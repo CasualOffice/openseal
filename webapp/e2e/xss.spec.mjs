@@ -150,8 +150,12 @@ test("hostile names, subjects, labels and URLs render as text on every sender sc
 
   await page.goto(app(`#/prepare/${ids.draft}`));
   const steps = page.getByRole("navigation", { name: "Steps" });
+  // A draft with documents and people opens on its fields once loaded (E2E-07): wait for
+  // that, so no click lands while it is still opening. Steps before the current one are
+  // named "… (done)", so a step's name is matched from its start.
+  await expect(page.locator('.os-stepper__btn[aria-current="step"]')).toContainText("Fields");
   for (const name of ["Documents", "Recipients", "Fields", "Review and send"]) {
-    await steps.getByRole("button", { name: new RegExp(`${name}$`) }).click();
+    await steps.getByRole("button", { name: new RegExp(`^${name}`) }).click();
     await expect(page.locator('.os-stepper__btn[aria-current="step"]')).toContainText(name);
     // The heading names the subject on every step.
     await clean(page, dialogs, `prepare: ${name}`);
@@ -165,9 +169,13 @@ test("hostile names, subjects, labels and URLs render as text on every sender sc
   await page.goto(app(`#/templates/${ids.template}/edit`));
   await clean(page, dialogs, "template editor", null);
 
+  // Each admin screen is waited for by its heading, so the payload is looked for on it and
+  // not on the screen it replaces.
   await page.goto(app("#/admin"));
+  await expect(page.getByRole("heading", { name: "Members and roles", level: 1 })).toBeVisible();
   await clean(page, dialogs, "admin: users");
   await page.goto(app("#/admin?tab=api"));
+  await expect(page.getByRole("heading", { name: "API and webhooks", level: 1 })).toBeVisible();
   await clean(page, dialogs, "admin: API", SVG);
   await page.goto(app("#/admin?tab=account"));
   await clean(page, dialogs, "admin: account", null);

@@ -7,6 +7,9 @@ For each HTML page (site/_src/ excluded, as GitHub Pages does not publish it), e
 href, src and srcset that is not an external URL must name a file that exists, and a
 #fragment must name an id on the target page. Also refuses a page with two elements of
 one id. External links (http:, https:, mailto:) are counted, not fetched: no network.
+A link into app/ names the web app's demo copy, which tools/build-site.py --publish
+copies there from webapp/ (SITE-04), so it must name a file in webapp/ that is published
+(not its tests); its #fragment is a route of the app, not an id, and is not checked.
 Standard library only; exits non-zero, naming each broken link and its page.
 """
 
@@ -18,6 +21,8 @@ from html.parser import HTMLParser
 from urllib.parse import unquote, urlsplit
 
 SITE = pathlib.Path(__file__).resolve().parent.parent / "site"
+WEBAPP = SITE.parent / "webapp"
+APP_SKIP = {"e2e", "tests", "node_modules", "package.json", "package-lock.json"}  # as build-site.py
 
 
 class Page(HTMLParser):
@@ -77,7 +82,16 @@ def main() -> int:
             except ValueError:
                 problems.append(f"{rel}: {link!r} leaves site/")
                 continue
-            if "_src" in target.relative_to(SITE.resolve()).parts:
+            inside = target.relative_to(SITE.resolve()).parts
+            if inside and inside[0] == "app":
+                if (SITE / "app").exists():
+                    problems.append(f"{rel}: site/app/ exists, but app/ is the published demo copy of webapp/")
+                    continue
+                app_target = WEBAPP.joinpath(*inside[1:]) if len(inside) > 1 else WEBAPP / "index.html"
+                if len(inside) < 2 or inside[1] in APP_SKIP or inside[1].startswith(".") or not app_target.is_file():
+                    problems.append(f"{rel}: {link!r} names no published file of the web app (webapp/{'/'.join(inside[1:])})")
+                continue
+            if "_src" in inside:
                 problems.append(f"{rel}: {link!r} points into site/_src, which is not published")
                 continue
             if not target.exists():

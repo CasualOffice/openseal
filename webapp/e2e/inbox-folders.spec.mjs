@@ -128,7 +128,7 @@ test("Inbox, folders, Deleted, server filters and the ended certificate on the s
   await page.goto(new URL(out.signUrl, page.url()).href);
   const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
   const progress = page.locator("#guide-progress");
-  await expect(consent.or(progress)).toBeVisible();
+  await expect(consent.or(progress).first()).toBeVisible();
   if (await consent.isVisible()) {
     await page.getByLabel("I agree to use electronic records and signatures.").check();
     await page.getByRole("button", { name: "Continue" }).click();

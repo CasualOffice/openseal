@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Verify a sealed PDF | OpenSeal</title>
+<meta name="description" content="Check a sealed PDF in your browser with OpenSeal&#x27;s verifier compiled to WebAssembly: integrity, certificate trust, timestamp and revisions. The file is not uploaded.">
+<meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Verify a sealed PDF | OpenSeal">
+<meta property="og:description" content="Check a sealed PDF in your browser with OpenSeal&#x27;s verifier compiled to WebAssembly: integrity, certificate trust, timestamp and revisions. The file is not uploaded.">
+<link rel="icon" href="assets/mark.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/ui/geist-1.3.1-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/site.css">
+<script src="assets/theme-init.js"></script>
+<script type="module" src="assets/site.js"></script>
+</head>
+<body data-root="">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="assets/logo.svg" alt="" width="120" height="24">
+      <img class="logo-dark" src="assets/logo-dark.svg" alt="" width="120" height="24">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="index.html#product">Product</a><a href="verify.html" aria-current="page">Verify</a><a href="docs/index.html">Docs</a><a href="docs/api.html">API</a><a href="roadmap.html">Roadmap</a><a href="changelog.html">Changelog</a><a href="download.html">Download</a></nav>
+    <div class="header-actions">
+      <button type="button" class="search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="search-open__label">Search</span><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="header-gh" href="https://github.com/CasualOffice/openseal">GitHub</a>
+      <a class="btn btn-strong btn-sm header-cta" href="app/app.html#/signin">Try the demo</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="index.html#product">Product</a><a href="verify.html" aria-current="page">Verify</a><a href="docs/index.html">Docs</a><a href="docs/api.html">API</a><a href="roadmap.html">Roadmap</a><a href="changelog.html">Changelog</a><a href="download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a class="menu-cta" href="app/app.html#/signin">Try the demo<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1">
+<!-- SITE-03: the public verifier. assets/verify.js loads the web app's verifier from the
+     published demo copy (app/vendor/openseal-wasm/, built by tools/build-webapp-wasm.sh;
+     tools/build-site.py --publish) and the app's report rules (app/verifyreport.js), and
+     draws the result here. Nothing is sent anywhere: the page makes no request with the file. -->
+<section class="page-head vfy-head" aria-labelledby="vfy-h"><div class="wrap narrow">
+  <span class="eyebrow eyebrow--ok">Verify</span>
+  <h1 id="vfy-h">Verify a sealed PDF</h1>
+  <p class="lede">Check whether a PDF is exactly what was signed, who sealed it, and when. The check runs in this browser with the same verifier the OpenSeal server and command line use, compiled to WebAssembly.</p>
+  <p class="vfy-private"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span><strong>Your file is not uploaded.</strong> It is read in this tab and never leaves your device; this page sends nothing anywhere.</span></p>
+</div></section>
+
+<section class="section-tight vfy-section"><div class="wrap narrow">
+  <div class="vfy" data-app="app/" data-samples="samples/">
+    <div class="vfy-drop" data-testid="vfy-drop">
+      <span class="vfy-drop__icon" aria-hidden="true"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="M13.3 16.3 15 18"/></svg></span>
+      <p class="vfy-drop__title">Drop a sealed PDF here</p>
+      <p class="vfy-drop__sub">or choose one from your device. Up to 50 MB.</p>
+      <label class="btn btn-primary vfy-choose"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg><span>Choose a PDF</span><input class="sr-only" type="file" accept="application/pdf,.pdf" data-testid="vfy-input"></label>
+      <p class="vfy-engine" role="status" data-testid="vfy-engine" data-state="loading">Preparing the verifier…</p>
+      <noscript><p class="vfy-engine">The verifier needs JavaScript and WebAssembly. Without them, check the PDF with the <code>openseal</code> command line or pyHanko.</p></noscript>
+    </div>
+
+    <div class="vfy-trust">
+      <div>
+        <h2 class="vfy-trust__title" id="trust-h">Trusted certificates <span class="muted">(optional)</span></h2>
+        <p class="muted">A signature's issuer can only be confirmed against a root you trust: your organisation's, or the signing service's. Add it as a DER or PEM file; it stays in this tab too.</p>
+        <ul class="vfy-chips" aria-labelledby="trust-h" aria-live="polite" data-testid="vfy-trusted"><li class="muted">None</li></ul>
+      </div>
+      <label class="btn btn-secondary btn-sm vfy-trust__add"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Add certificate</span><input class="sr-only" type="file" multiple accept=".cer,.crt,.der,.pem,application/x-x509-ca-cert,application/pkix-cert" data-testid="vfy-trust-input"></label>
+    </div>
+
+    <div class="vfy-samples">
+      <p><strong>No sealed PDF at hand?</strong> Try one of ours. Each is checked against the test root it was sealed under, which is for these samples only.</p>
+      <div class="cta-row">
+        <button type="button" class="btn btn-secondary btn-sm" data-sample="sealed-agreement.pdf" data-testid="vfy-sample-sealed"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 13V8.5C14 7 15 7 15 5a3 3 0 0 0-6 0c0 2 1 2 1 3.5V13"/><path d="M20 15.5a2.5 2.5 0 0 0-2.5-2.5h-11A2.5 2.5 0 0 0 4 15.5V17a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1z"/><path d="M5 22h14"/></svg><span>Check a sealed sample</span></button>
+        <button type="button" class="btn btn-secondary btn-sm" data-sample="tampered-agreement.pdf" data-testid="vfy-sample-tampered"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><span>Check a tampered sample</span></button>
+      </div>
+      <p class="vfy-samples__files muted">Or download them: <a href="samples/sealed-agreement.pdf" download>sealed-agreement.pdf</a>, <a href="samples/tampered-agreement.pdf" download>tampered-agreement.pdf</a> (one byte changed after sealing), and <a href="samples/test-roots.pem" download>test-roots.pem</a>.</p>
+    </div>
+
+    <div class="vfy-result" data-testid="vfy-result" tabindex="-1"></div>
+  </div>
+</div></section>
+
+<section class="section-tight section-alt" aria-labelledby="vfy-what-h"><div class="wrap">
+  <div class="sec-head">
+    <h2 id="vfy-what-h">What the check tells you.</h2>
+    <p>Four questions, answered by the verifier from the file alone. The verdict is the verifier's; this page never upgrades it.</p>
+  </div>
+  <ul class="facts facts--light vfy-what">
+    <li data-claim><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><path d="m9 15 2 2 4-4"/></svg></span><strong>Integrity</strong><span>Whether the bytes each signature covers are exactly the bytes that were signed. One changed byte fails it.</span><a class="claim-mark claim-mark--tested" data-claim-mark="tested" href="https://github.com/CasualOffice/openseal/blob/main/.github/workflows/ci.yml"><svg class="i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg><span>Tested: tampered fixtures in CI (verifier, pyHanko, EU DSS)</span></a></li>
+    <li data-claim><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"/><path d="m16 9-5.5 5.5L8 12"/></svg></span><strong>Certificate trust</strong><span>Whether the sealing certificate chains to a root you trust. Without your root, the answer is "could not be fully verified", never "valid".</span><span class="claim-mark claim-mark--deploy" data-claim-mark="deployment"><svg class="i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg><span>Depends on your deployment: which root you trust: the operator&#x27;s sealing CA, or a public one it uses</span></span></li>
+    <li data-claim><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></span><strong>Timestamp</strong><span>When an RFC 3161 timestamp authority says the signature existed, so the time does not rest on anyone's clock.</span><a class="claim-mark claim-mark--tested" data-claim-mark="tested" href="https://github.com/CasualOffice/openseal/blob/main/crates/casual-sign-crypto/tests/checks.rs"><svg class="i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg><span>Tested: the verifier&#x27;s timestamp checks</span></a></li>
+    <li data-claim><span class="cell-icon"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></svg></span><strong>Revisions</strong><span>Every change appended after a signature, and whether it is one the signature allows (validation data, a document timestamp) or a change to what was signed.</span><a class="claim-mark claim-mark--tested" data-claim-mark="tested" href="https://github.com/CasualOffice/openseal/blob/main/crates/casual-sign-verify/tests/fixtures.rs"><svg class="i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/></svg><span>Tested: shadow and incremental-saving attack fixtures</span></a></li>
+  </ul>
+  <p class="note">The full verifier in the <a href="app/verify.html">web app</a> also shows the audit trail attached to an OpenSeal PDF and a preview of its pages. The same check runs offline with <code>openseal verify</code> (<a href="download.html">download</a>), and the seal is standard PAdES, so independent validators such as pyHanko and EU DSS read it too. A verdict here is a technical result, not a legal opinion.</p>
+</div></section>
+<script type="module" src="assets/verify.js"></script>
+
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="assets/logo.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <img class="logo-dark" src="assets/logo-dark.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="index.html#product">Overview</a></li><li><a href="app/app.html#/signin">Try the demo</a></li><li><a href="verify.html">Verify a PDF</a></li><li><a href="download.html">Download and deploy</a></li><li><a href="roadmap.html">Roadmap</a></li><li><a href="changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="docs/getting-started.html">Getting started</a></li><li><a href="docs/self-hosting.html">Self-hosting</a></li><li><a href="docs/api.html">API reference</a></li><li><a href="docs/webhooks.html">Webhooks</a></li></ul></div>
+    <div class="foot-col"><h2>Trust</h2><ul><li><a href="docs/security.html">Security and evidence</a></li><li><a href="docs/verifying.html">Verifying a document</a></li><li><a href="security.html">Security policy</a></li><li><a href="docs/architecture.html">Architecture</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="docs/contributing.html">Contributing</a></li><li><a href="brand.html">Brand and attribution</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p><p>Pre-release software: v0.0.1 is for evaluation, not yet for production agreements.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

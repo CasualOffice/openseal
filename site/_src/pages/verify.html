@@ -1,0 +1,59 @@
+<!--meta {"title": "Verify a sealed PDF", "description": "Check a sealed PDF in your browser with OpenSeal's verifier compiled to WebAssembly: integrity, certificate trust, timestamp and revisions. The file is not uploaded.", "nav": "verify", "wasm": true} -->
+<!-- SITE-03: the public verifier. assets/verify.js loads the web app's verifier from the
+     published demo copy (app/vendor/openseal-wasm/, built by tools/build-webapp-wasm.sh;
+     tools/build-site.py --publish) and the app's report rules (app/verifyreport.js), and
+     draws the result here. Nothing is sent anywhere: the page makes no request with the file. -->
+<section class="page-head vfy-head" aria-labelledby="vfy-h"><div class="wrap narrow">
+  <span class="eyebrow eyebrow--ok">Verify</span>
+  <h1 id="vfy-h">Verify a sealed PDF</h1>
+  <p class="lede">Check whether a PDF is exactly what was signed, who sealed it, and when. The check runs in this browser with the same verifier the OpenSeal server and command line use, compiled to WebAssembly.</p>
+  <p class="vfy-private">{{icon:lock:16}}<span><strong>Your file is not uploaded.</strong> It is read in this tab and never leaves your device; this page sends nothing anywhere.</span></p>
+</div></section>
+
+<section class="section-tight vfy-section"><div class="wrap narrow">
+  <div class="vfy" data-app="{{root}}app/" data-samples="{{root}}samples/">
+    <div class="vfy-drop" data-testid="vfy-drop">
+      <span class="vfy-drop__icon" aria-hidden="true">{{icon:file-search:24}}</span>
+      <p class="vfy-drop__title">Drop a sealed PDF here</p>
+      <p class="vfy-drop__sub">or choose one from your device. Up to 50 MB.</p>
+      <label class="btn btn-primary vfy-choose">{{icon:upload:16}}<span>Choose a PDF</span><input class="sr-only" type="file" accept="application/pdf,.pdf" data-testid="vfy-input"></label>
+      <p class="vfy-engine" role="status" data-testid="vfy-engine" data-state="loading">Preparing the verifier…</p>
+      <noscript><p class="vfy-engine">The verifier needs JavaScript and WebAssembly. Without them, check the PDF with the <code>openseal</code> command line or pyHanko.</p></noscript>
+    </div>
+
+    <div class="vfy-trust">
+      <div>
+        <h2 class="vfy-trust__title" id="trust-h">Trusted certificates <span class="muted">(optional)</span></h2>
+        <p class="muted">A signature's issuer can only be confirmed against a root you trust: your organisation's, or the signing service's. Add it as a DER or PEM file; it stays in this tab too.</p>
+        <ul class="vfy-chips" aria-labelledby="trust-h" aria-live="polite" data-testid="vfy-trusted"><li class="muted">None</li></ul>
+      </div>
+      <label class="btn btn-secondary btn-sm vfy-trust__add">{{icon:plus:16}}<span>Add certificate</span><input class="sr-only" type="file" multiple accept=".cer,.crt,.der,.pem,application/x-x509-ca-cert,application/pkix-cert" data-testid="vfy-trust-input"></label>
+    </div>
+
+    <div class="vfy-samples">
+      <p><strong>No sealed PDF at hand?</strong> Try one of ours. Each is checked against the test root it was sealed under, which is for these samples only.</p>
+      <div class="cta-row">
+        <button type="button" class="btn btn-secondary btn-sm" data-sample="sealed-agreement.pdf" data-testid="vfy-sample-sealed">{{icon:stamp:16}}<span>Check a sealed sample</span></button>
+        <button type="button" class="btn btn-secondary btn-sm" data-sample="tampered-agreement.pdf" data-testid="vfy-sample-tampered">{{icon:triangle-alert:16}}<span>Check a tampered sample</span></button>
+      </div>
+      <p class="vfy-samples__files muted">Or download them: <a href="{{root}}samples/sealed-agreement.pdf" download>sealed-agreement.pdf</a>, <a href="{{root}}samples/tampered-agreement.pdf" download>tampered-agreement.pdf</a> (one byte changed after sealing), and <a href="{{root}}samples/test-roots.pem" download>test-roots.pem</a>.</p>
+    </div>
+
+    <div class="vfy-result" data-testid="vfy-result" tabindex="-1"></div>
+  </div>
+</div></section>
+
+<section class="section-tight section-alt" aria-labelledby="vfy-what-h"><div class="wrap">
+  <div class="sec-head">
+    <h2 id="vfy-what-h">What the check tells you.</h2>
+    <p>Four questions, answered by the verifier from the file alone. The verdict is the verifier's; this page never upgrades it.</p>
+  </div>
+  <ul class="facts facts--light vfy-what">
+    <li data-claim><span class="cell-icon">{{icon:file-check}}</span><strong>Integrity</strong><span>Whether the bytes each signature covers are exactly the bytes that were signed. One changed byte fails it.</span>{{claim:tested|tampered fixtures in CI (verifier, pyHanko, EU DSS)|.github/workflows/ci.yml}}</li>
+    <li data-claim><span class="cell-icon">{{icon:badge-check}}</span><strong>Certificate trust</strong><span>Whether the sealing certificate chains to a root you trust. Without your root, the answer is "could not be fully verified", never "valid".</span>{{claim:deployment|which root you trust: the operator's sealing CA, or a public one it uses}}</li>
+    <li data-claim><span class="cell-icon">{{icon:clock}}</span><strong>Timestamp</strong><span>When an RFC 3161 timestamp authority says the signature existed, so the time does not rest on anyone's clock.</span>{{claim:tested|the verifier's timestamp checks|crates/casual-sign-crypto/tests/checks.rs}}</li>
+    <li data-claim><span class="cell-icon">{{icon:layers}}</span><strong>Revisions</strong><span>Every change appended after a signature, and whether it is one the signature allows (validation data, a document timestamp) or a change to what was signed.</span>{{claim:tested|shadow and incremental-saving attack fixtures|crates/casual-sign-verify/tests/fixtures.rs}}</li>
+  </ul>
+  <p class="note">The full verifier in the <a href="{{root}}app/verify.html">web app</a> also shows the audit trail attached to an OpenSeal PDF and a preview of its pages. The same check runs offline with <code>openseal verify</code> (<a href="{{root}}download.html">download</a>), and the seal is standard PAdES, so independent validators such as pyHanko and EU DSS read it too. A verdict here is a technical result, not a legal opinion.</p>
+</div></section>
+<script type="module" src="{{root}}assets/verify.js"></script>

@@ -13,10 +13,16 @@ passed with `--dss IMAGE`; DSS is LGPL and runs only as that separate program.
     python3 tools/verify-sealed.py fixtures/sealed --dss openseal-eu-dss   # rung 3 over them too
 
 `--self-test` builds a one-page PDF, a throwaway CA and signing certificate, seals the
-PDF with pyHanko at PAdES B-B, and then checks three cases: the sealed file validates;
-a flipped byte inside the signed range fails; an incremental update that changes the
-page's content after signing is reported as a modification. A validator that passes
-all three can fail, so a later green run means something.
+PDF with pyHanko at PAdES B-B, and then checks four cases: the sealed file validates and
+is trusted; a flipped byte inside the signed range fails; an incremental update that
+changes the page's content after signing is reported as a modification; and on a manifest
+without a `level` column the sealed file passes under its own root and fails under
+another CA's (HRD-13). A validator that passes all four can fail, so a later green run
+means something.
+
+A manifest without a `level` column holds each `intact` row to: the last signature
+intact and valid, covering the whole file, and chaining to the directory's
+`trust-root.pem`.
 
 A manifest with a `level` column (`fixtures/sealed`, OpenSeal's own seals) is held to
 more: every signature intact, valid and trusted; for B-LT and B-LTA the DSS alone must
@@ -28,6 +34,7 @@ Needs `pyhanko` and `cryptography` (CI installs them; locally use a virtualenv).
 non-zero and names each file that disagreed with its manifest.
 """
 
+import contextlib
 import datetime
 import io
 import logging
@@ -52,7 +59,8 @@ def roots_of(root):
     return list(root) if isinstance(root, list) else [root]
 
 def validate(data, trust_root):
-    """Return (intact, coverage_is_whole_file, modification_level) for the last signature."""
+    """Return (intact, coverage_is_whole_file, modification_level, trusted) for the last
+    signature; `trusted`: its certificate chains to `trust_root`."""
     from pyhanko.pdf_utils.reader import PdfFileReader
     from pyhanko.sign.validation import validate_pdf_signature
     from pyhanko_certvalidator import ValidationContext
@@ -60,11 +68,11 @@ def validate(data, trust_root):
     reader = PdfFileReader(io.BytesIO(data), strict=False)
     sigs = reader.embedded_signatures
     if not sigs:
-        return False, False, "no signature"
+        return False, False, "no signature", False
     status = validate_pdf_signature(sigs[-1], ValidationContext(trust_roots=roots_of(trust_root)))
     whole = status.coverage.name == "ENTIRE_FILE"
     level = status.modification_level.name if status.modification_level else "UNKNOWN"
-    return bool(status.intact and status.valid), whole, level
+    return bool(status.intact and status.valid), whole, level, bool(status.trusted)
 
 
 def make_pki(workdir):
@@ -184,21 +192,38 @@ def self_test(dss_image=None):
         root = load_cert_from_pemder(str(paths["ca"]))
         sealed = seal(one_page_pdf("Agreement"), paths)
 
-        intact, whole, level = validate(sealed, root)
-        if not (intact and whole):
-            failures.append(f"a freshly sealed PDF did not validate (intact={intact}, whole file={whole})")
+        intact, whole, level, trusted = validate(sealed, root)
+        if not (intact and whole and trusted):
+            failures.append(f"a freshly sealed PDF did not validate (intact={intact}, whole file={whole}, trusted={trusted})")
 
         at = sealed.index(b"(Agreement)") + 1
         flipped = bytearray(sealed)
         flipped[at] ^= 0x20
-        intact, _, _ = validate(bytes(flipped), root)
+        intact, _, _, _ = validate(bytes(flipped), root)
         if intact:
             failures.append("a flipped byte inside the signed range still validated")
 
         modified = change_after_signing(sealed)
-        intact, whole, level = validate(modified, root)
+        intact, whole, level, _ = validate(modified, root)
         if whole or level in ("NONE", "LTA_UPDATES"):
             failures.append(f"a content change after signing was not reported (whole file={whole}, level={level})")
+
+        # HRD-13: a manifest without a `level` column (the plain path of check_dirs) holds
+        # its seals to its trust root too: the sealed file passes under its own root and
+        # fails under another CA's.
+        (pathlib.Path(tmp) / "other").mkdir()
+        other = make_pki(pathlib.Path(tmp) / "other")
+        for label, ca, want in (("own", paths["ca"], 0), ("other", other["ca"], 1)):
+            d = pathlib.Path(tmp) / f"plain-{label}"
+            d.mkdir()
+            (d / "sealed.pdf").write_bytes(sealed)
+            (d / "manifest.tsv").write_text("file\texpect\twhy\nsealed.pdf\tintact\tself-test\n", encoding="utf8")
+            (d / "trust-root.pem").write_bytes(ca.read_bytes())
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                got = check_dirs([str(d)])
+            if got != want:
+                failures.append(f"a plain manifest under {'its own root' if want == 0 else 'another root'} "
+                                f"{'failed' if want == 0 else 'passed'} (exit {got})")
 
         if dss_image:
             work = pathlib.Path(tmp)
@@ -224,7 +249,8 @@ def self_test(dss_image=None):
             print(f"  {f}", file=sys.stderr)
         return 1
     who = "pyHanko and EU DSS" if dss_image else "pyHanko"
-    print(f"verify-sealed self-test ({who}): sealed validates; flipped byte fails; later content change reported")
+    print(f"verify-sealed self-test ({who}): sealed validates; flipped byte fails; later content change reported; "
+          "another root fails a plain manifest")
     return 0
 
 
@@ -336,8 +362,9 @@ def dss_judge(rows, level):
 def check_dirs(dirs, dss_image=None):
     """Each directory's manifest.tsv names its PDFs. A manifest with a `level` column
     (OpenSeal's own seals, `fixtures/sealed`) gets the full check of `pyhanko_sealed` and,
-    with an EU DSS image, `dss_judge`; otherwise the last signature must be intact and
-    cover the whole file exactly when the row says `intact`."""
+    with an EU DSS image, `dss_judge`; otherwise the last signature must be intact, cover
+    the whole file and chain to the directory's `trust-root.pem` exactly when the row says
+    `intact` (HRD-13: without the trust check a seal under any root passed)."""
     logging.getLogger("pyhanko").setLevel(logging.CRITICAL)
     logging.getLogger("pyhanko_certvalidator").setLevel(logging.CRITICAL)
     need("pyhanko")
@@ -375,11 +402,12 @@ def check_dirs(dirs, dss_image=None):
             continue
         for r in rows:
             name, expect = r.get("file", ""), r.get("expect", "")
-            intact, whole, level = validate((d / name).read_bytes(), root)
-            ok = intact and whole
+            intact, whole, level, trusted = validate((d / name).read_bytes(), root)
+            ok = intact and whole and trusted
             checked += 1
             if (expect == "intact") != ok:
-                problems.append(f"{d / name}: expected {expect}, pyHanko says intact={intact}, whole file={whole}, changes={level}")
+                problems.append(f"{d / name}: expected {expect}, pyHanko says intact={intact}, whole file={whole}, "
+                                f"trusted={trusted}, changes={level}")
     if problems:
         print("sealed PDFs that disagree with their manifest:", file=sys.stderr)
         for p in problems:

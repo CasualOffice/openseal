@@ -2,12 +2,41 @@
 // Administrators and Audit log over `/organizations/me` (ORG-03, ORG-05). Mock mode at
 // 1440 and 390 px: the demo user owns an organization of two workspaces
 // (webapp/mock.js `organization()`); the server's own rules are tested in
-// server/casual-sign-server/tests/organizations.rs.
+// server/casual-sign-server/tests/organizations.rs. The last test runs on any server, the
+// Compose stack included, whose bootstrap administrator owns its organization (E2E-11).
 
 import { test, expect } from "@playwright/test";
 import { app, signIn, expectAccessible, REAL } from "./helpers.mjs";
 
-const mockOnly = () => test.skip(REAL, "uses the mock's seeded organization; the real stack's run is ORG-06's remaining step");
+const mockOnly = () => test.skip(REAL, "uses the mock's seeded organization (its workspaces, members and counts); on a real server the test at the end runs (ORG-06)");
+
+// E2E-11: over `/organizations/me` on any server: a new workspace is listed, its creation
+// is in the organization's audit log, whose chain verifies; the owner is listed as one.
+test("organization admin on any server: a workspace made is listed and logged; the owner is an administrator (ORG-06)", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await signIn(page, "home");
+  const name = `E2E ${Date.now()}-${testInfo.project.name}`;
+  await page.goto(app("#/org?section=workspaces"));
+  await expect(page.getByRole("heading", { name: "Workspaces", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New workspace" }).click();
+  const sheet = page.getByTestId("sheet-org-ws-new");
+  await sheet.getByLabel("Name").fill(name);
+  await sheet.getByRole("button", { name: "Create workspace" }).click();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByTestId("org-workspaces").locator("tbody tr", { hasText: name })).toContainText("Active");
+
+  await page.goto(app("#/org?section=audit"));
+  await expect(page.getByRole("heading", { name: "Audit log", level: 1 })).toBeVisible();
+  const log = page.getByTestId("org-audit");
+  await expect(log.locator('tr[data-action="workspace.created"]').first()).toBeVisible();
+  await page.getByTestId("org-audit-verify").click();
+  await expect(page.getByText("Every entry in the log is linked to the one before it.")).toBeVisible();
+
+  await page.goto(app("#/org?section=admins"));
+  await expect(page.getByRole("heading", { name: "Administrators", level: 1 })).toBeVisible();
+  await expect(page.getByTestId("org-admins").locator("tbody tr", { hasText: "Owner" }).first()).toBeVisible();
+  await expectAccessible(page, "organization administrators on any server");
+});
 
 for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
   test.describe(`organization admin at ${label} px`, () => {

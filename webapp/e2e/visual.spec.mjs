@@ -375,17 +375,21 @@ test("the bundled UI font draws the app and the signing page, on the canvas's fl
     await page.setViewportSize({ width, height: 900 });
     await page.goto(app("#/signin"));
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
-    const r = await page.evaluate(async () => {
-      await document.fonts.ready;
-      return { root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize), loaded: document.fonts.check('14px "OpenSeal Geist"', "Agreement"), family: getComputedStyle(document.body).fontFamily };
-    });
+    const r = await page.evaluate(() => ({ root: Number.parseFloat(getComputedStyle(document.documentElement).fontSize), family: getComputedStyle(document.body).fontFamily }));
     expect(r.family.startsWith('"OpenSeal Geist"'), `body font at ${width}: ${r.family}`).toBe(true);
-    expect(r.loaded, `Geist loaded at ${width}`).toBe(true);
+    await expect.poll(() => page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('14px "OpenSeal Geist"', "Agreement"); }), `Geist loaded at ${width}`).toBe(true);
     expect(Math.abs(r.root - want[width]), `root size at ${width}: ${r.root}`).toBeLessThan(0.05);
   }
   await page.goto(signPage(tokens.sign));
   await expect(page.getByRole("heading", { name: "Enter your access code" })).toBeVisible();
-  expect(await page.evaluate(async () => { await document.fonts.ready; return document.fonts.check('16px "OpenSeal Geist"', "Sign"); })).toBe(true);
+  // E2E-08: the signing page draws in its own name for the bundled Geist file, "OpenSeal
+  // Sign Geist" (sign.css), with "OpenSeal Geist" only as its fallback. The fallback face
+  // is fetched only when the page lays text out while its own face is still loading, so
+  // checking "OpenSeal Geist" here passed or failed on the cache's timing. The face the
+  // page is set in is the one checked, until it has loaded.
+  const face = await page.evaluate(() => getComputedStyle(document.body).fontFamily.split(",")[0].trim());
+  expect(face).toBe('"OpenSeal Sign Geist"');
+  await expect.poll(() => page.evaluate(async (f) => { await document.fonts.ready; return document.fonts.check(`16px ${f}`, "Sign"); }, face)).toBe(true);
 });
 
 // Small component defects (UX-02).

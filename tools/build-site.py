@@ -6,6 +6,16 @@ api/openapi.yaml. The output is committed; GitHub Pages publishes site/ without 
     python3 tools/build-site.py --check              # fail, naming the file, if anything is stale
     python3 tools/build-site.py --screens DIR        # turn raw captures (tools/capture-site-screens.mjs)
                                                         # into site/assets/screens/*.webp and *.png (needs Pillow)
+    python3 tools/build-site.py --publish OUT [--require-wasm]
+                                                     # assemble the published tree in OUT: site/ without
+                                                        # _src/, plus the web app's demo copy in OUT/app/
+
+The published tree (SITE-03, SITE-04) is site/ plus a copy of webapp/ at app/, which is
+the interactive demo (mock mode, forced by `<meta name="openseal-demo" content="static">`
+in each of its pages, webapp/api.js `isDemoBuild`) and holds the WebAssembly verifier
+the site's Verify page runs (app/vendor/openseal-wasm/, built by
+tools/build-webapp-wasm.sh; `--require-wasm` fails when it is absent). The copy is made
+at publish time, not committed, so the app is never duplicated in the repository.
 
 Runs tools/build-roadmap.py (docs/06 and docs/14 to roadmap.html) and
 tools/build-api-docs.py (api/openapi.yaml to docs/api.html) as part of the build.
@@ -92,6 +102,18 @@ def screens(raw: pathlib.Path) -> None:
         raise SystemExit(f"build-site: no captures in {raw}; run tools/capture-site-screens.mjs first")
 
 
+# ---- Samples for the Verify page ------------------------------------------------------
+
+# published name -> fixture. The sealed one is PAdES B-LT (TOTAL_PASSED against its test
+# root); the tampered one has a byte flipped inside the signed range (HASH_FAILURE).
+SAMPLES = {
+    "sealed-agreement.pdf": "fixtures/sealed/p256-approval-blt.pdf",
+    "tampered-agreement.pdf": "fixtures/signed/flip-range1.pdf",
+}
+# The test roots the two samples chain to, as one PEM file (published as test-roots.pem).
+SAMPLE_ROOTS = ("fixtures/sealed/trust-root.pem", "fixtures/signed/trust-root.pem")
+
+
 # ---- Pages --------------------------------------------------------------------------------
 
 def build() -> dict[str, bytes]:
@@ -104,13 +126,19 @@ def build() -> dict[str, bytes]:
         files[f"assets/fonts/ui/{font.name}"] = font.read_bytes()
     for name in ("logo.svg", "logo-dark.svg", "mark.svg"):
         files[f"assets/{name}"] = (ROOT / "docs/assets" / name).read_bytes()
+    # The Verify page's samples (SITE-03): fixtures with known verdicts, so a visitor can
+    # see both outcomes without a file of their own.
+    for dest, src in SAMPLES.items():
+        files[f"samples/{dest}"] = (ROOT / src).read_bytes()
+    files["samples/test-roots.pem"] = b"".join((ROOT / src).read_bytes() for src in SAMPLE_ROOTS)
 
     pages: dict[str, str] = {}
     for path in sorted((SRC / "pages").glob("*.html")):
         meta, body = sitelib.read_fragment(path)
         body = sitelib.add_heading_ids(sitelib.expand(body, ""))
         pages[path.name] = sitelib.page(title=meta["title"], description=meta["description"], body=body, root="",
-                                        current=meta.get("nav", ""), main_class=meta.get("main", ""))
+                                        current=meta.get("nav", ""), main_class=meta.get("main", ""),
+                                        wasm=meta.get("wasm", False))
     for slug, title, _group in sitelib.available_docs():
         if slug == "api":
             continue
@@ -147,9 +175,57 @@ def changelog() -> str:
                         current="changelog")
 
 
+# ---- The published tree -----------------------------------------------------------------
+
+# What of webapp/ is not published: tests, the test harness, and Node's package file.
+APP_SKIP = {"e2e", "tests", "node_modules", "package.json", "package-lock.json"}
+DEMO_META = '<meta name="openseal-demo" content="static">'
+WASM = "vendor/openseal-wasm/casual_sign_wasm_bg.wasm"
+
+
+def publish(out: pathlib.Path, require_wasm: bool = False) -> None:
+    """Assemble the published tree in `out` (emptied first): site/ without _src/, and the
+    web app's demo copy in out/app/. Fails, naming the file, if something is missing."""
+    # site/ is copied as it is: run the build (or --check) first, as pages.yml does.
+    if out.exists():
+        if not out.is_dir() or (any(out.iterdir()) and not (out / ".openseal-published").exists()):
+            raise SystemExit(f"build-site: {out} exists and is not a tree this tool published; refusing to empty it")
+        shutil.rmtree(out)
+    shutil.copytree(SITE, out, ignore=lambda d, names: [n for n in names if pathlib.Path(d) == SITE and n == "_src"])
+    app = out / "app"
+    if app.exists():
+        raise SystemExit("build-site: site/app/ exists; the demo copy is published there")
+    webapp = ROOT / "webapp"
+    shutil.copytree(webapp, app, ignore=lambda d, names: [n for n in names if (pathlib.Path(d) == webapp and n in APP_SKIP) or n.startswith(".")])
+    for page in sorted(app.glob("*.html")):
+        text = page.read_text(encoding="utf8")
+        if '<meta charset="utf-8">' not in text:
+            raise SystemExit(f"build-site: webapp/{page.name} has no <meta charset=\"utf-8\"> to mark as the demo copy")
+        text = text.replace('<meta charset="utf-8">', f'<meta charset="utf-8">\n  {DEMO_META}', 1)
+        if page.name == "sign.html":
+            # Served at /s/{token} by a real server, so its URLs are root-relative there; the
+            # demo copy is opened as app/sign.html?t=…, so they become relative to it.
+            before = text
+            text = text.replace('href="/', 'href="').replace('src="/', 'src="')
+            if text == before:
+                raise SystemExit("build-site: webapp/sign.html has no root-relative URL to rewrite; check the demo copy")
+        page.write_text(text, encoding="utf8")
+    if not (app / WASM).exists():
+        msg = f"build-site: {WASM} is not built (tools/build-webapp-wasm.sh); the Verify page will say the verifier is missing"
+        if require_wasm:
+            raise SystemExit(msg)
+        print(msg, file=sys.stderr)
+    (out / ".nojekyll").write_bytes(b"")
+    (out / ".openseal-published").write_bytes(b"")
+    print(f"build-site: published {sum(1 for p in out.rglob('*') if p.is_file())} files to {out}")
+
+
 def main(argv: list[str]) -> int:
     if len(argv) >= 2 and argv[0] == "--screens":
         screens(pathlib.Path(argv[1]))
+        return 0
+    if argv and argv[0] == "--publish" and len(argv) in (2, 3) and argv[2:] in ([], ["--require-wasm"]):
+        publish(pathlib.Path(argv[1]).resolve(), require_wasm=argv[2:] == ["--require-wasm"])
         return 0
     check = argv == ["--check"]
     if argv and not check:

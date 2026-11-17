@@ -1606,7 +1606,7 @@ function done(everyone, celebrate = false) {
     mark: stateMark("check", { seal: true, pop: celebrate }),
     title,
     text: everyone ? t("sign.done.everyone") : t("sign.done.waiting"),
-    children: [receiptRows(), h("p", { class: "os-state__note" }, before, h("a", { class: "os-sign__inlink", href: "/verify.html", text: t("sign.done.verify-link") }), after)],
+    children: [receiptRows(), h("p", { class: "os-state__note" }, before, h("a", { class: "os-sign__inlink", href: location.pathname.startsWith("/s/") ? "/verify.html" : "verify.html", text: t("sign.done.verify-link") }), after)],
     actions,
     testId: "sign-done",
     tone: "seal",

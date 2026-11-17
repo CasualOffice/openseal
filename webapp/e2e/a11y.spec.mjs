@@ -51,12 +51,16 @@ for (const scheme of ["light", "dark"]) {
       await page.getByRole("button", { name: "Add recipient" }).first().click();
       await page.getByTestId("recipient-name").fill("Ari Access");
       await page.getByTestId("recipient-email").fill("ari@example.com");
+      await page.getByTestId("recipient-email").blur();
       await expectAccessible(page, `prepare, recipients step (${scheme})`);
       await page.getByTestId("wizard-next").click();
       await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
       await page.locator(".os-palette").getByRole("button", { name: "Add Signature field" }).press("Enter");
       await expect(page.getByRole("heading", { name: "Signature field" })).toBeVisible();
       await expectAccessible(page, `prepare, field selected (${scheme})`);
+      // On a real server the recipient and the field are saved before Next is offered:
+      // wait for the app to stop holding it ("Every signer needs a field").
+      await expect(page.getByTestId("wizard-next")).not.toHaveAttribute("aria-disabled", "true");
       await page.getByTestId("wizard-next").click();
       await expectAccessible(page, `prepare, review step (${scheme})`);
       await page.getByRole("button", { name: "Send", exact: true }).first().click();

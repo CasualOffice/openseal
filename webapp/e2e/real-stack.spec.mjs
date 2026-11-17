@@ -68,7 +68,9 @@ async function addRecipient(page, n, { name, email }) {
 async function sign(browser, link, name, last) {
   const context = await browser.newContext();
   const page = await context.newPage();
-  await page.goto(link);
+  // "domcontentloaded", then signOn waits for the page itself: WebKit on the shared stack
+  // has waited past the test timeout for a full "load" (as in helpers.mjs's signIn).
+  await page.goto(link, { waitUntil: "domcontentloaded" });
   await signOn(page, name, last);
   await context.close();
 }
@@ -80,7 +82,7 @@ async function signOn(page, name, last) {
   // Progress is announced by the guide's status line at every width (the redesign keeps
   // a second, silent copy in the top bar: both are screen-reader text, so it is not used).
   const progress = page.locator("#guide-progress");
-  await expect(consent.or(progress)).toBeVisible();
+  await expect(consent.or(progress).first()).toBeVisible();
   if (await consent.isVisible()) {
     await page.getByLabel("I agree to use electronic records and signatures.").check();
     await page.getByRole("button", { name: "Continue" }).click();
@@ -212,7 +214,7 @@ test.describe("slice 1 (VS-01)", () => {
     await sp.goto(await signingLink(cara.email, started));
     const consent = sp.getByRole("heading", { name: "Electronic records and signatures" });
     const progress = sp.locator("#guide-progress");
-    await expect(consent.or(progress)).toBeVisible();
+    await expect(consent.or(progress).first()).toBeVisible();
     if (await consent.isVisible()) {
       await sp.getByLabel("I agree to use electronic records and signatures.").check();
       await sp.getByRole("button", { name: "Continue" }).click();

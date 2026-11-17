@@ -157,7 +157,7 @@ function integrations(body, ctx, tab) {
       panel.dataset.section = id;
       if (id === "webhooks") webhooks(panel, ctx); else clients(panel, ctx);
     },
-    onChange(id) { try { history.replaceState(null, "", navHref("integrations", id)); } catch { /* a sandboxed frame */ } },
+    onChange(id) { try { ctx.replaceHash(navHref("integrations", id)); } catch { /* a sandboxed frame */ } },
   });
   HEADS.get(body)?.({});
   body.append(tb);
@@ -173,7 +173,7 @@ function members(body, ctx, tab) {
       panel.dataset.section = id;
       if (id === "groups") groups(panel, ctx); else if (id === "profiles") profiles(panel, ctx); else users(panel, ctx);
     },
-    onChange(id) { try { history.replaceState(null, "", navHref("members", id)); } catch { /* a sandboxed frame */ } },
+    onChange(id) { try { ctx.replaceHash(navHref("members", id)); } catch { /* a sandboxed frame */ } },
   });
   HEADS.get(body)?.({});
   body.append(tb);

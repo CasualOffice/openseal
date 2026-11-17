@@ -1970,7 +1970,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       };
       const env = await ctx.api.createEnvelope(body);
       S.recipients.forEach((r, i) => { r.id = env.recipients?.[i]?.id || null; });
-      history.replaceState(null, "", `${location.pathname}${location.search}#/prepare/${encodeURIComponent(env.id)}`);
+      ctx.replaceHash(`#/prepare/${encodeURIComponent(env.id)}`);
       await loadFromServer(env);
     } else {
       // A scheduled draft is not edited (CS-WF-0022): saving a change cancels the

@@ -16,7 +16,7 @@ import { h } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
 import { button, busy } from "./ui/index.js";
-import { errorMessage } from "./api.js";
+import { errorMessage, isDemoBuild } from "./api.js";
 import { signInErrors, firstInvalid, resetError, usableProviders, signInFailure, owedFactor, factorError, groupSecret } from "./authmodel.js";
 import { authLayout, cardHead, textField, passwordField, setFieldError, alertBox, footerLinks } from "./authview.js";
 
@@ -42,7 +42,8 @@ export async function mount(view, ctx) {
   if (ctx.api.hasCsrf()) {
     try { owed = owedFactor(await ctx.api.session()); } catch { owed = null; }
   }
-  if (owed) screens[owed](); else screens.signIn("");
+  // The website's demo copy (SITE-04) starts with the demo account filled in.
+  if (owed) screens[owed](); else screens.signIn(hint && isDemoBuild() ? hint.email : "");
 }
 
 /// Into the app, or on to the second factor the session still owes.
@@ -59,6 +60,7 @@ function signIn(card, ctx, hint, prefill, screens) {
   card.replaceChildren();
   const email = textField({ id: "signin-email", label: t("signin.email"), type: "email", autocomplete: "username", value: prefill });
   const password = passwordField({ id: "signin-password", label: t("signin.password"), autocomplete: "current-password", command: "auth.toggle-password" });
+  if (hint && isDemoBuild() && prefill === hint.email) password.input.value = hint.password;
   const alert = alertBox("signin-alert");
   const forgot = h("button", { type: "button", class: "os-auth__link", attrs: { "data-os-command": "auth.forgot-password" }, text: t("signin.forgot") });
   forgot.addEventListener("click", () => screens.reset(email.input.value.trim()));

@@ -185,7 +185,7 @@ export function mount(view, ctx, _match, params) {
   // ---- State changes ---------------------------------------------------------------
   function syncHash() {
     const want = agreementsHash(s.view, s.q);
-    if (location.hash !== want) history.replaceState(history.state, "", `${location.pathname}${location.search}${want}`);
+    if (location.hash !== want) ctx.replaceHash(want);
   }
   function setView(id) {
     if (!VIEWS.some((v) => v.id === id)) return;
