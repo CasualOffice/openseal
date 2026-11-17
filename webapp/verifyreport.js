@@ -154,3 +154,63 @@ export function fileSize(bytes) {
   if (b < 1024 * 1024) return { key: "verify.size-kb", n: Math.max(1, Math.round(b / 1024)) };
   return { key: "verify.size-mb", n: Math.round((b / (1024 * 1024)) * 10) / 10 };
 }
+
+// ---- Anchor proofs (FG-158, docs/32 §5) ------------------------------------------------
+//
+// Input is the canonical JSON `verify_anchor()` returns from the WASM build
+// (`crates/casual-sign-wasm/src/api.rs`): `{"ok": {outcome, envelope_id, seq, head,
+// anchor, inclusion, timestamp, tsa_chain, trail, tsa_time, tsa_name}}` or `{"error":
+// {code, message}}`. The outcome is the verifier's, the same as `openseal anchor verify`
+// gives; this only names it.
+
+/// The checks of an anchor proof in the order a person reads them.
+export const ANCHOR_CHECKS = ["inclusion", "timestamp", "tsa_chain", "trail"];
+
+/// The largest proof file the page reads (docs/21: `MAX_PROOF_BYTES`, 256 KiB).
+export const MAX_ANCHOR_PROOF = 256 * 1024;
+
+const ANCHOR_STATES = { passed: "anchored", indeterminate: "unconfirmed", failed: "failed" };
+
+/// States: "anchored" (every check passed), "unconfirmed" (nothing failed, but the TSA is
+/// not one the person trusts), "failed", "error" (not a proof, `code` says why).
+export function summarizeAnchor(text) {
+  const error = (code) => ({ state: "error", code, checks: [], at: null, tsa: null, envelopeId: null, seq: null, period: null });
+  let parsed;
+  try { parsed = typeof text === "string" ? JSON.parse(text) : text; } catch { return error("CS-API-0001"); }
+  if (!parsed || typeof parsed !== "object") return error("CS-API-0001");
+  if (parsed.error) return error(String(parsed.error.code || "CS-API-0010"));
+  const r = parsed.ok;
+  if (!r || typeof r !== "object") return error("CS-API-0001");
+  const state = Object.hasOwn(ANCHOR_STATES, r.outcome) ? ANCHOR_STATES[r.outcome] : "failed";
+  const checks = ANCHOR_CHECKS.map((name) => {
+    const c = r[name];
+    const status = c && (c.status === "passed" || c.status === "failed") ? c.status : "not_run";
+    return { name, status, code: status === "failed" && typeof c.code === "string" ? c.code : null };
+  });
+  return {
+    state,
+    code: null,
+    checks,
+    at: Number.isSafeInteger(r.tsa_time) && r.tsa_time >= 0 ? new Date(r.tsa_time * 1000).toISOString() : null,
+    tsa: typeof r.tsa_name === "string" && r.tsa_name ? r.tsa_name : null,
+    envelopeId: typeof r.envelope_id === "string" ? r.envelope_id : null,
+    seq: Number.isSafeInteger(r.seq) ? r.seq : null,
+    period: typeof r.anchor?.period === "string" ? r.anchor.period : null,
+  };
+}
+
+/// Whether to hand the PDF's audit trail (`parseTrail`'s result) to `verify_anchor` with
+/// the proof `proofBytes`: `{use, note}`. The trail is matched when it holds the anchored
+/// event ("checked") or is another envelope's ("other": the verifier then refuses it);
+/// not when there is none ("none") or the event is after the trail ends ("later": a
+/// sealed PDF's trail stops at sealing, and later events are anchored later). Reading the
+/// proof here only decides what to pass; the verdict is the verifier's.
+export function anchorTrailPlan(proofBytes, trail) {
+  if (!trail || !trail.ok) return { use: false, note: "none" };
+  let p;
+  try { p = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(proofBytes)); } catch { return { use: false, note: "none" }; }
+  if (!p || typeof p !== "object" || !Number.isSafeInteger(p.seq)) return { use: false, note: "none" };
+  if (trail.envelopeId !== p.envelope_id) return { use: true, note: "other" };
+  if (p.seq >= trail.events.length) return { use: false, note: "later" };
+  return { use: true, note: "checked" };
+}

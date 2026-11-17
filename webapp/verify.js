@@ -19,12 +19,12 @@ import { icon } from "./icons.js";
 import { t, applyI18n } from "./i18n.js";
 import { button, emptyState, toast, pdfPreview } from "./ui/index.js";
 import { initTheme, getTheme, toggleTheme } from "./theme.js";
-import { summarize, certificatesFrom } from "./verifyreport.js";
+import { summarize, certificatesFrom, summarizeAnchor, anchorTrailPlan, MAX_ANCHOR_PROOF } from "./verifyreport.js";
 import { parseTrail, TRAIL_NAME, MAX_TRAIL_BYTES } from "./trail.js";
 import { readAttachment } from "./pdfview.js";
 import { createClient, isMockMode } from "./api.js";
 import { register } from "./commands.js";
-import { dropZone, engineLine, scanning, opening, receipt, detailCard, signatureItem, changesList, trailBody } from "./verifyview.js";
+import { dropZone, engineLine, scanning, opening, receipt, detailCard, signatureItem, changesList, trailBody, anchorBody } from "./verifyview.js";
 
 const mock = isMockMode();
 
@@ -33,6 +33,9 @@ const MAX_PDF = 50 * 1024 * 1024; // docs/21: 50 MiB
 const MIN_SCAN_MS = 600;
 const main = document.getElementById("main");
 const trust = []; // {name, der: [base64]}
+/// The envelope's anchor proof (FG-158), chosen or fetched: `{name, bytes}`; `notYet`
+/// when it was asked of the server and nothing is anchored yet.
+const anchor = { file: null, notYet: false };
 let loading = null;
 
 /// The verifier module, loaded once. Null when it is not installed on this server.
@@ -62,7 +65,7 @@ function start() {
     h("header", { class: "os-vfy__intro" },
       h("h1", { class: "os-vfy__title", text: t("verify.title") }),
       h("p", { class: "os-vfy__lede", text: t("verify.lede") })),
-    drop, engine.el, fileInput, trustCard()));
+    drop, engine.el, fileInput, trustCard(), anchorCard()));
   choose.focus({ preventScroll: true });
 }
 
@@ -108,6 +111,51 @@ function trustCard() {
     input, add);
 }
 
+/// The optional anchor proof (docs/32 §5): one `anchor-proof.json` beside the PDF, read
+/// here and checked with the PDF, never uploaded.
+function anchorCard() {
+  const list = h("ul", { class: "os-vfy__chips", attrs: { "aria-live": "polite", "data-testid": "anchor-chosen" } });
+  const input = h("input", { type: "file", accept: ".json,application/json", class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "anchor-input" } });
+  const render = () => {
+    clear(list);
+    if (!anchor.file) { list.append(h("li", { class: "os-vfy__muted os-vfy__small", text: t("verify.trust-none") })); return; }
+    const name = anchor.file.name;
+    list.append(h("li", { class: "os-vfy__chip" }, icon("file-check", { size: 12 }), h("span", { class: "os-vfy__ellipsis", text: name }),
+      button(t("verify.anchor-remove", { name }), { icon: "x", size: "sm", variant: "ghost", iconOnly: true, onClick: () => { anchor.file = null; render(); } })));
+  };
+  input.addEventListener("change", async () => {
+    const f = input.files[0];
+    input.value = "";
+    if (!f) return;
+    if (f.size > MAX_ANCHOR_PROOF) { toast(t("verify.anchor-bad", { name: f.name }), "error"); return; }
+    anchor.file = { name: f.name.slice(0, 120), bytes: new Uint8Array(await f.arrayBuffer()) };
+    anchor.notYet = false;
+    render();
+  });
+  render();
+  const add = button(t("verify.anchor-add"), { icon: "plus", size: "sm", command: "pdf.anchor-add", onClick: () => input.click() });
+  return h("section", { class: "os-vfy__trust", attrs: { "aria-labelledby": "anchor-card-h" } },
+    h("div", { class: "os-vfy__trust-text" },
+      h("h2", { id: "anchor-card-h", class: "os-vfy__trust-title", text: t("verify.anchor-title") }),
+      h("p", { class: "os-vfy__muted os-vfy__small", text: t("verify.anchor-text") }),
+      list),
+    input, add);
+}
+
+/// The anchor proof checked by `verify_anchor` in the WASM module, with the PDF's trail
+/// when it holds the anchored event (`anchorTrailPlan`); null when there is none.
+function checkAnchor(mod, rawTrail, trail, trustJson) {
+  if (!anchor.file) return anchor.notYet ? { state: "not-yet" } : null;
+  const plan = anchorTrailPlan(anchor.file.bytes, trail);
+  let a;
+  try {
+    a = summarizeAnchor(mod.verify_anchor(anchor.file.bytes, plan.use && rawTrail ? rawTrail : new Uint8Array(), trustJson));
+  } catch {
+    a = summarizeAnchor({ error: { code: "CS-API-0010" } });
+  }
+  return { ...a, trailNote: plan.note };
+}
+
 // ---- Check -----------------------------------------------------------------------------
 
 /// Read the file, run the verifier, read the trail, then show the receipt. Each stage
@@ -139,13 +187,15 @@ async function check(file) {
 
   scan.step("trail");
   let trail = null;
+  let rawTrail = null;
   try {
-    const raw = await readAttachment(bytes, TRAIL_NAME, MAX_TRAIL_BYTES);
-    trail = raw ? parseTrail(raw) : null;
-  } catch { trail = null; }
+    rawTrail = await readAttachment(bytes, TRAIL_NAME, MAX_TRAIL_BYTES);
+    trail = rawTrail ? parseTrail(rawTrail) : null;
+  } catch { trail = null; rawTrail = null; }
+  const anchored = checkAnchor(mod, rawTrail, trail, trustJson);
   scan.step("done");
   if (!reduced()) await pause(Math.max(0, MIN_SCAN_MS - (Date.now() - began)));
-  show({ file, bytes, report, trail, checkedAt });
+  show({ file, bytes, report, trail, anchored, checkedAt });
 }
 
 function problem(text) {
@@ -155,13 +205,14 @@ function problem(text) {
 
 // ---- Result ----------------------------------------------------------------------------
 
-function show({ file, bytes, report: r, trail, checkedAt }) {
+function show({ file, bytes, report: r, trail, anchored, checkedAt }) {
   clear(main);
   const details = h("div", { class: "os-vfy__details" });
   if (r.signatures.length) {
     details.append(detailCard("sigs-h", t("verify.signatures", { n: r.signatures.length }), h("ol", { class: "os-vfy__sigs" }, ...r.signatures.map(signatureItem))));
   }
   if (r.changes.length) details.append(detailCard("changes-h", t("verify.changes"), changesList(r.changes)));
+  if (anchored) details.append(detailCard("anchor-h", t("verify.anchor"), ...anchorBody(anchored)));
   details.append(detailCard("trail-h", t("verify.trail"), ...trailBody(trail)));
   details.append(detailCard("vpreview-h", t("verify.preview"), pdfPreview({ load: async () => bytes, name: file.name, height: 35 }).el));
   main.append(
@@ -194,6 +245,7 @@ function chrome() {
 function registerCommands() {
   register("pdf.verify-choose", { label: t("verify.choose"), run: () => fileInput.click() });
   register("pdf.verify-another", { label: t("verify.another"), run: start });
+  register("pdf.anchor-add", { label: t("verify.anchor-add"), run: () => document.querySelector("[data-testid=anchor-input]")?.click() });
 }
 
 // ---- A sealed document handed over by the envelope page (UX-04) -------------------------
@@ -226,6 +278,13 @@ async function handoff(ref) {
   }
   try {
     const blob = await api.currentDocument(ref.envelope, ref.document);
+    // The envelope's anchor proof, when one is anchored (FG-158); its absence or a
+    // refusal does not stop the document's check.
+    try {
+      const proof = await api.anchorProof(ref.envelope);
+      if (proof && proof.size <= MAX_ANCHOR_PROOF) anchor.file = { name: "anchor-proof.json", bytes: new Uint8Array(await proof.arrayBuffer()) };
+      else anchor.notYet = proof === null;
+    } catch { /* checked without it */ }
     let name = "sealed.pdf";
     try {
       const { envelope } = await api.getEnvelope(ref.envelope);

@@ -1027,6 +1027,12 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             "{path}"
         );
     }
+    // No head anchored yet (FG-158; the anchor job runs after the day closes).
+    let r = Box::pin(api.call("GET", &format!("{base}/anchor-proof"), k, None, &[])).await;
+    assert_eq!(
+        (r.status, r.code().as_str()),
+        (StatusCode::NOT_FOUND, "CS-API-0017")
+    );
 
     // Signer 1: open, read, view, consent, authenticate (wrong, then right), adopt,
     // fill, finish.

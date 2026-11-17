@@ -30,6 +30,15 @@
       <label class="btn btn-secondary btn-sm vfy-trust__add">{{icon:plus:16}}<span>Add certificate</span><input class="sr-only" type="file" multiple accept=".cer,.crt,.der,.pem,application/x-x509-ca-cert,application/pkix-cert" data-testid="vfy-trust-input"></label>
     </div>
 
+    <div class="vfy-trust">
+      <div>
+        <h2 class="vfy-trust__title" id="anchor-h">Anchor proof <span class="muted">(optional)</span></h2>
+        <p class="muted">An OpenSeal envelope's anchor-proof.json shows its history was time-stamped by a time-stamping authority. Add it to check it with the PDF; it stays in this tab too.</p>
+        <ul class="vfy-chips" aria-labelledby="anchor-h" aria-live="polite" data-testid="vfy-anchor-chosen"><li class="muted">None</li></ul>
+      </div>
+      <label class="btn btn-secondary btn-sm vfy-trust__add">{{icon:plus:16}}<span>Add anchor proof</span><input class="sr-only" type="file" accept=".json,application/json" data-testid="vfy-anchor-input"></label>
+    </div>
+
     <div class="vfy-samples">
       <p><strong>No sealed PDF at hand?</strong> Try one of ours. Each is checked against the test root it was sealed under, which is for these samples only.</p>
       <div class="cta-row">

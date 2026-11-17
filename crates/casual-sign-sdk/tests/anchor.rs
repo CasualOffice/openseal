@@ -69,6 +69,8 @@ fn anchoring_a_set_of_heads_proves_inclusion_of_each() {
         assert_eq!(v.outcome(), AnchorOutcome::Passed, "{i}: {v:?}");
         assert_eq!(v.proof.head, hs[i]);
         assert_eq!(v.timestamp.gen_time, Some(AT));
+        // The TSA's name, for "anchored … by <TSA>" (FG-158, the Verify page).
+        assert_eq!(v.timestamp.tsa_name.as_deref(), Some("T-1G Test TSA"));
     }
 }
 
@@ -100,6 +102,8 @@ fn a_token_from_another_anchor_fails() {
     let v = verify_anchor_proof(swapped.as_bytes(), None, &common::trust()).unwrap();
     assert_eq!(v.outcome(), AnchorOutcome::Failed);
     assert!(!v.timestamp.token.passed());
+    // A token that does not pass names no TSA.
+    assert_eq!(v.timestamp.tsa_name, None);
 }
 
 #[test]

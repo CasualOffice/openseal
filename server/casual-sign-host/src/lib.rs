@@ -10,6 +10,8 @@
 //!   revokes, and enqueue every other effect as a job. Nothing is visible until the
 //!   caller commits.
 //! - [`jobs`]: one job per effect: its kind, idempotency key, payload and due time.
+//! - [`anchor`]: anchors and envelope proof files from the store's rows (`FG-158`),
+//!   published by the worker and served by the API.
 //! - [`ml`]: document analysis (docs/33): the features in effect, the advisory
 //!   `analyze_document` and `fingerprint_template` jobs and their keys (`SEC-I06`).
 //!
@@ -18,6 +20,7 @@
 //!
 //! **Privacy.** Errors carry codes and the kind of thing named, never personal data.
 
+pub mod anchor;
 pub mod apply;
 pub mod capture;
 pub mod crash;

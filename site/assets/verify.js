@@ -24,6 +24,10 @@ const chips = box.querySelector('[data-testid="vfy-trusted"]');
 const engineLine = box.querySelector('[data-testid="vfy-engine"]');
 const out = box.querySelector('[data-testid="vfy-result"]');
 const trust = []; // {name, der: [base64]}
+const anchorInput = box.querySelector('[data-testid="vfy-anchor-input"]');
+const anchorChips = box.querySelector('[data-testid="vfy-anchor-chosen"]');
+/// An envelope's anchor proof (FG-158, docs/32 §5): `{name, bytes}`, checked with the PDF.
+let anchorProof = null;
 
 // ---- Loading the verifier and the app's rules ----------------------------------------------
 
@@ -108,6 +112,26 @@ trustInput.addEventListener("change", async () => {
   trustInput.value = "";
 });
 
+// ---- The anchor proof -------------------------------------------------------------------------
+
+function renderAnchor() {
+  anchorChips.replaceChildren();
+  if (!anchorProof) { anchorChips.append(h("li", { class: "muted", text: "None" })); return; }
+  const remove = h("button", { type: "button", class: "vfy-chip__x", "aria-label": `Remove ${anchorProof.name}` }, mark("bad", 12));
+  remove.addEventListener("click", () => { anchorProof = null; renderAnchor(); });
+  anchorChips.append(h("li", { class: "vfy-chip" }, h("span", { class: "vfy-chip__name", text: anchorProof.name }), remove));
+}
+
+anchorInput.addEventListener("change", async () => {
+  const f = anchorInput.files[0];
+  anchorInput.value = "";
+  if (!f) return;
+  // docs/21: a proof file is at most 256 KiB.
+  if (f.size > 256 * 1024) { problem(`${f.name} is not an anchor proof (a JSON file under 256 KB).`); return; }
+  anchorProof = { name: f.name.slice(0, 120), bytes: new Uint8Array(await f.arrayBuffer()) };
+  renderAnchor();
+});
+
 // ---- Choosing a file ------------------------------------------------------------------------
 
 input.addEventListener("change", () => { const f = input.files[0]; input.value = ""; if (f) check(f.name, f); });
@@ -152,7 +176,13 @@ async function check(name, file) {
   const trustJson = JSON.stringify({ validation_time: Math.floor(checkedAt / 1000), anchors: trust.flatMap((c) => c.der) });
   let r;
   try { r = eng.report.summarize(eng.wasm.verify(bytes, trustJson)); } catch { r = { state: "error", code: "CS-API-0010", signatures: [], changes: [] }; }
-  show(eng, { name, size: bytes.length, r, checkedAt });
+  // The anchor proof, checked by the same WASM module (`verify_anchor`); this page does
+  // not read the PDF's audit trail, so the proof is not matched to it here.
+  let a = null;
+  if (anchorProof) {
+    try { a = eng.report.summarizeAnchor(eng.wasm.verify_anchor(anchorProof.bytes, new Uint8Array(), trustJson)); } catch { a = eng.report.summarizeAnchor({ error: { code: "CS-API-0010" } }); }
+  }
+  show(eng, { name, size: bytes.length, r, a, checkedAt });
 }
 
 /// The four answers the page promises, from the verifier's own checks: a row passes only
@@ -171,7 +201,7 @@ function row(label, tone, text, testid) {
     h("span", { class: "vfy-row__text", text }));
 }
 
-function show({ report, t, has }, { name, size, r, checkedAt }) {
+function show({ report, t, has }, { name, size, r, a, checkedAt }) {
   const tone = report.verdictTone(r.state);
   const sigs = r.signatures;
   const integrity = answer(sigs, ["byte_range", "digest", "signature"]);
@@ -186,6 +216,7 @@ function show({ report, t, has }, { name, size, r, checkedAt }) {
     row("Integrity", integrity, { ok: "The signed bytes are unchanged.", bad: "The document does not match what was signed.", warn: "Not every signature could be checked against the document.", none: "There is no signature to check." }[integrity], "vfy-integrity"),
     row("Certificate trust", chain, { ok: "The sealing certificate chains to a root you trust.", bad: "The sealing certificate's chain is broken.", warn: r.needsTrust ? "No trusted root for the issuer: add it under Trusted certificates." : "The chain could not be confirmed.", none: "Not checked." }[chain], "vfy-trust"),
     row("Timestamp", stamp, stamp === "ok" && proven.length ? `Proven to exist at ${when(Math.min(...proven))}, by an RFC 3161 timestamp.` : { ok: "The timestamp checks out.", bad: "A timestamp does not check out.", warn: "No trusted timestamp; the time rests on the check itself.", none: "No timestamp." }[stamp], "vfy-timestamp"),
+    a ? anchorRow(t, a) : null,
     row("Revisions", disallowed ? "bad" : "ok", r.revisions ? `${r.revisions} revision${r.revisions === 1 ? "" : "s"}; ${disallowed ? `${disallowed} change the signed content` : "every later one only adds what the signatures allow"}.` : "No later revisions.", "vfy-revisions"),
   ];
   const text = r.state === "error" ? t("verify.state.error-text", { code: r.code }) : t(`verify.state.${r.state}-text`);
@@ -224,9 +255,21 @@ function show({ report, t, has }, { name, size, r, checkedAt }) {
   out.focus({ preventScroll: false });
 }
 
+/// The anchor proof's row: the verifier's outcome, in the app's words (verifyreport.js
+/// names it, never upgrades it).
+function anchorRow(t, a) {
+  const tone = { anchored: "ok", unconfirmed: "warn", failed: "bad", error: "bad" }[a.state] || "bad";
+  const day = a.at ? new Date(a.at).toLocaleDateString(undefined, { dateStyle: "medium" }) : "—";
+  const vars = { day, tsa: a.tsa || t("verify.anchor.tsa-unknown"), code: a.code || "—" };
+  const failed = a.checks.filter((c) => c.status === "failed").map((c) => c.code).filter(Boolean);
+  const text = `${t(`verify.anchor.${a.state}`, vars)}. ${t(`verify.anchor.${a.state}-text`, vars)}${failed.length ? ` (${failed.join(", ")})` : ""}`;
+  return row("Public anchor", tone, text, "vfy-anchor");
+}
+
 // ---- Start ------------------------------------------------------------------------------------
 
 renderTrust();
+renderAnchor();
 engine().then((eng) => {
   if (eng) setEngine("ready", "Verifier ready. Checks run in this browser.");
   else setEngine("missing", "The verifier is not published with this copy of the site.");

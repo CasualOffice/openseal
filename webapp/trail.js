@@ -34,7 +34,8 @@ export function parseTrail(bytes) {
   const problems = [];
   events.forEach((e, i) => {
     if (e.seq !== i) problems.push({ seq: i, problem: "seq" });
-    if (!e.hash || !/^[0-9a-f]{64}$/.test(e.hash)) problems.push({ seq: i, problem: "hash" });
+    // As written by casual-sign-audit: `sha256:` and 64 hex digits (bare hex read too).
+    if (!e.hash || !/^(sha256:)?[0-9a-f]{64}$/.test(e.hash)) problems.push({ seq: i, problem: "hash" });
     const want = i === 0 ? null : events[i - 1].hash;
     if (e.prev !== want) problems.push({ seq: i, problem: "prev" });
   });
