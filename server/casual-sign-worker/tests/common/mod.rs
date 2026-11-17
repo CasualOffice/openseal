@@ -495,6 +495,9 @@ pub struct Env {
     /// When set, seals time-stamp through this directory (the database's TSAs, `CON-07`)
     /// instead of the in-process test TSA.
     pub tsa_directory: Mutex<Option<Arc<casual_sign_worker::tsa::TsaDirectory>>>,
+    /// When set, seals fetch OCSP and CRLs from this source (B-LT and B-LTA, `VS-07`)
+    /// instead of answering nothing.
+    pub revocation: Mutex<Option<casual_sign_worker::seal::RevocationFactory>>,
     next: AtomicU64,
 }
 
@@ -574,6 +577,7 @@ impl Env {
             inference: Mutex::new(None),
             messenger: Mutex::new(None),
             tsa_directory: Mutex::new(None),
+            revocation: Mutex::new(None),
             next: AtomicU64::new(0),
         };
         env.blob_store().put(&env.delivered).await.unwrap();
@@ -633,6 +637,9 @@ impl Env {
         if let Some(d) = directory {
             services.timestamps = d.factory();
             services.tsa_directory = Some(d);
+        }
+        if let Some(r) = self.revocation.lock().unwrap().clone() {
+            services.revocation = r;
         }
         services
     }

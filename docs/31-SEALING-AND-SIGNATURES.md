@@ -161,6 +161,11 @@ later revision is classified** (DSS addition, document timestamp, form fill perm
 disallowed change). The verdict is structured: per signature `valid`, `invalid` (why), or `indeterminate` (why: no
 trust anchor, no revocation data, unsupported algorithm), in the vocabulary of ETSI EN 319 102-1.
 
+The worker's check of each stored seal (`casual-sign-worker` `seal::check_verified`) also requires the last signature
+to cover the whole file, except at B-LT, where the one uncovered tail it accepts is revisions that only add `/DSS`
+data (as the seal's own self-check). Before `VS-07` it required whole-file coverage at B-LT too, so a B-LT envelope
+never left `completing`; `tests/end_to_end.rs` now seals one at B-LT and has pyHanko validate it from the DSS alone.
+
 ### As built (stage 1G)
 
 `seal(input, &SealRequest, &dyn KeyProvider, &dyn TimestampSource, &dyn RevocationSource)`, `augment` (B-T to B-LT or

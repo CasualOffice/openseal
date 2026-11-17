@@ -11,7 +11,8 @@
 //! in-process self-check, against the operator's trust anchors at the current time.
 //! Every signature's byte range, digest, CMS signature and certificate chain must pass,
 //! the timestamp too at B-T and above, no revision after a signature may be a
-//! disallowed change, and the last signature must cover the whole file. Revocation may
+//! disallowed change, and the last signature must cover the whole file (at B-LT, the
+//! DSS revision after it is the one tail allowed: `/DSS` additions only). Revocation may
 //! be unknown at B-T (`INDETERMINATE/TRY_LATER`, as EU DSS says offline); at B-LT and
 //! B-LTA it must pass from the embedded data. Only then is `verified: true` reported to
 //! the engine, which refuses `completed` otherwise. pyHanko and EU DSS run over sealed
@@ -29,7 +30,7 @@ use casual_sign_sdk::evidence::{
     AuthStep, Consent, CopyKind, CopyRow, DocumentRow, EnvelopeSummary, Mark, Outcome, Party,
     RecipientRow, Role, SealInfo,
 };
-use casual_sign_sdk::verify::{Check, Indication, SubIndication};
+use casual_sign_sdk::verify::{Check, Indication, ModificationClass, SubIndication};
 use casual_sign_sdk::{
     Capture, CertificateInput, CertificateOptions, Engine, Fill, FlattenOptions, FontSet,
     KeyProvider, Profile, RevocationSource, SealRequest, TimestampSource, TrustStore,
@@ -356,7 +357,12 @@ pub fn check_verified(report: &VerificationReport, profile: Profile) -> Result<(
     if report.signatures.is_empty() {
         return fail("no signature");
     }
-    if !report.covered_by_last_signature {
+    // A B-LT seal ends with its DSS revision, which no signature covers (no document
+    // timestamp follows it, unlike B-LTA): the file may end unsigned only there, and only
+    // with `/DSS` additions after the last signature (VS-07; as `casual-sign-seal`'s own
+    // self-check, which skips coverage at B-LT). Anything else uncovered still fails.
+    let dss_tail = profile == Profile::BaselineLt && only_dss_after_last(report);
+    if !(report.covered_by_last_signature || dss_tail) {
         return fail("coverage");
     }
     let long_term = matches!(profile, Profile::BaselineLt | Profile::BaselineLta);
@@ -390,6 +396,20 @@ pub fn check_verified(report: &VerificationReport, profile: Profile) -> Result<(
         }
     }
     Ok(())
+}
+
+/// Whether every revision after the last signature only adds `/DSS` (and `/VRI`) data,
+/// and there is at least one: the tail a B-LT seal leaves unsigned.
+fn only_dss_after_last(report: &VerificationReport) -> bool {
+    report.signatures.last().is_some_and(|s| {
+        !s.modifications_after.is_empty()
+            && s.modifications_after.iter().all(|r| {
+                !r.classes.is_empty()
+                    && r.classes
+                        .iter()
+                        .all(|c| matches!(c, ModificationClass::DssUpdate))
+            })
+    })
 }
 
 fn party(name: &str, email: &str) -> Party {
