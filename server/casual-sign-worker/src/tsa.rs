@@ -298,7 +298,7 @@ fn crl_urls(cert: &Certificate) -> Vec<String> {
         .collect()
 }
 
-/// OCSP first, CRL as the fallback.
+/// OCSP and CRLs: the engine asks for both and embeds what answers (HRD-14).
 struct HttpRevocation {
     agent: ureq::Agent,
 }

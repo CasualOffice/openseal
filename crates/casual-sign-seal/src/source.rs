@@ -93,9 +93,9 @@ pub struct CrlQuery<'a> {
 /// OCSP responders and CRL distribution points, reached by the host (docs/31 §4 step 9).
 ///
 /// For each certificate in the signer's and the TSAs' chains (trust anchors excepted) the
-/// engine asks [`RevocationSource::ocsp`] first and falls back to
-/// [`RevocationSource::crl`] (docs/31 §9). Each answer must show the certificate not
-/// revoked at the time asked, or it is not embedded.
+/// engine asks [`RevocationSource::ocsp`] and [`RevocationSource::crl`], embedding both
+/// when both answer and the CRL alone when OCSP does not (docs/31 §9, HRD-14). Each
+/// answer must show the certificate not revoked at the time asked, or it is not embedded.
 pub trait RevocationSource {
     /// The DER `OCSPResponse` to `query`, or `None` when the certificate names no
     /// responder or the responder had no answer.

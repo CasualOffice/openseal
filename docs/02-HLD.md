@@ -174,7 +174,7 @@ Each has already been paid for there.
 | --- | --- | --- | --- |
 | Key custody | `KeyProvider` (engine) | `keyd` with PKCS#11; file key in dev only | AWS KMS, GCP KMS, Azure Key Vault, HashiCorp Vault Transit |
 | Timestamps | `TimestampSource` (engine trait, server impl does HTTP) | Configured RFC 3161 TSA list with failover | Qualified TSAs for eIDAS |
-| Revocation | `RevocationSource` | OCSP then CRL over HTTP, cached | — |
+| Revocation | `RevocationSource` | OCSP and CRL over HTTP (both embedded when both answer), cached | — |
 | Trust | `TrustStore` (value) | Bundled Mozilla roots plus operator roots; EU LOTL for verification | AATL list (operator-supplied) |
 | Object storage | `BlobStore` (server) | Local filesystem; S3-compatible | Azure Blob, GCS |
 | Email | `Mailer` | SMTP | SES, SendGrid, Postmark |

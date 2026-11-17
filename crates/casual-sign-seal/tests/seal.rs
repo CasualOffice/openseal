@@ -655,3 +655,105 @@ fn the_input_is_a_prefix_of_every_output() {
         assert!(renewed.bytes.starts_with(&input));
     }
 }
+
+/// The `/DSS` arrays of a sealed file, decoded: `[certificates, OCSP responses, CRLs]`.
+fn dss_arrays(bytes: &[u8]) -> [Vec<Vec<u8>>; 3] {
+    use casual_sign_pdf::{Object, admit};
+    let never = || false;
+    let mut doc = admit(bytes, &Limits::default(), &never).unwrap().document;
+    let root = doc.trailer().get(b"Root").cloned().unwrap();
+    let catalog = doc.resolve(&root, &never).unwrap();
+    let dss = doc
+        .resolve(catalog.dict().unwrap().get(b"DSS").unwrap(), &never)
+        .unwrap();
+    let dss = dss.dict().unwrap().clone();
+    let mut out: [Vec<Vec<u8>>; 3] = Default::default();
+    for (i, key) in [&b"Certs"[..], b"OCSPs", b"CRLs"].into_iter().enumerate() {
+        let Some(list) = dss.get(key) else { continue };
+        let Object::Array(items) = doc.resolve(list, &never).unwrap() else {
+            panic!("/{} is not an array", String::from_utf8_lossy(key));
+        };
+        for item in items.iter() {
+            let r = item.as_ref().unwrap();
+            out[i].push(doc.decode_stream(r.num, &never).unwrap());
+        }
+    }
+    out
+}
+
+/// HRD-14: Adobe Acrobat Reader 26.2, offline, said "revocation checks could not be done"
+/// for B-LTA seals whose signer and TSA certificates were covered only by an OCSP answer
+/// (with a SHA-256 `CertID`), where pyHanko and EU DSS used that answer. A certificate
+/// whose CA publishes a CRL also carries that CRL in the DSS, so a validator that cannot
+/// match the OCSP answer still finds revocation data for every certificate in every
+/// chain: the signer, the TSA, the issuing CA and the OCSP responder (unless it has
+/// `id-pkix-ocsp-nocheck`), up to the self-signed root.
+#[test]
+fn every_certificate_carries_its_crl_beside_its_ocsp_answer() {
+    use casual_sign_crypto::Certificate;
+    use casual_sign_crypto::revocation::{RevocationStatus, crl_status_for};
+    use der::Decode;
+    const NOCHECK: &str = "1.3.6.1.5.5.7.48.1.5";
+    for (label, provider) in [("p256", p256()), ("rsa", rsa())] {
+        for profile in [Profile::BaselineLt, Profile::BaselineLta] {
+            let tsa = TestTsa::new(SIGNING_TIME);
+            let s = seal(
+                &one_page("Agreement"),
+                &request(profile),
+                &provider,
+                &tsa,
+                &TestRevocation::default(),
+            )
+            .unwrap();
+            let [certs, ocsps, crls] = dss_arrays(&s.bytes);
+            assert!(
+                ocsps.len() >= 2,
+                "{label} {profile:?}: signer and TSA by OCSP"
+            );
+            let certs: Vec<Certificate> = certs
+                .iter()
+                .map(|d| Certificate::from_der(d).unwrap())
+                .collect();
+            let mut checked = 0;
+            for c in &certs {
+                let tbs = c.tbs_certificate();
+                if tbs.subject() == tbs.issuer() {
+                    continue;
+                }
+                let nocheck = tbs
+                    .extensions()
+                    .is_some_and(|e| e.iter().any(|x| x.extn_id.to_string() == NOCHECK));
+                if nocheck {
+                    continue;
+                }
+                let issuer = certs
+                    .iter()
+                    .find(|i| i.tbs_certificate().subject() == tbs.issuer())
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "{label} {profile:?}: no issuer of {} in /Certs",
+                            tbs.subject()
+                        )
+                    });
+                assert!(
+                    crls.iter().any(|l| matches!(
+                        crl_status_for(l, c, issuer, SIGNING_TIME),
+                        Ok(RevocationStatus::Good)
+                    )),
+                    "{label} {profile:?}: no CRL in the DSS covers {}",
+                    tbs.subject()
+                );
+                checked += 1;
+            }
+            assert!(
+                checked >= 3,
+                "{label} {profile:?}: signer, TSA and issuing CA checked"
+            );
+            assert!(
+                passed(&s.bytes),
+                "{label} {profile:?}: {:?}",
+                ours(&s.bytes)
+            );
+        }
+    }
+}
