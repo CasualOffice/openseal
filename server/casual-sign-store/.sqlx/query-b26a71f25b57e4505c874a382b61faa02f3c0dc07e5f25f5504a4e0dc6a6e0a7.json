@@ -1,0 +1,149 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT a.id, a.period, a.tree_size, a.root, a.timestamp_token, a.tsa_time, a.created_at, l.leaf_index, l.seq, l.head, l.path FROM chain_anchor_leaves AS l JOIN chain_anchors AS a ON a.account_id = l.account_id AND a.id = l.anchor_id WHERE l.account_id = $1 AND l.envelope_id = $2 ORDER BY a.period, l.seq",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "period",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "period"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "tree_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "tree_size"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "root",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "root"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "timestamp_token",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "timestamp_token"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "tsa_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "tsa_time"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "leaf_index",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "chain_anchor_leaves",
+            "name": "leaf_index"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "seq",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "chain_anchor_leaves",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "head",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "chain_anchor_leaves",
+            "name": "head"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "path",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "chain_anchor_leaves",
+            "name": "path"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b26a71f25b57e4505c874a382b61faa02f3c0dc07e5f25f5504a4e0dc6a6e0a7"
+}

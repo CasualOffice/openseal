@@ -74,7 +74,7 @@ parts below.
 | `verify.html` offline in WASM | Not met | Built (`WEB-05`; `wasm-parity` green in run 43860204277, native and WASM agree over the corpus). But the browser specs that run the WASM verifier, `web02.spec.mjs:234` "a sealed PDF verifies against its trust root…" and `signin-dashboard.spec.mjs:169`, `:187` (tampered PDF), are skipped in both `e2e` and `compose-e2e` (`test.skip(!WASM ...)`: CI does not build the WASM for the web app). `shell.spec.mjs:406` passed but does not show the WASM verdict. Missing: build the WASM in the `e2e` job so these run. M |
 | CLI | Met | `crates/casual-sign-cli/tests/cli.rs` `seal_b_t_over_http_tsa_then_verify_and_detect_tamper`, `seal_b_b_then_verify_indeterminate_without_revocation`, `audit_verify_detects_an_edit` `... ok` in `test (windows-latest)` and `test (macos-latest)` of run 43860204277 |
 | B-LT default option | Not met | The engine seals B-LT (`casual-sign-seal` tests; `validators` green) and an envelope takes `seal_profile` (`server/casual-sign-server/src/api/envelopes.rs`), but no server or worker test was found that sends with B-LT, or sets it as an account's default, and gets a B-LT seal checked by pyHanko. `FG-154` reads `Engine`. Missing: the account default setting if absent, a worker test, an editor control. M |
-| public anchoring | Not met | `FG-158` `Designed`; docs/32 §5 only. Nothing built. L |
+| public anchoring | Built, not yet merged | `FG-158` `Engine` (docs/32 §5 As built, migration 0041, ADR-037 Proposed): the worker anchors each account's changed chain heads daily with a TSA token over the tree's root and size, stores proofs insert-only and publishes to `OPENSEAL_ANCHOR_LOG`; `openseal anchor verify` proves a head offline. Tests: `casual-sign-worker/tests/anchoring.rs` (day anchored, proofs verify, tampered head fails, crash after the token and after storing), `casual-sign-sdk/tests/anchor.rs`, `casual-sign-audit/tests/anchor.rs`, CLI `anchor_verify_proves_a_head_and_detects_a_tampered_one`. Left: proofs served by the API and shown in `verify.html` (needs a row); ADR-037 acceptance |
 | merged | Met | What exists is on `main` at `ea67292` |
 | CI green including a browser run | Not met | Run 43860204277 is green, but the slice's browser runs are the skipped WASM specs above. Closes with the first item. (counted there) |
 | docs/96 rows updated | Met | `FG-157` `Works`, `FG-154` `Engine`, `FG-158` `Designed`: each states what is built |
@@ -96,7 +96,7 @@ Owner decision: close / not yet, because …
 | 5 | Accessibility of auth steps; ADR-033 acceptance | S |
 | 7 | WASM verifier specs run in CI | M |
 | 7 | B-LT default option with a test | M |
-| 7 | Public anchoring | L |
+| 7 | Public anchoring: merge; proofs through the API and `verify.html`; ADR-037 acceptance | M |
 | 7 | Demo (needs a row); accessibility scan of `verify.html` | S |
 
 Nothing here states that any signature is legally valid or that the product is compliant or certified (docs/09).

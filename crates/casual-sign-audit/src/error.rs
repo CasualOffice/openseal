@@ -140,6 +140,10 @@ pub enum AuditError {
         /// What was wrong.
         fault: LocationFault,
     },
+    /// An anchor proof is not for the trail given: another envelope's, or the trail has
+    /// no event at the proof's sequence number with the proof's head (`CS-AUD-0012`,
+    /// `FG-158`).
+    AnchorMismatch,
 }
 
 impl AuditError {
@@ -158,6 +162,7 @@ impl AuditError {
             Self::ProofInvalid => "CS-AUD-0009",
             Self::Tombstone => "CS-AUD-0010",
             Self::Location { .. } => "CS-AUD-0011",
+            Self::AnchorMismatch => "CS-AUD-0012",
         }
     }
 
@@ -204,6 +209,7 @@ impl fmt::Display for AuditError {
             Self::ProofInvalid => write!(f, "{code}: inclusion proof does not verify"),
             Self::Tombstone => write!(f, "{code}: tombstone does not match its chain"),
             Self::Location { fault } => write!(f, "{code}: invalid location ({fault:?})"),
+            Self::AnchorMismatch => write!(f, "{code}: anchor proof does not match the trail"),
         }
     }
 }

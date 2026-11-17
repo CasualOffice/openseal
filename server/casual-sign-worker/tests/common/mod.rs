@@ -495,6 +495,10 @@ pub struct Env {
     /// When set, seals time-stamp through this directory (the database's TSAs, `CON-07`)
     /// instead of the in-process test TSA.
     pub tsa_directory: Mutex<Option<Arc<casual_sign_worker::tsa::TsaDirectory>>>,
+    /// Whether the worker queues anchors of chain heads (FG-158; off by default).
+    pub anchoring: AtomicBool,
+    /// Where anchors are published (none by default).
+    pub anchor_sink: Mutex<Option<Arc<dyn casual_sign_worker::anchor::AnchorSink>>>,
     next: AtomicU64,
 }
 
@@ -574,6 +578,8 @@ impl Env {
             inference: Mutex::new(None),
             messenger: Mutex::new(None),
             tsa_directory: Mutex::new(None),
+            anchoring: AtomicBool::new(false),
+            anchor_sink: Mutex::new(None),
             next: AtomicU64::new(0),
         };
         env.blob_store().put(&env.delivered).await.unwrap();
@@ -644,6 +650,7 @@ impl Env {
             base_url: "https://sign.example.test".into(),
             mail_from: "no-reply@example.test".into(),
             mail_domain: "example.test".into(),
+            anchoring: self.anchoring.load(Ordering::SeqCst),
             ..WorkerConfig::default()
         };
         let mailer =
@@ -690,6 +697,10 @@ impl Env {
         };
         let w = match self.messenger.lock().unwrap().clone() {
             Some(m) => w.with_messenger(m),
+            None => w,
+        };
+        let w = match self.anchor_sink.lock().unwrap().clone() {
+            Some(s) => w.with_anchor_sink(s),
             None => w,
         };
         match faults {

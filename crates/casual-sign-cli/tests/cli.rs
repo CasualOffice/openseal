@@ -538,3 +538,91 @@ fn audit_verify_detects_an_edit() {
     assert_eq!(code(&o), 1, "{}", stdout(&o));
     assert_eq!(code(&run(&["audit", "frob", &good])), 2);
 }
+
+#[test]
+fn anchor_verify_proves_a_head_and_detects_a_tampered_one() {
+    use casual_sign_sdk::anchor::{
+        Anchor, AnchorProof, MerkleTree, anchor_statement, timestamp_statement,
+    };
+    use casual_sign_sdk::evidence::{Actor, Chain, Context, EventData, Timestamp};
+    use casual_sign_sdk::model::Id;
+    let mut c = Chain::new(Id::new("env-anchored").unwrap());
+    for (i, data) in [
+        EventData::EnvelopeCreated {
+            subject_hash: casual_sign_sdk::Hash256::digest(b"s"),
+        },
+        EventData::EnvelopeCompleting {},
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let e = c.next(
+            Timestamp::from_unix_millis(1_794_301_200_000 + i as i64 * 1000).unwrap(),
+            Actor::system(),
+            Context::default(),
+            data,
+        );
+        c.append(e).unwrap();
+    }
+    let trail = write("anchored-trail.json", &c.to_trail_json().unwrap());
+    let head = c.head().unwrap();
+    let heads = [
+        casual_sign_sdk::Hash256::digest(b"other-1"),
+        head,
+        casual_sign_sdk::Hash256::digest(b"other-2"),
+    ];
+    let tree = MerkleTree::from_chain_heads(&heads);
+    let tsa = common::TestTsa::new(common::SIGNING_TIME);
+    let token = timestamp_statement(&tsa, &anchor_statement(&tree.root(), 3)).unwrap();
+    let proof = AnchorProof {
+        envelope_id: Id::new("env-anchored").unwrap(),
+        seq: 1,
+        head,
+        proof: tree.inclusion_proof(1).unwrap(),
+        anchor: Anchor {
+            id: Id::new("anchor-cli").unwrap(),
+            period: "2026-11-10".into(),
+            tree_size: 3,
+            root: tree.root(),
+            tsa_time: Timestamp::from_unix_millis(
+                i64::try_from(token.gen_time.as_millis()).unwrap(),
+            )
+            .unwrap(),
+            timestamp_token: token.der,
+        },
+    }
+    .to_json()
+    .unwrap();
+    let good = write("anchor-proof.json", &proof);
+    let f = files();
+    let o = run(&[
+        "anchor",
+        "verify",
+        &good,
+        "--trail",
+        &trail,
+        "--trust",
+        &f.tsa_root,
+        "--json",
+    ]);
+    assert_eq!(code(&o), 0, "{}{}", stdout(&o), stderr(&o));
+    let j = json(&o);
+    assert_eq!(j["outcome"], "passed");
+    assert_eq!(j["trail"], "passed");
+    assert_eq!(j["head"], head.to_string());
+    // No trusted root: indeterminate.
+    assert_eq!(code(&run(&["anchor", "verify", &good])), 4);
+    // A tampered head fails.
+    let mut other = head;
+    other.0[0] ^= 1;
+    let forged = String::from_utf8(proof)
+        .unwrap()
+        .replace(&head.to_string(), &other.to_string());
+    let bad = write("anchor-proof-forged.json", forged.as_bytes());
+    let o = run(&["anchor", "verify", &bad, "--trust", &f.tsa_root, "--json"]);
+    assert_eq!(code(&o), 1, "{}", stdout(&o));
+    assert_eq!(json(&o)["inclusion"]["code"], "CS-AUD-0009");
+    // Not a proof at all: refused with its code.
+    let o = run(&["anchor", "verify", &trail]);
+    assert_eq!(code(&o), 3, "{}", stderr(&o));
+}
