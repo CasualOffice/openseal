@@ -63,46 +63,32 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `67ca967` (2026-11-13).
+Docs are true as of 2026-11-17 (`main` at `900d0b6`; pull request #18 open on `sprint1-stabilization`).
 
 **Phases D, 0, 1 and 2 are closed** (owner: D and 0 on 2026-11-11, 1 on 2026-11-11 after clean fuzz run 42907980149,
 2 on 2026-11-12), and milestones M0, M1 and M2 are declared reached (instruction 38). **v0.0.1, the first
-pre-release, is published** (tag at `4780d84`, GitHub CI run 43123420112 green on all 14 jobs; `REL-01` keeps the GHCR
-packages' visibility and the manual walkthrough). The repository is public; GitHub CI on `main` is the full check, and
-sessions run only the test that proves their change (docs/04 rule 37). Work runs as one cycling queue whose items
-merge and push straight to `main`, with no pull requests (instructions 45 to 47). Lanes use the whole machine,
-backing off when free memory falls below about 3 GB (instruction 40); an independent reviewer is used only for risky
-pieces (security, evidence, database, server; instruction 41).
+pre-release, is published** (tag at `4780d84`; `REL-01` keeps the GHCR packages' visibility and the manual
+walkthrough). It is not for production agreements. The repository is public; GitHub CI on `main` is the full check,
+and sessions run only the test that proves their change (docs/04 rule 37). Work not yet on `main` goes on a branch
+with a pull request whose CI must be green before the main session merges it (instructions 53, 56); commits carry no
+Claude attribution or e-mail (instruction 57).
 
-- **Built:** the Rust engine (PDF reader, writer and normalizer, fields, flattening, crypto, PAdES sealing B-B to
-  B-LTA, verifier, audit chain and certificate, XFA layout, `casual-sign-pii` recognisers, SDK and `openseal` CLI,
-  WebAssembly verifier); the workflow engine, Postgres store (migrations 0001 to 0034), API server
-  (`api/openapi.yaml`), job worker, `casual-sign-keyd` (PKCS#11) and the single-node Compose deployment; the web app,
-  redesigned on the approved design (`UX-02` to `UX-08`, `WEB-17`, `WEB-18`), tested by Playwright in mock mode and
-  against the Compose stack (`compose-e2e`). Done with their Compose run green in CI (2026-11-14): the Inbox and
-  server filters (`UXW-01`, `UXW-03`); the ended envelope's certificate (`UXW-30`); bulk send from a template with a
-  CSV list (`UXW-04`); template sharing, Shared with me and Favourites (`UXW-06`); groups and custom permission
-  profiles (`UXW-07`); in-person hosting (`UXW-18`). Merged on 2026-11-13 and tested on the server, still waiting for
-  a Compose run: folders and Deleted views (`UXW-02`, envelope restore awaits ADR-031); the admin audit log screen and the webhooks screen (`UXW-09`, `UXW-10`,
-  `UXW-31` to `UXW-33`); organizations, their routes, workspace switching and admin audit logs (`ORG-02` to `ORG-05`
-  Done) and the organization admin screens' first cut (`ORG-06`); the platform console `casual-sign-console` with
-  operators and TOTP (`CON-03`), approvals and suspend or resume (`CON-04`), health (`CON-05`), the Keys page over
-  keyd's admin interface (`CON-06`), timestamp authorities in the database changed by two key custodians (`CON-07`),
-  console writes copied into organization logs (`CON-16`) and its UI (`CON-17`); plans, metering and quota
-  enforcement (`PLAN-02` to `PLAN-04` Done); SMS and voice one-time codes and recipient sign-in through an OpenID
-  Connect provider (`VS-05`, `RAUTH-01`, ADR-033 Proposed); a staff TOTP second factor (`ASVS-01`), breached-password
-  refusal and security notices (`ASVS-02`, `ASVS-04`); malware scanning of uploads through ClamAV (`ASVS-11`); in `casual-sign-modeld`, OCR (`ML-02`), page hashes and
-  embeddings (`ML-05`), GLiNER extraction and personal data (`ML-07`, `ML-08`), with the worker's analysis jobs and
-  the server's analysis routes (`WEB-19`); the ASVS 4.0.3 self-assessment ([67](docs/67-ASVS-SELF-ASSESSMENT.md),
-  `SEC-ASVS-01`) and the licence inventory (`LEG-01`). [96](docs/96-FEATURE-FIT-GAP.md) counts 48 of 168 rows working
-  end to end and 25 in part.
-- **In progress:** slice 1 (`VS-01`: the demo `S1-02`, accessibility; its browser run on Compose is green on GitHub);
-  slice 2 (`VS-02`: the demo `RTE-04`; the in-person Compose spec is green); slice 5 (`VS-05`: the
-  Compose run and demo `RAUTH-02`, ADR-033's acceptance); the Compose runs of the `UXW-*` and `ORG-06` rows above;
-  the console as a Compose service and its remaining writes (`CON-02`, `CON-04`, `CON-05`); the real-stack run
-  of the model suggestions and `compose --profile ml up` (`WEB-19`, `ML-09`); the open ASVS findings and `LEG-01` sign-off;
-  conditional routing and signing groups (slice 29) are designed in ADR-035 and wait on its acceptance (`WF-01`, `DEC-17`).
-- **Next:** slices 1, 2, 5 and 7 to their end points for M3, then v0.0.2 (organizations and switching, the console with
-  health, plans with three meters; instruction 29), then the rest of ADR-028 (`ORG-10` onward, with `ORG-07` to
-  `ORG-09` done; `CON-08` onward,
-  `PLAN-05` onward).
+- **Focus:** harden one deployment and reach M3 (instructions 48, 51, 54). Feature expansion is paused, nothing
+  dropped: ML, the platform console, plans and metering wait until M3 closes (`FRZ-01`). M3 needs slices 1, 2, 5 and
+  7 closed by the owner; [73](docs/73-M3-SLICE-EVIDENCE.md) lists every gate item and its evidence.
+- **Proven on `main` by CI** (run 44001061169, every job green): slice 1's outcome on the Compose stack (`VS-01`);
+  failure recovery on the hardened profile (`HRD-01`, `HRD-10`); the real-style CA and TSA validation (`HRD-02`); the
+  backup and restore drill (`ASVS-14`); the security event log (`ASVS-08`); anomaly alerting (`ASVS-13`);
+  administrators' TOTP by default (`ASVS-31`); the site's verifier and demo (`SITE-03` to `SITE-05`).
+- **Built, waiting for CI on `main` or the owner:** Acrobat Reader reading B-LTA seals valid offline (`HRD-14`,
+  `HRD-03`; green on branch run 44011154004, a run on `main` pending); keyd seal tokens (`KEYD-02`, ADR-036); slices 2
+  and 5 on the real stack with their demos (`RTE-04`, `RAUTH-02`); slice 7 on pull request #18 (WASM verifier in CI,
+  B-LT default, Verify accessibility scan and demo, public anchoring `FG-158`, ADR-037). Flaky-test fixes `E2E-07` to
+  `E2E-09`, `E2E-11` and `E2E-12` wait for repeated green runs.
+- **Left before production use:** the external penetration test (`HRD-05`), load numbers (`HRD-04`), the rest of
+  production hardening (`HRD-06`, `HRD-11`, `HRD-12`), the accessibility audit (`A11Y-01`), counsel's review
+  (`LEG-02`), and the open ASVS findings: 12 requirements Not met and 32 Partly in
+  [67](docs/67-ASVS-SELF-ASSESSMENT.md), a self-assessment, not a certification.
+  [96](docs/96-FEATURE-FIT-GAP.md) counts 50 of 168 rows working end to end, 27 in part and 15 with their engine built.
+- **Exact state per item:** [14](docs/14-EXECUTION-TRACKER.md); phases, milestones and the hardening gate:
+  [06](docs/06-ROADMAP-AND-DELIVERY.md).
