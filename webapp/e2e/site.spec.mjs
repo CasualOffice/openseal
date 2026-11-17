@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
+import { expectAccessible } from "./helpers.mjs";
 
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const fixture = (p) => path.join(ROOT, "fixtures", p);
@@ -79,6 +80,26 @@ test.describe("verify", () => {
     await expect(page.getByTestId("vfy-problem")).toContainText("not a PDF");
     await expect(page.locator(".vfy img")).toHaveCount(0);
   });
+
+  // VS-07 (slice 7): axe on the Verify page, light and dark, at the start, on a valid
+  // and on a tampered verdict (WCAG 2.2 AA rule set, as the app's a11y.spec.mjs).
+  for (const scheme of ["light", "dark"]) {
+    test(`the Verify page is accessible (${scheme})`, async ({ page }) => {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.addInitScript((s) => { try { localStorage.setItem("openseal.theme", s); } catch { /* storage off */ } }, scheme);
+      await page.goto("/verify.html");
+      await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
+      await expect(page.getByTestId("vfy-engine")).toHaveAttribute("data-state", "ready");
+      await expectAccessible(page, `site verify, start (${scheme})`);
+      await page.getByTestId("vfy-trust-input").setInputFiles([fixture("sealed/trust-root.pem"), fixture("signed/trust-root.der")]);
+      await page.getByTestId("vfy-input").setInputFiles(fixture("sealed/p256-approval-blt.pdf"));
+      await expect(page.getByTestId("vfy-verdict")).toHaveAttribute("data-state", "valid");
+      await expectAccessible(page, `site verify, valid (${scheme})`);
+      await page.getByTestId("vfy-input").setInputFiles(fixture("signed/flip-range1.pdf"));
+      await expect(page.getByTestId("vfy-verdict")).toHaveAttribute("data-state", "invalid");
+      await expectAccessible(page, `site verify, tampered (${scheme})`);
+    });
+  }
 });
 
 test("from the home page, a visitor sends and signs a sample agreement in the demo", async ({ page }) => {

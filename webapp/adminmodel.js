@@ -211,6 +211,16 @@ export function orgLocked(acct, setting) {
   return acct?.organization_policy?.settings?.[setting]?.locked === true;
 }
 
+/// VS-07: the PAdES levels an account may seal new envelopes at by default
+/// (`settings.default_seal_profile`; the server refuses anything else).
+export const SEAL_PROFILES = Object.freeze(["pades-b-t", "pades-b-lt", "pades-b-lta"]);
+
+/// The string key naming a seal profile; an unset or unknown one is the server's
+/// default, B-T. Pure.
+export function sealProfileLabel(profile) {
+  return `admin.seal-${SEAL_PROFILES.includes(profile) ? profile : "pades-b-t"}`;
+}
+
 /// The days before expiry the account warns recipients (0: none). Pure.
 export function expiryWarningOf(settings) {
   const n = settings?.workflow_policy?.expiry_warning_days;

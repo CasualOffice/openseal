@@ -499,6 +499,9 @@ pub struct Env {
     pub anchoring: AtomicBool,
     /// Where anchors are published (none by default).
     pub anchor_sink: Mutex<Option<Arc<dyn casual_sign_worker::anchor::AnchorSink>>>,
+    /// When set, seals fetch OCSP and CRLs from this source (B-LT and B-LTA, `VS-07`)
+    /// instead of answering nothing.
+    pub revocation: Mutex<Option<casual_sign_worker::seal::RevocationFactory>>,
     next: AtomicU64,
 }
 
@@ -580,6 +583,7 @@ impl Env {
             tsa_directory: Mutex::new(None),
             anchoring: AtomicBool::new(false),
             anchor_sink: Mutex::new(None),
+            revocation: Mutex::new(None),
             next: AtomicU64::new(0),
         };
         env.blob_store().put(&env.delivered).await.unwrap();
@@ -639,6 +643,9 @@ impl Env {
         if let Some(d) = directory {
             services.timestamps = d.factory();
             services.tsa_directory = Some(d);
+        }
+        if let Some(r) = self.revocation.lock().unwrap().clone() {
+            services.revocation = r;
         }
         services
     }

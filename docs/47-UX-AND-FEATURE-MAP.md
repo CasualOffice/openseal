@@ -244,7 +244,9 @@ column rests on docs/48. No logo, name, colour, illustration or text of theirs i
   forgets). Without mock or a server on loopback the app and signing
   page say "No OpenSeal server is running here".
 - **Verifier build**: `tools/build-webapp-wasm.sh` builds casual-sign-wasm as `tools/wasm-parity.sh` ships it and
-  copies it to `webapp/vendor/openseal-wasm/` (build output, not committed); without it Verify says so.
+  copies it to `webapp/vendor/openseal-wasm/` (build output, not committed); without it Verify says so. CI's `e2e`
+  job builds it (cached on its sources) before Playwright, so the Verify specs run the real verifier; `compose-e2e`
+  checks the server image serves it (`application/wasm`) and runs the same specs against the stack (`VS-07`).
 - **CSP**: `verify.html` alone adds `'wasm-unsafe-eval'` to `script-src` (meta tag and `tools/serve-webapp.py`
   header), which a browser requires to compile WebAssembly; no JavaScript eval is allowed anywhere.
 - **Components** (`webapp/ui/`, one library): buttons and icon buttons with tooltips, fields, selects, checkboxes,
@@ -970,6 +972,13 @@ Spec: `docs/assets/design-canvas/Intelligence.dc.html` (and Main for the list la
   warning" or "n days before". The server takes `settings.workflow_policy` only whole, so the page reads the
   account's policy again on save and sends it (its disclosure kept) or the engine's defaults with the new days
   (`adminmodel.js` `expiryWarningPatch`).
+- **Organization** also holds "Seal new envelopes at" (`VS-07`, `FG-154`): PAdES B-T (the default), B-LT
+  (long-term validation) or B-LTA, saved as `settings.default_seal_profile` only when it changes; an envelope created
+  without a `seal_profile` takes it on the server (and in the mock). Tested in `manage.spec.mjs` and
+  `tests/ux08.test.mjs`. The per-envelope choice in the editor is not built yet.
+- **Verify, accessibility and demo** (`VS-07`): axe on `verify.html` at start, valid, tampered and refused, light and
+  dark (`a11y.spec.mjs`), and on the site's Verify page (`site.spec.mjs`); `verify-demo.spec.mjs` records the
+  verify flow in Chromium and WebKit to `target/e2e-demo/vs07-*.webm`, uploaded by CI's `e2e` job as `slice-7-demo`.
 - **Audit log** (UXW-09, `GET /admin-events`): the workspace's admin log, newest first of the events loaded (pages of
   1,000, five at a time, then "Load more"), with When, Action, Made by (a member's or API client's name, or "The
   server") and the changed keys; a search box and Action and Made by filters over the loaded events (the route takes

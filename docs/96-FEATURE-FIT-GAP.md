@@ -10,7 +10,7 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 48 of 168 rows work end to end; 16 more have their engine built and tested; 37 are designed, 25 are partial (`FG-012`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-073`, `FG-076`, `FG-092`, `FG-095`, `FG-098`, `FG-100`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-140`, `FG-171`, `FG-172`, `FG-177`, `FG-182`, `FG-183`, `FG-184`, `FG-195`) and 42 are not started** (counted with `grep` over the Status column). Counts recounted 2026-11-13 (`DOC-008`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
+**Today: 50 of 168 rows work end to end; 15 more have their engine built and tested; 37 are designed, 27 are partial (`FG-012`, `FG-060`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-071`, `FG-073`, `FG-076`, `FG-092`, `FG-095`, `FG-098`, `FG-100`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-137`, `FG-140`, `FG-154`, `FG-171`, `FG-172`, `FG-177`, `FG-182`, `FG-183`, `FG-184`, `FG-195`) and 42 are not started** (counted with `grep` over the Status column). Counts recounted 2026-11-13 (`DOC-008`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status.
 
 ## Documents
 
@@ -166,7 +166,7 @@ instructions 8 and 9).
 | FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Works |
 | FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Works |
 | FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Works |
-| FG-154 | Long-term validation (B-LT, B-LTA) | — | Build | 7, 17 | Engine |
+| FG-154 | Long-term validation (B-LT, B-LTA) | — | Build | 7, 17 | Partial: B-LT works end to end through the API and worker: an account's default seal level (`settings.default_seal_profile`, Admin → Organization, `PATCH /accounts/me`) or an envelope's `seal_profile`; the worker seals at B-LT and accepts the DSS-only tail (`VS-07`); `casual-sign-worker/tests/end_to_end.rs` `an_account_defaulting_to_b_lt_gets_long_term_seals_verified_by_pyhanko` verifies the sealed PDF and certificate with ours and pyHanko from the DSS alone (seen red: default not applied; seal stuck `completing` on coverage); the Organization setting is in a browser run in mock mode (`manage.spec.mjs`). B-LTA through the worker is not tested end to end, there is no per-envelope control in the editor, and no Compose run seals at B-LT |
 | FG-155 | Audit trail embedded in the PDF | — (ours) | Build | 1 | Works |
 | FG-156 | Hash-chained audit events | — (ours) | Build | Phase 1 | Works |
 | FG-157 | Offline verification page and CLI | — (ours) | Build | 7 | Works |

@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   NAV, routeFrom, navHref, SCOPE_GROUPS, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
   POLICY_DEFAULTS, expiryWarningOf, withExpiryWarning, expiryWarningPatch, filterAdminEvents, joinCsvPages,
-  orgLocked,
+  orgLocked, SEAL_PROFILES, sealProfileLabel,
 } from "../adminmodel.js";
 import { createClient } from "../api.js";
 import { createMockFetch, MOCK } from "../mock.js";
@@ -206,4 +206,20 @@ test("a setting the organization locks reads as locked, anything else as the wor
   assert.equal(orgLocked(acct, "branding"), false);
   assert.equal(orgLocked({}, "branding"), false);
   assert.equal(orgLocked(null, "branding"), false);
+});
+
+test("an account's default seal profile: B-LT offered, applied to new envelopes, an unknown one refused (VS-07)", async () => {
+  assert.deepEqual([...SEAL_PROFILES], ["pades-b-t", "pades-b-lt", "pades-b-lta"]);
+  assert.equal(sealProfileLabel("pades-b-lt"), "admin.seal-pades-b-lt");
+  assert.equal(sealProfileLabel(undefined), "admin.seal-pades-b-t");
+  assert.equal(sealProfileLabel("pades-b-b"), "admin.seal-pades-b-t");
+  const c = createClient({ fetch: createMockFetch() });
+  await c.login(MOCK.email, MOCK.password);
+  // Before a default is set, a new envelope is sealed at B-T, as the server's.
+  assert.equal((await c.createEnvelope({ subject: "Before" })).seal_profile, "pades-b-t");
+  await assert.rejects(c.patchAccountSettings({ default_seal_profile: "pades-b-b" }), (e) => e.status === 422 && e.errors[0].pointer === "/settings/default_seal_profile");
+  const out = await c.patchAccountSettings({ default_seal_profile: "pades-b-lt" });
+  assert.equal(out.settings.default_seal_profile, "pades-b-lt");
+  assert.equal((await c.createEnvelope({ subject: "After" })).seal_profile, "pades-b-lt");
+  assert.equal((await c.createEnvelope({ subject: "Own", seal_profile: "pades-b-t" })).seal_profile, "pades-b-t");
 });
