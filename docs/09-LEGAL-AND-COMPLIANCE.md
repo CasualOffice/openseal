@@ -196,9 +196,9 @@ one scoped exception, owner instruction 32 (§8).
 **NOTICE check.** `python3 tools/licence-inventory.py --check` fails unless NOTICE points to the inventory and the
 licence texts, names every vendored component and every bundled model repository, reproduces the NOTICE of any
 shipped crate that has one (Apache-2.0 §4(d); on 2026-11-13 none does: the only crate with a notices file,
-`cfg_aliases`, is build-only), names every shipped crate with a PATENTS file (`rav1e`, whose Alliance for Open Media
-Patent License 1.0 must be reproduced with binaries), and no licence or font file sits in a shipped folder without a component that accounts
-for it. Before `LEG-01` NOTICE omitted the Geist fonts (three copies), the pdf.js CMaps (Adobe BSD-3-Clause), ONNX
+`cfg_aliases`, is build-only), names every shipped crate with a PATENTS file (since 2026-11-18 none: `rav1e`, whose
+Alliance for Open Media Patent License 1.0 had to be reproduced with binaries, left the build under `LEG-08`), and no
+licence or font file sits in a shipped folder without a component that accounts for it. Before `LEG-01` NOTICE omitted the Geist fonts (three copies), the pdf.js CMaps (Adobe BSD-3-Clause), ONNX
 Runtime and all model weights, and said nothing of the Rust crates; it now covers them. The check is a tool for this
 review, not a CI gate (no new gates without the owner).
 
@@ -220,11 +220,9 @@ review, not a CI gate (no new gates without the owner).
 6. Data and fonts: the Adobe AFM notice ("retain all copyright notices") as met by NOTICE; the OFL-1.1 fonts, embedded
    as subsets in signed PDFs that users distribute; the Presidio patterns ported without code, with the MIT text
    included.
-7. `rav1e` 0.8.1 (an AV1 encoder that `image`'s default features compile into casual-sign-modeld, though modeld
-   encodes no image) is BSD-2-Clause and also under the Alliance for Open Media Patent License 1.0, which requires
-   the licence to accompany binaries and ends the patent grant for a licensee that brings a patent claim over an
-   AV1 implementation. NOTICE names it and THIRD-PARTY-LICENSES.txt holds the text; is that adequate, and should
-   the encoder be dropped from the build instead (`LEG-08`)?
+7. Withdrawn 2026-11-18 (`LEG-08`): `rav1e` 0.8.1, an AV1 encoder under BSD-2-Clause and the Alliance for Open Media
+   Patent License 1.0, is no longer built or locked. It came only from `image`'s default features through
+   `oar-ocr`, now vendored without them (docs/19 §Vendored crates); modeld encodes no image.
 8. Training-data lineage stays an owner and counsel question under `LEG-02` and §8; this packet covers licences only.
 
 **Not covered here:** trademark (DEC-07), legal claims and the default ERSD (`LEG-02`), the corpus fixtures, which are

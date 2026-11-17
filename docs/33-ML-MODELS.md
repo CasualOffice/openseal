@@ -517,6 +517,12 @@ they are pinned back to `bit_field` 0.10.3, `exr` 1.74.0 (1.74.1 and 1.74.2 brin
 the owner's confirmation: the four `zip` 8.6 `extract` advisories (`oar-ocr` requires `^8.6`, reads one archive
 with `by_name` only and never extracts; `DEP-06`) and the unmaintained `paste` and `ttf-parser`, which arrive only
 through `imageproc`'s default features turning on every `image` codec and `ab_glyph` (`DEP-07`).
+**Vendored (2026-11-18, `DEP-06`, `DEP-07`, `LEG-08`; under D3(b)):** no `oar-ocr` release past 0.10.2 exists, so `oar-ocr` and
+`oar-ocr-core` 0.10.2 are vendored in `third_party/` (docs/19 §Vendored crates) with only their manifests changed (and a test of the `.npz` loader added):
+`zip` 9.0.5 or later (locked at 9.3.0; no source change), and `image` and `imageproc` without default features. The
+eight `zip` ignores and the `ttf-parser` ignore are removed; every image codec except hayro's `png`, `rav1e` and
+`ab_glyph` left the build and the lockfile. OCR output is unchanged: `tests/ocr.rs` on the real bundle still reads
+1,465 of 1,476 Latin words (99.25 %). `paste` stays ignored: `tokenizers` 0.23.2 depends on it directly (`DEP-07`).
 
 Determinism: CPU execution only, one intra-op thread per session, a fixed graph optimisation level, and fixed
 truncation. Output is expected to be bit-identical on the same build and CPU instruction set; across AVX2 and
