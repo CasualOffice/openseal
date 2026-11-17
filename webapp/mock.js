@@ -1692,6 +1692,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const items = db.audit[env.id] || [];
       return json(200, { items, chain_head: items.length ? items[items.length - 1].hash : null });
     }
+    if (sub === "anchor-proof" && method === "GET") {
+      // FG-158: the mock has no anchor job (no time-stamping authority), so nothing is
+      // ever anchored here; the server's answer before the first anchor.
+      fail(404, "CS-API-0017", "Not anchored yet");
+    }
     if (sub === "certificate" && method === "GET") {
       // A completed envelope's; a declined, voided or expired one's envelope
       // certificate (UXW-30), as the server once its worker has made it.

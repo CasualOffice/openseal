@@ -174,10 +174,17 @@ protects against an operator rewriting history wholesale. Nothing is published t
   TSA's over the statement (`CS-VER-0006`) and its TSA chains to a given root at the token's time (`CS-VER-0004`,
   else indeterminate), and with the trail that the trail verifies and its event `seq` has that hash (`CS-AUD-0012`).
   A trail rewritten after anchoring and rehashed to be internally valid fails the last check.
-- **Served.** `GET /api/v1/envelopes/{id}/anchor-proof` (docs/40) answers the proof file of the envelope's
+- **Served and shown.** `GET /api/v1/envelopes/{id}/anchor-proof` (docs/40) answers the proof file of the envelope's
   latest anchored head to staff who may read the envelope (`404 CS-API-0017` before any), made by the code the worker
-  publishes with (`casual_sign_host::anchor`); `casual-sign-wasm` exports `verify_anchor`, the same checks with the same
-  verdict as the SDK and the CLI (`casual-sign-wasm/tests/anchor.rs`), for the Verify page.
+  publishes with (`casual_sign_host::anchor`). `casual-sign-wasm` exports `verify_anchor`: the checks above, with the
+  same verdict as the SDK and the CLI (`casual-sign-wasm/tests/anchor.rs`), plus the token's time and its TSA
+  certificate's name. The web app's Verify page (`verify.html`) takes the proof file beside the PDF (or fetches it
+  when opened from an envelope, and says "not anchored yet" on `404 CS-API-0017`), checks it in the browser and, when
+  the proof's event is in the audit trail the PDF carries, matches it to that trail; it says "History anchored on
+  <day> by <TSA>", "not confirmed" (the TSA's root is not one the person added), or that the proof does not hold,
+  with each check and its code. A proof whose event comes after the PDF's trail ends (a sealed PDF's trail stops at
+  sealing) is checked without the trail, and the page says so. The website's Verify page checks a proof beside the
+  PDF the same way, without the trail. Playwright `verify-anchor.spec.mjs` (Chromium, WebKit) and `site.spec.mjs`.
 - **Not yet:** the sealed PDF does not carry the proof files, and a signer's downloads do not include them (only staff
   fetch them, through the API); the published file is not yet mirrored to a third-party log; the TSA's revocation is not
   checked by the anchor verifier. What an anchor proves is that the head existed at the TSA's time; it carries no
