@@ -41,10 +41,10 @@ Outcome (docs/06): "Sequential, parallel, mixed; cc, viewer, approver, agent; de
 | --- | --- | --- |
 | outcome (what a user can do): Sequential, parallel, mixed; cc, viewer, approver, agent; decline; void; reminders; expiry | Met | In `server-db` of run 43860204277: `casual-sign-server` `tests/routing.rs` (parallel, mixed, cc, agent, approver, viewer through the ceremony); worker `tests/flow.rs` (decline), `tests/crash.rs` (reminders), `tests/expiry.rs` (expiry and warning). Sequential in a browser on the real stack: `real-stack.spec.mjs:105` "two signers in order sign through emailed links; the sealed PDF and certificate download" passed in `compose-e2e` |
 | merged | Met | All on `main` at `ea67292` |
-| CI green including a browser run | Met | Run 43860204277 green. `compose-e2e`: `real-stack.spec.mjs:281` "an in-person signer chosen in the editor is hosted from the envelope page and signs" passed (the `UXW-18` item the tracker named). `e2e` (mock): `recipient-types.spec.mjs` approver, viewer, agent, in-person passed. Note: approver, viewer and agent browser steps are skipped in `compose-e2e` (mock only); the outcome on the real server rests on `tests/routing.rs` |
+| CI green including a browser run | Met | Run 43860204277 green. `compose-e2e`: `real-stack.spec.mjs:281` "an in-person signer chosen in the editor is hosted from the envelope page and signs" passed (the `UXW-18` item the tracker named). `e2e` (mock): `recipient-types.spec.mjs` approver, viewer, agent, in-person passed. Note: approver, viewer and agent browser steps were skipped in `compose-e2e` (mock only). Since `routing.spec.mjs` (2026-11-17, on `sprint1-stabilization`): one envelope to an approver, a viewer, an agent and a signer in order, each acting through the link the worker emailed (Mailpit), the agent naming the signer, the sealed PDF and certificate downloaded and added to pyHanko's manifest; passed in mock mode on chromium and webkit (seen red when the mock invited everyone at once). Its Compose run is proven only by the first green `compose-e2e` after merge |
 | docs/96 rows updated | Met | Slice-2 rows: `FG-021`..`FG-024`, `FG-031`, `FG-035`, `FG-090`, `FG-094`, `FG-115`, `FG-116`, `FG-134`, `FG-135` `Works`; `FG-095` (expiration) and `FG-092` Partial; `FG-005`, `FG-038`, `FG-041` Designed; `FG-103` not started. The rows state the truth; M4, not M3, asks for `Works` |
-| demo recorded | Not met | `RTE-04` Open; no recording exists. Could follow `S1-02`'s pattern (record in `compose-e2e`, upload an artefact). M |
-| Accessibility (WCAG 2.2 AA) and i18n string extraction | Needs the owner | `a11y-sign.spec.mjs` scans the signer's ceremony steps (passed, run 43860204277); no axe scan names the approver's Approve, the viewer's finish or the agent's form specifically. i18n as slice 1. Decide whether the ceremony scan covers them, or add scans. S |
+| demo recorded | Needs CI, then the owner | `routing.spec.mjs` records every screen of the VS-02 run on the Compose stack (sender, approver, viewer, agent, named signer: `target/e2e-demo/vs02-*.webm`), and `compose-e2e` uploads them with the sealed PDFs as artefact `slice-2-demo` (`if-no-files-found: error`), as `S1-02`. Missing: a green `compose-e2e` run that produced it, then someone watches it and links it from docs/65. S |
+| Accessibility (WCAG 2.2 AA) and i18n string extraction | Axe met locally; i18n not met | `a11y-sign.spec.mjs` "the approver's, viewer's and agent's steps are accessible" (light, dark): axe on each type's documents step, review step (Approve; the agent's form, and its refused address) and receipt; passed in mock mode on chromium, webkit and mobile (seen red with `aria-hidden` on Approve). Counts once `e2e` is green on GitHub with it. i18n as slice 1. S |
 
 Owner decision: close / not yet, because …
 
@@ -89,8 +89,8 @@ Owner decision: close / not yet, because …
 | --- | --- | --- |
 | 1 | Demo watched and linked from docs/65 (`S1-02`) | S |
 | 1 | i18n extraction shown | S |
-| 2 | Demo (`RTE-04`) | M |
-| 2 | Accessibility of approver, viewer, agent steps decided | S |
+| 2 | Demo (`RTE-04`): built; a green `compose-e2e` run, then watched and linked from docs/65 | S |
+| 2 | i18n extraction shown (as slice 1) | S |
 | 5 | Compose run with SMS and OIDC stubs (`RAUTH-02`) | M |
 | 5 | Demo (`RAUTH-02`) | S |
 | 5 | Accessibility of auth steps; ADR-033 acceptance | S |

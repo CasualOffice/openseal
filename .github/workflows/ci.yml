@@ -282,6 +282,17 @@ jobs:
           path: target/e2e-demo/vs05-*
           if-no-files-found: error
           retention-days: 90
+      # The slice 2 demo (RTE-04): routing.spec.mjs's VS-02 run recorded (sender, approver,
+      # viewer, agent, the named signer), kept with the sealed PDFs and certificates.
+      - if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: slice-2-demo
+          path: |
+            target/e2e-demo/vs02-*
+            target/e2e-sealed/*vs02-*
+          if-no-files-found: error
+          retention-days: 90
       - if: failure()
         run: mkdir -p target && docker compose logs --no-color > target/compose.log 2>&1
       - if: failure()
