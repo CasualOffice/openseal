@@ -16,7 +16,9 @@
 #
 # tools/check-deploy.py checks every rule above over this file and fails on any
 # violation; run it after every change. Images are pinned by digest or by an
-# OPENSEAL_VERSION you built and signed.
+# OPENSEAL_VERSION you built and signed. A published release pins OpenSeal's own images
+# by their signed digests: add its compose.release.yml with a second -f (written by
+# tools/release/pin_release.py; verify it first, docs/65 §Releases).
 
 name: openseal-production
 

@@ -264,7 +264,8 @@ proves each is caught):
   none added, `no-new-privileges`, memory, CPU and process limits, no core dumps, bounded logs and a health check
   (the worker writes a heartbeat while its database answers, `casual-sign-worker healthcheck`; the one-shot
   `migrate` alone has none). No privileged mode, host namespace or Docker socket. Images are pinned by digest or
-  are OpenSeal's own at an `OPENSEAL_VERSION` you built and signed. The server stops on `SIGINT`, which drains it.
+  are OpenSeal's own at an `OPENSEAL_VERSION` you built and signed; a release's `compose.release.yml` pins OpenSeal's
+  own by their signed digests too (§Releases). The server stops on `SIGINT`, which drains it.
 - **Secrets** are Docker secrets: files under `/run/secrets/`, each mounted only into the services that read it (the
   seal key's PIN and chain and keyd's identity into keyd alone, never the server), never an environment value (`docker inspect` and `/proc/1/environ` show only paths). Development switches
   (`OPENSEAL_DEV_INSECURE_KEY`, file keys) are refused by the checker.
@@ -292,7 +293,8 @@ installs it in the database: `KEYD-02`, below), each owned by the one container 
 `seal-chain.pem` and `keyd-pkcs11-pin` (owner 10001, 0400), `trust-anchors.pem`, `smtp-password` (owner 65532,
 0400). Set the variables the file requires (`OPENSEAL_SECRETS_DIR`, `OPENSEAL_VERSION`, `OPENSEAL_PUBLIC_URL`,
 `OPENSEAL_TRUSTED_PROXIES`, the PKCS#11 module, token and label, mail, SMTP, TSA and seal name; `docker compose`
-names any that is missing), record the manifests, then `docker compose -f deploy/compose.production.yml up -d --wait`.
+names any that is missing), record the manifests, then `docker compose -f deploy/compose.production.yml up -d --wait`
+(with a published release: verify it and add its `compose.release.yml`, §Releases).
 Checked by running (2026-11-14, Docker 29.8 on macOS): Postgres and the object store start healthy under this profile as
 their non-root users; a `verify-full` client gets TLS 1.3, a plain connection is refused (`no pg_hba.conf entry …
 no encryption`) and a wrong host name fails verification; the S3 gateway answers TLS 1.3 with the internal CA and
@@ -663,6 +665,84 @@ manifests), `payload-structure.txt`, `flipped.err` and `edited.err` (the encrypt
 a failure, each stack's Compose logs. CI uploads these and the console log (`target/backup-drill.log`) as the artifact
 `backup-drill` of the run, kept 90 days: `gh run download <run id> -n backup-drill`. Copy the report of each drill you
 count into your audit records before then; the artifact holds no backup, no key and no signing link.
+
+## Releases: verify, then pin (`REL-01`)
+
+**Status:** the workflow below is written and linted (`actionlint` with `shellcheck`), its pinning tool is unit-tested,
+and the pinned profile was rendered and passed `tools/check-deploy.py` on a workstation (2026-11-17). It has not yet
+run on a tag: v0.0.1 was built by its first version (images with BuildKit's SBOM and provenance only, no cosign
+signature, no release assets). The first tag after this change is its first real run.
+
+**What a release is.** `.github/workflows/release.yml` runs on a `v*` tag pushed by the owner, never on an ordinary
+push. For each of `server`, `worker` and `keyd` it builds `deploy/Dockerfile`'s target for `linux/amd64` (base images
+pinned by digest) and pushes `ghcr.io/casualoffice/openseal-<service>:<version>` to GitHub Container Registry. Every
+image digest then carries: BuildKit's SPDX SBOM and SLSA provenance (mode `max`) attached to the image index; a
+keyless cosign signature (Sigstore, the workflow's GitHub OIDC identity, recorded in the public Rekor log); and a
+GitHub build provenance attestation. The release's assets are:
+
+| Asset | What |
+| --- | --- |
+| `openseal-<service>-<version>.spdx.json` | SPDX SBOM of each pushed image (syft, pinned) |
+| `openseal-rust-<version>.cdx.tar.gz` | CycloneDX 1.5 SBOM of every workspace crate, Linux x86-64, all features (`cargo-cyclonedx`, pinned) |
+| `images.json` | The version and, per service, repository, tag and digest |
+| `compose.release.yml`, `openseal-release.env` | The production profile pinned to those digests (below) |
+| `RELEASE-NOTES.md` | The `CHANGELOG.md` section, the image digests and a pointer here |
+| `SHA256SUMS`, `SHA256SUMS.sigstore.json` | SHA-256 of every asset above, and a keyless cosign signature over that list |
+
+Every asset also has a build provenance attestation. Versions `0.x` and `x.y.z-pre` are published as pre-releases.
+Run by hand (Actions, `release`, Run workflow) it is a dry run: it builds every image to a local archive and every
+asset, pushes and signs nothing, and keeps the assets as the run's `release-dry-run` artifact. It publishes by hand
+only when `publish` is ticked and the run was started on a `v*` tag (to finish a tag run that failed part-way).
+
+**Verifying a release** (cosign 3 and the GitHub CLI; nothing here needs a GitHub account once the packages are
+public). `V` is the tag, `REPO=CasualOffice/openseal`:
+
+```sh
+gh release download "$V" -R "$REPO" -D "openseal-$V"; cd "openseal-$V"
+ID="https://github.com/$REPO/.github/workflows/release.yml@refs/tags/$V"
+ISSUER=https://token.actions.githubusercontent.com
+# 1. The checksum list was signed by this repository's release workflow at this tag, then every asset matches it.
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json --certificate-identity "$ID" --certificate-oidc-issuer "$ISSUER"
+sha256sum -c SHA256SUMS                       # macOS: shasum -a 256 -c SHA256SUMS
+# 2. Each image digest is signed by the same identity and has build provenance from this repository.
+for ref in $(jq -r '.images[] | "\(.repository)@\(.digest)"' images.json); do
+  cosign verify "$ref" --certificate-identity "$ID" --certificate-oidc-issuer "$ISSUER" > /dev/null && echo "signed: $ref"
+  gh attestation verify "oci://$ref" -R "$REPO" --signer-workflow "$REPO/.github/workflows/release.yml"
+done
+# 3. Optionally, each asset's provenance, and the SBOM attached to an image.
+gh attestation verify openseal-rust-*.cdx.tar.gz -R "$REPO"
+docker buildx imagetools inspect "$(jq -r '.images.server | "\(.repository)@\(.digest)"' images.json)" --format '{{ json .SBOM }}'
+```
+
+To accept any release tag rather than one, use `--certificate-identity-regexp
+'^https://github\.com/CasualOffice/openseal/\.github/workflows/release\.yml@refs/tags/v'` in place of
+`--certificate-identity`. A signature from any other workflow, branch or repository fails these checks.
+
+**Running exactly what was verified.** Check out the source at the same tag (the profile, `deploy/production/` and
+the checker come from it), then start the production profile with the override, which sets `keyd`, `migrate`,
+`server` and `worker` to `repository:tag@sha256:…`; Docker pulls by digest, so a moved or re-pushed tag changes
+nothing:
+
+```sh
+docker compose -f deploy/compose.production.yml -f "openseal-$V/compose.release.yml" \
+    --env-file "openseal-$V/openseal-release.env" up -d --wait
+```
+
+`openseal-release.env` sets `OPENSEAL_IMAGE_PREFIX` and `OPENSEAL_VERSION`, which the profile requires; the other
+variables (§Production deployment) still come from your environment. The files can be written again from a verified
+`images.json`, for example after mirroring the images to your own registry and editing the repositories:
+`python3 -I tools/release/pin_release.py --from images.json --out DIR`. It refuses an image not given by `sha256`
+digest, a missing or unknown service, mixed repository prefixes and a tag other than the version. The release
+workflow renders the pinned profile and runs `tools/check-deploy.py --json` over it before publishing; you can do the
+same: `docker compose -f deploy/compose.production.yml -f compose.release.yml config --format json --no-interpolate >
+merged.json && python3 -I tools/check-deploy.py --json merged.json`.
+
+**Owner's steps, once per package.** GitHub Container Registry makes a package pushed by a workflow private, and
+the workflow's token cannot change that. After the first tag run, for each of `openseal-server`, `openseal-worker` and
+`openseal-keyd`: the organization's Packages, the package, Package settings, Change visibility, Public (and link it to
+the repository, so the repository's workflows keep write access). Until then pulls, `cosign verify` and `gh
+attestation verify` on the images need a GitHub login with read access. The images are built for `linux/amd64` only:
+arm64 hosts run them under emulation or build from source.
 
 ## Upgrades
 
