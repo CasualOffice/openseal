@@ -48,6 +48,11 @@ VALID_ALL = (
                    "document timestamp is valid")),
 )
 VALID_BLTA = (("ltv", ("signature is ltv enabled",)),)
+# A certified document (DocMDP P2) that later received the B-LTA document timestamp is,
+# rightly, not "unmodified since this signature": Reader says the certification is valid
+# and the later changes are ones the certifying party permits (HRD-14, run 44009523390).
+CERTIFIED_UNCHANGED = ("document unchanged", ("valid certified document",
+                                              "document has not been modified since this signature was applied"))
 BAD = (
     "at least one signature is invalid",
     "at least one signature has problems",
@@ -110,7 +115,9 @@ def judge_file(row, entry):
                 problems.append(f"{name}: no 'Certified by' banner")
         elif not has(texts, BANNER_VALID):
             problems.append(f"{name}: no 'Signed and all signatures are valid' banner")
-        wanted = VALID_ALL + (VALID_BLTA if row.get("level") == "B-LTA" else ())
+        base = tuple(CERTIFIED_UNCHANGED if certified and what == "document unchanged" else (what, phrases)
+                     for what, phrases in VALID_ALL)
+        wanted = base + (VALID_BLTA if row.get("level") == "B-LTA" else ())
         for what, phrases in wanted:
             if not any(has(texts, p) for p in phrases):
                 problems.append(f"{name}: {what} not shown (looked for {' / '.join(repr(p) for p in phrases)})")

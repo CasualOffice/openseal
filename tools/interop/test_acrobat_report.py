@@ -96,6 +96,23 @@ class Judge(unittest.TestCase):
         self.entry(bad, "agreement-p256-certified-p2-blta.pdf")["banner"] = "Signed and all signatures are valid."
         self.assertTrue(any("Certified by" in p for p in ar.judge(bad, self.rows)))
 
+    def test_a_certified_file_reads_valid_certified_not_unmodified(self):
+        # Reader's words for the certified B-LTA file on run 44009523390 (HRD-14): the later
+        # document timestamp is a permitted change, so "not been modified" never appears.
+        rep = json.loads(json.dumps(self.report))
+        e = self.entry(rep, "agreement-p256-certified-p2-blta.pdf")
+        e["texts"] = ["Valid certified document:", "Changes have been made to this document that are permitted by the certifying party.",
+                      "Signer’s identity is valid", "Signature is LTV enabled", "Signature is valid:",
+                      "Signature includes an embedded timestamp."]
+        self.assertEqual(ar.judge(rep, self.rows), [])
+        # Still refused when Reader doubts it.
+        e["texts"].append("The validity of the document certification is UNKNOWN. The author could not be verified.")
+        self.assertTrue(ar.judge(rep, self.rows))
+        # And an ordinary file still needs "not been modified".
+        f = self.entry(rep, "agreement-p256-blta.pdf")
+        f["texts"] = [t for t in f["texts"] if "modified" not in t] + ["Valid certified document:"]
+        self.assertTrue(any("document unchanged" in p for p in ar.judge(rep, self.rows)))
+
     def test_a_tampered_file_shown_valid_fails(self):
         bad = copy.deepcopy(self.report)
         e = self.entry(bad, "tampered-p256-blta.pdf")
