@@ -65,6 +65,7 @@ by saying so.
 | 54 | 2026-11-17 | After an outside review recommending stabilisation: complete HRD-14 (Acrobat reads B-LTA seals as valid offline) and slices 2 (routing), 5 (authentication) and 7 (verify) first. Chose, from options: accept ADR-033 (recipient authentication); build public anchoring of audit-chain heads (FG-158) now as part of slice 7, not after M3. Remaining work stays on one branch, proven green on CI before its single pull request (instruction 53). | `HRD-14`, `VS-02`, `VS-05`, `VS-07`, `ADR-033`, `FG-158` |
 | 55 | 2026-11-17 | Chose, from options: accept ADR-036 — keyd signs only with a short-lived token the database issues for an envelope that still owes a seal; the worker carries it and keyd never reaches the database. | `KEYD-02`, `ADR-036` |
 | 56 | 2026-11-17 | "Raise a PR for what is done, another for the remaining": the finished stabilization work went as PR #16; public anchoring and the slice 7 verifier work follow in a second PR. Chose, from options: accept ADR-037 — public anchoring of audit chain heads: a daily per-account RFC 6962 tree, an RFC 3161 token over its root and size, appended to a public log file, verified offline with `openseal anchor verify`. | `FG-158`, `ADR-037`, `VS-07` |
+| 57 | 2026-11-17 | "Don't use Claude attribution and mail": commits and pull requests carry no Claude `Co-Authored-By` trailer, no e-mail address and no "Generated with Claude Code" footer, from every session and worker. Earlier history is not rewritten. | Commits, PRs |
 
 ## Inherited working rules
 
