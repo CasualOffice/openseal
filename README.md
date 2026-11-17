@@ -25,8 +25,8 @@ published by `.github/workflows/pages.yml`, with an **interactive demo** (the we
 **public verifier** that checks a sealed PDF in your browser without uploading it.
 
 > **Pre-release.** v0.0.1 is for evaluation, not for production agreements. The development stack makes its own CA,
-> software HSM and timestamp authority; the external security review, accessibility audit, Adobe Acrobat validation
-> and counsel review are still ahead. See [Status](#status).
+> software HSM and timestamp authority; the external security review, accessibility audit and counsel review are
+> still ahead. Adobe Acrobat Reader reads the long-term seals as valid offline on `main` (`HRD-14`). See [Status](#status).
 
 Part of [CasualOffice](https://github.com/CasualOffice), with
 [OpenCalc](https://github.com/CasualOffice/opencalc) (spreadsheets),
@@ -75,54 +75,53 @@ or try the same demo on the website with nothing installed.
 
 ## Status
 
-Docs are true as of `67ca967` (2026-11-13). **Pre-alpha.** **v0.0.1**, the first pre-release, is
-[published](https://github.com/CasualOffice/openseal/releases/tag/v0.0.1): usable end to end on one machine with Docker
-Compose, not yet for production agreements. **Phases D, 0, 1 and 2 are closed** (owner, 2026-11-11 and 2026-11-12),
-and the owner has declared milestones M0, M1 and M2 reached. The engine, workflow engine, persistence, key service,
-API server, job worker and web app are built and merged; a sender uploads, places fields and sends; signers sign on a
-phone or a desktop; everyone downloads a sealed PDF and certificate that pyHanko accepts, in CI on the Compose stack.
+Docs are true as of 2026-11-17 (`main` at `900d0b6`, with pull request #18 open on top). **Pre-alpha.** **v0.0.1**,
+the first pre-release, is [published](https://github.com/CasualOffice/openseal/releases/tag/v0.0.1): usable end to end
+on one machine with Docker Compose, **not for production agreements**. **Phases D, 0, 1 and 2 are closed** (owner,
+2026-11-11 and 2026-11-12) and milestones M0, M1 and M2 are reached. Since 2026-11-13 the owner has paused feature
+expansion (nothing dropped) to harden one deployment end to end and to finish M3, "first signature": slices 1 (send and
+sign), 2 (routing), 5 (authentication and consent) and 7 (verify). Each item's exact state is in
+[docs/14](docs/14-EXECUTION-TRACKER.md); the M3 evidence, gate item by gate item, is in
+[docs/73](docs/73-M3-SLICE-EVIDENCE.md).
 
-**On `main` since v0.0.1** (not yet in a release). Each is merged and tested on the server; most still wait for
-their run against the Compose stack in CI before their row is closed ([docs/14](docs/14-EXECUTION-TRACKER.md)):
+**Proven by a green CI run on `main`** (runs 44001061169 and 44018844840, 2026-11-17, every job green, unless named):
 
-- **A redesigned web app** on the approved design (`UX-02` to `UX-08`, `WEB-17`, `WEB-18`): send editor with
-  click-to-place fields and every field kind, signing page, Home, Agreements and the envelope page, Templates,
-  Reports and Admin, an app shell that works on phones. The signer's page names the sender and serves the
-  electronic-records disclosure (`UXW-34`).
-- **Inbox and folders** (`UXW-01` to `UXW-03`): envelopes waiting for the signed-in member, signed from inside the
-  app; each member's own folders; a Deleted view for envelopes and templates; server-side filters and sorts.
-- **Bulk send** from a template with a CSV list, per-row errors, a test of the list and progress (`UXW-04`).
-- **Template sharing** with members, groups or the whole workspace, Shared with me and Favourites (`UXW-06`).
-- **Groups and custom permission profiles** (`UXW-07`), an **admin audit log** per workspace and per organization,
-  hash-chained, with JSON and CSV export (`ORG-05`, `UXW-09`), and a **webhooks screen** that edits, pauses, tests
-  and redelivers (`UXW-10`, `UXW-31` to `UXW-33`).
-- **Organizations and workspaces** (ADR-028): organizations above workspaces (`ORG-02`), organization routes
-  (`ORG-03`), switching between workspaces (`ORG-04`) and a first cut of the organization admin screens (`ORG-06`).
-- **The platform console** (`casual-sign-console`, a separate binary with its own sign-in and TOTP): health,
-  organizations with two-person suspend and resume, approvals, operators and the hash-chained operator log
-  (`CON-02` to `CON-05`, `CON-16`, `CON-17`); **plans** with versions, assignments and overrides (`PLAN-02`),
-  **metering** of envelopes sent, seats, storage and workspaces (`PLAN-03`) and **quota enforcement** (`PLAN-04`);
-  the **Keys and certificates** page over keyd's read-only admin interface (`CON-06`) and **timestamp authorities**
-  held in the database and changed by two key custodians, which the worker now seals with (`CON-07`). The console
-  is not yet a Compose service (`CON-02`).
-- **Recipient authentication**: one-time codes by **SMS and voice call** through an HTTPS gateway (`VS-05`) and
-  **sign-in through an OpenID Connect provider** (`RAUTH-01`, ADR-033 Proposed).
-- **Staff accounts**: a TOTP second factor with recovery codes and an account policy (`ASVS-01`), passwords on a
-  breached-password list refused, and an email notice when a password is set, changed or reset or a second
-  factor is added (`ASVS-02`, `ASVS-04`).
-- **Malware scanning of every upload** by ClamAV in its own container (Compose profile `production`): malware
-  refused and recorded in the admin log, fail closed with an operator switch (`ASVS-11`, docs/65 §Malware scanning).
-- **The ML model service** `casual-sign-modeld` (ADR-029): OCR of scanned pages (`ML-02`), page hashes and
-  embeddings for template matching (`ML-05`), GLiNER extraction and personal-data detection (`ML-07`, `ML-08`), with
-  the worker's analysis jobs and the server's analysis and suggestion routes (`WEB-19`). Off by default; nothing a
-  model says enters the evidence. Left: the editor's suggestions on the real stack and `compose --profile ml up`
-  (`ML-09`).
-- **An OWASP ASVS 4.0.3 self-assessment** ([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md), `SEC-ASVS-01`; not a
-  certification) and a **licence inventory** ([THIRD-PARTY.md](THIRD-PARTY.md), `LEG-01`, awaiting sign-off).
+- Send and sign on the Compose stack, the signer on a phone, both parties downloading the sealed PDF and certificate
+  that our verifier and pyHanko accept (slice 1's outcome, `VS-01`).
+- Failure recovery on the hardened production profile: worker, keyd, PostgreSQL and the object store killed or paused
+  mid-flow; every envelope completes once, audit chains intact (`HRD-01`, `HRD-10`, job `chaos-compose`).
+- Sealing against a real-style CA hierarchy with OCSP and CRL, agreed by ours, pyHanko and EU DSS (`HRD-02`).
+- Encrypted, signed backups with a restore drill that rebuilds and verifies every chain (`ASVS-14`, job `backup-drill`).
+- A security event log in one JSON format, anomaly alerting, malware scanning of uploads, and a TOTP second factor
+  required of administrators by default (`ASVS-08`, `ASVS-13`, `ASVS-11`, `ASVS-31`).
+- The website's public in-browser verifier and the no-install demo (`SITE-03`, `SITE-04`; pages run 44001061250).
+- keyd signs only with a seal token the database issues for an envelope that still owes a seal (`KEYD-02`, ADR-036).
+- Slices 2 and 5 on the real stack: routing through an approver, a viewer, an agent and a signer, and every
+  recipient authentication method with an SMS gateway and an OpenID Connect provider stub, with recorded demos
+  (`RAUTH-02`; the slice 2 demo `RTE-04` is still to be watched and linked).
 
-**Next:** the Compose runs that close the rows above; slices 1, 2, 5 and 7 to their end points for M3; the rest of
-ADR-028 (delegated administration, organization policy, SSO, SCIM, usage export; `ORG-*`, `CON-*`, `PLAN-*`) for
-v0.0.2 (instruction 29); the open ASVS findings (`ASVS-03` and onward).
+**Built, waiting for a green CI run on `main` or for the owner:**
+
+- Adobe Acrobat Reader reads the B-LTA seals as valid offline, LTV enabled (`HRD-14`, `HRD-03`): acrobat run
+  44024248440 on `main`.
+- Public anchoring of audit chain heads (`FG-158`) and slice 7's verify work (`VS-07`): CI run 44023485128 on `main`.
+- Slice 7 on pull request #18: the WebAssembly verifier's browser tests in CI, B-LT as an account's default seal level,
+  an accessibility scan of Verify, its demo, and public anchoring of audit chain heads (`VS-07`, `FG-158`, ADR-037).
+
+No slice is closed; only the owner closes one. [docs/96](docs/96-FEATURE-FIT-GAP.md) counts 50 of 168 features
+working end to end, 27 in part and 15 with their engine built.
+
+**Pre-release limits.** The development stack makes its own CA, software HSM and timestamp authority, so its seals
+validate only against that CA. Not yet done: the external penetration test (`HRD-05`), the accessibility audit
+(`A11Y-01`), counsel's review of legal claims and the default disclosure (`LEG-02`), published load numbers (`HRD-04`)
+and the rest of production hardening (`HRD-06`). The OWASP ASVS 4.0.3 self-assessment
+([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md)) finds 12 requirements not met and 32 partly met; it is a
+self-assessment, not an audit or a certification. Nothing here states that a signature is legally valid or that
+OpenSeal is compliant or certified ([docs/09](docs/09-LEGAL-AND-COMPLIANCE.md)).
+
+**Next:** M3's remaining gate items (docs/73), the hardening release ([docs/06](docs/06-ROADMAP-AND-DELIVERY.md)
+§Hardening release), then the paused work in order: the verifier as a standalone package (`VER-01`), organizations,
+the platform console, plans and the model service.
 
 | Phase | Exit gate | State |
 | --- | --- | --- |
@@ -131,7 +130,8 @@ v0.0.2 (instruction 29); the open ASVS findings (`ASVS-03` and onward).
 | 1 — PDF and evidence core | **Closed** (7 of 7) | Every admitted corpus PDF (417 of 417) filled, flattened, sealed and verified by ours, pyHanko and EU DSS; tamper and signature-wrapping fixtures detected by all three; WASM byte-identical to native; 24 h of fuzzing per target with no finding. Signed off 2026-11-11 |
 | 2 — Envelope engine and server | **Closed** (5 of 5) | Workflow engine, persistence, API server, job worker, keyd and the Docker Compose deployment; end-to-end on the stack green in CI; crash tests with real process kills; tenant isolation over every operation; every access and web threat with a test seen red. Signed off 2026-11-12 |
 | Release 1 (v0.0.1) | Published 2026-11-12 | Send and sign with routing, templates, decline and void, access code and email code, sealed PDF and certificate, verify, API and webhooks, single-node Compose. Left in `REL-01`: public container packages and the recorded manual walkthrough |
-| Slices 1–35 | — | None closed yet; slices 1, 2 and 5 have their outcome built and are waiting for their Compose runs and demos; slices 1, 2, 5 and 7 lead to M3 (first signature, private preview) |
+| Hardening release | Open (2 of 7) | `HRD-01` and `HRD-02` met on CI; Acrobat (`HRD-03`) waits for its run on `main`; load numbers, the pen test, production hardening and the ASVS "Not met" items left |
+| Slices 1–35 | None closed | Slices 1, 2, 5 and 7 lead to M3; [docs/73](docs/73-M3-SLICE-EVIDENCE.md) lists each gate item and its evidence |
 
 **What the engine does today** (Rust, `crates/`, each part tested against hostile files and real documents):
 
@@ -170,7 +170,7 @@ The design, research and plan:
 | Research: DocuSign, SignNow, open-source competitors, law and standards | [docs/48](docs/48-DOCUSIGN-STUDY.md), [49](docs/49-SIGNNOW-STUDY.md), [52](docs/52-COMPETITOR-STUDY.md), [09](docs/09-LEGAL-AND-COMPLIANCE.md) |
 | Security | [docs/07](docs/07-SECURITY-THREAT-MODEL.md) |
 | Roadmap and tracker | [docs/06](docs/06-ROADMAP-AND-DELIVERY.md), [docs/14](docs/14-EXECUTION-TRACKER.md) |
-| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 168 features tracked; 48 work end to end, 25 in part, 15 more have their engine built |
+| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 168 features tracked; 50 work end to end, 27 in part, 15 more have their engine built |
 
 The plan: the headless engine (Phase 1) and the envelope engine, server and API (Phase 2) are done; **35 vertical
 slices** now deliver user-visible features, starting with send-and-sign. Milestones: M0 ready to build, M1

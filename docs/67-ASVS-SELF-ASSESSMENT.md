@@ -14,7 +14,9 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
   `-crypto`, `-verify`) and **keyd** (`server/casual-sign-keyd`). Level-3-only requirements are assessed for those
   three parts only; their scope column says so.
 - **Method.** Each requirement was checked against the code, tests and documents on `main` at 2026-11-13 by reading
-  the named file or test. A test is cited only where it exists; where the threat model records a control seen red, its
+  the named file or test. Re-assessed 2026-11-17 against `main` at `900d0b6` (PR #16 merged, CI run 44018844840 green) for every requirement
+  whose evidence changed since (staff MFA default, the security event log, anomaly alerting, the restore drill, keyd
+  seal tokens); work still on an open pull request is named as such and never counted as Met. A test is cited only where it exists; where the threat model records a control seen red, its
   `SEC-*` id is cited. Nothing was penetration-tested and no scanner was run for this document.
 - **Paths.** `-server/src/x.rs` means `server/casual-sign-server/src/x.rs`; likewise `-worker`, `-store`, `-keyd`,
   `-console`, `-modeld`, `-secrets`, `-host` under `server/`. Engine crates are under `crates/`.
@@ -33,14 +35,19 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
-The largest gaps: a second factor for tenant staff beyond TOTP for administrators by default (`ASVS-01` built TOTP and `ASVS-31` made it the default for administrators; WebAuthn and replacing a lost factor remain), log shipping shown only as configuration
-(`ASVS-08A`; the security event log itself is built, `ASVS-08`), and anomaly alerting that counts per server instance and not yet envelope sends (`ASVS-13`). The evidence core is
+The largest gaps: staff authentication beyond TOTP (no WebAuthn, `CON-13`; no way to replace a lost factor, `ASVS-32`;
+TOTP is the default only for administrators since `ASVS-31`), staff session management (no idle timeout or session
+list, `ASVS-06`; no step-up before sensitive changes, `ASVS-07`), personal-data controls (self-service export and
+erasure, retention purge: `ASVS-16`, `ASVS-18`), unsigned release images (`ASVS-15`), and log shipping shown only as
+configuration (`ASVS-08A`). Built and green on CI on `main` since the first assessment: the security event log
+(`ASVS-08`), anomaly alerting (`ASVS-13`; envelope sends are not yet counted, `ASVS-13A`), the backup and restore drill
+(`ASVS-14`, job `backup-drill`) and the administrators' TOTP default (`ASVS-31`). The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
 
 ## Findings
 
-Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-09`, `ASVS-11`, `ASVS-12`, `ASVS-24`, `ASVS-26`, `ASVS-30` and `ASVS-34` are closed.
+Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-08`, `ASVS-09`, `ASVS-11`, `ASVS-12`, `ASVS-13`, `ASVS-14`, `ASVS-24`, `ASVS-26`, `ASVS-30`, `ASVS-31` and `ASVS-34` are closed.
 
 | Row | Sev | Requirements | What is missing |
 | --- | --- | --- | --- |
@@ -51,7 +58,7 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-05 (Done) | P1 | ASVS 3.2.3, 3.4.4 | Closed 2026-11-13: the staff cookie is `__Host-os_session` whenever `Secure`; the ceremony cookie keeps `Path=/s/`. Was: Name the staff session cookie `__Host-os_session` whenever cookies are `Secure` (and the ceremony cookie with a `__Host-` or narrowest-path equivalent) |
 | ASVS-06 | P1 | ASVS 3.3.2, 3.3.4; relates to `UXW-13` | Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password |
 | ASVS-07 | P1 | ASVS 3.7.1, 4.3.3 | Step-up re-authentication (password or second factor within the last 5 minutes) before creating API clients or keys, granting administrator profiles, changing webhook URLs and changing the user's email |
-| ASVS-08 | P1 | ASVS 1.7.1, 1.7.2, 2.8.5, 7.1.3, 7.1.4, 7.2.1, 7.2.2, 8.3.5, 9.2.5; `SEC-D01` stays (no personal data) | Security event log: staff sign-in success and failure, logout, reset, lockout, operator TOTP rejection, rate-limit hits and every 401/403 with request id and a hashed principal; one JSON log format across server, worker, keyd and modeld; staff document downloads recorded; worker logs keyd and TSA connection failures with their code; docs/65 explains shipping logs to a remote collector |
+| ASVS-08 (Done) | P1 | ASVS 1.7.1, 1.7.2, 2.8.5, 7.1.3, 7.1.4, 7.2.1, 7.2.2, 8.3.5, 9.2.5; `SEC-D01` stays (no personal data) | Security event log: staff sign-in success and failure, logout, reset, lockout, operator TOTP rejection, rate-limit hits and every 401/403 with request id and a hashed principal; one JSON log format across server, worker, keyd and modeld; staff document downloads recorded; worker logs keyd and TSA connection failures with their code; docs/65 explains shipping logs to a remote collector |
 | ASVS-08A | P2 | ASVS 1.7.2 | Show the log-forwarding Compose override delivering to a live syslog-over-TLS collector on a Linux Docker host (found by `ASVS-08`) |
 | ASVS-08B | P2 | ASVS 7.2.2 | Ceremony refusals carry their code and recipient in `access.denied`; another account's object (answered 404) is logged as a refusal (found by `ASVS-08`) |
 | ASVS-08C | P2 | ASVS 8.3.5 | A change to an envelope or a field (create, `PATCH`, send, void, correct, resend, adding or changing fields) answers with every field's value; log it as a read of that data too, or answer without the values (found by `ASVS-08` review) |
@@ -59,8 +66,8 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-10 | P2 | ASVS 12.3.4, 14.4.2 | `Content-Disposition` on API responses (`attachment` for JSON; `attachment` or `inline` with a server-made filename for documents and certificates) |
 | ASVS-11 (Done) | P1 | ASVS 12.4.2 | Closed 2026-11-14: every upload is scanned by ClamAV's clamd in its own container before it is read or stored; malware is refused and recorded in the admin log; fail closed with an operator switch; a clean document's admission report, bound by the chain, says so. Was: Malware scanning seam for uploads: an optional scanner (ICAP or ClamAV in its own container) called before admission, its verdict recorded in the audit chain |
 | ASVS-12 (Done) | P2 | ASVS 6.2.8 | Closed 2026-11-13: comparisons call `aws_lc_rs::constant_time`. Was: Replace the hand-rolled hash comparison `same` in `-server/src/crypto.rs` (and any copy in the console) with a vetted constant-time primitive (`subtle` or `aws-lc-rs`), per CLAUDE.md: cryptography is never hand-rolled |
-| ASVS-13 | P1 | ASVS 8.1.4, 11.1.7, 11.1.8; `VS-20` | Detect and alert on abnormal activity: request and 429 rates per principal and address, authentication failure bursts, mass downloads, bulk voids; thresholds configurable; alerts to the operator's channel |
-| ASVS-14 | P1 | ASVS 8.1.5, 8.1.6; `SEC-D02` | Backups encrypted with separate keys, with a documented and tested restore drill that verifies the audit chain, admin logs and keyd's operation log after restore |
+| ASVS-13 (Done) | P1 | ASVS 8.1.4, 11.1.7, 11.1.8; `VS-20` | Closed 2026-11-14; envelope and bulk sends left as `ASVS-13A`. Was: Detect and alert on abnormal activity: request and 429 rates per principal and address, authentication failure bursts, mass downloads, bulk voids; thresholds configurable; alerts to the operator's channel |
+| ASVS-14 (Done) | P1 | ASVS 8.1.5, 8.1.6; `SEC-D02` | Closed 2026-11-14 on CI's `backup-drill`. Was: Backups encrypted with separate keys, with a documented and tested restore drill that verifies the audit chain, admin logs and keyd's operation log after restore |
 | ASVS-15 | P1 | ASVS 1.14.2, 10.3.2, 14.1.1, 14.2.5; `SEC-C02` | Sign release images with cosign and document verification at deploy; an SBOM for the source tree and vendored web files beside the image SBOMs |
 | ASVS-16 | P1 | ASVS 8.3.2, 8.3.3; `VS-15` | Self-service export and erasure requests for staff users and signers (evidence kept as retention requires, personal data otherwise removed), and an operator privacy-notice template |
 | ASVS-17 | P2 | ASVS 1.8.2, 6.1.1, 6.1.2, 8.3.7 | Decide by ADR between application-level encryption of personal data at rest and operator storage encryption, and record what the operator must enable |
@@ -363,7 +370,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 4.1.1 | 1 | All | Access control on a trusted service layer | Met | Server guard per route; hiding a button is never a control (CLAUDE.md); `-server/tests/auth.rs` `every_guarded_route_refuses_a_request_without_credentials` | — |
 | 4.1.2 | 1 | All | Access-control attributes not user-manipulable | Met | Account from the credential only (`SEC-O05`); scopes from the stored profile (`profile_scopes`) | — |
-| 4.1.3 | 1 | All | Least privilege | Met | Profiles Admin/Sender/Viewer; API keys narrow, never widen (`auth.rs`); console role has no grant on `public` (`SEC-X01`) | — |
+| 4.1.3 | 1 | All | Least privilege | Met | Profiles Admin/Sender/Viewer; API keys narrow, never widen (`auth.rs`); console role has no grant on `public` (`SEC-X01`); keyd signs only with a short-lived seal token the database mints for an envelope that still owes a seal, so an allow-listed caller cannot sign for any other envelope (`KEYD-02`, ADR-036, migration 0040; `-keyd/tests/seal_token.rs` `keyd_signs_only_for_an_envelope_with_its_seal_token`, seen red; on `main` since PR #16, passed in run 44018844840) | — |
 | 4.1.4 | 3 | — | Deleted in 4.0.3 (duplicate of 4.1.3) | Deleted | — | — |
 | 4.1.5 | 1 | All | Access control fails securely | Met | Deny by default; a poisoned rate-limit lock fails closed (`state.rs`); store errors map to refusals (`error.rs`) | — |
 
@@ -501,7 +508,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 7.3.1 | 2 | All | Log injection prevented | Met | `tracing` structured fields; values are server-made (request id is a server UUID, route is a template) | — |
 | 7.3.2 | 3 | — | Deleted in 4.0.3 (duplicate of 7.3.1) | Deleted | — | — |
-| 7.3.3 | 2 | All | Security logs protected from modification | Met | Audit, admin and operator logs append-only with triggers and grants, hash-chained (`-store/tests/admin_events.rs`, `SEC-O13`, `SEC-X04`); keyd op log refuses an edited file (`-keyd/tests/mtls.rs` `an_edited_operation_log_is_refused`) | — |
+| 7.3.3 | 2 | All | Security logs protected from modification | Met | Audit, admin and operator logs append-only with triggers and grants, hash-chained (`-store/tests/admin_events.rs`, `SEC-O13`, `SEC-X04`); keyd op log refuses an edited file (`-keyd/tests/mtls.rs` `an_edited_operation_log_is_refused`). Public anchoring of chain heads (`FG-158`, ADR-037) is on pull request #18, not yet on `main`, and is not counted here | — |
 | 7.3.4 | 2 | All | Time sources synchronized; UTC | Met | Timestamps in UTC (`time::OffsetDateTime`, `tracing` default); trusted time for evidence from RFC 3161 TSAs (`SEC-S06`); host NTP is the operator's | — |
 
 **V7.4 Error Handling**
@@ -522,8 +529,8 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 8.1.2 | 2 | All | Server-side cached/temporary copies protected | Met | No disk caches of documents; blobs in the store under the tenancy model; modeld derived data keyed by account (`SEC-I06`) | — |
 | 8.1.3 | 2 | All | Minimal request parameters | Met | Ids in paths, typed bodies; no hidden fields carrying authorization | — |
 | 8.1.4 | 2 | All | Detect and alert on abnormal request numbers | Met | Rate limits answer 429 (`-server/tests/auth.rs` `rate_limits_answer_429_with_retry_after`); the server counts requests and `429`s per principal and per address over a sliding window and raises one `alert.abnormal_activity` event and one operator alert per burst (`-server/src/anomaly.rs`; `-server/tests/anomaly.rs`, seen red; docs/65 §Abnormal activity, with collector rules for several instances; `SEC-D07`) | — |
-| 8.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): regular backups and test restores | Met | Built (`ASVS-14`): `tools/backup/openseal_backup.py` takes scheduled backups (database snapshot, blobs, keyd's log) and restores only into a fresh install, then `casual-sign-server verify-evidence` rebuilds every chain (the operator log too) and reads back every blob the evidence names: documents, certificates of completion, signature captures and their images, logos and attachments; the backup itself refuses an export lacking any of them (`-store/tests/evidence.rs`, `-server/tests/backup_commands.rs`, `tools/backup/test_openseal_backup.py`; docs/65 §Backups and restore). The restore drill (`tools/backup/drill.sh`, CI job `backup-drill`) is written but has not yet been run to completion, so the test restore is not yet evidenced Test restore run end to end on CI (`backup-drill`, run 43519062719, 2026-11-14; restore 8.6 s). | ASVS-14 |
-| 8.1.6 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backups stored securely | Met | Built (`ASVS-14`): CMS AuthEnvelopedData (AES-256-GCM, RSA-OAEP-SHA-256) for an offline recipient key, manifest signed with Ed25519 by a key only the backup host holds (verifiers hold its public half, so they cannot forge a backup a restore would run), roles script limited to role statements with no psql meta-command, no private key or secret in a backup; every check runs on the bytes then used (manifest, signature and payload read from the store once, into a private directory; only that copy decrypted); a flipped payload byte, an edited or re-signed manifest, a payload or manifest swapped in the store between check and use, another key, a roles script with `\!` or a `$` in a role name, and a hostile tar entry are refused (`tools/backup/test_openseal_backup.py`). Partly until the drill has run Test restore run end to end on CI (`backup-drill`, run 43519062719, 2026-11-14; restore 8.6 s). | ASVS-14 |
+| 8.1.5 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): regular backups and test restores | Met | Built (`ASVS-14`): `tools/backup/openseal_backup.py` takes scheduled backups (database snapshot, blobs, keyd's log) and restores only into a fresh install, then `casual-sign-server verify-evidence` rebuilds every chain (the operator log too) and reads back every blob the evidence names: documents, certificates of completion, signature captures and their images, logos and attachments; the backup itself refuses an export lacking any of them (`-store/tests/evidence.rs`, `-server/tests/backup_commands.rs`, `tools/backup/test_openseal_backup.py`; docs/65 §Backups and restore). The restore drill (`tools/backup/drill.sh`, CI job `backup-drill`) restores into a fresh stack and verifies the audit chains, admin log and keyd's operation log: green on `main` in runs 43519062719 (2026-11-14; restore 8.6 s) and 44001061169 (2026-11-17). | ASVS-14 |
+| 8.1.6 | 3 | Ceremony, sealing, keyd | L3 (sealing, keyd): backups stored securely | Met | Built (`ASVS-14`): CMS AuthEnvelopedData (AES-256-GCM, RSA-OAEP-SHA-256) for an offline recipient key, manifest signed with Ed25519 by a key only the backup host holds (verifiers hold its public half, so they cannot forge a backup a restore would run), roles script limited to role statements with no psql meta-command, no private key or secret in a backup; every check runs on the bytes then used (manifest, signature and payload read from the store once, into a private directory; only that copy decrypted); a flipped payload byte, an edited or re-signed manifest, a payload or manifest swapped in the store between check and use, another key, a roles script with `\!` or a `$` in a role name, and a hostile tar entry are refused (`tools/backup/test_openseal_backup.py`). The test restore runs end to end on CI (`backup-drill`, runs 43519062719 and 44001061169). | ASVS-14 |
 
 **V8.2 Client-side Data Protection**
 
@@ -605,7 +612,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 11.1.4 | 1 | All | Anti-automation for excessive calls | Met | Per-principal API, per-link and per-address ceremony limits (`-server/tests/threats.rs` `ceremony_calls_are_limited_per_link_and_per_client_address`) | — |
 | 11.1.5 | 1 | All | Limits against business risks | Met | Access-code lockout (`-server/tests/threats.rs` `an_access_code_locks_after_the_accounts_attempts...`); voided envelopes open nothing | — |
 | 11.1.6 | 2 | All | No TOCTOU or race conditions | Met | Quotas by conditional update (`SEC-U01`); chain head locked; workflow commands transactional; the seal's record fenced by the job lease (`SEC-S12`, `HRD-01`) | — |
-| 11.1.7 | 2 | All | Monitor unusual business events | Partly | Mass document reads and runs of voids per principal and address are counted and alerted (`-server/src/anomaly.rs`, docs/65 §Abnormal activity); envelope sends and bulk sends are not counted, and the console has no detector | ASVS-13 |
+| 11.1.7 | 2 | All | Monitor unusual business events | Partly | Mass document reads and runs of voids per principal and address are counted and alerted (`-server/src/anomaly.rs`, docs/65 §Abnormal activity); envelope sends and bulk sends are not counted, and the console has no detector | ASVS-13A, ASVS-13B |
 | 11.1.8 | 2 | All | Configurable alerting on automated attacks | Met | Authentication-failure, `403`, `429` and request bursts alert per principal and address, thresholds, window, cooldown and alert rate set by `OPENSEAL_ALERT_*` (docs/65 §Abnormal activity); one alert per burst, bounded memory (`-server/tests/anomaly.rs`, `anomaly.rs` unit tests, seen red; `SEC-D07`) | — |
 
 ### V12 Files and Resources

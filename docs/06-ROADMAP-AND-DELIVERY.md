@@ -54,7 +54,15 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of `67ca967` (2026-11-13). Phases D, 0, 1 and 2 are closed; **v0.0.1**, the first pre-release,
+Docs are true as of 2026-11-17 (`main` at `900d0b6`, pull request #18 open). Since 2026-11-13 feature expansion is
+paused for the hardening release and M3 (instructions 48, 51, 54; §Freeze, §Hardening release); the M3 evidence per
+gate item is in [73](73-M3-SLICE-EVIDENCE.md). Proven by CI on `main` (runs 44001061169 and 44018844840): `HRD-01`, `HRD-02`, `HRD-10`,
+`ASVS-08`, `ASVS-13`, `ASVS-14`, `ASVS-31`, keyd seal tokens (`KEYD-02`), slice 5 on the real stack with its demo
+(`RAUTH-02`) and slice 2's routing spec there (demo `RTE-04` to be watched and linked). Also proven on `main`: Acrobat Reader reading
+B-LTA seals valid offline (`HRD-14`, `HRD-03`; acrobat run 44024248440) and slice 7 with public anchoring (`VS-07`,
+`FG-158`; CI run 44023485128).
+
+Before 2026-11-13: phases D, 0, 1 and 2 are closed; **v0.0.1**, the first pre-release,
 is published (`REL-01`). Engine, server, API, worker, keyd, Compose deployment and web app exist. Merged since v0.0.1,
 most rows waiting only for their Compose run in CI: the redesigned web app (`UX-02` to `UX-08`, `WEB-17`), Inbox,
 folders and server filters (`UXW-01` to `UXW-03`), bulk send (`UXW-04`), template sharing (`UXW-06`), groups and
@@ -71,12 +79,12 @@ authorities (`CON-03` to `CON-07`, `CON-16`, `CON-17`, `PLAN-02` to `PLAN-04`), 
 | 2 Envelope engine and server | **Closed** 2026-11-12 | Owner, instruction 23; `compose-e2e`, `P2-CRASH`, `P2-THREATS` |
 | Milestones | M0, M1, M2 **reached** | Owner, instruction 38 (`MS-0`–`MS-2` in [14](14-EXECUTION-TRACKER.md)); M3 needs slices 1, 2, 5 and 7 closed |
 | Release 1 / v0.0.1 | **Published** 2026-11-12 | Tagged at `4780d84` after GitHub CI run 43123420112 was green on all 14 jobs; images with SBOM and provenance; pre-release on GitHub. Left in `REL-01`: GHCR packages public, the manual walkthrough in [65](65-RUNNING-IT.md); the boxes below are ticked by `REL-01` from evidence |
-| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point; slice 1 (`VS-01`) is in progress, its boxes below. Slice 5 (`VS-05`): access code, email, SMS and voice codes, sign-in through an OpenID Connect provider (`RAUTH-01`, ADR-033 Proposed), versioned ERSD and withdrawal built, tested and in a mock-mode browser run on desktop and phone; the Compose run and the demo (`RAUTH-02`) and ADR-033's acceptance left. [96](96-FEATURE-FIT-GAP.md) counts 48 of 168 rows working and 25 in part |
+| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point; slice 1 (`VS-01`) is in progress, its boxes below. Slice 5 (`VS-05`): access code, email, SMS and voice codes, sign-in through an OpenID Connect provider (`RAUTH-01`, ADR-033 Accepted 2026-11-17), versioned ERSD and withdrawal built, tested and in a mock-mode browser run on desktop and phone; the Compose run with SMS and OIDC stubs and the demo (`RAUTH-02`) passed on `main` run 44018844840. [96](96-FEATURE-FIT-GAP.md) counts 50 of 168 rows working, 27 in part and 15 with their engine built |
 | Slice 2 routing (`VS-02`) | In progress 2026-11-13 | Outcome met by tests: sequential (`E2E-01`); parallel and mixed with a copy, an agent, an approver and a viewer acting through the ceremony (`casual-sign-server` tests/routing.rs); the agent, offered by the editor, names later recipients by `POST /s/{token}/recipients`; decline (worker tests/flow.rs); void; reminders (worker tests/crash.rs); expiry and its warning through the worker (worker tests/expiry.rs). The signing page's approver, viewer and agent steps and the in-person host are in a browser run (`webapp/e2e/recipient-types.spec.mjs`, `RTE-01`), and the receipt says what each type did (`RTE-02`). End point not met: CI green on main after the merge, including the in-person Compose spec (`UXW-18`); the demo (`RTE-04`); owner closure |
 | UI pass (`UX-01`) | **Done** 2026-11-13 | All seven packages `UX-02` to `UX-08` merged: design system and a distinct destructive colour, send editor (click-to-place, every field kind, recipient types), signing page, Home/Agreements/envelope, Templates/Reports/Admin rail, app shell with notifications and profile. Signer view names the sender and serves the disclosure (`UXW-34`). Follow-ups and missing workflows are `UXW-*` and `UX-09` onward |
 | In progress: organizations, console, plans | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | Done: organizations (`ORG-02`), organization routes (`ORG-03`), switching (`ORG-04`), admin audit logs (`ORG-05`); console operators with TOTP (`CON-03`), the Keys page (`CON-06`), timestamp authorities with two-person changes (`CON-07`), operator actions copied to organization logs (`CON-16`); plans, metering and quota enforcement (`PLAN-02` to `PLAN-04`). In progress: organization admin screens (`ORG-06`), the console as a Compose service (`CON-02`), approvals and suspend or resume (`CON-04`), health (`CON-05`), the console UI (`CON-17`). Done since: workspace actions (`ORG-07`), organization policy with locked and tighten-only keys (`ORG-08`), envelope transfer within a workspace (`ORG-09`). Next: `CON-08`, `PLAN-05` onward; for v0.0.2 (instruction 29) |
 | In progress: ML | ADR-029 Accepted ([33](33-ML-MODELS.md)) | Merged: `casual-sign-modeld` with bundle tooling (`ML-09`), OCR (`ML-02`), page hashes and embeddings for template matching (`ML-05`), GLiNER spans for extraction and personal data with fp16 parity (`ML-07`, `ML-08`), `casual-sign-pii` recognisers, value normalisation, the worker's analysis jobs and the server's analysis routes (`WEB-19`). Left: the worker on modeld's network in Compose (`compose --profile ml up`, `ML-09`) and the editor's suggestions on the real stack (`WEB-18`). Every feature off by default; nothing a model says enters the evidence |
-| Security | `SEC-ID-01`, `SEC-CER-01`, `ASVS-02`, `ASVS-04` **Done**; `ASVS-01`, `SEC-ASVS-01` in progress | Shared-account changes refused across workspaces (migration 0013); signer content and every ceremony write require the recipient's authentication first; staff TOTP with recovery codes (`ASVS-01`, WebAuthn and lost-factor recovery left); breached passwords refused; the ASVS 4.0.3 self-assessment ([67](67-ASVS-SELF-ASSESSMENT.md)) with 38 findings, 8 closed. Not a certification |
+| Security | `SEC-ID-01`, `SEC-CER-01`, `ASVS-02`, `ASVS-04`, `ASVS-08`, `ASVS-11`, `ASVS-13`, `ASVS-14`, `ASVS-31` **Done**; `ASVS-01`, `SEC-ASVS-01` in progress | Shared-account changes refused across workspaces (migration 0013); signer content and every ceremony write require the recipient's authentication first; staff TOTP with recovery codes, required of administrators by default (`ASVS-01`, `ASVS-31`; WebAuthn and lost-factor recovery left); breached passwords refused; security event log, anomaly alerting, malware scanning, and a backup restore drill green on CI; the ASVS 4.0.3 self-assessment ([67](67-ASVS-SELF-ASSESSMENT.md), 2026-11-17: 210 Met, 32 Partly, 12 Not met) with 43 finding rows in docs/14, 14 closed. Not a certification |
 
 ### Waivers
 
@@ -105,7 +113,8 @@ running:
 - [x] `HRD-02` Sealing validated against a real-style CA hierarchy (offline root, issuing CA, OCSP and CRL served) and a
       production RFC 3161 TSA; pyHanko and EU DSS agree; an Acrobat interoperability packet is produced.
 - [x] `HRD-03` Acrobat Reader opens the packet's PDFs as valid, signed and unchanged (owner or a named tester; results
-      recorded with screenshots).
+      recorded with screenshots). 2026-11-17: every packet file as the checklist expects in the `acrobat` workflow on
+      the sprint branch (run 44011154004); ticked when the same workflow is green on `main`.
 - [ ] `HRD-04` Load and chaos test with published numbers (envelopes per minute, p95 seal time, recovery time).
 - [ ] `HRD-05` External penetration test commissioned and its findings closed or tracked (owner: vendor and budget).
 - [ ] `HRD-06` Production deployment hardening: non-root, read-only file systems, resource limits, TLS everywhere,
