@@ -49,6 +49,7 @@ by `tools/licence-inventory.py`, `LEG-01`).
 | [69-LEGAL-REVIEW-BRIEF](69-LEGAL-REVIEW-BRIEF.md) | Legal review brief for counsel: what OpenSeal claims and does not, the evidence model, questions on ESIGN/UETA, eIDAS, retention, data protection and licence, deliverables expected (`DOC-011`) | Ready to send; counsel is the owner's |
 | [70-PUBLIC-DEMO-PLAN](70-PUBLIC-DEMO-PLAN.md) | Public demo deployment plan: static mock-mode demo and in-browser verifier versus a hosted live stack; data handling, abuse limits, demo keys, monitoring, cost drivers (`DOC-012`) | Ready for the owner's decision; recommends the static path (`SITE-03`, `SITE-04`) |
 | [71-DESIGN-PARTNER-PITCH](71-DESIGN-PARTNER-PITCH.md) | Design-partner pitch: one page to recruit about five companies to embed OpenSeal; what they get, what we ask, what is not ready (`DOC-013`) | Ready to send |
+| [73-M3-SLICE-EVIDENCE](73-M3-SLICE-EVIDENCE.md) | M3 slice evidence: every exit-gate item of slices 1, 2, 5 and 7 with its status and CI evidence, for the owner to close | Live: proposal, owner decisions open |
 | [72-SUSTAINABILITY-OPTIONS](72-SUSTAINABILITY-OPTIONS.md) | Sustainability options: hosted cloud, paid support and SLA, managed key service, a staged combination; needs, cost drivers, risks, fit with Apache-2.0 (`DOC-014`) | Ready for the owner's decision |
 | [96-FEATURE-FIT-GAP](96-FEATURE-FIT-GAP.md) | **Every DocuSign and SignNow feature** (168 rows) with disposition, slice and status — the parity measure | Live |
 
