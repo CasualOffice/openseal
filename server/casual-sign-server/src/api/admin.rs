@@ -93,6 +93,10 @@ fn organization_policy_json(org: &Value, settings: &Value) -> Value {
     json!({ "settings": settings_view })
 }
 
+/// The account setting naming the seal profile of an envelope created without one
+/// (VS-07): read by `POST /envelopes` and bulk sends (`envelopes::create_in`).
+pub(crate) const DEFAULT_SEAL_PROFILE: &str = "default_seal_profile";
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AccountPatch {
@@ -145,6 +149,14 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
                 }
                 _ => return Err(ApiError::invalid("/settings/mfa_policy")),
             }
+        }
+        // The seal level new envelopes take when they name none (VS-07, FG-154):
+        // `pades-b-t`, `pades-b-lt` or `pades-b-lta`.
+        if k == DEFAULT_SEAL_PROFILE
+            && !v.is_null()
+            && serde_json::from_value::<casual_sign_model::SealProfile>(v.clone()).is_err()
+        {
+            return Err(ApiError::invalid("/settings/default_seal_profile"));
         }
         if v.is_null() {
             settings.remove(&k);

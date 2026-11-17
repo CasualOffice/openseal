@@ -229,7 +229,9 @@ test("admin: a member of another account too keeps their name; their profile sti
 });
 
 test.describe("verify", () => {
-  test.skip(!WASM || REAL, "the WASM verifier is built locally by tools/build-webapp-wasm.sh; the server image does not ship it yet");
+  // Mock mode needs the verifier built into webapp/ (tools/build-webapp-wasm.sh; CI's e2e job
+  // builds it); a real server serves its own (deploy/Dockerfile's wasm stage, VS-07).
+  test.skip(!WASM && !REAL, "the WASM verifier is built locally by tools/build-webapp-wasm.sh");
 
   test("a sealed PDF verifies against its trust root, and is only indeterminate without it", async ({ page }, testInfo) => {
     await page.goto("/verify.html");

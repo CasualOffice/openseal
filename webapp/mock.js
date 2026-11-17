@@ -268,6 +268,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   }
 
   // ---- Model helpers -----------------------------------------------------------
+  /// The seal profiles an envelope or the account's default may name (docs/22 §3).
+  const SEAL_PROFILES = ["pades-b-t", "pades-b-lt", "pades-b-lta"];
   function newEnvelope({ subject = "", message = "", signing_options = {}, created_at } = {}) {
     const env = {
       id: uid(), status: "draft", version: 1, sender_user_id: "user-demo", subject, message,
@@ -972,6 +974,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
     if (b.reminders) env.reminders = b.reminders;
     if (Number.isInteger(b.expires_in_days)) env.expires_at = iso(b.expires_in_days * 24 * 60);
+    // As the server (VS-07): the envelope's own seal profile, else the account's default.
+    const profile = b.seal_profile || account().settings?.default_seal_profile;
+    if (SEAL_PROFILES.includes(profile)) env.seal_profile = profile;
     const docIds = (b.documents || []).map((d) => addDocument(env, d.name, unb64(d.content_base64 || "")).id);
     const refs = {};
     for (const r of b.recipients || []) { const rec = addRecipient(env, r); if (r.ref) refs[r.ref] = rec.id; }
@@ -1531,6 +1536,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if ("builtin_profiles" in body.settings) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/builtin_profiles", code: "CS-API-0001" }]);
         // As the server: `workflow_policy` is taken only as a whole `Policy` (RTE-03).
         if ("workflow_policy" in body.settings && body.settings.workflow_policy !== null && !policyOk(body.settings.workflow_policy)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/workflow_policy", code: "CS-API-0001" }]);
+        // As the server (VS-07): the default seal profile is one of the three PAdES levels.
+        if ("default_seal_profile" in body.settings && body.settings.default_seal_profile !== null && !SEAL_PROFILES.includes(body.settings.default_seal_profile)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/default_seal_profile", code: "CS-API-0001" }]);
         const before = db.account.settings;
         const next = { ...before };
         for (const [k, v] of Object.entries(body.settings)) { if (v === null) delete next[k]; else next[k] = v; }

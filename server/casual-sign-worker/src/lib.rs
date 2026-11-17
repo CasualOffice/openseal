@@ -24,6 +24,7 @@
 //! **Privacy.** Logs carry ids, kinds and codes only: never an address, a name, a
 //! subject, a URL, a token or document content (`SEC-D01`).
 
+pub mod anchor;
 pub mod apply;
 pub use casual_sign_host::capture;
 pub mod email;

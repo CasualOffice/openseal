@@ -76,7 +76,7 @@ seal profiles are not built yet.
 | `expires_at` | timestamptz? | |
 | `reminder_policy` | json | First after N days, then every M days |
 | `signing_options` | json | Allow reassign, allow decline, allow finish-later, `capture_location` (GEO-01: record each recipient's location on every action; off by default, absent from the JSON when off; per envelope, see below), signer attachments, in-person, language |
-| `seal_profile` | enum | `pades-b-t` default, `pades-b-lt`, `pades-b-lta` |
+| `seal_profile` | enum | `pades-b-t` default, `pades-b-lt`, `pades-b-lta`; when the create names none, the account's `settings.default_seal_profile` (`VS-07`) |
 | `completion_delivery` | json | Attach documents to completion email, combine with certificate |
 | `brand_id` | uuid? | |
 | `template_ids` | uuid[] | Provenance when created from templates |
@@ -247,6 +247,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | Field and its value | `fields`, `field_values` | `TenantTx::fields` |
 | RoutingRule, CustomField, Comment | `routing_rules`, `envelope_custom_fields`, `comments` | schema only |
 | AuditEvent, purge tombstone | `audit_events`, `envelope_tombstones` | `TenantTx::audit` (append, read, verify) |
+| Anchor of chain heads, its leaves (`FG-158`) | `chain_anchors`, `chain_anchor_leaves` | `TenantTx::anchors` (the day's heads, insert, by period, an envelope's leaves); queued through `EntryPoints::enqueue_anchor_jobs` |
 | BulkSend, BulkSendRow | `bulk_sends`, `bulk_send_rows` | `TenantTx::bulk_sends` (`UXW-04`): a batch with its rows (`input` holds the row's recipients and problems, personal data); a row is claimed `FOR UPDATE SKIP LOCKED`, marked sent with its envelope (which then names the batch in `envelopes.bulk_send_id`) or failed with a code; `settle` completes a batch once no row is pending; cancel leaves pending rows unsent. No migration was needed |
 | SigningLink | `signing_links` | resolution only |
 | WebhookSubscription, WebhookDelivery | `webhook_subscriptions`, `webhook_deliveries` | `TenantTx::webhooks` |
@@ -270,7 +271,9 @@ unexpired invitation id (`openseal_accept_user_invitation`, 0013); the two 0013 
 sessions in every account, through `openseal_revoke_user_sessions`, which the application role cannot call. One more,
 `openseal_user_in_other_account` (0013), answers only whether a member of the current account also belongs to another
 account, and is false for anyone who is not a member of the current account. The migrator owns every table; `openseal_app` owns nothing, has no
-`BYPASSRLS`, no `TRUNCATE` anywhere, and only `SELECT`, `INSERT` on `audit_events` and `envelope_tombstones`.
+`BYPASSRLS`, no `TRUNCATE` anywhere, and only `SELECT`, `INSERT` on `audit_events`, `envelope_tombstones`,
+`chain_anchors` and `chain_anchor_leaves`. One more definer function, `openseal_enqueue_anchor_jobs` (0041), takes a
+day and supplied times, queues one anchor job per account with an event that day, and returns only a count.
 
 **Audit as built.** An event is stored as its RFC 8785 canonical bytes, exactly what its hash covers; an insert
 trigger recomputes `sha256(canonical)`, refuses a `seq` that is not the next or a `prev` that is not the head
@@ -530,6 +533,13 @@ the rules above, and what does not:
   current account that is `completing`, or declined, voided or expired with no `certificate_sha256`, and no row
   otherwise; `mac` is NULL while no key is installed. Needs the `pgcrypto` extension (created by the migration). No
   tenant table is added.
+- **Anchors of chain heads (built, `FG-158`, migration 0041, docs/32 §5):** tenant tables `chain_anchors` (account,
+  id, `period` date, `tree_size` 1 to 1,000,000, `root`, `timestamp_token` up to 64 KiB, `tsa_time`, `created_at`;
+  unique per account and period) and `chain_anchor_leaves` (account, anchor, `leaf_index`, envelope, `seq` and `head`
+  of the head event, `path` as concatenated 32-byte hashes, at most 64; a head anchored once per envelope; composite
+  references to the anchor and the envelope), both insert-only with the audit chain's UPDATE, DELETE and TRUNCATE
+  triggers; index `audit_events (account_id, at)` for the day's events; definer `openseal_enqueue_anchor_jobs(day,
+  start, end, now)` (a period over a day is `CS-DB-0008`).
 - **Seal reconciliation (built, `CON-09`, migration 0038):** tenant table `seal_signatures` (account, envelope,
   digest 32/48/64 bytes, keyd alias, time; key account, envelope, digest; insert-only from the worker, in the
   transaction that stores the sealed bytes); `platform.seal_digests(from, to)` and `platform.seal_digests_of(ids)`,

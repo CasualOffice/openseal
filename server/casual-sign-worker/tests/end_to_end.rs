@@ -210,12 +210,18 @@ fn ours(env: &Env, bytes: &[u8]) {
 
 /// Write `files` with a manifest and the seal root, then run pyHanko over them.
 fn pyhanko(dir: &Path, files: &[(&str, &[u8])]) {
+    pyhanko_at(dir, files, "B-T");
+}
+
+/// As [`pyhanko`], each file held to `level` (`B-LT`: valid from the DSS alone, with
+/// revocation checking hard-fail and no fetching; `tools/verify-sealed.py`).
+fn pyhanko_at(dir: &Path, files: &[(&str, &[u8])], level: &str) {
     let _ = std::fs::remove_dir_all(dir);
     std::fs::create_dir_all(dir).unwrap();
     let mut manifest = String::from("file\texpect\twhy\tlevel\n");
     for (name, bytes) in files {
         std::fs::write(dir.join(name), bytes).unwrap();
-        manifest.push_str(&format!("{name}\tintact\tT-2C/T-2D end to end\tB-T\n"));
+        manifest.push_str(&format!("{name}\tintact\tT-2C/T-2D end to end\t{level}\n"));
     }
     std::fs::write(dir.join("manifest.tsv"), manifest).unwrap();
     std::fs::write(dir.join("trust-root.pem"), pki::root_pem()).unwrap();
@@ -653,4 +659,184 @@ async fn one_signer_gets_the_sealed_pdf_and_the_certificate_from_the_completion_
         .filter(|i| i["type"] == "certificate.downloaded")
         .count();
     assert_eq!(by_ada, 2, "the sender's download and the signer's");
+}
+
+/// VS-07, FG-154: B-LT as an account's default. The administrator sets
+/// `default_seal_profile` to `pades-b-lt` (`PATCH /accounts/me`; an unknown profile is
+/// refused); an envelope created without a profile takes it, one that names a profile
+/// keeps its own; the worker seals at B-LT, fetching OCSP and CRLs (the test PKI's
+/// responder), and the sealed PDF and the certificate verify at B-LT with our verifier
+/// from what they carry (no CRLs supplied) and with pyHanko from the DSS alone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_account_defaulting_to_b_lt_gets_long_term_seals_verified_by_pyhanko() {
+    let Some(env) = Env::new("end_to_end_b_lt_default").await else {
+        return;
+    };
+    *env.revocation.lock().unwrap() = Some(Arc::new(|| {
+        Box::new(pki::TestRevocation {
+            no_issuers: true,
+            ..pki::TestRevocation::default()
+        })
+    }));
+    let st = AppState::new(
+        env.db.store.clone(),
+        Blobs::Fs(Arc::new(env.blob_store())),
+        JwtKeys::generate().unwrap(),
+        Arc::new(Shared(Arc::clone(&env.clock))),
+        Config {
+            public_url: "https://sign.example.test".into(),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    st.set_mfa_key(common::mfa_key());
+    let app = casual_sign_server::app(st);
+    let org = env.db.organization("Long Term").await;
+    casual_sign_server::bootstrap_workspace(
+        &env.db.store,
+        org,
+        "Long Term",
+        "admin@blt.example.test",
+        "Admin",
+        PASSWORD,
+    )
+    .await
+    .unwrap();
+    let mut staff = Http {
+        app: app.clone(),
+        cookie: None,
+        csrf: None,
+    };
+    let login = staff
+        .call(
+            "POST",
+            "/api/v1/auth/login",
+            Some(json!({"email": "admin@blt.example.test", "password": PASSWORD})),
+            &[],
+        )
+        .await;
+    assert_eq!(login.status, StatusCode::OK, "{:?}", login.json());
+    let set = login.headers["set-cookie"].to_str().unwrap();
+    staff.cookie = Some(set.split(';').next().unwrap().to_owned());
+    staff.csrf = Some(login.json()["csrf_token"].as_str().unwrap().to_owned());
+    common::pass_factor(
+        &staff.app,
+        staff.cookie.as_deref().unwrap(),
+        staff.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await;
+
+    // The account's default: an unknown profile is refused, B-LT is taken.
+    let bad = staff
+        .call(
+            "PATCH",
+            "/api/v1/accounts/me",
+            Some(json!({"settings": {"default_seal_profile": "pades-b-b"}})),
+            &[],
+        )
+        .await;
+    assert_eq!(
+        bad.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        bad.json()
+    );
+    let set = staff
+        .ok(
+            "PATCH",
+            "/api/v1/accounts/me",
+            Some(json!({"settings": {"default_seal_profile": "pades-b-lt"}})),
+            StatusCode::OK,
+        )
+        .await;
+    assert_eq!(set["settings"]["default_seal_profile"], "pades-b-lt");
+
+    // A draft that names its own profile keeps it.
+    let own = staff
+        .ok(
+            "POST",
+            "/api/v1/envelopes",
+            Some(json!({
+                "subject": "Short term", "seal_profile": "pades-b-t",
+                "documents": [{"name": "short.pdf", "content_base64": b64(&env.original)}],
+            })),
+            StatusCode::CREATED,
+        )
+        .await;
+    assert_eq!(own["seal_profile"], "pades-b-t", "{own}");
+
+    let e = staff
+        .ok(
+            "POST",
+            "/api/v1/envelopes",
+            Some(json!({
+                "subject": "Long-term lease", "status": "sent",
+                "documents": [{"name": "lease.pdf", "content_base64": b64(&env.original)}],
+                "recipients": [
+                    {"ref": "a", "type": "signer", "name": "Ada Lovelace", "email": "ada@blt.example.test", "routing_order": 1},
+                ],
+                "fields": [{"recipient": "a", "document": 0, "type": "signature", "page": 1,
+                    "x": 72, "y": 100, "width": 180, "height": 30, "required": true}],
+            })),
+            StatusCode::CREATED,
+        )
+        .await;
+    assert_eq!(
+        e["seal_profile"], "pades-b-lt",
+        "the account's default: {e}"
+    );
+    let id = e["id"].as_str().unwrap().to_owned();
+    let doc = e["documents"][0]["id"].as_str().unwrap().to_owned();
+    let f_sig = e["fields"][0]["id"].as_str().unwrap().to_owned();
+    let base = format!("/api/v1/envelopes/{id}");
+
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    sign(&env, &app, "ada@blt.example.test", &f_sig).await;
+    for _ in 0..2 {
+        let out = env.run().await;
+        assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    }
+    let done = staff.ok("GET", &base, None, StatusCode::OK).await;
+    assert_eq!(done["status"], "completed", "{done}");
+
+    let get = |path: String| {
+        let staff = &staff;
+        async move {
+            let r = staff.call("GET", &path, None, &[]).await;
+            assert_eq!(r.status, StatusCode::OK, "{path}");
+            r.body
+        }
+    };
+    let sealed = get(format!("{base}/documents/{doc}/content?version=sealed")).await;
+    let certificate = get(format!("{base}/certificate")).await;
+
+    // Ours, at B-LT, from what the files carry: no CRL is supplied to the verifier.
+    for bytes in [&sealed, &certificate] {
+        let options = env.engine.verify_options(std::time::Duration::from_millis(
+            u64::try_from(env.clock.ms()).unwrap(),
+        ));
+        assert!(options.crls.is_empty());
+        let report = env.engine.verify(bytes, &pki::trust(), &options);
+        casual_sign_worker::seal::check_verified(&report, Profile::BaselineLt).unwrap();
+        assert!(
+            report
+                .signatures
+                .iter()
+                .all(|s| s.indication == casual_sign_sdk::Indication::TotalPassed),
+            "every signature passes from what the file carries"
+        );
+        // Unsigned after the seal: only the DSS revision B-LT adds.
+        assert!(!report.covered_by_last_signature);
+    }
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("end-to-end-b-lt-default");
+    pyhanko_at(
+        &dir,
+        &[
+            ("vs07-sealed-blt.pdf", &sealed),
+            ("vs07-certificate-blt.pdf", &certificate),
+        ],
+        "B-LT",
+    );
 }

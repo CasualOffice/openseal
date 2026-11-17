@@ -86,6 +86,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | --- | ---: | --- |
 | Audit trail size; events; JSON depth | 64 MiB; 100,000; 32 | CS-AUD-0002 |
 | Event time going backwards | 1 s tolerance (host-supplied) | CS-AUD-0007 |
+| Anchor of chain heads (`FG-158`): leaves per anchor; audit path; proof or published anchor file; RFC 3161 token | 1,000,000; 64 hashes; 256 KiB, JSON depth 8; 64 KiB | CS-AUD-0002 (leaves, file size), CS-AUD-0009 (path), CS-AUD-0003 (token) |
 | Certificate: recipients, documents, copies | 100 each | CS-AUD-0020 |
 | Certificate: signer attachments listed (`WEB-06`) | 1,000 | CS-AUD-0020 |
 | Certificate: text value; disclosure | 4,000 bytes; 256 KiB | CS-AUD-0020 |

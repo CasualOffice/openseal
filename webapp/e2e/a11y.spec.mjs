@@ -1,7 +1,16 @@
 // Scenario 6 (WEB-01): axe-core on every sender screen, light and dark — zero serious
 // or critical violations (WCAG 2.2 AA rule set).
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { test, expect } from "@playwright/test";
 import { signIn, app, pdfFile, expectAccessible, REAL } from "./helpers.mjs";
+
+const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
+const fixture = (p) => path.join(ROOT, "fixtures", p);
+// The Verify page's verifier: built into webapp/ in mock mode (tools/build-webapp-wasm.sh,
+// CI's e2e job), served by a real server (deploy/Dockerfile's wasm stage).
+const WASM = fs.existsSync(path.join(ROOT, "webapp/vendor/openseal-wasm/casual_sign_wasm_bg.wasm"));
 
 for (const scheme of ["light", "dark"]) {
   test.describe(`${scheme} theme`, () => {
@@ -66,6 +75,30 @@ for (const scheme of ["light", "dark"]) {
       await page.getByRole("button", { name: "Send", exact: true }).first().click();
       await expect(page.getByRole("dialog")).toBeVisible();
       await expectAccessible(page, `send dialog (${scheme})`);
+    });
+
+    // VS-07 (slice 7): verify.html at every state a visitor reaches: the start with the
+    // verifier loaded, the valid receipt with its detail cards, the red receipt of a
+    // tampered PDF, and a refused file.
+    test("verify: start, valid, tampered and refused", async ({ page }) => {
+      test.skip(!WASM && !REAL, "the WASM verifier is built locally by tools/build-webapp-wasm.sh");
+      await page.goto(REAL ? "/verify.html" : "/verify.html?mock=1");
+      await expect(page.locator("html")).toHaveAttribute("data-theme", scheme);
+      await expect(page.getByTestId("verify-engine")).toHaveAttribute("data-state", "ready");
+      await expectAccessible(page, `verify, start (${scheme})`);
+      await page.getByTestId("trust-input").setInputFiles(fixture("sealed/trust-root.pem"));
+      await page.getByTestId("verify-input").setInputFiles(fixture("sealed/p256-approval-blt.pdf"));
+      await expect(page.getByTestId("verdict")).toHaveAttribute("data-state", "valid");
+      await expectAccessible(page, `verify, valid (${scheme})`);
+      await page.getByTestId("verify-another").click();
+      await page.getByTestId("trust-input").setInputFiles(fixture("signed/trust-root.der"));
+      await page.getByTestId("verify-input").setInputFiles(fixture("signed/flip-range1.pdf"));
+      await expect(page.getByTestId("verdict")).toHaveAttribute("data-state", "invalid");
+      await expectAccessible(page, `verify, tampered (${scheme})`);
+      await page.getByTestId("verify-another").click();
+      await page.getByTestId("verify-input").setInputFiles({ name: "note.pdf", mimeType: "application/pdf", buffer: Buffer.from("hello") });
+      await expect(page.getByTestId("verify-problem")).toContainText("not a PDF");
+      await expectAccessible(page, `verify, refused (${scheme})`);
     });
   });
 }

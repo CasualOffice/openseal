@@ -35,7 +35,8 @@ async fn migrations_apply_from_empty_then_a_second_run_applies_nothing() {
     );
     assert_eq!(second.already, all);
     // Versions rise from 1 with no gap but a number docs/14 reserves for another lane
-    // (23 is reserved by a row merging separately).
+    // (23 is reserved by a row merging separately; 40 by KEYD-02, merging beside FG-158's
+    // 41: drop it here once both are on the branch).
     const RESERVED: &[i64] = &[23];
     assert!(all.windows(2).all(|w| w[0] < w[1]), "{all:?}");
     let last = *all.last().unwrap();
@@ -119,8 +120,9 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // `permission_profiles.admin_scope_group_ids` and two checks); 0038 `seal_signatures`
     // (CON-09), a tenant table; 0039 none (ORG-08: the staff-session resolver answers the
     // organization policy); 0040 none in `public` (KEYD-02: the token key is in
-    // `openseal_keyd`).
-    assert_eq!(tables.len(), 64, "{tables:?}");
+    // `openseal_keyd`); 0041 `chain_anchors` and `chain_anchor_leaves` (FG-158), tenant
+    // tables.
+    assert_eq!(tables.len(), 66, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
         "org_admin_events",
@@ -186,6 +188,10 @@ async fn the_application_role_cannot_change_evidence_or_the_ledger() {
         ("audit_events", "TRUNCATE", false),
         ("envelope_tombstones", "UPDATE", false),
         ("envelope_tombstones", "DELETE", false),
+        ("chain_anchors", "UPDATE", false),
+        ("chain_anchors", "DELETE", false),
+        ("chain_anchor_leaves", "UPDATE", false),
+        ("chain_anchor_leaves", "DELETE", false),
         ("accounts", "DELETE", false),
         ("accounts", "INSERT", false),
         ("accounts", "UPDATE", false),

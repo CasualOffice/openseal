@@ -26,6 +26,9 @@
 //!   timestamp, metadata, new signatures and form filling where DocMDP and FieldMDP allow,
 //!   annotations where DocMDP allows) so that shadow and incremental-saving attacks show as
 //!   a disallowed modification (SEC-S01).
+//!
+//! [`verify_timestamp`] checks a detached RFC 3161 token over a digest the caller
+//! computed, with its TSA's chain: the anchors of audit chain heads (docs/32 §5).
 
 mod byterange;
 mod certsig;
@@ -33,6 +36,7 @@ mod chain;
 mod diff;
 mod report;
 mod revocation;
+mod timestamp;
 mod verify;
 
 use core::time::Duration;
@@ -44,6 +48,7 @@ pub use report::{
     RevisionChanges, SignatureKind, SignatureReport, SubIndication, TimeSource, TimestampInfo,
     VerificationReport,
 };
+pub use timestamp::{TimestampVerdict, verify_timestamp};
 
 /// The certificates the caller trusts, and intermediates it supplies for path building.
 /// No root is built in: an empty store makes every signature at best

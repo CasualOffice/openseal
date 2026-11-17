@@ -13,6 +13,9 @@
 //!   as a [`Problem`] in a [`ChainReport`].
 //! - [`merkle`]: RFC 6962 tree hashing over chain heads for anchoring (docs/32 §5), with
 //!   inclusion proofs and their verifier.
+//! - [`anchor`]: the statement a time-stamping authority signs over a period's tree, the
+//!   published [`anchor::Anchor`] and the [`anchor::AnchorProof`] an envelope keeps
+//!   (`FG-158`).
 //! - [`Tombstone`]: what a purge keeps (docs/32 §7).
 //! - [`Location`]: where a signer was when they acted, from the device or approximated
 //!   from the IP address, in `context.location` (GEO-01, personal data).
@@ -22,6 +25,7 @@
 //! whose [`AuditError::code`] is a `CS-AUD-*` code; messages and reports carry indexes,
 //! counts and hashes, never event content.
 
+pub mod anchor;
 mod chain;
 mod error;
 mod event;

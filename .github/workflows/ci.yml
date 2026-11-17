@@ -211,17 +211,46 @@ jobs:
 
   # WEB-01, E2E-01: web app unit tests, then Playwright in Chromium, WebKit and a phone
   # viewport (mock mode until the Compose deployment, 2F), with axe on every screen.
+  # VS-07: the WebAssembly verifier is built first (as pages.yml builds it), so the
+  # Verify specs run the real verifier instead of skipping; the build is cached on the
+  # sources it is made from, and the job fails if it is missing.
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Restore the WebAssembly verifier
+        id: wasm
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: webapp/vendor/openseal-wasm
+          key: webapp-wasm-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'Cargo.toml', 'crates/**', 'tools/build-webapp-wasm.sh') }}
+      - if: steps.wasm.outputs.cache-hit != 'true'
+        run: rustup show active-toolchain || { sleep 15; rustup toolchain uninstall 1.96.0; rustup show active-toolchain; }
+      - if: steps.wasm.outputs.cache-hit != 'true'
+        run: cargo install wasm-pack --version 0.14.0 --locked
+      - if: steps.wasm.outputs.cache-hit != 'true'
+        name: Build the WebAssembly verifier
+        run: tools/build-webapp-wasm.sh
+      - name: The verifier is there (the Verify specs must run, not skip)
+        run: |
+          test -s webapp/vendor/openseal-wasm/casual_sign_wasm_bg.wasm
+          test -s webapp/vendor/openseal-wasm/casual_sign_wasm.js
       - working-directory: webapp
         run: npm test
       - working-directory: webapp/e2e
         run: npm ci && npx playwright install --with-deps chromium webkit
       - working-directory: webapp/e2e
         run: npx playwright test
+      # The slice 7 demo (VS-07): the Verify page checking a sealed and a tampered PDF,
+      # recorded by verify-demo.spec.mjs in Chromium and WebKit.
+      - if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: slice-7-demo
+          path: target/e2e-demo/vs07-*
+          if-no-files-found: error
+          retention-days: 90
       - if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -253,6 +282,15 @@ jobs:
       - run: python3 -I -m unittest discover -s tools/e2e -p 'test_*.py'
       - run: docker compose up -d --build --wait
       - run: docker compose exec -T -e OPENSEAL_ADMIN_PASSWORD="$OPENSEAL_E2E_PASSWORD" server casual-sign-server bootstrap "E2E" "$OPENSEAL_E2E_EMAIL" "E2E Admin"
+      # VS-07: the server image carries the WebAssembly verifier (deploy/Dockerfile's wasm
+      # stage), so the Verify specs run against it; checked here so they cannot pass on a
+      # page that says the verifier is missing.
+      - name: The server serves the WebAssembly verifier
+        run: |
+          type=$(curl -fsS -o /dev/null -w '%{content_type}' "$OPENSEAL_E2E_BASE_URL/vendor/openseal-wasm/casual_sign_wasm_bg.wasm")
+          echo "casual_sign_wasm_bg.wasm: $type"
+          test "$type" = application/wasm
+          curl -fsS -o /dev/null "$OPENSEAL_E2E_BASE_URL/vendor/openseal-wasm/casual_sign_wasm.js"
       - working-directory: webapp/e2e
         run: npm ci && npx playwright install --with-deps chromium webkit
       - working-directory: webapp/e2e

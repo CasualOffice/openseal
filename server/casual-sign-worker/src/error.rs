@@ -77,6 +77,9 @@ pub enum WorkerError {
         /// The provider's HTTP status, when it answered.
         status: Option<u16>,
     },
+    /// `CS-WRK-0019`: the anchor sink did not take a published anchor (`FG-158`); the
+    /// anchor is stored, and the job publishes it again when retried.
+    AnchorSink,
     /// The store's error (`CS-DB-*`, `CS-BLOB-*`).
     Store(StoreError),
     /// The engine refused the worker's command (`CS-WF-*`, `CS-FLD-*`, `CS-AUTH-*`).
@@ -120,6 +123,7 @@ impl WorkerError {
             Self::LeaseLost => "CS-WRK-0015",
             Self::BadCapture => "CS-WRK-0016",
             Self::MessengerFailed { .. } => "CS-WRK-0017",
+            Self::AnchorSink => "CS-WRK-0019",
             Self::Store(e) => e.code(),
             Self::Workflow { code } | Self::Pipeline { code } | Self::Model { code } => code,
         }
@@ -180,6 +184,7 @@ impl fmt::Display for WorkerError {
                 Some(s) => write!(f, "{code}: the SMS or voice provider answered {s}"),
                 None => write!(f, "{code}: the SMS or voice provider could not be reached"),
             },
+            Self::AnchorSink => write!(f, "{code}: the anchor sink did not take the anchor"),
             Self::Store(e) => write!(f, "{e}"),
             Self::Workflow { .. } => write!(f, "{code}: the engine refused the worker's command"),
             Self::Pipeline { .. } => write!(f, "{code}: a pipeline step failed"),

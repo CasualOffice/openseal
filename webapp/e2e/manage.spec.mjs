@@ -412,8 +412,12 @@ test("admin: invite by email, edit a user's profile and disable them, settings a
   await expect(st.getByTestId("account-name")).toHaveText("Demo account");
   await expect(st.getByRole("textbox", { name: "Account name" })).toHaveCount(0);
   await st.getByLabel("Envelopes expire after (days)").fill("30");
+  // VS-07: B-LT offered as the account's default seal level.
+  await expect(st.getByLabel("Seal new envelopes at")).toHaveValue("pades-b-t");
+  await st.getByLabel("Seal new envelopes at").selectOption("pades-b-lt");
   await st.getByRole("button", { name: "Save" }).click();
   await expect(page.getByTestId("account-settings")).toContainText("30");
+  await expect(page.getByTestId("seal-profile")).toHaveText("PAdES B-LT (long-term validation)");
   await expectAccessible(page, "admin account");
 });
 

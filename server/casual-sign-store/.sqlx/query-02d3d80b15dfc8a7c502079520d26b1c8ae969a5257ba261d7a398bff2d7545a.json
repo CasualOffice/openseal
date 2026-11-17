@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO chain_anchor_leaves (account_id, anchor_id, leaf_index, envelope_id, seq, head, path) SELECT $1, $2, i, e, s, h, p FROM UNNEST($3::bigint[], $4::uuid[], $5::bigint[], $6::bytea[], $7::bytea[]) AS t (i, e, s, h, p)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Int8Array",
+        "UuidArray",
+        "Int8Array",
+        "ByteaArray",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "02d3d80b15dfc8a7c502079520d26b1c8ae969a5257ba261d7a398bff2d7545a"
+}
