@@ -62,7 +62,9 @@ and revocation answers.
 6. Send the signature value's digest to the TSA; embed the token as an unsigned attribute (B-T).
 7. Assemble CMS SignedData (detached), hex-encode, write into `/Contents`, zero-padded.
 8. **Verify the result** with `casual-sign-verify` before returning. A seal that does not verify is an error.
-9. For B-LT: collect OCSP responses (or CRLs) for every certificate in the signer and TSA chains; append a second
+9. For B-LT: collect OCSP responses and, where the CA publishes one, the CRL as well (the CRL alone when OCSP gives
+   no answer) for every certificate in the signer and TSA chains (HRD-14: Acrobat Reader may not use the OCSP answer
+   offline, so each certificate carries a CRL a reader can use instead); append a second
    incremental update with `/DSS` and `/VRI`. For B-LTA: append a document timestamp over the whole. Issuers come
    from the CMS, the revocation source and the request's trust store (anchors and intermediates): a real CA's chain
    stops below its offline root, and so does a TSA's token. A chain ends at a trust anchor or at a
@@ -166,7 +168,9 @@ B-LTA later) and `renew_lta`. The placeholder is `max_der_len` plus 64 bytes, re
 ByteRange is a fixed-width placeholder filled in place. Certification adds `/Reference` with a DocMDP transform and
 `/Perms /DocMDP`. Invisible widgets carry no appearance stream (a zero-size Rect needs none), which keeps P=1 documents
 able to take B-LTA. `/VRI` keys are the upper-case hex SHA-1 of the whole decoded `/Contents`, as PAdES defines (an
-identifier only). Revocation: OCSP first (RFC 6960 request with a SHA-256 CertID), then CRL; responder certificates and
+identifier only). Revocation: OCSP (RFC 6960 request with a SHA-256 CertID) and also the CRL when the CA publishes one
+(since HRD-14; the CRL alone when OCSP gives no answer, and a CRL that cannot be fetched is not an error when OCSP
+answered); responder certificates and
 missing issuers go into `/Certs`. Every output is verified by `casual-sign-verify` before it is returned. Checked: ours,
 pyHanko (LTV from the DSS alone, hard-fail) and EU DSS agree on 19 fixtures and on 30 corpus PDFs sealed at B-LT.
 
@@ -304,6 +308,31 @@ B-LTA files' embedded revocation data as sufficient offline, where pyHanko and E
 the B-LTA output (or Reader's expectations of the DSS), to be tracked as its own row; the ladder row 4 says what it
 proves only after a green run.
 
+### HRD-14: what Reader lacked in the B-LTA files, and the fix
+
+The DSS of the failing files (dumped with pyHanko's reader) was structurally complete for ETSI EN 319 142-1 §5.4:
+`/Certs` held the seal, TSA, issuing CA, root and the delegated OCSP responder (with `id-pkix-ocsp-nocheck`);
+`/OCSPs` held one answer each for the seal and the TSA certificate; `/CRLs` held the root's CRL only, covering the
+issuing CA; the `/VRI` key was the upper-case hex SHA-1 of the whole `/Contents`; every answer covered the
+validation time (`thisUpdate` equal to the signature timestamp, `nextUpdate` a week later), which passes Reader's
+documented tests for embedded OCSP (Preference Reference, Rev Check (OCSP): validation time after `thisUpdate`
+minus the clock skew and before `nextUpdate` plus it). So the seal and TSA certificates had **OCSP as their only
+revocation data, with SHA-256 `CertID`s** (the engine asks only for SHA-256, `SEAL-14`), and Reader said
+"revocation checks could not be done" for both the seal and the document timestamp, that is, for exactly those two
+certificates; the issuing CA, covered by a CRL, raised nothing. Online, Reader asks the responder itself and is
+satisfied (the B-T files). Reader's documentation says nothing about `CertID` hashes; a public report (Adobe
+community, 2018, "LTV Digital Signatures using OCSP") describes Reader ignoring embedded SHA-256 OCSP answers and
+accepting SHA-1 ones. That is the most likely cause, and it is not proven until Reader runs again.
+
+The fix does not depend on it being the cause: **every certificate whose CA publishes a CRL now carries that CRL in
+the DSS beside its OCSP answer**, so a validator that cannot use an OCSP answer still has revocation data for every
+certificate of every chain, and no SHA-1 is introduced. A CRL showing the certificate revoked still refuses the seal;
+one the host cannot fetch is no error when OCSP answered. pyHanko given the regenerated packet's DSS with its OCSP
+answers removed (offline, hard-fail) trusts every signature and document timestamp; given the old packet's, it
+finds no revocation data for the TSA certificate. `interop.py serve` now logs every request (the `CertID` hash and
+nonce of each OCSP request, each CRL fetched) to `serve.log`, so the next Acrobat run also shows which hash Reader
+asks with. Reader's verdict on the regenerated packet is known only after the `acrobat` workflow runs on `main`.
+
 
 ## 8. Algorithms and crate choices
 
@@ -337,7 +366,7 @@ Rules the spike found:
 | Failure | Behaviour |
 | --- | --- |
 | TSA down | Next TSA; if all fail, the job retries with backoff; the envelope stays `completing`; an alert fires after a threshold. Never seal without the account's profile |
-| OCSP unavailable for B-LT | Fall back to CRL; if neither, seal at B-T and schedule the LT augmentation; the envelope completes with `seal.level = B-T` recorded and the augmentation recorded later |
+| OCSP unavailable for B-LT | Use the CRL alone (it is collected beside every OCSP answer anyway, HRD-14); if neither, seal at B-T and schedule the LT augmentation; the envelope completes with `seal.level = B-T` recorded and the augmentation recorded later |
 | HSM unavailable | Retry; alert; no fallback to a different key |
 | Placeholder overflow | `CS-SEAL-0003`; resize from the measured size and retry once |
 | Verification of our own output fails | `CS-SEAL-0010`; P0 incident; the envelope stays `completing` |

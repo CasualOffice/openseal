@@ -8,8 +8,10 @@
 //! intermediates: a real CA's chain stops below its offline root, and so does a TSA's
 //! token (HRD-02). A walk also ends at a trust anchor or a cross-certificate of one (same
 //! subject and key), which needs no revocation data. For each certificate that is not self-signed it
-//! asks the host for an OCSP response (a request with a SHA-256 `CertID`), falls back to
-//! a CRL (docs/31 §9), and embeds an answer only after `casual-sign-crypto` shows the
+//! asks the host for an OCSP response (a request with a SHA-256 `CertID`) and for a CRL,
+//! embedding the CRL beside the OCSP answer when the CA publishes one (HRD-14: Adobe
+//! Reader did not use our OCSP answers offline) and on its own when OCSP gives no answer
+//! (docs/31 §9). An answer is embedded only after `casual-sign-crypto` shows the
 //! certificate not revoked at the time asked. A delegated OCSP responder's certificate
 //! goes into `/Certs`; without `id-pkix-ocsp-nocheck` its own CRL is collected too.
 //!
@@ -285,7 +287,17 @@ impl Collector<'_> {
                 _ => {}
             }
         }
-        if answer.ocsp.is_none() {
+        if answer.ocsp.is_some() {
+            // HRD-14: the CRL as well, when the CA publishes one. Adobe Acrobat Reader did
+            // not use our OCSP answers offline (SHA-256 `CertID`s), so without a CRL it had
+            // no revocation data for the certificate. The OCSP answer already suffices, so a
+            // CRL the host cannot fetch costs nothing; one that shows the certificate
+            // revoked still refuses the seal.
+            answer.crl = match self.crl_for(cert, issuer) {
+                Err(SealError::Revocation(RevocationProblem::Source(_))) => None,
+                other => other?,
+            };
+        } else {
             answer.crl = self.crl_for(cert, issuer)?;
             if answer.crl.is_none() {
                 return Err(SealError::Revocation(RevocationProblem::NoAnswer { index }));
