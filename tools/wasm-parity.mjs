@@ -11,7 +11,9 @@
 //
 // Jobs: every PDF of fixtures/signed, fixtures/sealed, fixtures/hostile and the corpus
 // through admit, extract_text, place_anchor and verify; every envelope of
-// crates/casual-sign-wasm/parity/envelopes.json through evaluate_envelope; and the
+// crates/casual-sign-wasm/parity/envelopes.json through evaluate_envelope; the anchor
+// proof of fixtures/anchor through verify_anchor (with and without its trail and root,
+// and the trail given as the proof); and the
 // 225-case field-rule table (parity_cases), which must also equal
 // crates/casual-sign-fields/tests/parity/expected.txt. Native answers come back as
 // SHA-256 and length; on a difference the native answer is fetched whole and the first
@@ -91,6 +93,17 @@ function jobs(a) {
     out.push({ id: `envelopes/${e.name}#evaluate_envelope`, group: "envelopes", fn: "evaluate_envelope",
       fields: JSON.stringify(e.fields), values: JSON.stringify(e.values) });
   }
+  const anchorDir = join(ROOT, "fixtures/anchor");
+  if (existsSync(join(anchorDir, "anchor-proof.json"))) {
+    const proof = join(anchorDir, "anchor-proof.json");
+    const trail = join(anchorDir, "audit-trail.json");
+    const withRoot = trust(join(anchorDir, "trust-root.der"));
+    for (const [name, file, trailFile, t] of [
+      ["trail+root", proof, trail, withRoot], ["root", proof, null, withRoot],
+      ["no-root", proof, trail, trust(null)], ["not-a-proof", trail, null, withRoot]]) {
+      out.push({ id: `anchor/${name}#verify_anchor`, group: "anchor", fn: "verify_anchor", file, trail: trailFile, trust: t });
+    }
+  }
   out.push({ id: "table#parity_cases", group: "table", fn: "parity_cases" });
   return out;
 }
@@ -112,6 +125,7 @@ function call(m, job) {
     case "place_anchor": return m.place_anchor(read(), job.anchors);
     case "verify": return m.verify(read(), job.trust);
     case "evaluate_envelope": return m.evaluate_envelope(job.fields, job.values);
+    case "verify_anchor": return m.verify_anchor(read(), job.trail ? readFileSync(job.trail) : new Uint8Array(), job.trust);
     case "parity_cases": return m.parity_cases();
     default: throw new Error(`unknown fn ${job.fn}`);
   }

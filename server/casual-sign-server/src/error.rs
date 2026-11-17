@@ -126,6 +126,13 @@ impl ApiError {
         Self::new(StatusCode::NOT_FOUND, "CS-API-0002")
     }
 
+    /// `CS-API-0017` 404: the envelope exists and may be read, but none of its chain
+    /// heads is anchored yet (`FG-158`: the daily anchor job runs after the day closes).
+    pub fn not_anchored() -> Self {
+        Self::new(StatusCode::NOT_FOUND, "CS-API-0017")
+            .detail("no head of this envelope's audit chain is anchored yet")
+    }
+
     /// `CS-API-0003` 429.
     pub fn rate_limited(retry_after: u64) -> Self {
         let mut e = Self::new(StatusCode::TOO_MANY_REQUESTS, "CS-API-0003");

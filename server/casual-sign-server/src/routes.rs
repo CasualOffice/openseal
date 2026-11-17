@@ -532,6 +532,13 @@ pub fn table() -> Vec<Route> {
         ),
         r(
             "GET",
+            "/api/v1/envelopes/{id}/anchor-proof",
+            er,
+            JSON,
+            env::anchor_proof,
+        ),
+        r(
+            "GET",
             "/api/v1/envelopes/{id}/certificate",
             er,
             JSON,

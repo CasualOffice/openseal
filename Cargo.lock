@@ -954,9 +954,11 @@ dependencies = [
 name = "casual-sign-wasm"
 version = "0.0.1"
 dependencies = [
+ "casual-sign-audit",
  "casual-sign-fields",
  "casual-sign-model",
  "casual-sign-pdf",
+ "casual-sign-sdk",
  "casual-sign-verify",
  "rust_decimal",
  "serde_json",

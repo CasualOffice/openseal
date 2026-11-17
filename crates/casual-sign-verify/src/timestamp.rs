@@ -32,6 +32,34 @@ pub struct TimestampVerdict {
     pub gen_time: Option<Duration>,
     /// SHA-256 of the TSA certificate's DER, when the token passed.
     pub tsa_certificate_sha256: Option<[u8; 32]>,
+    /// The TSA certificate's subject common name (else its organization), when the
+    /// token passed: at most [`MAX_TSA_NAME`] characters, control characters dropped.
+    /// Informative, for a person reading the verdict ("time-stamped by …"); whether the
+    /// TSA is trusted is [`TimestampVerdict::chain`], never this name.
+    pub tsa_name: Option<String>,
+}
+
+/// The most characters of a TSA's name a verdict carries: the name comes from the
+/// token, which anyone can make.
+pub const MAX_TSA_NAME: usize = 128;
+
+/// The subject's common name, else its organization, bounded and without control
+/// characters; `None` when neither is a readable string.
+fn display_name(cert: &x509_cert::Certificate) -> Option<String> {
+    let subject = cert.tbs_certificate().subject();
+    let raw = subject
+        .common_name()
+        .ok()
+        .flatten()
+        .or_else(|| subject.organization().ok().flatten())?;
+    let name: String = raw
+        .value()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_TSA_NAME)
+        .collect();
+    let name = name.trim();
+    (!name.is_empty()).then(|| name.to_owned())
 }
 
 impl TimestampVerdict {
@@ -58,6 +86,7 @@ pub fn verify_timestamp(token: &[u8], sha256: &[u8; 32], trust: &TrustStore) -> 
         chain: Check::NotRun,
         gen_time: None,
         tsa_certificate_sha256: None,
+        tsa_name: None,
     };
     let Ok(imprint) = DigestValue::from_bytes(DigestAlgorithm::Sha256, sha256) else {
         return failed(reason(SubIndication::FormatFailure, TIMESTAMP));
@@ -100,5 +129,6 @@ pub fn verify_timestamp(token: &[u8], sha256: &[u8; 32], trust: &TrustStore) -> 
         chain,
         gen_time: Some(tst.gen_time()),
         tsa_certificate_sha256: fingerprint,
+        tsa_name: display_name(tst.tsa_certificate()),
     }
 }

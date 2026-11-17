@@ -1,4 +1,5 @@
-//! OpenSeal for the browser: field rules and the verifier compiled to WebAssembly
+//! OpenSeal for the browser: field rules, the verifier and the anchor-proof check
+//! compiled to WebAssembly
 //! (docs/19, `WASM-01`).
 //!
 //! The browser runs the same field rules the server believes at completion, and anyone
@@ -18,6 +19,8 @@
 //! - `extract_text(pdf: Uint8Array) -> string` ([`api::extract_text`])
 //! - `place_anchor(pdf: Uint8Array, anchors: string) -> string` ([`api::place_anchor`])
 //! - `evaluate_envelope(fields: string, values: string) -> string` ([`api::evaluate`])
+//! - `verify_anchor(proof: Uint8Array, trail: Uint8Array, trust: string) -> string`
+//!   ([`api::verify_anchor`]; an empty `trail` for none)
 //! - `parity_cases() -> string`, with the `parity` feature only ([`parity_cases`])
 
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -59,6 +62,14 @@ pub fn place_anchor(pdf: &[u8], anchors_json: &str) -> String {
 #[must_use]
 pub fn evaluate_envelope(fields_json: &str, values_json: &str) -> String {
     api::evaluate(fields_json, values_json)
+}
+
+/// Verify an envelope's anchor proof, with its audit trail when `trail` is not empty
+/// ([`api::verify_anchor`]).
+#[wasm_bindgen]
+#[must_use]
+pub fn verify_anchor(proof: &[u8], trail: &[u8], trust_json: &str) -> String {
+    api::verify_anchor(proof, trail, trust_json)
 }
 
 #[cfg(feature = "parity")]

@@ -334,6 +334,8 @@ pub fn classify(method: &str, template: &str) -> Option<Kind> {
         "/api/v1/envelopes/{id}/certificate",
         "/api/v1/envelopes/{id}/attachments/{sha256}",
         "/api/v1/envelopes/{id}/audit",
+        // The anchor proof of the envelope's chain head (FG-158): evidence.
+        "/api/v1/envelopes/{id}/anchor-proof",
         "/api/v1/envelopes/{id}/form-data",
         // What analysis found in a document (the suggestions carry values read from
         // its text) and the fields with their filled values (ASVS 8.3.5).
@@ -461,6 +463,8 @@ mod tests {
             "/api/v1/envelopes/{id}/fields/{f}",
             "/api/v1/envelopes/{id}",
             "/api/v1/templates/{id}/documents/{doc}/analysis",
+            // An envelope's anchor proof is evidence (FG-158).
+            "/api/v1/envelopes/{id}/anchor-proof",
         ] {
             assert_eq!(classify("GET", t), Some(Kind::DocumentRead), "{t}");
         }
