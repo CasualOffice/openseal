@@ -204,6 +204,7 @@ and PostgreSQL 17). In every case an envelope ends `completed` on one verified s
 | Worker killed (crash, OOM, `SIGKILL`) at any point of a job | The job's lease (300 s) lapses and any worker claims it again; an act already recorded is not repeated (docs/24 §Idempotency and crashes) | A restart of the worker process: Compose restarts it (`restart: unless-stopped`); under another orchestrator run it as a service that restarts on exit |
 | Worker paused or partitioned past its lease while another takes its job over | The paused worker records nothing when it resumes: storing a seal first renews the job's lease in the same transaction, which fails for a lease it lost (`CS-WRK-0015`); the other worker seals once | Nothing |
 | keyd unreachable while sealing | The seal fails (`CS-SEAL-0001`, or `CS-KEY-0011` if the worker never reached keyd); the engine raises a `seal_failed` operator alert and schedules a new seal job 60 s later, again and again; the envelope stays `completing`. A worker started while keyd is down (refused, reset, timed out, closed before TLS answered: `CS-KEY-0011`) still starts (it logs `keyd_unavailable`) and runs every other job. A keyd that refuses the worker is a configuration error, not an outage: a TLS refusal (`CS-KEY-0013`: `OPENSEAL_KEYD_CA` or `OPENSEAL_KEYD_SERVER_NAME` not keyd's, the client certificate untrusted, expired or revoked) or keyd's own refusal (`CS-KEY-0001`, `CS-KEY-0002`) stops the worker at start, non-zero, naming the code | keyd back: the next seal job completes the envelope. Alert on `seal_failed`. A worker that exits `CS-KEY-0013` at start: fix its keyd settings or certificate |
+| keyd refuses the seal token (`KEYD-02`) | keyd holds `OPENSEAL_KEYD_SEAL_TOKEN_KEY` and the request carried no token it accepts: the database has no key installed (the worker then sends none), a different key, or a clock more than five minutes from keyd's. keyd answers `CS-KEY-0015` and records it in its log; the worker logs `transport.backend_failed` with that code; the seal fails (`CS-SEAL-0001`), raises `seal_failed` and retries every 60 s; the envelope stays `completing`. The database minting no token at all (the envelope owes no seal) fails the seal `CS-KEY-0015` before keyd is asked | Install the same key in both (`casual-sign-server migrate` with `OPENSEAL_KEYD_SEAL_TOKEN_KEY`; keyd's file; restart keyd), keep both clocks on NTP; the next seal job completes the envelope. `casual-sign-worker` `tests/keyd.rs` `a_database_without_the_token_key_seals_nothing_until_it_is_installed` |
 | PostgreSQL restarted or unreachable | API requests answer a `5xx` problem while it is down (the pool waits up to 10 s for a connection) and the server keeps running; the worker logs `claim_failed` and keeps polling. A job interrupted mid-flight runs again after its back-off when its failure was recorded once the database returned, or once its lease lapses when it could not be (up to 300 s) | The database back: both reconnect without a restart. A signer whose request failed retries it; it is applied once |
 | Object store refuses writes | The seal job retries with back-off (`CS-BLOB-0001`); no sealed bytes land and none are served; on its last attempt (15) the job hands over to a new seal job through the engine's `SealFailed` with an operator alert. The same holds for a database failure anywhere before the seal is stored (reading the envelope or the job's steps). Still dead-lettered, with a `job_dead` alert and the envelope `completing`: a failure no retry cures (`CS-DB-0008`–`0010`, `CS-BLOB-0003`/`0005`), a database failure after the seal is stored on the last attempt, and a database outage that lasts through the last attempt, so the handover itself cannot be written | The store back: the next attempt completes the envelope. Alert on `job_dead` and `seal_failed`; after a `job_dead` for `seal_envelope`, once the cause is fixed re-queue that job (`UPDATE jobs SET status = 'queued', attempts = 0, run_at = now() WHERE id = …`): a seal it already stored is read back, not made again |
 
@@ -283,8 +284,10 @@ proves each is caught):
 
 Bringing it up: run `deploy/production/init-secrets.sh DIR` once as root on the Docker host. It writes the internal
 TLS CA (its key into `DIR/offline/`: move it off the host), the Postgres, object store, keyd and worker identities,
-random passwords, the database URLs, the S3 identities, the token and second-factor keys, and keyd's allow list,
-each owned by the one container user that reads it, mode 0400 (Postgres's key 0600). Add what only you have:
+random passwords, the database URLs, the S3 identities, the token and second-factor keys, keyd's allow list, and
+keyd's seal token key twice (`keyd-seal-token-key` for keyd, `migrate-seal-token-key` for the migrate job, which
+installs it in the database: `KEYD-02`, below), each owned by the one container user that reads it, mode 0400
+(Postgres's key 0600). Add what only you have:
 `seal-chain.pem` and `keyd-pkcs11-pin` (owner 10001, 0400), `trust-anchors.pem`, `smtp-password` (owner 65532,
 0400). Set the variables the file requires (`OPENSEAL_SECRETS_DIR`, `OPENSEAL_VERSION`, `OPENSEAL_PUBLIC_URL`,
 `OPENSEAL_TRUSTED_PROXIES`, the PKCS#11 module, token and label, mail, SMTP, TSA and seal name; `docker compose`
@@ -328,6 +331,7 @@ Each runbook keeps signers working throughout; each is exercised by a test, name
 | Object store credentials | Add a second identity to `s3-identities.json`, restart the store; switch `s3-secret-key` (and the access key) and restart the server and worker; remove the old identity | Server restart | runbook; not yet automated (`HRD-11`) |
 | Second-factor key (`OPENSEAL_MFA_KEY`) | Not rotatable yet: staff TOTP seeds are sealed under it; a re-seal path is `HRD-12` | — | — |
 | Seal key alias (`CON-10`) | Generate the new key in the HSM and obtain its certificate; serve it beside the current one (`OPENSEAL_KEYD_NEXT_ALIAS`, `_NEXT_PKCS11_KEY_LABEL` or `_KEY_ID`, `_NEXT_CHAIN`; in the production profile set `OPENSEAL_SEAL_NEXT_ALIAS` and `OPENSEAL_PKCS11_NEXT_KEY_LABEL`, the chain read from the token), record keyd's manifest, restart keyd; a key custodian proposes the alias with a start (`POST /console/v1/seal/changes`; refused unless keyd serves it with a certificate valid then), a second grants, the first applies; from the start every seal uses it, no restart (a change proposed without a start begins when it is applied; a version stays approved if its approving custodian is later disabled); once no seal job can still use the old alias, make the new key the only one: set `OPENSEAL_SEAL_ALIAS` and `OPENSEAL_PKCS11_KEY_LABEL` to the new key's, put its chain in `seal-chain.pem`, and clear `OPENSEAL_SEAL_NEXT_ALIAS` and `OPENSEAL_PKCS11_NEXT_KEY_LABEL` (outside the profile: keyd's `OPENSEAL_KEYD_ALIAS`, key and chain, and the worker's `OPENSEAL_KEYD_ALIAS`); record **both** manifests, keyd's and the worker's (`OPENSEAL_SEAL_ALIAS` sets the worker's `OPENSEAL_KEYD_ALIAS`, which its manifest holds), then restart keyd and the worker. Skipping the worker leaves it with a manifest that no longer matches, so its next restart is refused (`CS-KEY-0014`), or, with the manifest re-recorded but the worker not restarted, still configured for an alias keyd no longer serves | None for signers; keyd restarts pause sealing for seconds, jobs retry | `casual-sign-worker` `tests/keyd.rs` `the_seal_key_follows_the_approved_alias…` (pyHanko agrees on the rotated seal), `casual-sign-console` `tests/keys.rs` `a_seal_alias_change_needs_two_custodians…` and `a_seal_alias_without_a_start_applies_now_and_outlives_its_approver` (seen red with the approver's present state judged), `casual-sign-keyd` `tests/two_keys.rs`; seen red |
+| keyd seal token key (`KEYD-02`) | Write 32 new random bytes as 64 hex digits (`openssl rand -hex 32`) to both `keyd-seal-token-key` and `migrate-seal-token-key`; run the migrate job (`docker compose -f deploy/compose.production.yml run --rm migrate`), which installs it in the database; restart keyd. Outside the profile: `casual-sign-server migrate` with `OPENSEAL_KEYD_SEAL_TOKEN_KEY_FILE`, and keyd's `OPENSEAL_KEYD_SEAL_TOKEN_KEY_FILE` | Seals between the two steps fail `CS-KEY-0015` and retry 60 s later; signers are not affected | `casual-sign-server` `tests/backup_commands.rs` `migrate_installs_the_keyd_seal_token_key`; `casual-sign-worker` `tests/keyd.rs` `a_database_without_the_token_key_seals_nothing_until_it_is_installed`; seen red |
 
 A single server is restarted for the token key and object store credentials; run two server replicas behind the edge
 proxy for zero-downtime restarts (`HRD-11`).
@@ -344,7 +348,8 @@ line carries a name, an e-mail address, a client address, a token, a password or
 A process's own lines are JSON too: `start_failed` (`ERROR`, with the setting that failed in `error` and, whenever
 the failure has a docs/20 code, that code in its own `code` field, so alert on `code`) whenever a binary does not
 start, and `development_token_key`, `development_mfa_key` (server) and
-`development_file_key` (keyd) as `WARN` lines when a development key is in use; alert on these in production.
+`development_file_key` (keyd) as `WARN` lines when a development key is in use, and `seal_token_not_enforced` (keyd)
+when it runs without the seal token key, signing for any envelope id (`KEYD-02`); alert on these in production.
 
 **Security events** are `"event":"security"` lines, never filtered by `RUST_LOG`, with `kind`, `outcome` (`success`,
 `failure`; a failure is `WARN`), and where known `request_id`, `route`, `code` (docs/20), `account_id`, `principal`
@@ -468,11 +473,21 @@ stack keeps one in its secrets volume as `mfa-key`; keep it with the database ba
 lost key cannot be opened and its users can then sign in only with their recovery codes until the factor can be
 replaced, `ASVS-32`), `OPENSEAL_CLAMD_*` (§Malware
 scanning); `migrate` reads
-`OPENSEAL_MIGRATE_DATABASE_URL`. The worker's SMS and voice gateway is `OPENSEAL_SMS_GATEWAY_URL` and
+`OPENSEAL_MIGRATE_DATABASE_URL` and, when set, `OPENSEAL_KEYD_SEAL_TOKEN_KEY` (64 hex digits), which it installs in
+the database after the migrations (`KEYD-02`); the server itself is never given that key. The worker's SMS and voice gateway is `OPENSEAL_SMS_GATEWAY_URL` and
 `OPENSEAL_SMS_GATEWAY_SECRET`; its model service `OPENSEAL_MODELD_ADDR` with `OPENSEAL_MODELD_CA`,
 `_CLIENT_CERT`, `_CLIENT_KEY` and `_SERVER_NAME`; its health file `OPENSEAL_HEALTH_FILE`. keyd and the worker check
 `OPENSEAL_CONFIG_MANIFEST` (above). keyd's read-only admin operations answer only the certificates on
 `OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, which must not overlap its signing list (`CON-06`).
+
+**keyd signs only for envelopes that owe a seal** (`KEYD-02`, ADR-036, docs/31 §5) when it holds
+`OPENSEAL_KEYD_SEAL_TOKEN_KEY` (or `_FILE`): 32 random bytes as 64 hex digits (`openssl rand -hex 32`). The database
+needs the same key, installed by `casual-sign-server migrate` with that variable (as the schema owner; the
+application role can neither read nor replace it); migration 0040 needs the `pgcrypto` extension, which ships with
+PostgreSQL and is a trusted extension, so the migration role creates it. The production profile wires both and
+`init-secrets.sh` writes them. keyd without the key signs for any envelope id and logs `seal_token_not_enforced` at
+start; the evaluation stack (`docker-compose.yml`) runs that way. Keep the database's and keyd's clocks on NTP: a
+token lives ten minutes and keyd allows five more for skew.
 
 ## Backups and restore
 

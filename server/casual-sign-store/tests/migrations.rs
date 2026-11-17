@@ -118,7 +118,8 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // a check and commit triggers on `groups` and `group_members`); 0034 none in `public` (CON-07); 0035 none (CON-10, `platform`); 0036 none (ASVS-31); 0037 none (ORG-07:
     // `permission_profiles.admin_scope_group_ids` and two checks); 0038 `seal_signatures`
     // (CON-09), a tenant table; 0039 none (ORG-08: the staff-session resolver answers the
-    // organization policy).
+    // organization policy); 0040 none in `public` (KEYD-02: the token key is in
+    // `openseal_keyd`).
     assert_eq!(tables.len(), 64, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",

@@ -338,3 +338,179 @@ async fn alias_rotation(name: &str, key: impl FnOnce(casual_sign_keyd::Endpoint)
         );
     }
 }
+
+/// Install `key` as the database's seal token key, as the schema owner (`KEYD-02`).
+async fn install_token_key(env: &Env, key: &[u8; 32]) {
+    sqlx::query("SELECT openseal_keyd.set_seal_token_key($1)")
+        .bind(key.as_slice())
+        .execute(&env.db.admin)
+        .await
+        .unwrap();
+}
+
+/// keyd's `sign` outcomes for `envelope`, in order.
+fn sign_outcomes(oplog: &std::path::Path, envelope: uuid::Uuid) -> Vec<String> {
+    std::fs::read_to_string(oplog)
+        .unwrap()
+        .lines()
+        .map(|l| l.split('\t').map(str::to_owned).collect::<Vec<_>>())
+        .filter(|f| {
+            f.get(3).map(String::as_str) == Some("sign")
+                && f.get(7) == Some(&envelope.hyphenated().to_string())
+        })
+        .map(|f| f[8].clone())
+        .collect()
+}
+
+/// **`KEYD-02` (`SEC-S05`, ADR-036): keyd, holding the seal token key, signs only for an
+/// envelope the database says owes a seal.** The worker seals end to end with the token
+/// the database mints for the `completing` envelope. The database mints none for an
+/// envelope that is not completing (sent, or completed and sealed), and keyd refuses a
+/// signature asked under that envelope's id without one (`CS-KEY-0015`, recorded), as it
+/// refuses another envelope's token. The application role can neither read nor replace
+/// the token key.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn keyd_signs_only_for_an_envelope_the_database_says_owes_a_seal() {
+    let Some(env) = Env::new("keyd_seal_token").await else {
+        return;
+    };
+    let pki = Pki::new();
+    let dir = scratch("keyd-seal-token-worker");
+    let worker_id = pki.client_identity("worker");
+    let token_key = [0x42u8; 32];
+    let keyd = keyd_common::start_keyd_full(
+        &pki,
+        vec![("platform", dev_key(&pki, "KEYD-02 seal"))],
+        &[&worker_id.2],
+        &[],
+        KeydLimits::default(),
+        &dir,
+        None,
+        Some(casual_sign_keyd::SealTokenKey::new(&token_key).unwrap()),
+    );
+    install_token_key(&env, &token_key).await;
+    let ep = endpoint(&pki, &keyd, Some(&worker_id));
+    *env.key.lock().unwrap() = Some(SealKey::Keyd(KeydKey::new(ep.clone(), "platform")));
+    env.anchors
+        .lock()
+        .unwrap()
+        .push(keyd_common::der(&pki.seal_root()));
+
+    // The worker's normal seal, through keyd with the database's token.
+    let done = complete(&env).await;
+    assert_eq!(env.state(done.env).await.status, EnvelopeStatus::Completed);
+    assert_eq!(sign_outcomes(&keyd.oplog, done.env), ["ok", "ok"]);
+    assert_recorded(&env, &keyd.oplog, done.env, "platform").await;
+
+    // A sent envelope and the completed one owe no seal: the database mints nothing.
+    let sent = env.draft(vec![]).await;
+    env.send(sent).await;
+    env.run().await;
+    for (id, what) in [(sent.env, "sent"), (done.env, "completed")] {
+        let mut tx = env.db.store.for_account(env.account).begin().await.unwrap();
+        let t = tx
+            .seal_signatures()
+            .seal_token(casual_sign_store::EnvelopeId(id))
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        assert_eq!(t, None, "{what}");
+    }
+    // The worker's identity asking keyd directly for the sent envelope is refused, with
+    // no token and with the completed envelope's, and keyd records both refusals.
+    let direct = RemoteKey::connect(ep, "platform")
+        .unwrap()
+        .for_envelope(&sent.env.hyphenated().to_string())
+        .unwrap();
+    let digest = casual_sign_keyd::digest_for(DigestSigner::algorithm(&direct), b"not a seal");
+    assert_eq!(
+        direct.sign_digest(&digest).unwrap_err().code(),
+        "CS-KEY-0015"
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let other = casual_sign_keyd::SealTokenKey::new(&token_key)
+        .unwrap()
+        .mint(&done.env.hyphenated().to_string(), now + 600);
+    assert_eq!(
+        direct
+            .clone()
+            .with_seal_token(other)
+            .sign_digest(&digest)
+            .unwrap_err()
+            .code(),
+        "CS-KEY-0015"
+    );
+    assert_eq!(
+        sign_outcomes(&keyd.oplog, sent.env),
+        ["CS-KEY-0015", "CS-KEY-0015"]
+    );
+
+    // The application role (the server's and the worker's) can neither read the key
+    // nor replace it.
+    for sql in [
+        "SELECT key FROM openseal_keyd.seal_token_key",
+        "SELECT openseal_keyd.set_seal_token_key('\\x00')",
+    ] {
+        let err = sqlx::query(sql).execute(&env.db.app).await.unwrap_err();
+        let state = err.as_database_error().and_then(|e| e.code()).unwrap();
+        assert_eq!(state, "42501", "{sql}");
+    }
+}
+
+/// keyd holds the token key but the database does not yet: the worker seals without a
+/// token, keyd refuses it (`CS-KEY-0015`), the seal fails safe (a `seal_failed` alert,
+/// the envelope stays `completing`, nothing signed); once the key is installed the next
+/// seal job completes it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_database_without_the_token_key_seals_nothing_until_it_is_installed() {
+    let Some(env) = Env::new("keyd_seal_token_missing").await else {
+        return;
+    };
+    let pki = Pki::new();
+    let dir = scratch("keyd-seal-token-missing");
+    let worker_id = pki.client_identity("worker");
+    let token_key = [0x24u8; 32];
+    let keyd = keyd_common::start_keyd_full(
+        &pki,
+        vec![("platform", dev_key(&pki, "KEYD-02 missing"))],
+        &[&worker_id.2],
+        &[],
+        KeydLimits::default(),
+        &dir,
+        None,
+        Some(casual_sign_keyd::SealTokenKey::new(&token_key).unwrap()),
+    );
+    *env.key.lock().unwrap() = Some(SealKey::Remote(
+        RemoteKey::connect(endpoint(&pki, &keyd, Some(&worker_id)), "platform").unwrap(),
+    ));
+    env.anchors
+        .lock()
+        .unwrap()
+        .push(keyd_common::der(&pki.seal_root()));
+
+    let ids = complete(&env).await;
+    assert_eq!(env.state(ids.env).await.status, EnvelopeStatus::Completing);
+    // The seal reports a key failure as `CS-SEAL-0001` (casual-sign-crypto's `KeyError`
+    // carries no backend code); keyd's log and the worker's `transport.backend_failed`
+    // line name `CS-KEY-0015`.
+    let alerts = env.alerts.0.lock().unwrap().clone();
+    assert!(
+        alerts
+            .iter()
+            .any(|a| a.kind == "seal_failed" && a.code == "CS-SEAL-0001"),
+        "{alerts:?}"
+    );
+    let refused = sign_outcomes(&keyd.oplog, ids.env);
+    assert!(
+        !refused.is_empty() && refused.iter().all(|o| o == "CS-KEY-0015"),
+        "{refused:?}"
+    );
+
+    install_token_key(&env, &token_key).await;
+    env.clock.advance(Duration::from_secs(61));
+    env.run().await;
+    assert_eq!(env.state(ids.env).await.status, EnvelopeStatus::Completed);
+}

@@ -75,6 +75,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(37, "0037_workspace_actions.sql"),
     migration!(38, "0038_seal_reconciliation.sql"),
     migration!(39, "0039_organization_policy.sql"),
+    migration!(40, "0040_keyd_seal_tokens.sql"),
 ];
 
 /// The migration ledger. Also the first statement of migration 0001.
@@ -117,6 +118,21 @@ pub async fn migrate(pool: &PgPool) -> Result<MigrationReport> {
     let report = outcome?;
     unlocked?;
     Ok(report)
+}
+
+/// Install (or replace) the 32-byte key the database mints keyd's seal tokens under
+/// (`KEYD-02`, migration 0040), as the schema owner: `casual-sign-server migrate` with
+/// `OPENSEAL_KEYD_SEAL_TOKEN_KEY` set. keyd must hold the same key.
+///
+/// # Errors
+///
+/// `CS-DB-0008` for a key that is not 32 bytes; `CS-DB-0001` otherwise.
+pub async fn install_seal_token_key(pool: &PgPool, key: &[u8]) -> Result<()> {
+    sqlx::query!("SELECT openseal_keyd.set_seal_token_key($1)", key)
+        .execute(pool)
+        .await
+        .map_err(db)?;
+    Ok(())
 }
 
 async fn run(conn: &mut sqlx::PgConnection) -> Result<MigrationReport> {

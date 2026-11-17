@@ -294,6 +294,10 @@ pub struct SealInput {
     pub attachments: Vec<casual_sign_certificate::AttachmentRow>,
     /// The sealing time.
     pub now: Timestamp,
+    /// The database's seal token for the envelope, presented to keyd with every
+    /// signature (`KEYD-02`); `None` for a key in this process, or while the database has
+    /// no token key installed.
+    pub keyd_token: Option<casual_sign_keyd::SealToken>,
 }
 
 impl core::fmt::Debug for SealInput {
@@ -659,7 +663,7 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
     if input.delivered.len() != s.documents.len() {
         return Err(WorkerError::SealInput { what: "document" });
     }
-    let key = key_for(services, s)?;
+    let key = key_for(services, input)?;
     let (provider, development) = (&key.provider, key.development);
     let fingerprint = provider
         .certificate_chain()
@@ -784,22 +788,28 @@ fn recording(r: RemoteKey) -> SealKeyInUse {
     }
 }
 
-/// The platform key for `s`, whether it is a development key, and, for keyd, where its
-/// signatures are recorded.
-fn key_for(services: &SealServices, s: &EnvelopeState) -> Result<SealKeyInUse> {
+/// The platform key for `input`'s envelope, whether it is a development key, and, for
+/// keyd, where its signatures are recorded. A keyd key presents the envelope's seal token
+/// (`KEYD-02`) when the database minted one with a MAC.
+fn key_for(services: &SealServices, input: &SealInput) -> Result<SealKeyInUse> {
+    let s = &input.state;
+    let tokened = |r: RemoteKey| match &input.keyd_token {
+        Some(t) => r.with_seal_token(t.clone()),
+        None => r,
+    };
     Ok(match &services.key {
         SealKey::Remote(r) => {
             let r = r
                 .for_envelope(s.id.as_str())
                 .map_err(|e| pipeline(e.code()))?;
-            recording(r)
+            recording(tokened(r))
         }
         SealKey::Keyd(k) => {
             let r = k
                 .remote()
                 .and_then(|r| r.for_envelope(s.id.as_str()))
                 .map_err(|e| pipeline(e.code()))?;
-            recording(r)
+            recording(tokened(r))
         }
         SealKey::Local {
             provider,
@@ -892,7 +902,7 @@ pub fn seal_ended(
     let s = &input.state;
     let end =
         ending(s, &input.chain, &input.sender).ok_or(WorkerError::SealInput { what: "ending" })?;
-    let key = key_for(services, s)?;
+    let key = key_for(services, input)?;
     let mut cert_input = certificate_input(input);
     cert_input.ending = Some(end);
     let rendered = casual_sign_certificate::render_certificate(

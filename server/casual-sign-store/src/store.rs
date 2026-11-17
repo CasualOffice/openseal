@@ -165,6 +165,16 @@ impl Store {
         migrate(&self.pool).await
     }
 
+    /// Install (or replace) the 32-byte key the database mints keyd's seal tokens under
+    /// (`KEYD-02`, migration 0040), as the schema owner. keyd must hold the same key.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` for a key that is not 32 bytes; `CS-DB-0001` otherwise.
+    pub async fn install_seal_token_key(&self, key: &[u8]) -> Result<()> {
+        crate::migrate::install_seal_token_key(&self.pool, key).await
+    }
+
     /// The tenancy scope for `account`: the only door to tenant tables.
     #[must_use]
     pub fn for_account(&self, account: AccountId) -> Tenant<'_> {

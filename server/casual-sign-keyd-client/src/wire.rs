@@ -9,6 +9,8 @@
 //!          | 0x02 sign-digest alias:str8 alg:u8 digest:bytes8 envelope:str8
 //!          | 0x03 list-keys | 0x04 oplog-head | 0x05 oplog-range from:u64be n:u16be
 //!          | 0x06 health                               (admin operations, CON-06)
+//!          | 0x07 sign-digest-sealing alias:str8 alg:u8 digest:bytes8 envelope:str8
+//!                 expires:u64be mac:bytes8               (with a seal token, KEYD-02)
 //! response = 0x01 0x00 ok-body | 0x01 0x01 code:u16be
 //!   chain  = alg:u8 development:u8 count:u8 (der:bytes32){count}
 //!   sig    = signature:bytes16
@@ -24,7 +26,14 @@
 //! ```
 //!
 //! An alias and an envelope id are identifiers: their alphabet keeps the operation log
-//! free of anything a caller could smuggle into it. The admin operations are read-only:
+//! free of anything a caller could smuggle into it.
+//!
+//! **Seal tokens** (`KEYD-02`, ADR-036): `sign-digest-sealing` is `sign-digest` with a
+//! [`SealToken`] the database minted for the envelope while it owed a seal. Version 1
+//! keeps both operations: a keyd configured with a token key refuses `sign-digest`, and
+//! any token that does not verify, with `CS-KEY-0015`; a keyd without one ignores the
+//! token (and warns at start); a keyd older than the operation answers it `CS-KEY-0007`
+//! as an unknown operation, so a new caller fails closed against it. The admin operations are read-only:
 //! they return certificates, validity and the operation log's records (hashes, ids and
 //! codes), never a key or document byte (docs/23 §5.4).
 //!
@@ -62,6 +71,32 @@ const OP_LIST_KEYS: u8 = 3;
 const OP_OPLOG_HEAD: u8 = 4;
 const OP_OPLOG_RANGE: u8 = 5;
 const OP_HEALTH: u8 = 6;
+const OP_SIGN_SEALING: u8 = 7;
+
+/// Length of a seal token's MAC (HMAC-SHA-256).
+pub const SEAL_TOKEN_MAC: usize = 32;
+
+/// The database's word that an envelope owes a seal (`KEYD-02`, ADR-036): an HMAC-SHA-256,
+/// under the token key keyd and the database share, of [`seal_token_message`] for the
+/// envelope and `expires`. Minted by `openseal_keyd_seal_token` (migration 0040) only for
+/// an envelope `completing`, or ended (declined, voided, expired) without its envelope
+/// certificate; keyd verifies it before it signs. The MAC is not secret from the worker
+/// that carries it, only unforgeable by it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SealToken {
+    /// Unix seconds after which keyd refuses it.
+    pub expires: u64,
+    /// The MAC, [`SEAL_TOKEN_MAC`] bytes.
+    pub mac: Vec<u8>,
+}
+
+/// The bytes a seal token's MAC covers: `openseal-keyd-seal-token-v1`, the envelope id as
+/// the request carries it, and `expires` in decimal, separated by line feeds. Migration
+/// 0040 builds the same bytes in SQL.
+#[must_use]
+pub fn seal_token_message(envelope: &str, expires: u64) -> Vec<u8> {
+    format!("openseal-keyd-seal-token-v1\n{envelope}\n{expires}").into_bytes()
+}
 
 /// A request to keyd.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,6 +116,9 @@ pub enum Request {
         digest: Vec<u8>,
         /// The envelope the seal is for, for the operation log.
         envelope: String,
+        /// The database's seal token for `envelope` (`KEYD-02`): sent as
+        /// `sign-digest-sealing` when present, `sign-digest` when not.
+        token: Option<SealToken>,
     },
     /// Admin: every key's alias, backend, algorithm, chain and validity.
     ListKeys,
@@ -414,12 +452,24 @@ impl Request {
                 alg,
                 digest,
                 envelope,
+                token,
             } => {
-                out.push(OP_SIGN);
+                out.push(if token.is_some() {
+                    OP_SIGN_SEALING
+                } else {
+                    OP_SIGN
+                });
                 put8(&mut out, alias.as_bytes())?;
                 out.push(*alg);
                 put8(&mut out, digest)?;
                 put8(&mut out, envelope.as_bytes())?;
+                if let Some(t) = token {
+                    if t.mac.len() != SEAL_TOKEN_MAC {
+                        return Err(malformed("seal token length"));
+                    }
+                    out.extend_from_slice(&t.expires.to_be_bytes());
+                    put8(&mut out, &t.mac)?;
+                }
             }
             Self::ListKeys => out.push(OP_LIST_KEYS),
             Self::OplogHead => out.push(OP_OPLOG_HEAD),
@@ -458,7 +508,7 @@ impl Request {
                 Self::OplogRange { from, n }
             }
             OP_HEALTH => Self::Health,
-            OP_SIGN => {
+            OP_SIGN | OP_SIGN_SEALING => {
                 let alias = r.id(false)?;
                 let alg = r.u8()?;
                 let digest = r.bytes8()?;
@@ -467,11 +517,25 @@ impl Request {
                 }
                 let digest = digest.to_vec();
                 let envelope = r.id(true)?;
+                let token = if op == OP_SIGN_SEALING {
+                    let expires = r.u64()?;
+                    let mac = r.bytes8()?;
+                    if mac.len() != SEAL_TOKEN_MAC {
+                        return Err(malformed("seal token length"));
+                    }
+                    Some(SealToken {
+                        expires,
+                        mac: mac.to_vec(),
+                    })
+                } else {
+                    None
+                };
                 Self::Sign {
                     alias,
                     alg,
                     digest,
                     envelope,
+                    token,
                 }
             }
             _ => return Err(malformed("unknown operation")),
@@ -765,7 +829,63 @@ mod tests {
             alg: 1,
             digest: vec![7; 32],
             envelope: "env_01J9".into(),
+            token: None,
         }
+    }
+
+    fn sealing_request() -> Request {
+        Request::Sign {
+            alias: "platform".into(),
+            alg: 1,
+            digest: vec![7; 32],
+            envelope: "env_01J9".into(),
+            token: Some(SealToken {
+                expires: 1_800_000_000,
+                mac: vec![5; SEAL_TOKEN_MAC],
+            }),
+        }
+    }
+
+    /// A sign request with a seal token travels as its own operation (`KEYD-02`) and
+    /// round-trips; one without stays `sign-digest`, byte for byte as before; a token of
+    /// the wrong length is refused either way, and every prefix of the new frame is.
+    #[test]
+    fn a_seal_token_travels_as_sign_digest_sealing() {
+        let plain = sign_request().encode().unwrap();
+        assert_eq!(plain[1], OP_SIGN);
+        let sealing = sealing_request().encode().unwrap();
+        assert_eq!(sealing[1], OP_SIGN_SEALING);
+        assert_eq!(Request::decode(&sealing).unwrap(), sealing_request());
+        assert_eq!(sealing_request().op_name(), "sign");
+        for n in 0..sealing.len() {
+            assert!(Request::decode(&sealing[..n]).is_err(), "prefix {n}");
+        }
+        let mut short = sealing.clone();
+        let last = short.len() - SEAL_TOKEN_MAC - 1;
+        short[last] = 31;
+        short.pop();
+        assert!(Request::decode(&short).is_err());
+        let Request::Sign { mut token, .. } = sealing_request() else {
+            unreachable!()
+        };
+        token.as_mut().unwrap().mac.pop();
+        let bad = Request::Sign {
+            alias: "platform".into(),
+            alg: 1,
+            digest: vec![7; 32],
+            envelope: "e".into(),
+            token,
+        };
+        assert!(bad.encode().is_err());
+        let sig = Response::Signature(vec![9; 70]);
+        assert_eq!(
+            Response::decode(&sig.encode().unwrap(), &sealing_request()).unwrap(),
+            sig
+        );
+        assert_eq!(
+            seal_token_message("0192", 7),
+            b"openseal-keyd-seal-token-v1\n0192\n7"
+        );
     }
 
     #[test]
@@ -934,6 +1054,7 @@ mod tests {
             let _ = Request::decode(&body);
             let _ = Response::decode(&body, &req);
             let _ = Response::decode(&body, &sign_request());
+            let _ = Request::decode(&[&[VERSION, OP_SIGN_SEALING][..], &body].concat());
             for admin in [
                 Request::ListKeys,
                 Request::OplogHead,

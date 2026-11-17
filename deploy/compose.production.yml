@@ -130,6 +130,9 @@ services:
       OPENSEAL_KEYD_PKCS11_TOKEN: ${OPENSEAL_PKCS11_TOKEN:?set OPENSEAL_PKCS11_TOKEN}
       OPENSEAL_KEYD_PKCS11_KEY_LABEL: ${OPENSEAL_PKCS11_KEY_LABEL:?set OPENSEAL_PKCS11_KEY_LABEL}
       OPENSEAL_KEYD_PKCS11_PIN_FILE: /run/secrets/keyd-pkcs11-pin
+      # KEYD-02: sign only for envelopes the database says owe a seal (the same key the
+      # migrate job installs in the database).
+      OPENSEAL_KEYD_SEAL_TOKEN_KEY_FILE: /run/secrets/keyd-seal-token-key
       # A seal key rotation's overlap (CON-10, docs/65 §Rotation): the next key on the same
       # token, its chain read from the token. Empty: keyd serves the current key only.
       OPENSEAL_KEYD_NEXT_ALIAS: ${OPENSEAL_SEAL_NEXT_ALIAS:-}
@@ -141,6 +144,7 @@ services:
       - keyd-tls.key
       - keyd-allow-list
       - keyd-pkcs11-pin
+      - keyd-seal-token-key
       - seal-chain.pem
       - keyd-config-manifest
     volumes:
@@ -165,7 +169,9 @@ services:
     restart: "no"
     environment:
       OPENSEAL_MIGRATE_DATABASE_URL_FILE: /run/secrets/migrate-database-url
-    secrets: [migrate-database-url, internal-ca.pem]
+      # KEYD-02: installed in the database after the migrations; keyd holds the same.
+      OPENSEAL_KEYD_SEAL_TOKEN_KEY_FILE: /run/secrets/migrate-seal-token-key
+    secrets: [migrate-database-url, migrate-seal-token-key, internal-ca.pem]
     networks: [data]
     mem_limit: 256m
     cpus: 1
@@ -294,6 +300,8 @@ secrets:
   keyd-tls.key: {file: "${OPENSEAL_SECRETS_DIR}/keyd-tls.key"}
   keyd-allow-list: {file: "${OPENSEAL_SECRETS_DIR}/keyd-allow-list"}
   keyd-pkcs11-pin: {file: "${OPENSEAL_SECRETS_DIR}/keyd-pkcs11-pin"}
+  keyd-seal-token-key: {file: "${OPENSEAL_SECRETS_DIR}/keyd-seal-token-key"}
+  migrate-seal-token-key: {file: "${OPENSEAL_SECRETS_DIR}/migrate-seal-token-key"}
   keyd-config-manifest: {file: "${OPENSEAL_SECRETS_DIR}/keyd-config-manifest"}
   seal-chain.pem: {file: "${OPENSEAL_SECRETS_DIR}/seal-chain.pem"}
   worker-client-chain.pem: {file: "${OPENSEAL_SECRETS_DIR}/worker-client-chain.pem"}

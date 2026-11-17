@@ -12,7 +12,12 @@
 //! `oplog-head`, `oplog-range` and `health`, which are read-only and carry certificates,
 //! hashes, ids and codes, never a key; they cannot get a chain or a signature, and a
 //! signing caller cannot call an admin operation (`CS-CON-0008`, recorded either way).
-//! No fingerprint may be on both lists. Blocking I/O, one thread per connection, at most
+//! No fingerprint may be on both lists.
+//!
+//! With a seal token key ([`KeyService::with_seal_tokens`], `KEYD-02`, ADR-036), a
+//! signature is given only to a request carrying a valid seal token for its envelope,
+//! which the database mints only while the envelope owes a seal; anything else is
+//! refused `CS-KEY-0015`, recorded and logged as `key.use` refused. Blocking I/O, one thread per connection, at most
 //! [`KeydLimits::max_connections`] at once, with read and write timeouts.
 
 use std::collections::HashMap;
@@ -33,6 +38,7 @@ use crate::error::KeydError;
 use crate::oplog::{OpLog, OpRecord, hex};
 use crate::pem::tls_certificates;
 use crate::signer::{DigestSigner, wire_id};
+use crate::token::SealTokenKey;
 use crate::wire::{
     Health, KeyHealth, KeyInfo, Request, Response, read_frame, valid_id, write_frame,
 };
@@ -147,6 +153,7 @@ pub struct KeyService {
     windows: Mutex<HashMap<String, (Instant, u32)>>,
     limits: KeydLimits,
     security: SecurityLog,
+    tokens: Option<SealTokenKey>,
 }
 
 impl core::fmt::Debug for KeyService {
@@ -156,6 +163,7 @@ impl core::fmt::Debug for KeyService {
             .field("allowed", &self.allow.len())
             .field("admins", &self.admin.len())
             .field("limits", &self.limits)
+            .field("seal_tokens", &self.tokens.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -180,7 +188,23 @@ impl KeyService {
             windows: Mutex::new(HashMap::new()),
             limits,
             security: SecurityLog::from_env(Service::Keyd),
+            tokens: None,
         }
+    }
+
+    /// Sign only for envelopes that owe a seal (`KEYD-02`, ADR-036, `SEC-S05`): every
+    /// signature request must carry a seal token for its envelope, minted by the
+    /// database under `key`, or it is refused `CS-KEY-0015`.
+    #[must_use]
+    pub fn with_seal_tokens(mut self, key: SealTokenKey) -> Self {
+        self.tokens = Some(key);
+        self
+    }
+
+    /// Whether signatures need a seal token.
+    #[must_use]
+    pub const fn requires_seal_tokens(&self) -> bool {
+        self.tokens.is_some()
     }
 
     /// Write security events (`ASVS-08`: key use, refused callers, rate limits) to
@@ -384,6 +408,7 @@ impl KeyService {
                 alg,
                 digest,
                 envelope,
+                token,
             } => {
                 let mut rec = OpRecord {
                     time: now(),
@@ -395,7 +420,9 @@ impl KeyService {
                     envelope: envelope.clone(),
                     outcome: "ok",
                 };
-                let result = self.sign(caller, alias, *alg, digest);
+                let result = self
+                    .sealing(envelope, token.as_ref())
+                    .and_then(|()| self.sign(caller, alias, *alg, digest));
                 if let Err(e) = &result {
                     rec.outcome = e.code();
                 }
@@ -506,6 +533,19 @@ impl KeyService {
             Request::Chain { .. } | Request::Sign { .. } => {
                 Err(KeydError::Malformed("not an admin operation"))
             }
+        }
+    }
+
+    /// `CS-KEY-0015` unless no token is required or `token` is the database's for
+    /// `envelope`, still live at keyd's clock (`KEYD-02`).
+    fn sealing(
+        &self,
+        envelope: &str,
+        token: Option<&casual_sign_keyd_client::SealToken>,
+    ) -> Result<(), KeydError> {
+        match &self.tokens {
+            None => Ok(()),
+            Some(key) => key.check(envelope, token, now()),
         }
     }
 

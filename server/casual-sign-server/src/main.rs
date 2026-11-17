@@ -38,6 +38,9 @@
 //!
 //! `casual-sign-server migrate` applies every missing migration as the schema owner
 //! named by `OPENSEAL_MIGRATE_DATABASE_URL` (secret), never the application role (T-2F).
+//! With `OPENSEAL_KEYD_SEAL_TOKEN_KEY` (secret, 64 hex digits: keyd's own) it then
+//! installs the key the database mints keyd's seal tokens under (`KEYD-02`, migration
+//! 0040); the server itself is never given it.
 //!
 //! Backups and restores (ASVS-14, docs/65 §Backups; `tools/backup/openseal_backup.py`
 //! runs them):
@@ -264,17 +267,46 @@ async fn migrate() -> ExitCode {
         Ok(s) => s,
         Err(e) => return fail(e.code()),
     };
-    match store.migrate().await {
-        Ok(r) => {
-            println!(
-                "migrations: {} applied, {} already applied",
-                r.applied.len(),
-                r.already.len()
-            );
-            ExitCode::SUCCESS
+    let report = match store.migrate().await {
+        Ok(r) => r,
+        Err(e) => return fail(e.code()),
+    };
+    println!(
+        "migrations: {} applied, {} already applied",
+        report.applied.len(),
+        report.already.len()
+    );
+    // KEYD-02: the seal token key, the same bytes keyd holds.
+    match secret("OPENSEAL_KEYD_SEAL_TOKEN_KEY") {
+        Ok(None) => ExitCode::SUCCESS,
+        Err(e) => fail(&e),
+        Ok(Some(hex)) => {
+            let Some(key) = hex_key(hex.trim()) else {
+                return fail("OPENSEAL_KEYD_SEAL_TOKEN_KEY: not 64 hex digits");
+            };
+            match store.install_seal_token_key(&key).await {
+                Ok(()) => {
+                    println!("keyd seal token key installed");
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail(e.code()),
+            }
         }
-        Err(e) => fail(e.code()),
     }
+}
+
+/// 32 bytes from 64 hex digits.
+fn hex_key(s: &str) -> Option<Vec<u8>> {
+    if s.len() != 64 {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| {
+            s.get(i..i.saturating_add(2))
+                .and_then(|h| u8::from_str_radix(h, 16).ok())
+        })
+        .collect()
 }
 
 /// The store as the backup commands use it: the server's own configuration.
