@@ -20,6 +20,7 @@
 //! | `OPENSEAL_KEYD_FILE_KEY` | A PEM key file instead of PKCS#11: development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
 //! | `OPENSEAL_KEYD_SIGNATURES_PER_MINUTE` | Per-caller rate (default 600) |
 //! | `OPENSEAL_KEYD_NEXT_ALIAS` | Optional, during a seal key rotation (`CON-10`): a second key served beside the first, on the same token: `OPENSEAL_KEYD_NEXT_PKCS11_KEY_LABEL` and/or `_KEY_ID` (one is required), `OPENSEAL_KEYD_NEXT_CHAIN` or `_INTERMEDIATES`; development: `OPENSEAL_KEYD_NEXT_FILE_KEY` with `OPENSEAL_KEYD_NEXT_CHAIN` |
+//! | `OPENSEAL_KEYD_SEAL_TOKEN_KEY` or `OPENSEAL_KEYD_SEAL_TOKEN_KEY_FILE` | 32 bytes as 64 hex digits, the key the database mints seal tokens under (`KEYD-02`, migration 0040): with it, keyd signs only for a request carrying a valid token for its envelope (`CS-KEY-0015` otherwise); without it keyd signs for any envelope id and warns `seal_token_not_enforced` at start. The production profile sets it |
 //! | `OPENSEAL_CONFIG_MANIFEST` | Optional (required by the production profile): the manifest of the security settings below; keyd refuses to start when they differ (`CS-KEY-0014`, ASVS-24) |
 //! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: keyd does not start (`CS-LOG-0001`) |
 //!
@@ -42,13 +43,15 @@ use std::sync::Arc;
 use casual_sign_crypto::SignatureAlgorithm;
 use casual_sign_keyd::{
     AllowList, ChainSource, DevKeyConsent, DigestSigner, FileKey, KeyService, Keyd, KeydError,
-    KeydLimits, OpLog, Pkcs11KeyConfig, Pkcs11Module, certificates, server_tls,
+    KeydLimits, OpLog, Pkcs11KeyConfig, Pkcs11Module, SealTokenKey, certificates, server_tls,
 };
 use casual_sign_secrets::integrity::ConfigDigest;
 use casual_sign_secrets::{env_secret, unknown_secret_files};
 
 const KNOWN_SECRET_FILES: &[&str] = &[
     "OPENSEAL_KEYD_PKCS11_PIN_FILE",
+    // The seal token key (KEYD-02).
+    "OPENSEAL_KEYD_SEAL_TOKEN_KEY_FILE",
     // Read by the security log's pseudonym key (`casual-sign-seclog`, ASVS-08).
     "OPENSEAL_LOG_PSEUDONYM_KEY_FILE",
 ];
@@ -298,6 +301,18 @@ fn run() -> Result<(), KeydError> {
                 .map_err(|_| KeydError::Setting("OPENSEAL_KEYD_ADMIN_ALLOW_LIST"))?,
         )?;
         service = service.with_admin(admin)?;
+    }
+    // KEYD-02: with the database's token key, sign only for envelopes that owe a seal.
+    match env_secret("OPENSEAL_KEYD_SEAL_TOKEN_KEY")? {
+        Some(k) => service = service.with_seal_tokens(SealTokenKey::from_hex(k.expose())?),
+        None => log_line(
+            casual_sign_seclog::Level::Warn,
+            "seal_token_not_enforced",
+            &[(
+                "note",
+                "OPENSEAL_KEYD_SEAL_TOKEN_KEY is not set: keyd signs for any envelope id".into(),
+            )],
+        ),
     }
     let mut aliases = Vec::new();
     for (alias, key) in keys()? {

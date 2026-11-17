@@ -62,7 +62,9 @@ and revocation answers.
 6. Send the signature value's digest to the TSA; embed the token as an unsigned attribute (B-T).
 7. Assemble CMS SignedData (detached), hex-encode, write into `/Contents`, zero-padded.
 8. **Verify the result** with `casual-sign-verify` before returning. A seal that does not verify is an error.
-9. For B-LT: collect OCSP responses (or CRLs) for every certificate in the signer and TSA chains; append a second
+9. For B-LT: collect OCSP responses and, where the CA publishes one, the CRL as well (the CRL alone when OCSP gives
+   no answer) for every certificate in the signer and TSA chains (HRD-14: Acrobat Reader may not use the OCSP answer
+   offline, so each certificate carries a CRL a reader can use instead); append a second
    incremental update with `/DSS` and `/VRI`. For B-LTA: append a document timestamp over the whole. Issuers come
    from the CMS, the revocation source and the request's trust store (anchors and intermediates): a real CA's chain
    stops below its offline root, and so does a TSA's token. A chain ends at a trust anchor or at a
@@ -81,6 +83,8 @@ support exists (`SEAL-12`).
   alias, the digest algorithm and the digest, and an envelope id for its own log.
 - It rate-limits, logs every signature (digest, alias, caller, time) to its own append-only log, and refuses digests of
   the wrong length.
+- It signs only for an envelope that owes a seal: the request carries a short-lived token the database mints for that
+  envelope while it does (`KEYD-02`, ADR-036; below).
 - Backends: PKCS#11 (HSMs, SoftHSM in development), AWS KMS, GCP KMS/Cloud HSM, Azure Key Vault, HashiCorp Vault
   Transit, and a **file key in development only**: `keyd` refuses to start with a file key unless
   `OPENSEAL_DEV_INSECURE_KEY=1`, and every seal made with one carries `/Reason (Development key — not for production)`.
@@ -125,6 +129,29 @@ document byte or signed attribute reaches keyd).
   client live in `casual-sign-keyd-client`, without `cryptoki`.
 - **Expired signer certificate refused** (`CON-08`): before every signature keyd checks that its clock is within
   the alias's signer certificate validity, else `CS-CON-0006` (recorded); the seal job fails and retries.
+- **Seal tokens** (`KEYD-02`, ADR-036 (Proposed), `SEC-S05`): with `OPENSEAL_KEYD_SEAL_TOKEN_KEY` (32 bytes, 64
+  hex digits) keyd answers a signature only to `sign-digest-sealing` (wire op 7: `sign-digest`'s fields, then
+  `expires:u64be mac:bytes8`, the MAC 32 bytes) carrying a valid token for the request's envelope id: an
+  HMAC-SHA-256 (aws-lc-rs, compared in constant time) under that key over `openseal-keyd-seal-token-v1` LF envelope
+  id LF expiry (Unix seconds), not expired at keyd's clock and expiring at most 15 minutes ahead. The token is minted
+  only by `openseal_keyd_seal_token(envelope)` (migration 0040, `SECURITY DEFINER`, HMAC from `pgcrypto`), for an
+  envelope of the transaction's account that is `completing`, or declined, voided or expired without its envelope
+  certificate (UXW-30), valid ten minutes; the key sits in `openseal_keyd.seal_token_key`, which the application role
+  can neither read nor write, installed by `casual-sign-server migrate`. The worker fetches the token just before
+  sealing and presents it with every signature of that seal (`RemoteKey::with_seal_token`); the database minting none
+  fails the seal `CS-KEY-0015` before keyd is asked. Anything else is refused `CS-KEY-0015`, recorded in the
+  operation log and logged as `key.use` refused. keyd stays off the data network and holds no database credential:
+  the database vouches, the worker carries. What this bounds: a caller holding the worker's mTLS identity can obtain
+  signatures only under the id of an envelope the database says owes a seal, while it does, and putting an envelope
+  into that state leaves its trace in the database and the audit chain; it cannot bind the digest itself (the worker
+  computes the signed attributes at seal time), so reconciliation (below) remains the check on what was signed.
+  Without the key keyd signs as before and warns `seal_token_not_enforced` at start; the plain `sign-digest` (op 2)
+  stays in protocol version 1 for that case, and a keyd older than op 7 refuses it `CS-KEY-0007`, so a new worker
+  fails closed against it. Checked: `casual-sign-keyd` `tests/seal_token.rs` (no token, another envelope's, expired,
+  another key's: refused and recorded; the binary reads the key from its file), `casual-sign-worker` `tests/keyd.rs`
+  (the seal end to end with the database's token; no token minted for a sent or a completed envelope; the
+  application role cannot read or replace the key) and `tests/process_crash.rs`, whose keyd now requires tokens; each
+  seen red without its rule.
 - **Reconciliation** (`CON-09`, [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) §5.6): the worker records the digest
   of each keyd signature it used in `seal_signatures` with the sealed bytes; the console matches keyd's log against
   those records and alerts any mismatch (`CS-CON-0009`).
@@ -134,8 +161,8 @@ seal a PDF at B-B in process and through keyd; all eight pass our verifier (inte
 `TRY_LATER` for revocation at B-B) and pyHanko (`intact, valid, trusted`, whole file). A file key sealed through
 keyd passes both too. A client without a certificate, with a certificate from another CA, and with one not on the
 allow-list are refused. Not yet built: cloud KMS backends (AWS KMS, GCP KMS, Azure Key Vault, Vault Transit), a Unix
-socket transport with peer credentials, several keys per daemon from a configuration file, and the reconciliation of
-keyd's log with `document.sealed` (`SEC-S05`).
+socket transport with peer credentials, and several keys per daemon from a configuration file. (The reconciliation of
+keyd's log with the seals recorded is built: `CON-09` above.)
 
 ## 6. Timestamps
 
@@ -166,7 +193,9 @@ B-LTA later) and `renew_lta`. The placeholder is `max_der_len` plus 64 bytes, re
 ByteRange is a fixed-width placeholder filled in place. Certification adds `/Reference` with a DocMDP transform and
 `/Perms /DocMDP`. Invisible widgets carry no appearance stream (a zero-size Rect needs none), which keeps P=1 documents
 able to take B-LTA. `/VRI` keys are the upper-case hex SHA-1 of the whole decoded `/Contents`, as PAdES defines (an
-identifier only). Revocation: OCSP first (RFC 6960 request with a SHA-256 CertID), then CRL; responder certificates and
+identifier only). Revocation: OCSP (RFC 6960 request with a SHA-256 CertID) and also the CRL when the CA publishes one
+(since HRD-14; the CRL alone when OCSP gives no answer, and a CRL that cannot be fetched is not an error when OCSP
+answered); responder certificates and
 missing issuers go into `/Certs`. Every output is verified by `casual-sign-verify` before it is returned. Checked: ours,
 pyHanko (LTV from the DSS alone, hard-fail) and EU DSS agree on 19 fixtures and on 30 corpus PDFs sealed at B-LT.
 
@@ -304,6 +333,31 @@ B-LTA files' embedded revocation data as sufficient offline, where pyHanko and E
 the B-LTA output (or Reader's expectations of the DSS), to be tracked as its own row; the ladder row 4 says what it
 proves only after a green run.
 
+### HRD-14: what Reader lacked in the B-LTA files, and the fix
+
+The DSS of the failing files (dumped with pyHanko's reader) was structurally complete for ETSI EN 319 142-1 §5.4:
+`/Certs` held the seal, TSA, issuing CA, root and the delegated OCSP responder (with `id-pkix-ocsp-nocheck`);
+`/OCSPs` held one answer each for the seal and the TSA certificate; `/CRLs` held the root's CRL only, covering the
+issuing CA; the `/VRI` key was the upper-case hex SHA-1 of the whole `/Contents`; every answer covered the
+validation time (`thisUpdate` equal to the signature timestamp, `nextUpdate` a week later), which passes Reader's
+documented tests for embedded OCSP (Preference Reference, Rev Check (OCSP): validation time after `thisUpdate`
+minus the clock skew and before `nextUpdate` plus it). So the seal and TSA certificates had **OCSP as their only
+revocation data, with SHA-256 `CertID`s** (the engine asks only for SHA-256, `SEAL-14`), and Reader said
+"revocation checks could not be done" for both the seal and the document timestamp, that is, for exactly those two
+certificates; the issuing CA, covered by a CRL, raised nothing. Online, Reader asks the responder itself and is
+satisfied (the B-T files). Reader's documentation says nothing about `CertID` hashes; a public report (Adobe
+community, 2018, "LTV Digital Signatures using OCSP") describes Reader ignoring embedded SHA-256 OCSP answers and
+accepting SHA-1 ones. That is the most likely cause, and it is not proven until Reader runs again.
+
+The fix does not depend on it being the cause: **every certificate whose CA publishes a CRL now carries that CRL in
+the DSS beside its OCSP answer**, so a validator that cannot use an OCSP answer still has revocation data for every
+certificate of every chain, and no SHA-1 is introduced. A CRL showing the certificate revoked still refuses the seal;
+one the host cannot fetch is no error when OCSP answered. pyHanko given the regenerated packet's DSS with its OCSP
+answers removed (offline, hard-fail) trusts every signature and document timestamp; given the old packet's, it
+finds no revocation data for the TSA certificate. `interop.py serve` now logs every request (the `CertID` hash and
+nonce of each OCSP request, each CRL fetched) to `serve.log`, so the next Acrobat run also shows which hash Reader
+asks with. Reader's verdict on the regenerated packet is known only after the `acrobat` workflow runs on `main`.
+
 
 ## 8. Algorithms and crate choices
 
@@ -337,7 +391,7 @@ Rules the spike found:
 | Failure | Behaviour |
 | --- | --- |
 | TSA down | Next TSA; if all fail, the job retries with backoff; the envelope stays `completing`; an alert fires after a threshold. Never seal without the account's profile |
-| OCSP unavailable for B-LT | Fall back to CRL; if neither, seal at B-T and schedule the LT augmentation; the envelope completes with `seal.level = B-T` recorded and the augmentation recorded later |
+| OCSP unavailable for B-LT | Use the CRL alone (it is collected beside every OCSP answer anyway, HRD-14); if neither, seal at B-T and schedule the LT augmentation; the envelope completes with `seal.level = B-T` recorded and the augmentation recorded later |
 | HSM unavailable | Retry; alert; no fallback to a different key |
 | Placeholder overflow | `CS-SEAL-0003`; resize from the measured size and retry once |
 | Verification of our own output fails | `CS-SEAL-0010`; P0 incident; the envelope stays `completing` |

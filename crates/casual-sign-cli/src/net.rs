@@ -178,8 +178,9 @@ pub(crate) fn crl_urls(cert: &Certificate) -> Vec<String> {
         .collect()
 }
 
-/// OCSP first, CRL as the fallback; a responder that fails gives no answer, so the
-/// engine falls back, and a level that cannot be reached fails with `CS-SEAL-0004`.
+/// OCSP and CRLs (the engine asks for both, HRD-14); a responder that fails gives no
+/// answer, so the engine uses the CRL alone, and a level that cannot be reached fails
+/// with `CS-SEAL-0004`.
 pub(crate) struct HttpRevocation<'a> {
     http: &'a Http,
 }

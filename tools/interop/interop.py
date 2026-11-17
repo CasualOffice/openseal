@@ -410,23 +410,37 @@ class Replay:
     """The packet's public material, answered from files: certificates, CRLs and the
     pre-signed OCSP answers. No key, so no TSA and no fresh answers."""
 
-    def __init__(self, pki_dir):
+    def __init__(self, pki_dir, log=False):
         self.dir = pathlib.Path(pki_dir)
         self.lock = threading.Lock()
         self.served = {"ocsp": 0, "crl": 0, "aia": 0, "tsa": 0}
+        # `serve` logs each request (HRD-14): which CertID hash a reader such as Acrobat
+        # asks with, and which CRLs it fetches. Test PKI serials only, no personal data.
+        self.log = log
+
+    def note(self, line):
+        if self.log:
+            print(f"interop: {line}", flush=True)
 
     def file(self, name):
         path = self.dir / name
-        return path.read_bytes() if path.is_file() else None
+        body = path.read_bytes() if path.is_file() else None
+        if not name.startswith("ocsp/"):
+            self.note(f"GET {name} -> {'200' if body is not None else '404'}")
+        return body
 
     def answer_ocsp_request(self, body):
         try:
             req = ocsp.load_der_ocsp_request(body)
             name = f"{req.serial_number:x}-{req.hash_algorithm.name}.der"
         except Exception:
+            self.note("OCSP malformed request")
             return ocsp.OCSPResponseBuilder.build_unsuccessful(
                 ocsp.OCSPResponseStatus.MALFORMED_REQUEST).public_bytes(serialization.Encoding.DER)
         answer = self.file(f"ocsp/{name}")
+        nonce = any(isinstance(e.value, x509.OCSPNonce) for e in req.extensions)
+        self.note(f"OCSP serial {req.serial_number:x} CertID {req.hash_algorithm.name} nonce={nonce} -> "
+                  f"{'answered' if answer is not None else 'unauthorized'}")
         if answer is None:
             return ocsp.OCSPResponseBuilder.build_unsuccessful(
                 ocsp.OCSPResponseStatus.UNAUTHORIZED).public_bytes(serialization.Encoding.DER)
@@ -1054,7 +1068,7 @@ def check_rows(d, rows, roots, roots_pem, dss_image, pipeline):
 
 
 def serve(args):
-    replay = Replay(pathlib.Path(args.dir) / "pki")
+    replay = Replay(pathlib.Path(args.dir) / "pki", log=True)
     server = Server(PACKET_PORT)
     server.start(replay, live=False)
     print(f"interop: serving {args.dir}/pki at {server.base} (AIA, CRLs, OCSP); Ctrl-C stops")

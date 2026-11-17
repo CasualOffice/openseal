@@ -60,6 +60,11 @@ pub enum KeydError {
     /// `CS-CON-0006`: a signature asked of an alias whose signer certificate has expired or
     /// is not yet valid at keyd's clock (docs/23 §5.4, `CON-08`).
     AliasRefused,
+    /// `CS-KEY-0015`: a signature refused because the request carries no valid seal token
+    /// for its envelope (none, expired, too long-lived, for another envelope, or not
+    /// minted under keyd's token key), or, on the worker's side, because the database
+    /// minted none: the envelope owes no seal (`KEYD-02`, ADR-035, `SEC-S05`).
+    SealRefused,
 }
 
 /// What is wrong with a key's configuration (`CS-KEY-0006`).
@@ -106,6 +111,7 @@ impl KeydError {
             Self::Setting(_) => "CS-KEY-0012",
             Self::AdminRefused => "CS-CON-0008",
             Self::AliasRefused => "CS-CON-0006",
+            Self::SealRefused => "CS-KEY-0015",
         }
     }
 
@@ -129,6 +135,7 @@ impl KeydError {
             Self::Setting(_) => 12,
             Self::AdminRefused => ADMIN_REFUSED,
             Self::AliasRefused => ALIAS_REFUSED,
+            Self::SealRefused => 15,
         }
     }
 
@@ -147,6 +154,7 @@ impl KeydError {
             7 => Self::Malformed("refused by keyd"),
             8 => Self::RateLimited,
             9 => Self::OperationLog("reported by keyd".into()),
+            15 => Self::SealRefused,
             ADMIN_REFUSED => Self::AdminRefused,
             ALIAS_REFUSED => Self::AliasRefused,
             _ => Self::Transport(format!("keyd answered with unknown error {n}")),
@@ -204,6 +212,9 @@ impl fmt::Display for KeydError {
             Self::AliasRefused => {
                 f.write_str("seal alias refused: its certificate is outside its validity")
             }
+            Self::SealRefused => f.write_str(
+                "signature refused: no valid seal token for an envelope that owes a seal",
+            ),
         }
     }
 }

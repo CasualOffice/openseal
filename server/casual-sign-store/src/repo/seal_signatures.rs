@@ -46,6 +46,28 @@ impl SealSignatures<'_> {
         Ok(done.rows_affected() == 1)
     }
 
+    /// The database's seal token for `envelope` (`KEYD-02`, migration 0040): its expiry
+    /// (Unix seconds) and MAC while the envelope owes a seal (`completing`, or ended
+    /// without its envelope certificate), the MAC `None` while no token key is installed;
+    /// `None` when it owes none. keyd verifies the token before it signs for the envelope.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn seal_token(
+        &mut self,
+        envelope: EnvelopeId,
+    ) -> Result<Option<(i64, Option<Vec<u8>>)>> {
+        let row = sqlx::query!(
+            "SELECT expires, mac FROM openseal_keyd_seal_token($1)",
+            envelope.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(row.and_then(|r| r.expires.map(|e| (e, r.mac))))
+    }
+
     /// The digests recorded for `envelope`, in byte order.
     ///
     /// # Errors

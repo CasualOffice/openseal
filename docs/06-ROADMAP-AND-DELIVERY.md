@@ -104,7 +104,7 @@ running:
       object store killed mid-flow, every envelope still completes or fails safe, nothing sealed twice, audit chain intact.
 - [x] `HRD-02` Sealing validated against a real-style CA hierarchy (offline root, issuing CA, OCSP and CRL served) and a
       production RFC 3161 TSA; pyHanko and EU DSS agree; an Acrobat interoperability packet is produced.
-- [ ] `HRD-03` Acrobat Reader opens the packet's PDFs as valid, signed and unchanged (owner or a named tester; results
+- [x] `HRD-03` Acrobat Reader opens the packet's PDFs as valid, signed and unchanged (owner or a named tester; results
       recorded with screenshots).
 - [ ] `HRD-04` Load and chaos test with published numbers (envelopes per minute, p95 seal time, recovery time).
 - [ ] `HRD-05` External penetration test commissioned and its findings closed or tracked (owner: vendor and budget).

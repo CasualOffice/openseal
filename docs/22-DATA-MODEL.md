@@ -523,6 +523,13 @@ the rules above, and what does not:
   `platform.apply_key_change` after `request_key_change` and `grant_key_change` by two key custodians (`OS012` →
   `CS-CON-0006` for a payload that fails its checks); `approval_requests.action` gains `tsa.set` and `tsa.remove`. The
   worker reads only `openseal_tsa_endpoints()` (enabled rows: URL, policy OID, certificate hash, in order).
+- **keyd seal tokens (built, `KEYD-02`, migration 0040, ADR-036):** schema `openseal_keyd` (no grant to any
+  application role) with `seal_token_key` (one row: a 32-byte key and when it was set), written only by
+  `openseal_keyd.set_seal_token_key(key)` (migrator only; `casual-sign-server migrate`); the definer function
+  `openseal_keyd_seal_token(envelope)` (granted to `openseal_app`) returns `(expires, mac)` for an envelope of the
+  current account that is `completing`, or declined, voided or expired with no `certificate_sha256`, and no row
+  otherwise; `mac` is NULL while no key is installed. Needs the `pgcrypto` extension (created by the migration). No
+  tenant table is added.
 - **Seal reconciliation (built, `CON-09`, migration 0038):** tenant table `seal_signatures` (account, envelope,
   digest 32/48/64 bytes, keyd alias, time; key account, envelope, digest; insert-only from the worker, in the
   transaction that stores the sealed bytes); `platform.seal_digests(from, to)` and `platform.seal_digests_of(ids)`,

@@ -239,6 +239,22 @@ pub fn start_keyd_logged(
     dir: &Path,
     log: Option<casual_sign_seclog::SecurityLog>,
 ) -> RunningKeyd {
+    start_keyd_full(pki, keys, allowed, admins, limits, dir, log, None)
+}
+
+/// As [`start_keyd_logged`], signing only for requests carrying a seal token minted under
+/// `tokens` (`KEYD-02`) when it is given.
+#[allow(clippy::too_many_arguments)] // Test helper: one argument per knob, all named at the call.
+pub fn start_keyd_full(
+    pki: &Pki,
+    keys: Vec<(&str, Arc<dyn DigestSigner>)>,
+    allowed: &[&str],
+    admins: &[&str],
+    limits: KeydLimits,
+    dir: &Path,
+    log: Option<casual_sign_seclog::SecurityLog>,
+    tokens: Option<casual_sign_keyd::SealTokenKey>,
+) -> RunningKeyd {
     let (cert, key, _) = pki.server_identity();
     let tls = server_tls(cert.as_bytes(), key.as_bytes(), pki.tls_ca.pem().as_bytes()).unwrap();
     let mut allow = AllowList::new();
@@ -258,6 +274,9 @@ pub fn start_keyd_logged(
     }
     if let Some(log) = log {
         service = service.with_security_log(log);
+    }
+    if let Some(tokens) = tokens {
+        service = service.with_seal_tokens(tokens);
     }
     let keyd = Keyd::bind("127.0.0.1:0", tls, service).unwrap();
     let addr = keyd.local_addr().unwrap().to_string();

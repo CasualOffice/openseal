@@ -13,6 +13,8 @@
 //!   A second, admin allow-list ([`KeyService::with_admin`], `CON-06`) is answered the
 //!   read-only `list-keys`, `oplog-head`, `oplog-range` and `health`, and nothing else; a
 //!   signing caller cannot call them (`CS-CON-0008`).
+//! - [`SealTokenKey`]: with it, keyd signs only for a request carrying the database's
+//!   seal token for its envelope, minted while the envelope owes a seal (`KEYD-02`).
 //! - [`RemoteKey`]: the caller's [`casual_sign_crypto::KeyProvider`] over keyd, so the worker seals
 //!   remotely.
 //!
@@ -32,6 +34,7 @@ mod pem;
 mod pkcs11;
 mod server;
 mod signer;
+mod token;
 
 /// keyd's errors live in `casual-sign-keyd-client`, shared with its callers.
 mod error {
@@ -44,6 +47,8 @@ mod wire {
     };
 }
 
+/// The database's seal token a worker presents (`KEYD-02`).
+pub use casual_sign_keyd_client::SealToken;
 pub use casual_sign_keyd_client::{AdminClient, Endpoint, client_tls};
 pub use cert_key::{MIN_RSA_SIGN_BITS, algorithm_for, probe};
 pub use client::{FailureHook, RemoteKey};
@@ -54,6 +59,7 @@ pub use pem::{MAX_CHAIN, certificates};
 pub use pkcs11::{ChainSource, Pkcs11Key, Pkcs11KeyConfig, Pkcs11Module};
 pub use server::{AllowList, KeyService, Keyd, KeydLimits, fingerprint, server_tls};
 pub use signer::{DigestSigner, digest_for, digest_len};
+pub use token::{MAX_TOKEN_LIFETIME_S, SEAL_TOKEN_KEY_LEN, SealTokenKey};
 
 /// Re-exported so hosts name the same types.
 pub use casual_sign_secrets::Secret;
