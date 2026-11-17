@@ -25,7 +25,7 @@ RUN apt-get update -q \
 WORKDIR /src
 COPY . .
 # The query cache in server/casual-sign-store/.sqlx: no database while building (ADR-014).
-ENV SQLX_OFFLINE=true CARGO_TERM_COLOR=never CARGO_INCREMENTAL=0
+ENV SQLX_OFFLINE=true CARGO_TERM_COLOR=never CARGO_INCREMENTAL=0 CARGO_NET_RETRY=10 CARGO_HTTP_MULTIPLEXING=false
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked \
@@ -39,6 +39,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 # ship it (wasm-pack 0.14.0, --target web, opt-level "z", fat LTO, no wasm-opt), so the
 # server's Verify page runs the same verifier the parity job checks.
 FROM ${RUST_IMAGE} AS wasm
+# crates.io downloads retry instead of failing the build (chaos-compose, PR #16: a network
+# error installing wasm-pack); CI sets the same for cargo outside Docker.
+ENV CARGO_NET_RETRY=10 CARGO_HTTP_MULTIPLEXING=false
 RUN rustup target add wasm32-unknown-unknown
 # wasm-bindgen's CLI built here at the version Cargo.lock pins (wasm-pack uses it from
 # PATH): the prebuilt binary wasm-pack would download needs a newer glibc than Debian 12.
@@ -132,7 +135,7 @@ RUN apt-get update -q \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
 COPY . .
-ENV SQLX_OFFLINE=true CARGO_TERM_COLOR=never CARGO_INCREMENTAL=0
+ENV SQLX_OFFLINE=true CARGO_TERM_COLOR=never CARGO_INCREMENTAL=0 CARGO_NET_RETRY=10 CARGO_HTTP_MULTIPLEXING=false
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/src/target \
     cargo build --release --locked -p casual-sign-modeld \
