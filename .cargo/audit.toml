@@ -24,6 +24,16 @@ ignore = [
     "RUSTSEC-2026-0368",
     "RUSTSEC-2026-0369",
     "RUSTSEC-2026-0429",
+    # RUSTSEC-2026-0545, -0546, -0547, -0548 (zip < 9.0.x, published 2026-11-17), same
+    # crate, same path, same row (DEP-06): -0546 is `ZipArchive::extract` (never called);
+    # -0548 is `ZipStreamReader` (not used); -0545 is AES entries and -0547 the legacy
+    # Shrink/Reduce/Implode decoders, neither compiled (oar-ocr builds zip with
+    # `default-features = false` and only `deflate-flate2`). The only file read is a model
+    # we ship, which modeld does not load. Removed with the four above under DEP-06.
+    "RUSTSEC-2026-0545",
+    "RUSTSEC-2026-0546",
+    "RUSTSEC-2026-0547",
+    "RUSTSEC-2026-0548",
     # RUSTSEC-2024-0436 (paste, unmaintained; no vulnerability) and RUSTSEC-2026-0192
     # (ttf-parser, unmaintained; no vulnerability): both reach modeld only because
     # `oar-ocr-core` depends on `imageproc` with its defaults, which turn on `image`'s
