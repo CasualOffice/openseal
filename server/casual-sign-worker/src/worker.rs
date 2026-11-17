@@ -1942,7 +1942,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         ctx: &Ctx<'_>,
         state: EnvelopeState,
     ) -> Result<Vec<SealedDocument>> {
-        let input = self.gather(ctx.account, ctx.envelope, state, true).await?;
+        let mut input = self.gather(ctx.account, ctx.envelope, state, true).await?;
         let now = input.now;
         // Seal (blocking: keyd and the TSA are synchronous).
         self.refresh_tsas().await;
@@ -1953,6 +1953,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         )
         .map_err(|_| WorkerError::StateUnreadable)?;
         services.key = self.seal_key_at(at).await?;
+        input.keyd_token = self.seal_token(ctx.account, ctx.envelope).await?;
         let (outs, input) = tokio::task::spawn_blocking(move || {
             let r = seal::seal_all(&services, &input);
             (r, input)
@@ -2094,7 +2095,42 @@ impl<B: BlobStore + 'static> Worker<B> {
             delivered,
             captures,
             now: ts(self.now())?,
+            keyd_token: None,
         })
+    }
+
+    /// The database's seal token for `envelope` when the seal key is keyd's (`KEYD-02`,
+    /// ADR-036): keyd, holding the token key, signs only with it. Fetched just before
+    /// sealing, so its ten minutes cover the seal. `None` for a key in this process, and
+    /// while the database has no token key installed (a keyd with one then refuses).
+    ///
+    /// # Errors
+    ///
+    /// `CS-KEY-0015` when the database mints none: the envelope owes no seal (the seal
+    /// job fails safe and the engine schedules another); the store's code otherwise.
+    async fn seal_token(
+        &self,
+        account: AccountId,
+        envelope: EnvelopeId,
+    ) -> Result<Option<casual_sign_keyd::SealToken>> {
+        if matches!(self.seal.key, seal::SealKey::Local { .. }) {
+            return Ok(None);
+        }
+        let mut tx = self.store.for_account(account).begin().await?;
+        let token = tx.seal_signatures().seal_token(envelope).await?;
+        tx.commit().await?;
+        match token {
+            None => Err(WorkerError::Pipeline {
+                code: "CS-KEY-0015",
+            }),
+            Some((_, None)) => Ok(None),
+            Some((expires, Some(mac))) => Ok(Some(casual_sign_keyd::SealToken {
+                expires: u64::try_from(expires).map_err(|_| WorkerError::Pipeline {
+                    code: "CS-KEY-0015",
+                })?,
+                mac,
+            })),
+        }
     }
 
     /// Store the sealed documents and certificate, read each back and verify it
@@ -2205,10 +2241,11 @@ impl<B: BlobStore + 'static> Worker<B> {
             return self.close_job(tx, job, lease).await;
         };
         tx.commit().await?;
-        let input = self.gather(job.account_id, envelope, state, false).await?;
+        let mut input = self.gather(job.account_id, envelope, state, false).await?;
         let now = input.now;
         let profile = input.state.seal_profile;
         self.refresh_tsas().await;
+        input.keyd_token = self.seal_token(job.account_id, envelope).await?;
         let services = self.seal.clone();
         let (bytes, signatures) =
             tokio::task::spawn_blocking(move || seal::seal_ended(&services, &input))

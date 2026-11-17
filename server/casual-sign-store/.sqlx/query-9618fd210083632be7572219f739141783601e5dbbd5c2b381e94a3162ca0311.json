@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT expires, mac FROM openseal_keyd_seal_token($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "expires",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "mac",
+        "type_info": "Bytea",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "9618fd210083632be7572219f739141783601e5dbbd5c2b381e94a3162ca0311"
+}

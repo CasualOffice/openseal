@@ -2,7 +2,8 @@
 //! `blobs-export` and `blobs-import` carry a store through a directory unchanged and
 //! refuse altered bytes; `verify-evidence` passes on an intact database and store, and
 //! names what it finds broken: a missing document blob, an altered audit event, or a role
-//! that cannot see every account.
+//! that cannot see every account. Also `migrate` installing keyd's seal token key
+//! (`KEYD-02`), an operator command run the same way.
 
 // Test code: a panic is the failure report (CLAUDE.md).
 #![allow(
@@ -342,6 +343,46 @@ async fn verify_evidence_passes_on_an_intact_install_and_names_what_is_broken() 
     assert!(!o.status.success());
     assert!(
         stderr(&o).contains("CS-DB-0005") && stderr(&o).contains(&envelope),
+        "{}",
+        stderr(&o)
+    );
+}
+
+/// `migrate` with `OPENSEAL_KEYD_SEAL_TOKEN_KEY` installs the key the database mints keyd's
+/// seal tokens under (`KEYD-02`, migration 0040), and refuses one that is not 64 hex
+/// digits.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn migrate_installs_the_keyd_seal_token_key() {
+    let Some(api) = Api::new("migrate_seal_token_key", Rls::On).await else {
+        return;
+    };
+    let owner = api.db.owner_url();
+    let hex = "ab".repeat(32);
+    let o = run(
+        &["migrate"],
+        &[
+            ("OPENSEAL_MIGRATE_DATABASE_URL", owner.as_str()),
+            ("OPENSEAL_KEYD_SEAL_TOKEN_KEY", hex.as_str()),
+        ],
+    );
+    assert!(o.status.success(), "{}", stderr(&o));
+    assert!(stdout(&o).contains("keyd seal token key installed"));
+    let key: Vec<u8> = sqlx::query_scalar("SELECT key FROM openseal_keyd.seal_token_key")
+        .fetch_one(&api.db.admin)
+        .await
+        .unwrap();
+    assert_eq!(key, vec![0xab; 32]);
+
+    let o = run(
+        &["migrate"],
+        &[
+            ("OPENSEAL_MIGRATE_DATABASE_URL", owner.as_str()),
+            ("OPENSEAL_KEYD_SEAL_TOKEN_KEY", "abcd"),
+        ],
+    );
+    assert!(!o.status.success());
+    assert!(
+        stderr(&o).contains("OPENSEAL_KEYD_SEAL_TOKEN_KEY"),
         "{}",
         stderr(&o)
     );

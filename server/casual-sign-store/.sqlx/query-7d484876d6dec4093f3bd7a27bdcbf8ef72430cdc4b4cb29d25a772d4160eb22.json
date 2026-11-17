@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT openseal_keyd.set_seal_token_key($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "set_seal_token_key",
+        "type_info": "Void",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "7d484876d6dec4093f3bd7a27bdcbf8ef72430cdc4b4cb29d25a772d4160eb22"
+}

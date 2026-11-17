@@ -81,6 +81,8 @@ support exists (`SEAL-12`).
   alias, the digest algorithm and the digest, and an envelope id for its own log.
 - It rate-limits, logs every signature (digest, alias, caller, time) to its own append-only log, and refuses digests of
   the wrong length.
+- It signs only for an envelope that owes a seal: the request carries a short-lived token the database mints for that
+  envelope while it does (`KEYD-02`, ADR-036; below).
 - Backends: PKCS#11 (HSMs, SoftHSM in development), AWS KMS, GCP KMS/Cloud HSM, Azure Key Vault, HashiCorp Vault
   Transit, and a **file key in development only**: `keyd` refuses to start with a file key unless
   `OPENSEAL_DEV_INSECURE_KEY=1`, and every seal made with one carries `/Reason (Development key — not for production)`.
@@ -125,6 +127,29 @@ document byte or signed attribute reaches keyd).
   client live in `casual-sign-keyd-client`, without `cryptoki`.
 - **Expired signer certificate refused** (`CON-08`): before every signature keyd checks that its clock is within
   the alias's signer certificate validity, else `CS-CON-0006` (recorded); the seal job fails and retries.
+- **Seal tokens** (`KEYD-02`, ADR-036 (Proposed), `SEC-S05`): with `OPENSEAL_KEYD_SEAL_TOKEN_KEY` (32 bytes, 64
+  hex digits) keyd answers a signature only to `sign-digest-sealing` (wire op 7: `sign-digest`'s fields, then
+  `expires:u64be mac:bytes8`, the MAC 32 bytes) carrying a valid token for the request's envelope id: an
+  HMAC-SHA-256 (aws-lc-rs, compared in constant time) under that key over `openseal-keyd-seal-token-v1` LF envelope
+  id LF expiry (Unix seconds), not expired at keyd's clock and expiring at most 15 minutes ahead. The token is minted
+  only by `openseal_keyd_seal_token(envelope)` (migration 0040, `SECURITY DEFINER`, HMAC from `pgcrypto`), for an
+  envelope of the transaction's account that is `completing`, or declined, voided or expired without its envelope
+  certificate (UXW-30), valid ten minutes; the key sits in `openseal_keyd.seal_token_key`, which the application role
+  can neither read nor write, installed by `casual-sign-server migrate`. The worker fetches the token just before
+  sealing and presents it with every signature of that seal (`RemoteKey::with_seal_token`); the database minting none
+  fails the seal `CS-KEY-0015` before keyd is asked. Anything else is refused `CS-KEY-0015`, recorded in the
+  operation log and logged as `key.use` refused. keyd stays off the data network and holds no database credential:
+  the database vouches, the worker carries. What this bounds: a caller holding the worker's mTLS identity can obtain
+  signatures only under the id of an envelope the database says owes a seal, while it does, and putting an envelope
+  into that state leaves its trace in the database and the audit chain; it cannot bind the digest itself (the worker
+  computes the signed attributes at seal time), so reconciliation (below) remains the check on what was signed.
+  Without the key keyd signs as before and warns `seal_token_not_enforced` at start; the plain `sign-digest` (op 2)
+  stays in protocol version 1 for that case, and a keyd older than op 7 refuses it `CS-KEY-0007`, so a new worker
+  fails closed against it. Checked: `casual-sign-keyd` `tests/seal_token.rs` (no token, another envelope's, expired,
+  another key's: refused and recorded; the binary reads the key from its file), `casual-sign-worker` `tests/keyd.rs`
+  (the seal end to end with the database's token; no token minted for a sent or a completed envelope; the
+  application role cannot read or replace the key) and `tests/process_crash.rs`, whose keyd now requires tokens; each
+  seen red without its rule.
 - **Reconciliation** (`CON-09`, [23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md) §5.6): the worker records the digest
   of each keyd signature it used in `seal_signatures` with the sealed bytes; the console matches keyd's log against
   those records and alerts any mismatch (`CS-CON-0009`).
@@ -134,8 +159,8 @@ seal a PDF at B-B in process and through keyd; all eight pass our verifier (inte
 `TRY_LATER` for revocation at B-B) and pyHanko (`intact, valid, trusted`, whole file). A file key sealed through
 keyd passes both too. A client without a certificate, with a certificate from another CA, and with one not on the
 allow-list are refused. Not yet built: cloud KMS backends (AWS KMS, GCP KMS, Azure Key Vault, Vault Transit), a Unix
-socket transport with peer credentials, several keys per daemon from a configuration file, and the reconciliation of
-keyd's log with `document.sealed` (`SEC-S05`).
+socket transport with peer credentials, and several keys per daemon from a configuration file. (The reconciliation of
+keyd's log with the seals recorded is built: `CON-09` above.)
 
 ## 6. Timestamps
 

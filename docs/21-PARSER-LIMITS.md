@@ -110,6 +110,8 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Keys in one `list-keys` answer (admin, `CON-06`) | 64 | CS-KEY-0007 |
 | Records in one `oplog-range` answer (admin, `CON-06`) | 1 to 256 | CS-KEY-0007 |
 | Subject or issuer name in `list-keys` | 1,024 bytes, no control characters (keyd replaces them) | CS-KEY-0007 |
+| Seal token MAC in `sign-digest-sealing` (`KEYD-02`) | exactly 32 bytes | CS-KEY-0007 |
+| Seal token life: as minted; most ahead of keyd's clock it may expire | 10 minutes; 15 minutes (5 for clock skew) | CS-KEY-0015 |
 
 ## Images (signatures, stamps, attachments shown inline)
 

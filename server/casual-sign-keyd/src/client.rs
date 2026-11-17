@@ -24,6 +24,7 @@ pub struct RemoteKey {
     endpoint: Endpoint,
     alias: String,
     envelope: String,
+    token: Option<casual_sign_keyd_client::SealToken>,
     algorithm: SignatureAlgorithm,
     development: bool,
     chain: Vec<Certificate>,
@@ -36,6 +37,7 @@ impl core::fmt::Debug for RemoteKey {
             .field("endpoint", &self.endpoint)
             .field("alias", &self.alias)
             .field("envelope", &self.envelope)
+            .field("token", &self.token.is_some())
             .field("algorithm", &self.algorithm)
             .field("development", &self.development)
             .field("chain", &self.chain.len())
@@ -79,6 +81,7 @@ impl RemoteKey {
             endpoint,
             alias: alias.to_owned(),
             envelope: String::new(),
+            token: None,
             algorithm,
             development,
             chain,
@@ -120,7 +123,17 @@ impl RemoteKey {
         }
         let mut out = self.clone();
         envelope.clone_into(&mut out.envelope);
+        out.token = None;
         Ok(out)
+    }
+
+    /// The same key, presenting `token` (the database's word that this key's envelope
+    /// owes a seal, `KEYD-02`) with every signature request. Set the envelope first:
+    /// [`RemoteKey::for_envelope`] drops the token.
+    #[must_use]
+    pub fn with_seal_token(mut self, token: casual_sign_keyd_client::SealToken) -> Self {
+        self.token = Some(token);
+        self
     }
 }
 
@@ -151,6 +164,7 @@ impl DigestSigner for RemoteKey {
                 alg,
                 digest: digest.to_vec(),
                 envelope: self.envelope.clone(),
+                token: self.token.clone(),
             },
         )
         .and_then(|resp| match resp {

@@ -53,7 +53,7 @@ use casual_sign_sdk::{Engine, FontSet, Limits, Profile};
 use casual_sign_store::repo::webhooks::Subscription;
 use casual_sign_store::{AccountId, EnvelopeId, WebhookSubscriptionId};
 use common::{Hook, Rls, Smtp, TestDb, fresh, pki};
-use keyd_common::{Pki, RunningKeyd, scratch, start_keyd};
+use keyd_common::{Pki, RunningKeyd, scratch, start_keyd_full};
 use rcgen::{KeyPair, PKCS_ECDSA_P256_SHA256};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -240,12 +240,22 @@ impl Stack {
         )
         .unwrap();
         let worker_id = kpki.client_identity("worker");
-        let keyd = start_keyd(
+        // keyd signs only with the database's seal token (KEYD-02): the key in both.
+        let token_key = [0x3cu8; 32];
+        sqlx::query("SELECT openseal_keyd.set_seal_token_key($1)")
+            .bind(token_key.as_slice())
+            .execute(&db.admin)
+            .await
+            .unwrap();
+        let keyd = start_keyd_full(
             &kpki,
             vec![("platform", Arc::new(file_key) as Arc<dyn DigestSigner>)],
             &[&worker_id.2],
+            &[],
             KeydLimits::default(),
             &dir,
+            None,
+            Some(casual_sign_keyd::SealTokenKey::new(&token_key).unwrap()),
         );
         let write = |name: &str, text: &str| {
             let p = dir.join(name);
