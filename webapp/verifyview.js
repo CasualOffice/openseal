@@ -218,6 +218,47 @@ export function changesList(changes) {
   }));
 }
 
+const ANCHOR_TONE = { anchored: "ok", unconfirmed: "warn", failed: "bad", error: "bad" };
+const ANCHOR_ICON = { ok: "circle-check", warn: "circle-alert", bad: "circle-x" };
+
+/// A day for "anchored on …", in the browser's locale.
+function day(iso) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+/// The anchor proof's card body (FG-158, docs/32 §5): the verifier's outcome on the
+/// proof ("History anchored on <day> by <TSA>", or why not), which envelope event it
+/// anchors, each check as the verifier reported it, and whether this PDF's audit trail
+/// was matched. `a` is `summarizeAnchor`'s result plus `trailNote`, or `{state:
+/// "not-yet"}` when the envelope's proof was asked for and nothing is anchored yet.
+export function anchorBody(a) {
+  if (a.state === "not-yet") {
+    return [h("p", { class: "os-vfy__muted", attrs: { "data-testid": "anchor-verdict", "data-state": "not-yet" }, text: t("verify.anchor.not-yet") })];
+  }
+  const tone = ANCHOR_TONE[a.state] || "bad";
+  const vars = { day: a.at ? day(a.at) : "—", tsa: a.tsa || t("verify.anchor.tsa-unknown"), code: a.code || "—" };
+  const out = [
+    h("p", { class: `os-vfy__line os-vfy__anchor-head is-${tone}`, attrs: { "data-testid": "anchor-verdict", "data-state": a.state } },
+      icon(ANCHOR_ICON[tone], { size: 16 }), h("span", { text: t(`verify.anchor.${a.state}`, vars) })),
+    h("p", { class: "os-vfy__muted os-vfy__small", text: t(`verify.anchor.${a.state}-text`, vars) }),
+  ];
+  if (a.state === "error") return out;
+  if (a.envelopeId != null && a.seq != null) {
+    out.push(h("p", { class: "os-vfy__muted os-vfy__small os-vfy__head" }, h("code", { text: t("verify.anchor.which", { id: a.envelopeId, seq: a.seq }) })));
+  }
+  out.push(h("ul", { class: "os-vfy__checks", attrs: { "data-testid": "anchor-checks" } }, ...a.checks.map((c) => {
+    const ct = checkTone(c.status);
+    return h("li", { class: `os-vfy__check is-${ct}` },
+      h("span", { class: "os-vfy__check-dot", attrs: { "aria-hidden": "true" } }, CHECK_ICON[ct] ? icon(CHECK_ICON[ct], { size: 12 }) : null),
+      h("span", { class: "os-vfy__check-name", text: t(`verify.anchor.check.${c.name}`) }),
+      h("span", { class: "os-vfy__check-status", text: t(`verify.status.${c.status}`) }),
+      c.code ? h("code", { class: "os-vfy__check-why", text: c.code }) : null);
+  })));
+  if (a.trailNote) out.push(h("p", { class: "os-vfy__muted os-vfy__small", attrs: { "data-testid": "anchor-trail" }, text: t(`verify.anchor.trail.${a.trailNote}`, { seq: a.seq ?? "—" }) }));
+  return out;
+}
+
 /// The audit trail the PDF carries: whether its links hold (what trail.js checks), that
 /// hashes are not recomputed here, and the events.
 export function trailBody(trail) {

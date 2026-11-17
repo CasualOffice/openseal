@@ -20,12 +20,11 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use casual_sign_audit::{AuditError, Hash256, ShapeFault, Timestamp};
-use casual_sign_model::Id;
-use casual_sign_sdk::anchor::{Anchor, AnchorProof, InclusionProof};
-use casual_sign_store::EnvelopeId;
-use casual_sign_store::repo::anchors::{StoredAnchor, StoredLeaf};
 use time::{Date, OffsetDateTime, Time};
+
+// Made in `casual-sign-host` so the API serves the same proof bytes the worker stores
+// and publishes (`GET /api/v1/envelopes/{id}/anchor-proof`).
+pub use casual_sign_host::anchor::{anchor_of, period_text, proof_file, proof_files, published};
 
 /// How long after a day ends its anchor is queued: events recorded with a time just
 /// before midnight have committed by then.
@@ -82,70 +81,6 @@ impl AnchorSink for FileSink {
     }
 }
 
-fn out_of_shape() -> AuditError {
-    AuditError::Shape {
-        fault: ShapeFault::Member("anchor"),
-        index: None,
-    }
-}
-
-/// The engine's [`Anchor`] of a stored anchor.
-///
-/// # Errors
-///
-/// `CS-AUD-0003` when a stored value is out of the anchor's shape.
-pub fn anchor_of(a: &StoredAnchor) -> Result<Anchor, AuditError> {
-    let millis =
-        i64::try_from(a.tsa_time.unix_timestamp_nanos() / 1_000_000).map_err(|_| out_of_shape())?;
-    Ok(Anchor {
-        id: Id::new(a.id.to_string()).map_err(|_| out_of_shape())?,
-        period: period_text(a.period),
-        tree_size: a.tree_size,
-        root: Hash256(a.root),
-        tsa_time: Timestamp::from_unix_millis(millis).ok_or_else(out_of_shape)?,
-        timestamp_token: a.timestamp_token.clone(),
-    })
-}
-
-/// The published line of a stored anchor (canonical JSON, `openseal.anchor`).
-///
-/// # Errors
-///
-/// As [`anchor_of`] and [`Anchor::to_json`].
-pub fn published(a: &StoredAnchor) -> Result<Vec<u8>, AuditError> {
-    anchor_of(a)?.to_json()
-}
-
-/// An envelope's proof files (`openseal.anchor-proof`), one per anchor covering one of
-/// its heads, in the order of `leaves`.
-///
-/// # Errors
-///
-/// As [`anchor_of`]; `CS-AUD-0009` for a stored path longer than a proof's.
-pub fn proof_files(
-    envelope: EnvelopeId,
-    leaves: &[StoredLeaf],
-) -> Result<Vec<Vec<u8>>, AuditError> {
-    let id = Id::new(envelope.0.to_string()).map_err(|_| out_of_shape())?;
-    leaves
-        .iter()
-        .map(|l| {
-            AnchorProof {
-                envelope_id: id.clone(),
-                seq: l.seq,
-                head: Hash256(l.head),
-                proof: InclusionProof {
-                    leaf_index: l.leaf_index,
-                    tree_size: l.anchor.tree_size,
-                    path: l.path.iter().map(|p| Hash256(*p)).collect(),
-                },
-                anchor: anchor_of(&l.anchor)?,
-            }
-            .to_json()
-        })
-        .collect()
-}
-
 /// `[start, end)` of UTC day `day`.
 #[must_use]
 pub fn day_bounds(day: Date) -> (OffsetDateTime, OffsetDateTime) {
@@ -189,17 +124,6 @@ pub fn days_to_queue(now: OffsetDateTime, done: Option<Date>) -> Vec<Date> {
     }
     days.reverse();
     days
-}
-
-/// The `YYYY-MM-DD` of `day`.
-#[must_use]
-pub fn period_text(day: Date) -> String {
-    format!(
-        "{:04}-{:02}-{:02}",
-        day.year(),
-        u8::from(day.month()),
-        day.day()
-    )
 }
 
 /// `YYYY-MM-DD` read back.

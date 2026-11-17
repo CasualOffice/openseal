@@ -6,9 +6,10 @@
 //!
 //!     cargo run --release -p casual-sign-wasm --features parity --example native_parity -- JOBS.json [--dump ID]
 //!
-//! A job is `{"id", "fn", "file"?, "trust"?, "anchors"?, "fields"?, "values"?}`; `fn` is
-//! `admit`, `extract_text`, `place_anchor`, `verify`, `evaluate_envelope` or
-//! `parity_cases`, and the string members are passed through unchanged.
+//! A job is `{"id", "fn", "file"?, "trail"?, "trust"?, "anchors"?, "fields"?, "values"?}`;
+//! `fn` is `admit`, `extract_text`, `place_anchor`, `verify`, `verify_anchor` (`trail`
+//! a file path, or null for none), `evaluate_envelope` or `parity_cases`, and the string
+//! members are passed through unchanged.
 
 // A developer tool over its own job file: it may exit on a bad one (CLAUDE.md: tests and
 // tools may unwrap).
@@ -36,6 +37,13 @@ fn run(job: &Value) -> String {
         "extract_text" => casual_sign_wasm::api::extract_text(&read()),
         "place_anchor" => casual_sign_wasm::api::place_anchor(&read(), arg(job, "anchors")),
         "verify" => casual_sign_wasm::api::verify(&read(), arg(job, "trust")),
+        "verify_anchor" => {
+            let trail = match arg(job, "trail") {
+                "" => Vec::new(),
+                path => std::fs::read(path).expect("trail file readable"),
+            };
+            casual_sign_wasm::api::verify_anchor(&read(), &trail, arg(job, "trust"))
+        }
         "evaluate_envelope" => {
             casual_sign_wasm::api::evaluate(arg(job, "fields"), arg(job, "values"))
         }

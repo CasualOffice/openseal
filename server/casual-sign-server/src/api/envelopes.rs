@@ -1123,6 +1123,37 @@ pub(crate) async fn audit(
     ))
 }
 
+/// `GET /envelopes/{id}/anchor-proof` (`FG-158`, docs/32 §5): the proof file
+/// (`openseal.anchor-proof` v1, canonical JSON) of the envelope's latest anchored chain
+/// head: the head, its leaf index and audit path, and the day's anchor with its RFC 3161
+/// token. Anyone can check it offline (`openseal anchor verify`, the Verify page) against
+/// the TSA's root and, with the audit trail, against the chain. Made from the stored leaf
+/// by the code the worker publishes with (`casual_sign_host::anchor`). `404 CS-API-0017`
+/// while no head is anchored. A staff read of evidence in the security log (`ASVS-08`);
+/// not recorded in the chain, whose new head would itself wait for the next anchor.
+pub(crate) async fn anchor_proof(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let leaves = tx.anchors().leaves_of(l.id).await?;
+    tx.commit().await?;
+    // Oldest period first: the last leaf is the latest anchored head.
+    let Some(latest) = leaves.last() else {
+        return Err(ApiError::not_anchored());
+    };
+    let body = casual_sign_host::anchor::proof_file(l.id, latest)
+        .map_err(|_| ApiError::internal("anchor proof"))?;
+    let mut r = (StatusCode::OK, body).into_response();
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    r.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_static("attachment; filename=\"anchor-proof.json\""),
+    );
+    Ok(r)
+}
+
 // Documents -----------------------------------------------------------------------------
 
 /// `GET /envelopes/{id}/documents`.

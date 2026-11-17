@@ -65,6 +65,29 @@ test.describe("verify", () => {
     await expect(page.getByTestId("vfy-trust")).toContainText("add it under Trusted certificates");
   });
 
+  // FG-158: an envelope's anchor proof checked beside the PDF by the same WASM module.
+  test("an anchor proof is checked with the PDF: valid anchored, tampered refused", async ({ page }) => {
+    const proof = fs.readFileSync(fixture("anchor/anchor-proof.json"), "utf8");
+    const head = JSON.parse(proof).head;
+    const forged = proof.replace(head, head.slice(0, -1) + (head.at(-1) === "0" ? "1" : "0"));
+    await page.goto("/verify.html");
+    await expect(page.getByTestId("vfy-engine")).toHaveAttribute("data-state", "ready");
+    await page.getByTestId("vfy-trust-input").setInputFiles(fixture("anchor/trust-root.pem"));
+    await page.getByTestId("vfy-anchor-input").setInputFiles(fixture("anchor/anchor-proof.json"));
+    await expect(page.getByTestId("vfy-anchor-chosen")).toContainText("anchor-proof.json");
+    await page.getByTestId("vfy-input").setInputFiles(fixture("sealed/p256-approval-blt.pdf"));
+    const row = page.getByTestId("vfy-anchor");
+    await expect(row).toHaveAttribute("data-tone", "ok");
+    await expect(row).toContainText(/History anchored on .*2026 by T-1G Test TSA/);
+    await expectAccessible(page, "site verify, anchor proof");
+
+    await page.getByTestId("vfy-anchor-input").setInputFiles({ name: "forged.json", mimeType: "application/json", buffer: Buffer.from(forged) });
+    await page.getByTestId("vfy-input").setInputFiles(fixture("sealed/p256-approval-blt.pdf"));
+    await expect(row).toHaveAttribute("data-tone", "bad");
+    await expect(row).toContainText("The anchor proof does not hold");
+    await expect(row).toContainText("CS-AUD-0009");
+  });
+
   test("the samples show both outcomes", async ({ page }) => {
     await page.goto("/verify.html");
     await page.getByTestId("vfy-sample-sealed").click();

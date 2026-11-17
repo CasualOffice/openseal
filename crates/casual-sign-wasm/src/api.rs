@@ -10,6 +10,8 @@ use core::time::Duration;
 use std::collections::BTreeMap;
 use std::str::FromStr;
 
+use casual_sign_audit::anchor::AnchorProof;
+use casual_sign_audit::{AuditError, VerifyOptions as TrailOptions};
 use casual_sign_fields::text::Quad;
 use casual_sign_fields::{
     AnchorMatch, AnchorSpec, AnchorUnits, Computed, PageText, Point, Values, evaluate_envelope,
@@ -526,6 +528,69 @@ fn anchor_from_json(v: &Value) -> Result<AnchorSpec, String> {
         }
     }
     Ok(spec)
+}
+
+// ------------------------------------------------------------------ anchor
+
+/// `verify_anchor(proof, trail, trust)`: an envelope's anchor proof (docs/32 §5,
+/// `FG-158`), the checks of `casual_sign_sdk::anchor::verify_anchor_proof` and `openseal
+/// anchor verify`: the head is the leaf at its index of the tree of the anchor's size and
+/// root (`inclusion`), the token is a TSA's over the tree's statement (`timestamp`), the
+/// TSA chains to `trust`'s anchors at the token's own time (`tsa_chain`), and, when
+/// `trail` is not empty (an `audit-trail.json`), that the trail verifies, is this
+/// envelope's, and its event `seq` is the head (`trail`, else `not_run`).
+///
+/// `trust_json` is [`verify`]'s; only its anchors and intermediates are used (the time
+/// proved is the token's). `outcome` is `passed`, `failed` or `indeterminate` (nothing
+/// failed, but the TSA does not chain to a trusted anchor). `tsa_time` is the token's
+/// `genTime` in Unix seconds and `tsa_name` its TSA's name, when the token passed.
+#[must_use]
+pub fn verify_anchor(proof: &[u8], trail: &[u8], trust_json: &str) -> String {
+    let (trust, _) = match trust_from_json(trust_json) {
+        Ok(t) => t,
+        Err(e) => return e,
+    };
+    let proof = match AnchorProof::from_json(proof) {
+        Ok(p) => p,
+        Err(e) => return error(e.code(), e.to_string()),
+    };
+    let inclusion = proof.check_inclusion();
+    let timestamp = casual_sign_verify::verify_timestamp(
+        &proof.anchor.timestamp_token,
+        proof.anchor.statement().as_bytes(),
+        &trust,
+    );
+    let trail = (!trail.is_empty()).then(|| proof.check_trail(trail, &TrailOptions::default()));
+    let trail_ok = trail.as_ref().is_none_or(Result::is_ok);
+    let outcome = if inclusion.is_err() || !timestamp.token.passed() || !trail_ok {
+        "failed"
+    } else if timestamp.chain.passed() {
+        "passed"
+    } else {
+        "indeterminate"
+    };
+    let result = |r: &Result<(), AuditError>| match r {
+        Ok(()) => json!({ "status": "passed", "sub_indication": null, "code": null }),
+        Err(e) => json!({ "status": "failed", "sub_indication": null, "code": e.code() }),
+    };
+    ok(json!({
+        "outcome": outcome,
+        "envelope_id": proof.envelope_id.as_str(),
+        "seq": proof.seq,
+        "head": proof.head.to_string(),
+        "anchor": {
+            "id": proof.anchor.id.as_str(),
+            "period": proof.anchor.period,
+            "tree_size": proof.anchor.tree_size,
+            "root": proof.anchor.root.to_string(),
+        },
+        "inclusion": result(&inclusion),
+        "timestamp": check_json(&timestamp.token),
+        "tsa_chain": check_json(&timestamp.chain),
+        "trail": trail.as_ref().map_or_else(|| check_json(&Check::NotRun), result),
+        "tsa_time": timestamp.gen_time.map(|d| d.as_secs()),
+        "tsa_name": timestamp.tsa_name,
+    }))
 }
 
 // ------------------------------------------------------------------ envelope

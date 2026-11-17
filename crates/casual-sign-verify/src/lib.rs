@@ -48,7 +48,7 @@ pub use report::{
     RevisionChanges, SignatureKind, SignatureReport, SubIndication, TimeSource, TimestampInfo,
     VerificationReport,
 };
-pub use timestamp::{TimestampVerdict, verify_timestamp};
+pub use timestamp::{MAX_TSA_NAME, TimestampVerdict, verify_timestamp};
 
 /// The certificates the caller trusts, and intermediates it supplies for path building.
 /// No root is built in: an empty store makes every signature at best
