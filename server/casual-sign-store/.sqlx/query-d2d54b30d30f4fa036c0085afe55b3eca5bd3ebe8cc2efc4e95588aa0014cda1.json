@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, period, tree_size, root, timestamp_token, tsa_time, created_at FROM chain_anchors WHERE account_id = $1 AND period = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "period",
+        "type_info": "Date",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "period"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "tree_size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "tree_size"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "root",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "root"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "timestamp_token",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "timestamp_token"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "tsa_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "tsa_time"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "chain_anchors",
+            "name": "created_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Date"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "d2d54b30d30f4fa036c0085afe55b3eca5bd3ebe8cc2efc4e95588aa0014cda1"
+}

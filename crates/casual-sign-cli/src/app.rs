@@ -75,6 +75,12 @@ USAGE
   openseal audit verify TRAIL.json [--head HEX] [--envelope ID] [--count N] [--json]
       Verify an audit-trail.json: every hash, link, sequence number and time, and the head
       and count when given.
+  openseal anchor verify PROOF.json [--trail TRAIL.json] [--trust ROOT.pem]... [--json]
+      Verify an envelope's anchor proof (docs/32 \u{a7}5): its chain head is a leaf of the
+      anchored Merkle tree, the RFC 3161 token is over that tree's root and size, the
+      TSA chains to a --trust root at the token's time, and, with --trail, the head is
+      the trail's event at the proof's sequence number. Exit 4 when the TSA does not
+      chain to a given root.
   openseal help | --help | -h      This text.
   openseal --version               The version.
 
@@ -111,6 +117,9 @@ JSON (--json, one object on stdout)
               modifications_after:[{revision, allowed, classes}]}]}
   audit:     {file, valid, events, envelope_id, head, problems:[{index, kind}],
               problems_dropped, unrecognised}
+  anchor:    {file, outcome, envelope_id, seq, head, anchor:{id, period, tree_size, root},
+              inclusion, timestamp, tsa_chain, trail: \"passed\" | \"not_run\" |
+              {failed, code}, tsa_time}
   error:     {error: {code, message}} with exit 2 or 3
 ";
 
@@ -186,6 +195,10 @@ pub(crate) fn run(argv: Vec<String>) -> u8 {
         "audit" => match rest.split_first() {
             Some((sub, rest)) if sub == "verify" => audit_verify(rest),
             _ => Err(usage("expected `openseal audit verify TRAIL.json`")),
+        },
+        "anchor" => match rest.split_first() {
+            Some((sub, rest)) if sub == "verify" => anchor_verify(rest),
+            _ => Err(usage("expected `openseal anchor verify PROOF.json`")),
         },
         other => Err(usage(&format!(
             "unknown command `{other}`; see `openseal help`"
@@ -711,4 +724,96 @@ fn audit_verify(argv: &[String]) -> Result<u8, u8> {
         }
     }
     Ok(if report.is_valid() { OK } else { FAILED })
+}
+
+fn anchor_verify(argv: &[String]) -> Result<u8, u8> {
+    use casual_sign_sdk::anchor::{AnchorOutcome, verify_anchor_proof};
+    use casual_sign_sdk::verify::Check;
+    let p = parse(argv, &["trail", "trust"], &["json"])?;
+    let [file] = p.exactly(1, "PROOF.json").map_err(|e| usage(&e))? else {
+        return Err(USAGE);
+    };
+    let trust = trust_store(&p.all("trust"))?;
+    let proof = read(file)?;
+    let trail = match p.one("trail").map_err(|e| usage(&e))? {
+        Some(t) => Some(read(t)?),
+        None => None,
+    };
+    let v = match verify_anchor_proof(&proof, trail.as_deref(), &trust) {
+        Ok(v) => v,
+        Err(e) => {
+            if p.has("json") {
+                println!(
+                    "{}",
+                    serde_json::json!({ "error": { "code": e.code(), "message": e.to_string() } })
+                );
+            }
+            eprintln!("openseal: refused: {e}");
+            return Ok(REFUSED);
+        }
+    };
+    let (outcome, code) = match v.outcome() {
+        AnchorOutcome::Passed => ("passed", OK),
+        AnchorOutcome::Failed => ("failed", FAILED),
+        AnchorOutcome::Indeterminate => ("indeterminate", INDETERMINATE),
+    };
+    let check = |c: &Check| match c {
+        Check::Passed => serde_json::json!("passed"),
+        Check::NotRun => serde_json::json!("not_run"),
+        Check::Failed(r) => serde_json::json!({ "failed": r.sub.name(), "code": r.code }),
+    };
+    let result = |r: &Result<(), casual_sign_sdk::anchor::AuditError>| match r {
+        Ok(()) => serde_json::json!("passed"),
+        Err(e) => serde_json::json!({ "failed": "proof", "code": e.code() }),
+    };
+    let tsa_time = v.timestamp.gen_time.map(|d| d.as_secs());
+    if p.has("json") {
+        println!(
+            "{}",
+            serde_json::json!({
+                "file": file,
+                "outcome": outcome,
+                "envelope_id": v.proof.envelope_id.as_str(),
+                "seq": v.proof.seq,
+                "head": v.proof.head.to_string(),
+                "anchor": {
+                    "id": v.proof.anchor.id.as_str(),
+                    "period": v.proof.anchor.period,
+                    "tree_size": v.proof.anchor.tree_size,
+                    "root": v.proof.anchor.root.to_string(),
+                },
+                "inclusion": result(&v.inclusion),
+                "timestamp": check(&v.timestamp.token),
+                "tsa_chain": check(&v.timestamp.chain),
+                "trail": v.trail.as_ref().map_or(serde_json::json!("not_run"), result),
+                "tsa_time": tsa_time,
+            })
+        );
+    } else {
+        println!(
+            "{file}: {outcome}: envelope {} event {} head {} in anchor {} of {} ({} leaves)",
+            v.proof.envelope_id.as_str(),
+            v.proof.seq,
+            hex(&v.proof.head),
+            v.proof.anchor.id.as_str(),
+            v.proof.anchor.period,
+            v.proof.anchor.tree_size
+        );
+        if let Some(t) = tsa_time {
+            println!("  time-stamped at {t} (seconds since 1970-01-01T00:00:00Z)");
+        }
+        if let Err(e) = &v.inclusion {
+            println!("  inclusion: {e}");
+        }
+        if let Check::Failed(r) = &v.timestamp.token {
+            println!("  timestamp: {} ({})", r.sub.name(), r.code);
+        }
+        if let Check::Failed(r) = &v.timestamp.chain {
+            println!("  TSA chain: {} ({})", r.sub.name(), r.code);
+        }
+        if let Some(Err(e)) = &v.trail {
+            println!("  trail: {e}");
+        }
+    }
+    Ok(code)
 }

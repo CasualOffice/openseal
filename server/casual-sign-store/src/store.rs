@@ -805,4 +805,31 @@ impl EntryPoints<'_> {
             })
             .collect())
     }
+
+    /// Queue the anchor job of the UTC day `period` (`[start, end)`) for every account
+    /// with an audit event in it and no anchor for it (migration 0041, docs/32 §5,
+    /// `FG-158`). Returns how many were queued; a second call queues none.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` for a period that is not at most a day; `CS-DB-0001`.
+    pub async fn enqueue_anchor_jobs(
+        &self,
+        period: time::Date,
+        start: OffsetDateTime,
+        end: OffsetDateTime,
+        now: OffsetDateTime,
+    ) -> Result<u32> {
+        let n = sqlx::query_scalar!(
+            r#"SELECT openseal_enqueue_anchor_jobs($1, $2, $3, $4) AS "n!""#,
+            period,
+            start,
+            end,
+            now
+        )
+        .fetch_one(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(u32::try_from(n).unwrap_or(0))
+    }
 }

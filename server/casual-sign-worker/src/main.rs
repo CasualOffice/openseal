@@ -26,6 +26,8 @@
 //! | `OPENSEAL_WEBHOOK_EXTRA_ROOTS` | PEM file of CAs webhook receivers may chain to besides the platform's roots (a private CA) |
 //! | `OPENSEAL_SEAL_NAME`, `OPENSEAL_SEAL_REASON` | The seal's `/Name` and `/Reason` |
 //! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: the worker does not start (`CS-LOG-0001`) |
+//! | `OPENSEAL_ANCHORING` | `daily` (default) or `off`: queue each closed UTC day's anchor of chain heads (docs/32 §5, `FG-158`); the anchor is time-stamped by the TSAs above |
+//! | `OPENSEAL_ANCHOR_LOG` | Optional: a file each anchor is appended to as one JSON line (`openseal.anchor`), for the operator to publish; unset, anchors are stored and time-stamped only |
 //! | `OPENSEAL_SMS_GATEWAY_URL`, `OPENSEAL_SMS_GATEWAY_SECRET` (or `_FILE`) | Optional: the HTTPS gateway that sends SMS and voice one-time codes, and its bearer secret (`messenger::HttpGateway`); unset, such codes fail `CS-WRK-0013` |
 //!
 //! | `OPENSEAL_S3_CA` | PEM file of the CA the object store's TLS certificate chains to, besides the platform's roots (a private CA, the production profile) |
@@ -159,6 +161,16 @@ fn configure() -> Result<(WorkerConfig, SmtpConfig, SealServices, SsrfPolicy, St
     if let Some(n) = var("OPENSEAL_MAIL_FROM_NAME") {
         config.mail_from_name = n;
     }
+    // Public anchoring of chain heads (FG-158): on unless turned off.
+    config.anchoring = match var("OPENSEAL_ANCHORING").as_deref() {
+        None | Some("daily") => true,
+        Some("off") => false,
+        Some(_) => {
+            return Err(WorkerError::Config {
+                setting: "OPENSEAL_ANCHORING",
+            });
+        }
+    };
     let security = match var("OPENSEAL_SMTP_SECURITY").as_deref() {
         None | Some("starttls") => SmtpSecurity::StartTls,
         Some("implicit") => SmtpSecurity::Implicit,
@@ -371,6 +383,13 @@ async fn serve<B: BlobStore + 'static>(
         }
         None => worker,
     };
+    // Where anchors are published (FG-158): a file the operator publishes.
+    let worker = match var("OPENSEAL_ANCHOR_LOG") {
+        Some(path) => worker.with_anchor_sink(Arc::new(casual_sign_worker::anchor::FileSink::new(
+            path.into(),
+        ))),
+        None => worker,
+    };
     #[cfg(feature = "crash-points")]
     let worker = worker.with_fault_hook(Arc::new(|at, kind| {
         // P2-CRASH: `OPENSEAL_CRASH_AT=worker:<Boundary>:<job kind>` kills the process.
@@ -403,6 +422,8 @@ const CONFIG_FILES: &[&str] = &[
 const CONFIG_VALUES: &[&str] = &[
     "OPENSEAL_BASE_URL",
     "OPENSEAL_TSA_URLS",
+    "OPENSEAL_ANCHORING",
+    "OPENSEAL_ANCHOR_LOG",
     "OPENSEAL_KEYD_ADDR",
     "OPENSEAL_KEYD_SERVER_NAME",
     "OPENSEAL_KEYD_ALIAS",

@@ -6,6 +6,7 @@ use crate::error::{Result, StoreError};
 use crate::store::TenantTx;
 
 pub mod accounts;
+pub mod anchors;
 pub mod api_clients;
 pub mod audit;
 pub mod bulk_sends;
@@ -150,6 +151,11 @@ impl TenantTx {
     /// The worker's per-job step ledger.
     pub fn job_steps(&mut self) -> workflow::JobSteps<'_> {
         workflow::JobSteps { tx: self }
+    }
+
+    /// This account's anchors of chain heads and their leaves (migration 0041, FG-158).
+    pub fn anchors(&mut self) -> anchors::Anchors<'_> {
+        anchors::Anchors { tx: self }
     }
 
     /// The signatures keyd made for this account's seals (CON-09).

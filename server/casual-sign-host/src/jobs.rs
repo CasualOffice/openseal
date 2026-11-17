@@ -47,6 +47,7 @@ pub const KINDS: &[&str] = &[
     SEND_PASSWORD_RESET,
     SEND_SECURITY_NOTICE,
     SEAL_ENDED_CERTIFICATE,
+    ANCHOR_CHAIN_HEADS,
     // Advisory, not effects (docs/33 §2, WEB-19): claimed so a worker with a model
     // service fills them; enqueued only while a workspace has a feature in effect.
     crate::ml::ANALYZE_DOCUMENT,
@@ -81,6 +82,19 @@ pub fn ended_certificate_job(id: JobId, envelope: EnvelopeId, now: time::OffsetD
         run_at: now,
         max_attempts: 15,
     }
+}
+
+/// Not an effect (`FG-158`, docs/32 §5): anchor an account's chain heads of one UTC day.
+/// Queued by `openseal_enqueue_anchor_jobs` (migration 0041) with the idempotency key
+/// `anchor:<day>` and the payload [`AnchorJob`]; it has no envelope.
+pub const ANCHOR_CHAIN_HEADS: &str = "anchor_chain_heads";
+
+/// The payload of an [`ANCHOR_CHAIN_HEADS`] job.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AnchorJob {
+    /// The UTC day, `YYYY-MM-DD`.
+    pub period: String,
 }
 
 /// `SendInvitation`.
