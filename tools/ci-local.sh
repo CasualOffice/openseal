@@ -54,6 +54,9 @@ unset OPENSEAL_TEST_DATABASE_URL SQLX_OFFLINE SQLX_CLI_BIN
 step "compose e2e"   # T-2F, E2E-01: as ci.yml's compose-e2e job, on its own project and ports so a dev stack is untouched
 export COMPOSE_PROJECT_NAME=openseal-ci OPENSEAL_HTTP_PORT=18080 OPENSEAL_MAIL_PORT=18025
 export OPENSEAL_E2E_BASE_URL=http://localhost:18080 OPENSEAL_E2E_MAIL_URL=http://127.0.0.1:18025 OPENSEAL_E2E_EMAIL=e2e@openseal.test OPENSEAL_E2E_PASSWORD=e2e-only-passphrase
+# RAUTH-02: the CI-only stubs (SMS gateway, OpenID Connect provider) over the stack.
+export COMPOSE_FILE=docker-compose.yml:tools/e2e/compose.e2e.yml OPENSEAL_E2E_SMS_PORT=18026 OPENSEAL_E2E_SMS_URL=http://127.0.0.1:18026
+python3 -I -m unittest discover -s tools/e2e -p 'test_*.py'
 export OPENSEAL_E2E_CHROMIUM_CHANNEL="${OPENSEAL_E2E_CHROMIUM_CHANNEL:-chromium}"   # the new headless; the old shell can crash on macOS
 # The stack and its volumes go however this step ends; one check per line (docs/04 rule 31).
 trap 'docker compose down -v >/dev/null 2>&1 || true' EXIT
@@ -68,6 +71,7 @@ docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.p
 "$VENV/bin/python" -I tools/verify-sealed.py target/e2e-sealed
 docker compose down -v >/dev/null
 trap - EXIT
+unset COMPOSE_FILE
 unset COMPOSE_PROJECT_NAME OPENSEAL_HTTP_PORT OPENSEAL_MAIL_PORT OPENSEAL_E2E_BASE_URL OPENSEAL_E2E_MAIL_URL OPENSEAL_E2E_EMAIL OPENSEAL_E2E_PASSWORD
 step "backup drill";      OPENSEAL_DRILL_BUILD=0 OPENSEAL_DRILL_VALIDATOR_PYTHON="$VENV/bin/python" tools/backup/drill.sh   # ASVS-14, as ci.yml's backup-drill job; the images the compose e2e step just built
 step "chaos compose";     python3 -I -m unittest discover -s tools/chaos -p 'test_*.py'   # HRD-10, as ci.yml's chaos-compose job; the images the compose e2e step built
