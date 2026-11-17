@@ -1,0 +1,10 @@
+{"providers": [{
+  "id": "ci",
+  "name": "OpenSeal CI identity provider",
+  "issuer": "http://localhost:8090",
+  "authorization_endpoint": "http://localhost:8090/authorize",
+  "token_endpoint": "http://127.0.0.1:8090/token",
+  "jwks_uri": "http://127.0.0.1:8090/jwks",
+  "client_id": "openseal-ci",
+  "client_secret": "ci-only-not-a-secret"
+}]}

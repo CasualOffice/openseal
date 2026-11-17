@@ -4,7 +4,7 @@ Evidence for the owner to close the slices M3 needs ([06](06-ROADMAP-AND-DELIVER
 and 7; tracker rows `VS-01`, `VS-02`, `VS-05`, `VS-07`). Only the owner closes a slice, and exit criteria are never bent
 ([05](05-PHASES-AND-TASKS.md)). This page proposes; it closes nothing and ticks no box.
 
-**Summary:** slice 1, 3 of 5 gate items met; slice 2, 4 of 6; slice 5, 3 of 6; slice 7, 3 of 9.
+**Summary:** slice 1, 3 of 5 gate items met; slice 2, 4 of 6; slice 5, 3 of 6 (the browser run on the stack and the demo built, waiting on CI); slice 7, 3 of 9.
 
 **Reference run.** `main` at `ea67292`, GitHub Actions run
 [43860204277](https://github.com/CasualOffice/openseal/actions/runs/43860204277) (2026-11-16), every job green:
@@ -56,10 +56,10 @@ Outcome (docs/06): "Access code, email OTP, SMS OTP, phone call, OIDC; versioned
 | --- | --- | --- |
 | outcome (what a user can do): Access code, email OTP, SMS OTP, phone call, OIDC; versioned ERSD; withdraw consent | Met | In `server-db` of run 43860204277: `casual-sign-server` `tests/ceremony_auth.rs` (access code, withdraw; 5 passed), `tests/ceremony_sso.rs` (OIDC), `tests/disclosure.rs`, `tests/ersd_publish.rs` (versioned ERSD); worker `tests/email_otp.rs`, `tests/sms_otp.rs` (SMS and voice) |
 | merged | Met | All on `main` at `ea67292` |
-| CI green including a browser run | Not met | Mock-mode browser passed in `e2e` of run 43860204277: `recipient-auth.spec.mjs:54` "codes by email, text message and phone call, then consent and its withdrawal" and `:64` "sign-in through an identity provider comes back to the signing page", on chromium, webkit and mobile. Both are skipped in `compose-e2e`. Missing (`RAUTH-02`): an SMS gateway stub and an OIDC provider stub in `docker-compose.yml` and the spec run against the real server. M |
+| CI green including a browser run | Not met (built; CI is the proof) | Mock-mode browser passed in `e2e` of run 43860204277 (chromium, webkit, mobile). Since `RAUTH-02` (branch `sprint1-stabilization`): the CI-only overlay `tools/e2e/compose.e2e.yml` adds an SMS gateway stub and an OpenID Connect provider stub (`tools/e2e/auth_stubs.py`, 12 stdlib unit tests, run first in `compose-e2e`), and `recipient-auth.spec.mjs` no longer skips on the real stack: access code, email code read from Mailpit, SMS and voice codes read from the stub, sign-in on the stub's page, consent and withdrawal. Mock mode green locally on chromium, webkit and mobile; the Compose run itself has not run yet (no Docker here). Met when `compose-e2e` on `main` shows both tests passed on chromium and webkit |
 | docs/96 rows updated | Met | `FG-111`, `FG-117`, `FG-118`, `FG-119`, `FG-217` `Works`; `FG-177` (ERSD editing) Partial, real-stack e2e left; `FG-039`, `FG-040` (SMS and WhatsApp delivery) not started (`MSG-02`) |
-| demo recorded | Not met | Part of `RAUTH-02`; nothing recorded. S once the Compose run exists |
-| Accessibility (WCAG 2.2 AA) and i18n string extraction | Needs the owner | `a11y-sign.spec.mjs` "every ceremony step is accessible" passed (run 43860204277); not shown to include the code-entry, sign-in-provider and withdraw steps. i18n as slice 1. S |
+| demo recorded | Not met (built; CI is the proof) | `recipient-auth.spec.mjs` on the Compose stack records the signer's screens (codes on a phone, iPhone 13; sign-in on a desktop) into `target/e2e-demo/vs05-*.webm`; `compose-e2e` uploads them as the `slice-5-demo` artifact (`if-no-files-found: error`). Met when that artifact exists on a green `main` run |
+| Accessibility (WCAG 2.2 AA) and i18n string extraction | Needs the owner | Accessibility: `recipient-auth.spec.mjs` "the code entry, sign-in and withdraw steps are accessible" (light, dark) runs axe (`expectAccessible`, WCAG 2.2 AA tags) at phone width on the access-code step, each sent-code step (email, SMS, voice) before and after asking and with a wrong code, the identity-provider sign-in step, the withdraw dialog and the withdrawn screen; green locally in mock mode on chromium, webkit and mobile, red with the code field's label unbound (`axe on email-code entry (light)`). In CI's `e2e` job from the next run. i18n as slice 1 |
 | (tracker, not a docs/06 item) ADR-033 accepted | Needs the owner | ADR-033 (OIDC sign-in bound by verified email) is Proposed in docs/08; `VS-05` names its acceptance as left |
 
 Owner decision: close / not yet, because …

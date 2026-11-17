@@ -44,6 +44,7 @@ cookies over plain HTTP (`OPENSEAL_DEV_INSECURE_KEY=1`). A sealed PDF from it va
 **End-to-end test on the stack** (`E2E-01`, Phase 2 exit item 1; CI job `compose-e2e`, `tools/ci-local.sh`):
 
 ```sh
+export COMPOSE_FILE=docker-compose.yml:tools/e2e/compose.e2e.yml   # test stubs (below); test only
 docker compose up -d --build --wait
 docker compose exec -e OPENSEAL_ADMIN_PASSWORD=e2e-only-passphrase server \
     casual-sign-server bootstrap "E2E" e2e@openseal.test "E2E Admin"
@@ -53,6 +54,25 @@ OPENSEAL_E2E_BASE_URL=http://localhost:8080 OPENSEAL_E2E_EMAIL=e2e@openseal.test
 cd ../.. && docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.pem
 target/tools-venv/bin/python tools/verify-sealed.py target/e2e-sealed     # pyHanko over the sealed PDF and certificate
 ```
+
+**Recipient authentication in the test stack** (`RAUTH-02`, slice 5; test only). The CI-only overlay
+`tools/e2e/compose.e2e.yml` adds two stand-ins for providers an operator brings, so `e2e/recipient-auth.spec.mjs` runs
+its access code, emailed, texted and spoken codes, and identity-provider sign-in against the real server. Never deploy
+it: it accepts any number and any typed email. Neither `docker-compose.yml` nor `deploy/compose.production.yml` names
+it (`tools/e2e/test_auth_stubs.py` checks this; `tools/check-deploy.py` is unchanged).
+
+- `sms-gateway` (`tools/e2e/auth_stubs.py sms`): the worker's `OPENSEAL_SMS_GATEWAY_URL` contract, over HTTPS with a
+  certificate the development root issues at start (the worker trusts that root through `SSL_CERT_FILE` in the
+  overlay). It keeps what it receives in memory and serves it, as Mailpit serves mail, at
+  `http://127.0.0.1:8026/messages?to=+…` (`OPENSEAL_E2E_SMS_PORT`, `OPENSEAL_E2E_SMS_URL` for the spec).
+- `oidc` (`auth_stubs.py oidc`): an OpenID Connect provider for `tools/e2e/recipient-idps.json`, the server's
+  `OPENSEAL_RECIPIENT_IDPS_FILE` in the overlay. It runs in the server container's network namespace, so the server
+  reaches its token and JWKS endpoints on the loopback address and the browser its sign-in page at
+  `http://localhost:8090`. The page asks only for an email; the ID token (RS256, a key OpenSSL draws at start) asserts
+  it as verified, with the request's nonce, after checking the client secret, the redirect URI and the PKCE verifier.
+
+The stubs' tests run without Docker: `python3 -I -m unittest discover -s tools/e2e -p 'test_*.py'`. The run on the
+stack records the signer's screens into `target/e2e-demo/vs05-*.webm`, uploaded by `compose-e2e` as `slice-5-demo`.
 
 ## Pretrained models (optional, Compose profile `ml`)
 

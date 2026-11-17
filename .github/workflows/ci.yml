@@ -234,16 +234,23 @@ jobs:
   # signers in order, each signs through the link read from Mailpit, the sender downloads
   # the sealed PDF and certificate), then pyHanko over the downloads against the stack's
   # generated root. The stack is torn down with its volumes however the job ends.
+  # RAUTH-02: the CI-only overlay tools/e2e/compose.e2e.yml (COMPOSE_FILE, so every
+  # `docker compose` here uses it) adds an SMS gateway stub and an OpenID Connect provider
+  # stub, so slice 5's spec runs its codes and sign-in against the real server; never part
+  # of docker-compose.yml or the production profile.
   compose-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     env:
+      COMPOSE_FILE: docker-compose.yml:tools/e2e/compose.e2e.yml
       OPENSEAL_E2E_BASE_URL: http://localhost:8080
       OPENSEAL_E2E_MAIL_URL: http://127.0.0.1:8025
+      OPENSEAL_E2E_SMS_URL: http://127.0.0.1:8026
       OPENSEAL_E2E_EMAIL: e2e@openseal.test
       OPENSEAL_E2E_PASSWORD: e2e-only-passphrase
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: python3 -I -m unittest discover -s tools/e2e -p 'test_*.py'
       - run: docker compose up -d --build --wait
       - run: docker compose exec -T -e OPENSEAL_ADMIN_PASSWORD="$OPENSEAL_E2E_PASSWORD" server casual-sign-server bootstrap "E2E" "$OPENSEAL_E2E_EMAIL" "E2E Admin"
       - working-directory: webapp/e2e
@@ -260,8 +267,19 @@ jobs:
         with:
           name: slice-1-demo
           path: |
-            target/e2e-demo
+            target/e2e-demo/vs01-*
             target/e2e-sealed/*vs01-*
+          if-no-files-found: error
+          retention-days: 90
+      # The slice 5 demo (RAUTH-02): recipient-auth.spec.mjs on this stack, recorded, the
+      # signer's screens: an access code and codes by email, SMS and voice call on a phone,
+      # then sign-in at the identity provider stub on a desktop; each ends by consenting and
+      # withdrawing consent.
+      - if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: slice-5-demo
+          path: target/e2e-demo/vs05-*
           if-no-files-found: error
           retention-days: 90
       - if: failure()
