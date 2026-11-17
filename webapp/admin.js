@@ -39,7 +39,7 @@ import { register, unregisterPrefix } from "./commands.js";
 import {
   NAV, routeFrom, navHref, SCOPE_GROUPS, PERMISSION_GROUPS, profileChoices, profileValue, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
   expiryWarningOf, expiryWarningPatch, MAX_WARNING_DAYS, actorKind, changedKeys, filterAdminEvents, joinCsvPages,
-  orgLocked,
+  orgLocked, SEAL_PROFILES, sealProfileLabel,
 } from "./adminmodel.js";
 import { intelligence } from "./adminintel.js";
 import { ersdCard } from "./adminersd.js";
@@ -262,7 +262,8 @@ function account(panel, ctx, part) {
           row(t("admin.account-name"), acct.name),
           row(t("admin.expiry-days"), s().default_expiry_days),
           row(t("admin.reminder-days"), s().first_reminder_days ? s().first_reminder_days : t("admin.reminder-none")),
-          h("dt", { text: t("admin.expiry-warning") }), h("dd", { attrs: { "data-testid": "expiry-warning" }, text: warningText(expiryWarningOf(s())) })),
+          h("dt", { text: t("admin.expiry-warning") }), h("dd", { attrs: { "data-testid": "expiry-warning" }, text: warningText(expiryWarningOf(s())) }),
+          h("dt", { text: t("admin.seal-profile") }), h("dd", { attrs: { "data-testid": "seal-profile" }, text: t(sealProfileLabel(s().default_seal_profile)) })),
         lockNote("first_reminder_days")));
   }
   function card(id, title, lede, editLabel, onEdit, ...body) {
@@ -284,6 +285,10 @@ function account(panel, ctx, part) {
         f.remind = h("input", { id: "a-remind", class: "os-input", type: "number", min: "0", max: "60", step: "1", value: s().first_reminder_days ?? "" });
         if (orgLocked(acct, "first_reminder_days")) { f.remind.disabled = true; f.remind.setAttribute("aria-describedby", "a-remind-lock"); }
         f.warn = h("input", { id: "a-warn", class: "os-input", type: "number", min: "0", max: String(MAX_WARNING_DAYS), step: "1", value: String(expiryWarningOf(s())), attrs: { "aria-describedby": "a-warn-help" } });
+        // VS-07: the PAdES level new envelopes are sealed at when they name none.
+        f.seal = h("select", { id: "a-seal", class: "os-input", attrs: { "aria-describedby": "a-seal-help" } },
+          ...SEAL_PROFILES.map((p) => h("option", { value: p, text: t(sealProfileLabel(p)) })));
+        f.seal.value = SEAL_PROFILES.includes(s().default_seal_profile) ? s().default_seal_profile : "pades-b-t";
         f.err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
         body.append(
           h("p", { class: "os-label", text: t("admin.account-name") }), h("p", { class: "os-muted", attrs: { "data-testid": "account-name" }, text: acct.name || t("admin.not-set") }),
@@ -291,7 +296,9 @@ function account(panel, ctx, part) {
           h("label", { class: "os-label", attrs: { for: "a-remind" }, text: t("admin.reminder-days") }), f.remind,
           f.remind.disabled ? h("p", { id: "a-remind-lock", class: "os-help", text: t("admin.org-locked") }) : null,
           h("label", { class: "os-label", attrs: { for: "a-warn" }, text: t("admin.expiry-warning") }), f.warn,
-          h("p", { id: "a-warn-help", class: "os-help", text: t("admin.expiry-warning-help") }), f.err);
+          h("p", { id: "a-warn-help", class: "os-help", text: t("admin.expiry-warning-help") }),
+          h("label", { class: "os-label", attrs: { for: "a-seal" }, text: t("admin.seal-profile") }), f.seal,
+          h("p", { id: "a-seal-help", class: "os-help", text: t("admin.seal-profile-help") }), f.err);
       },
       actions: [
         { label: t("action.cancel"), value: null },
@@ -305,7 +312,9 @@ function account(panel, ctx, part) {
             if (!Number.isInteger(warn) || warn < 0 || warn > MAX_WARNING_DAYS) { f.err.textContent = t("admin.need-warning-days", { n: MAX_WARNING_DAYS }); f.warn.focus(); return undefined; }
             // RTE-03: the server takes the workflow policy whole, so the account's policy
             // as it is now (its disclosure kept) goes back with the new warning days.
-            const patch = { default_expiry_days: expiry, first_reminder_days: remind || null, ...(await expiryWarningPatch(ctx.api, warn)) };
+            // The seal level is sent only when it changes, so an unset default stays unset.
+            const seal = f.seal.value !== (SEAL_PROFILES.includes(s().default_seal_profile) ? s().default_seal_profile : "pades-b-t") ? { default_seal_profile: f.seal.value } : {};
+            const patch = { default_expiry_days: expiry, first_reminder_days: remind || null, ...seal, ...(await expiryWarningPatch(ctx.api, warn)) };
             const out = await ctx.api.patchAccountSettings(patch);
             acct = { ...acct, settings: out?.settings || acct.settings };
             return true;

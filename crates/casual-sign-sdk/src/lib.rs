@@ -64,6 +64,8 @@ pub use casual_sign_verify::{
 };
 pub use casual_sign_xfa::{Faces as XfaFaces, XfaError, XfaLimits, XfaReport};
 
+pub mod anchor;
+
 /// The field model the facade takes: fields, values and identifiers (docs/22 §6).
 pub mod model {
     pub use casual_sign_fields::{DisplayRect, PageGeometry};

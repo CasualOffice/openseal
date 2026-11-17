@@ -217,6 +217,9 @@ pub struct WorkerConfig {
     /// The account policy commands are decided under (per-account settings are read by
     /// the API, `T-2C`; the worker uses the operator's defaults).
     pub policy: Policy,
+    /// Queue each closed day's anchor jobs (`FG-158`, docs/32 §5). Any worker runs an
+    /// anchor job it claims; this decides whether this one also queues them.
+    pub anchoring: bool,
 }
 
 impl Default for WorkerConfig {
@@ -234,6 +237,7 @@ impl Default for WorkerConfig {
             abuse: "abuse@openseal.invalid".into(),
             token_ttl: Duration::from_secs(30 * 86_400),
             policy: Policy::default(),
+            anchoring: false,
         }
     }
 }
@@ -253,6 +257,9 @@ pub struct Worker<B: BlobStore> {
     faults: Option<FaultHook>,
     inference: Option<Arc<dyn crate::ml::Inference>>,
     messenger: Option<Arc<dyn crate::messenger::Messenger>>,
+    anchor_sink: Option<Arc<dyn crate::anchor::AnchorSink>>,
+    /// The latest day this process queued anchor jobs for.
+    anchors_queued: std::sync::Mutex<Option<time::Date>>,
 }
 
 impl<B: BlobStore> core::fmt::Debug for Worker<B> {
@@ -357,7 +364,17 @@ impl<B: BlobStore + 'static> Worker<B> {
             faults: None,
             inference: None,
             messenger: None,
+            anchor_sink: None,
+            anchors_queued: std::sync::Mutex::new(None),
         }
+    }
+
+    /// Publish each anchor of chain heads to `sink` (`FG-158`). Without one, anchors are
+    /// stored and time-stamped, and published nowhere.
+    #[must_use]
+    pub fn with_anchor_sink(mut self, sink: Arc<dyn crate::anchor::AnchorSink>) -> Self {
+        self.anchor_sink = Some(sink);
+        self
     }
 
     /// Send SMS and voice one-time codes through `messenger` (slice 5). Without it, a
@@ -409,6 +426,9 @@ impl<B: BlobStore + 'static> Worker<B> {
     ///
     /// The store's codes when the claim itself fails.
     pub async fn run_once(&self) -> Result<Vec<(String, JobOutcome)>> {
+        if self.config.anchoring {
+            self.queue_anchors().await;
+        }
         let lease = jobs::random_uuid();
         let claimed = self
             .store
@@ -578,6 +598,9 @@ impl<B: BlobStore + 'static> Worker<B> {
         }
         if job.kind == casual_sign_host::jobs::SEAL_ENDED_CERTIFICATE {
             return self.ended_certificate(job, lease).await;
+        }
+        if job.kind == casual_sign_host::jobs::ANCHOR_CHAIN_HEADS {
+            return self.anchor_heads(job, lease).await;
         }
         if job.kind == casual_sign_host::ml::ANALYZE_DOCUMENT
             || job.kind == casual_sign_host::ml::FINGERPRINT_TEMPLATE
@@ -1533,6 +1556,147 @@ impl<B: BlobStore + 'static> Worker<B> {
             })?;
         tx.commit().await?;
         Ok(())
+    }
+
+    /// Queue the anchor jobs of every closed day not yet queued by this process (at most
+    /// a week back). A failure is logged and tried again next round.
+    async fn queue_anchors(&self) {
+        let done = self.anchors_queued.lock().map(|g| *g).unwrap_or(None);
+        let days = crate::anchor::days_to_queue(self.now(), done);
+        for day in days {
+            let (start, end) = crate::anchor::day_bounds(day);
+            match self
+                .store
+                .entry_points()
+                .enqueue_anchor_jobs(day, start, end, self.now())
+                .await
+            {
+                Ok(_) => {
+                    if let Ok(mut g) = self.anchors_queued.lock() {
+                        *g = Some(day);
+                    }
+                }
+                Err(e) => {
+                    crate::log(
+                        "WARN",
+                        "anchor_queue_failed",
+                        &[("code", e.code().to_owned())],
+                    );
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Anchor an account's chain heads of one day (`FG-158`, docs/32 §5; the module
+    /// [`crate::anchor`] describes the steps and what a crash at each leaves).
+    async fn anchor_heads(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        use casual_sign_sdk::anchor::{MAX_ANCHOR_LEAVES, MerkleTree, anchor_statement};
+        use casual_sign_store::repo::anchors::{NewLeaf, StoredAnchor};
+        let bad = || WorkerError::BadJob {
+            kind: job.kind.clone(),
+        };
+        let p: casual_sign_host::jobs::AnchorJob =
+            serde_json::from_value(job.payload.clone()).map_err(|_| bad())?;
+        let period = crate::anchor::parse_period(&p.period).ok_or_else(bad)?;
+        if job.envelope_id.is_some() {
+            return Err(bad());
+        }
+        let (start, end) = crate::anchor::day_bounds(period);
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        if let Some(stored) = tx.anchors().by_period(period).await? {
+            // Stored by an earlier run (or another worker): publish again and close.
+            self.publish_anchor(&stored)?;
+            return self.close_job(tx, job, lease).await;
+        }
+        let limit = u32::try_from(MAX_ANCHOR_LEAVES.saturating_add(1)).unwrap_or(u32::MAX);
+        let heads = tx.anchors().heads_for_period(start, end, limit).await?;
+        if heads.is_empty() {
+            return self.close_job(tx, job, lease).await;
+        }
+        tx.commit().await?;
+        if u64::try_from(heads.len()).unwrap_or(u64::MAX) > MAX_ANCHOR_LEAVES {
+            return Err(WorkerError::Pipeline {
+                code: "CS-AUD-0002",
+            });
+        }
+        let leaves: Vec<Hash256> = heads.iter().map(|h| Hash256(h.head)).collect();
+        let tree = MerkleTree::from_chain_heads(&leaves);
+        let size = u64::try_from(tree.len()).unwrap_or(u64::MAX);
+        let root = tree.root();
+        let statement = anchor_statement(&root, size);
+        // The token (blocking: the TSA is synchronous), checked before anything is stored.
+        self.refresh_tsas().await;
+        let factory = Arc::clone(&self.seal.timestamps);
+        let token = tokio::task::spawn_blocking(move || {
+            let source = factory();
+            casual_sign_sdk::anchor::timestamp_statement(source.as_ref(), &statement)
+        })
+        .await
+        .map_err(|_| WorkerError::Pipeline {
+            code: "CS-SEAL-0002",
+        })?
+        .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+        self.boundary(Boundary::Recorded, &job.kind).await;
+        let mut rows = Vec::with_capacity(heads.len());
+        for (i, h) in heads.iter().enumerate() {
+            let proof = tree
+                .inclusion_proof(i)
+                .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+            rows.push(NewLeaf {
+                leaf_index: proof.leaf_index,
+                head: *h,
+                path: proof.path.iter().map(|p| p.0).collect(),
+            });
+        }
+        let tsa_time = OffsetDateTime::from_unix_timestamp_nanos(
+            i128::try_from(token.gen_time.as_nanos()).unwrap_or(i128::MAX),
+        )
+        .map_err(|_| WorkerError::Pipeline {
+            code: "CS-SEAL-0002",
+        })?;
+        let anchor = StoredAnchor {
+            // One id per account and day: a re-run that stores names the same anchor.
+            id: jobs::derived_uuid(&[
+                b"openseal.anchor",
+                job.account_id.0.as_bytes(),
+                p.period.as_bytes(),
+            ]),
+            period,
+            tree_size: size,
+            root: root.0,
+            timestamp_token: token.der,
+            tsa_time,
+            created_at: self.now(),
+        };
+        let mut tx = self.store.for_account(job.account_id).begin().await?;
+        let stored = if tx.anchors().insert(&anchor, &rows).await? {
+            anchor
+        } else {
+            tx.anchors()
+                .by_period(period)
+                .await?
+                .ok_or(WorkerError::Store(
+                    casual_sign_store::StoreError::NotFound { entity: "anchor" },
+                ))?
+        };
+        tx.commit().await?;
+        self.publish_anchor(&stored)?;
+        let tx = self.store.for_account(job.account_id).begin().await?;
+        self.close_job(tx, job, lease).await
+    }
+
+    /// Hand `anchor`'s published form to the sink, when there is one.
+    fn publish_anchor(
+        &self,
+        anchor: &casual_sign_store::repo::anchors::StoredAnchor,
+    ) -> Result<()> {
+        let Some(sink) = &self.anchor_sink else {
+            return Ok(());
+        };
+        let line = crate::anchor::published(anchor)
+            .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+        sink.publish(&line).map_err(|_| WorkerError::AnchorSink)
     }
 
     fn message_id(&self, job: JobId, who: &str) -> String {

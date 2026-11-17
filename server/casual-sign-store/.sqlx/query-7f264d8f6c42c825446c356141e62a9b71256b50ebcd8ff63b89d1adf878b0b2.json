@@ -1,0 +1,55 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT h.envelope_id AS \"envelope_id!\", h.seq AS \"seq!\", h.hash AS \"hash!\"\n                 FROM (SELECT DISTINCT ON (a.envelope_id) a.envelope_id, a.seq, a.hash\n                         FROM audit_events AS a\n                        WHERE a.account_id = $1 AND a.at < $3\n                          AND a.envelope_id IN (SELECT e.envelope_id FROM audit_events AS e\n                                                 WHERE e.account_id = $1\n                                                   AND e.at >= $2 AND e.at < $3)\n                        ORDER BY a.envelope_id, a.seq DESC) AS h\n                WHERE NOT EXISTS (SELECT 1 FROM chain_anchor_leaves AS l\n                                   WHERE l.account_id = $1 AND l.envelope_id = h.envelope_id\n                                     AND l.head = h.hash)\n                ORDER BY h.envelope_id\n                LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "envelope_id!",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "audit_events",
+            "name": "envelope_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "seq!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "audit_events",
+            "name": "seq"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "hash!",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "audit_events",
+            "name": "hash"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "7f264d8f6c42c825446c356141e62a9b71256b50ebcd8ff63b89d1adf878b0b2"
+}

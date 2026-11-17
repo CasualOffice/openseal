@@ -758,7 +758,21 @@ pub(crate) async fn create_in(
     if let Some(o) = req.signing_options {
         changes.push(Change::SetSigningOptions { options: o });
     }
-    if let Some(s) = req.seal_profile {
+    // The envelope's own profile, else the account's default (VS-07, FG-154): a stored
+    // default that is not a profile (written before it was checked) is ignored, and the
+    // engine's own default, B-T, stays.
+    let profile = match req.seal_profile {
+        Some(s) => Some(s),
+        None => tx
+            .account()
+            .get()
+            .await?
+            .settings
+            .get(super::admin::DEFAULT_SEAL_PROFILE)
+            .and_then(|v| serde_json::from_value::<casual_sign_model::SealProfile>(v.clone()).ok())
+            .filter(|p| *p != casual_sign_model::SealProfile::default()),
+    };
+    if let Some(s) = profile {
         changes.push(Change::SetSealProfile { profile: s });
     }
     if !changes.is_empty() {

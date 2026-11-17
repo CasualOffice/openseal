@@ -10,6 +10,7 @@ import { signIn, app, creds, REAL, expectAccessible } from "./helpers.mjs";
 const ROOT = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const fixture = (p) => path.join(ROOT, "fixtures", p);
 const WASM = fs.existsSync(path.join(ROOT, "webapp/vendor/openseal-wasm/casual_sign_wasm_bg.wasm"));
+const VERIFY = REAL ? "/verify.html" : "/verify.html?mock=1";
 
 test("a wrong password is refused with a message, and the right one signs in", async ({ page }) => {
   await page.goto(app("#/signin"));
@@ -164,10 +165,11 @@ test("an invitation link without a token says so and offers sign-in", async ({ p
 });
 
 test.describe("verify on the sealed-receipt design", () => {
-  test.skip(!WASM || REAL, "the WASM verifier is built locally by tools/build-webapp-wasm.sh");
+  // As web02.spec.mjs: built into webapp/ in mock mode, served by a real server (VS-07).
+  test.skip(!WASM && !REAL, "the WASM verifier is built locally by tools/build-webapp-wasm.sh");
 
   test("the verifier loads behind a skeleton line, then a check scans and ends on the receipt", async ({ page }) => {
-    await page.goto("/verify.html?mock=1");
+    await page.goto(VERIFY);
     await expect(page.getByTestId("verify-engine")).toHaveAttribute("data-state", "ready");
     await expect(page.getByTestId("verify-engine")).toContainText("Verifier ready");
     await page.getByTestId("trust-input").setInputFiles(fixture("sealed/trust-root.pem"));
@@ -185,7 +187,7 @@ test.describe("verify on the sealed-receipt design", () => {
   });
 
   test("a tampered PDF ends on a red receipt with the failing check marked", async ({ page }) => {
-    await page.goto("/verify.html?mock=1");
+    await page.goto(VERIFY);
     await page.getByTestId("trust-input").setInputFiles(fixture("signed/trust-root.der"));
     await page.getByTestId("verify-input").setInputFiles(fixture("signed/flip-range1.pdf"));
     const verdict = page.getByTestId("verdict");
