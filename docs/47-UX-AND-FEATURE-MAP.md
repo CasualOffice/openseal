@@ -185,7 +185,10 @@ shown, the badge colours, the font, checkbox targets, and the panel and toast op
   off. `real-stack.spec.mjs` runs only there: sign in, upload, two signers in order, send; each signer opens the link
   the worker emailed (read from Mailpit's API) and signs; the sender sees Completed and downloads the sealed PDF and
   the certificate into `target/e2e-sealed/`, which pyHanko then validates against the stack's root
-  (`tools/verify-sealed.py`). Against a real server the first sign-in seeds a draft and a sent envelope through the
+  (`tools/verify-sealed.py`). `routing.spec.mjs` (`VS-02`) runs in both modes: an approver, a viewer, an agent and a
+  signer in order; each acts through their own link in their turn (emailed on the stack, the mock's token in mock
+  mode), the agent names the signer, who signs; the sender downloads the sealed PDF and certificate. On the stack
+  every screen is recorded as the slice 2 demo (`RTE-04`, artefact `slice-2-demo`). Against a real server the first sign-in seeds a draft and a sent envelope through the
   API and later sign-ins reuse its session (the server allows ten sign-ins a minute); specs that need a seeded
   mock envelope or an emailed token skip, saying so. Found and fixed by this run: the signing page took
   `completing` (the server sealing) for "others still to sign", and showed an error rather than "this link does not
