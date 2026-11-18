@@ -24,6 +24,7 @@ from tracker_rows import ID_ROW, TRACKER, rows  # noqa: E402
 GATES = [
     "check-tracker-shape.py",
     "check-crate-deps.py",
+    "check-plan.py",
 ]
 
 SKIP_DIRS = {"target", "fuzz", ".git", "node_modules"}
