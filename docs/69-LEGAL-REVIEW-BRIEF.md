@@ -127,8 +127,9 @@ reviewed.
     sufficient? What records should we keep?
 20. We match the API shapes integrators know from DocuSign and SignNow without using their names or copying their
     prose ([52](52-COMPETITOR-STUDY.md)). Is that defensible?
-21. The eight open licence questions in [09](09-LEGAL-AND-COMPLIANCE.md) §9 (attribution placement, images, model
-    weights, ONNX Runtime's bundled MPL-2.0 code, fonts, the `rav1e` patent licence).
+21. The open licence questions in [09](09-LEGAL-AND-COMPLIANCE.md) §9 (attribution placement, images, model
+    weights, ONNX Runtime's bundled MPL-2.0 code, fonts; the `rav1e` patent-licence question was withdrawn when it
+    left the build, `LEG-08`).
 22. Trademark: is "OpenSeal" clear to use for software in our classes (`DEC-07`)?
 
 ## Deliverables expected from counsel

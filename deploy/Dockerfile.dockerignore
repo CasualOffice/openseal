@@ -6,6 +6,8 @@
 !crates
 !server
 !migrations
+# Vendored, patched crates the workspace takes through [patch.crates-io] (DEP-06).
+!third_party
 !webapp
 !deploy
 # The model manifest and its fetch script, for the `models` stage (ML-01).
