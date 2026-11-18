@@ -2252,8 +2252,9 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             &[],
         )
         .await,
-        StatusCode::OK,
-        "reauthenticate",
+        // The user enrolled a factor at sign-in, so the code is owed too.
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "reauthenticate without the second factor",
     )
     .await;
     ok(

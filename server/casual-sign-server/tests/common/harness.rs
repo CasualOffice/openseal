@@ -251,9 +251,7 @@ impl Api {
         if let Some(t) = template_of(path) {
             self.called.lock().unwrap().insert((method.to_owned(), t));
         }
-        // Boxed: a request's future is large in a debug build, and the biggest tests
-        // hold many on the test thread's stack.
-        let resp = Box::pin(self.app.clone().oneshot(req)).await.unwrap();
+        let resp = self.app.clone().oneshot(req).await.unwrap();
         let status = resp.status();
         let headers = resp.headers().clone();
         let body = resp.into_body().collect().await.unwrap().to_bytes();

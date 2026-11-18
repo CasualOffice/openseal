@@ -255,8 +255,7 @@ pub(crate) async fn guard(
     mut req: Request,
     next: Next,
 ) -> Response {
-    // Boxed: the credential checks are a large future, kept off the request's stack.
-    let p = match Box::pin(authenticate(&state, req.method(), req.headers())).await {
+    let p = match authenticate(&state, req.method(), req.headers()).await {
         Ok(p) => p,
         Err(e) => return e.into_response(),
     };
