@@ -276,7 +276,7 @@ export function trailBody(trail) {
     ol.append(h("li", { class: "os-vfy__event" },
       h("span", { class: "os-vfy__event-dot", attrs: { "aria-hidden": "true" } }),
       h("div", { class: "os-vfy__event-body" },
-        h("span", { class: "os-vfy__event-what", text: has(key) ? t(key) : eventLabel(e.type) }),
+        h("span", { class: "os-vfy__event-what", text: has(key) ? t(key) : eventLabel(e.type) || t("audit.event") }),
         h("span", { class: "os-vfy__muted os-vfy__small", text: e.actor.name || e.actor.kind }),
         e.at ? h("time", { class: "os-vfy__muted os-vfy__small os-vfy__event-at", attrs: { datetime: e.at }, text: fmtDate(e.at) }) : null)));
   }

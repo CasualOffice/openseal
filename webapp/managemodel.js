@@ -258,12 +258,14 @@ export function piiSummary(suggestions) {
 /// each `prev` the hash before it, and `chain_head` the last hash. It checks the links
 /// only and recomputes no hash (that needs the canonical event bytes, docs/32), so a
 /// screen may say "linked", never "verified" or "unchanged". `{ok, n, problems}`.
+/// Hashes are as the server writes them, `sha256:` and 64 hex digits (casual-sign-server
+/// `Hash256`); bare hex is read too, as trail.js does (S1-10).
 export function auditLinks(audit) {
   const items = Array.isArray(audit?.items) ? audit.items : [];
   const problems = [];
   items.forEach((a, i) => {
     if (a?.seq !== i) problems.push({ seq: i, problem: "seq" });
-    if (typeof a?.hash !== "string" || !/^[0-9a-f]{64}$/.test(a.hash)) problems.push({ seq: i, problem: "hash" });
+    if (typeof a?.hash !== "string" || !/^(sha256:)?[0-9a-f]{64}$/.test(a.hash)) problems.push({ seq: i, problem: "hash" });
     const want = i === 0 ? null : items[i - 1]?.hash ?? null;
     const prev = a?.prev !== undefined ? a.prev : a?.event?.prev ?? null;
     if (prev !== want) problems.push({ seq: i, problem: "prev" });

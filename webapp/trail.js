@@ -52,8 +52,9 @@ function actorOf(a) {
 }
 
 /// A readable event name from a type: "recipient.signature_adopted" →
-/// "Recipient signature adopted". The page prefers a message key when there is one.
+/// "Recipient signature adopted". The page prefers a message key when there is one;
+/// with no type this is "", and the page says `audit.event`.
 export function eventLabel(type) {
   const s = String(type || "").replace(/[._]+/g, " ").trim();
-  return s ? s[0].toUpperCase() + s.slice(1) : "Event";
+  return s ? s[0].toUpperCase() + s.slice(1) : "";
 }

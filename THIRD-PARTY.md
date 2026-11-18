@@ -13,28 +13,20 @@ linked into a server, worker, keyd, modeld, console or the WASM engine, on some 
 `test` only through dev-dependencies (never distributed). Cargo.lock covers every target
 platform, so `shipped` over-counts for any one binary.
 
-## Rust crates (549: 507 shipped)
+## Rust crates (503: 462 shipped)
 
 | Crate | Version | Licence (as declared) | Scope | Copyright lines in its licence files | NOTICE or PATENTS file |
 | --- | --- | --- | --- | --- | --- |
-| ab_glyph | 0.2.32 | Apache-2.0 | shipped | (none stated) |  |
-| ab_glyph_rasterizer | 0.1.10 | Apache-2.0 | shipped | (none stated) |  |
 | adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | shipped | Copyright (C) Jonas Schievink <jonasschievink@gmail.com> |  |
 | aes | 0.9.2 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018-2024 The RustCrypto Project Developers; Copyright (c) 2018 Artyom Pavlov |  |
 | ahash | 0.8.12 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018 Tom Kaitchuck |  |
 | aho-corasick | 1.1.5 | Unlicense OR MIT | shipped | Copyright (c) 2015 Andrew Gallant |  |
-| aligned | 0.4.3 | MIT OR Apache-2.0 | shipped | Copyright (c) 2017 Jorge Aparicio |  |
-| aligned-vec | 0.6.4 | MIT | shipped | Copyright (c) 2022 sarah |  |
 | alloc-no-stdlib | 2.0.4 | BSD-3-Clause | shipped | Copyright (c) 2016 Dropbox, Inc. |  |
 | alloc-stdlib | 0.2.4 | BSD-3-Clause | shipped | (none stated) |  |
 | allocator-api2 | 0.2.21 | MIT OR Apache-2.0 | shipped | (none stated) |  |
-| anyhow | 1.0.104 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | approx | 0.5.1 | Apache-2.0 | shipped | (none stated) |  |
-| arbitrary | 1.5.0 | MIT OR Apache-2.0 | shipped | Copyright (c) 2019 Manish Goregaokar |  |
-| arg_enum_proc_macro | 0.3.4 | MIT | shipped | Copyright (c) 2018 Luca Barbato |  |
 | argon2 | 0.5.3 | MIT OR Apache-2.0 | shipped | Copyright (c) 2021-2024 The RustCrypto Project Developers |  |
 | arrayvec | 0.7.8 | MIT OR Apache-2.0 | shipped | Copyright (c) Ulrik Sverdrup "bluss" 2015-2023 |  |
-| as-slice | 0.2.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018 Jorge Aparicio |  |
 | asn1-rs | 0.7.2 | MIT OR Apache-2.0 | test | Copyright (c) 2017 Pierre Chifflier |  |
 | asn1-rs-derive | 0.6.0 | MIT OR Apache-2.0 | test | Copyright (c) 2017 Pierre Chifflier |  |
 | asn1-rs-impl | 0.2.0 | MIT/Apache-2.0 | test | (none stated) |  |
@@ -43,9 +35,6 @@ platform, so `shipped` over-counts for any one binary.
 | atomic-polyfill | 1.0.3 | MIT OR Apache-2.0 | shipped | Copyright (c) 2020 Dario Nieuwenhuis |  |
 | atomic-waker | 1.1.2 | Apache-2.0 OR MIT | shipped | Copyright (c) 2016 Alex Crichton; Copyright (c) 2017 The Tokio Authors |  |
 | autocfg | 1.5.1 | Apache-2.0 OR MIT | build | Copyright (c) 2018 Josh Stone |  |
-| av-scenechange | 0.14.1 | MIT | shipped | Copyright (c) 2019 Multimedia and Rust |  |
-| av1-grain | 0.2.5 | BSD-2-Clause | shipped | Copyright (c) 2022-2022, the rav1e contributors |  |
-| avif-serialize | 0.8.9 | BSD-3-Clause | shipped | Copyright (c) 2020, Cloudflare, Inc. |  |
 | aws-lc-rs | 1.19.0 | ISC AND (Apache-2.0 OR ISC) | shipped | Copyright Amazon.com, Inc. or its affiliates. |  |
 | aws-lc-sys | 0.47.0 | ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0) | shipped | Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.; Copyright (c) 2014-2024 Google Inc.; Copyright (c) 2025-2026 Google Inc.; Copyright (c) 1998-2011 The OpenSSL Project. All rights reserved. |  |
 | axum | 0.8.9 | MIT | shipped | Copyright (c) 2019 axum Contributors |  |
@@ -56,9 +45,7 @@ platform, so `shipped` over-counts for any one binary.
 | base64 | 0.23.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2025 Alice Maz, Marshall Pierce |  |
 | base64ct | 1.8.3 | Apache-2.0 OR MIT | shipped | Copyright (c) 2014 Steve "Sc00bz" Thomas (steve at tobtu dot com); Copyright (c) 2021-2025 The RustCrypto Project Developers |  |
 | bit-vec | 0.9.1 | Apache-2.0 OR MIT | test | Copyright (c) 2023 The Rust Project Developers |  |
-| bit_field | 0.10.3 | Apache-2.0/MIT | shipped | Copyright (c) 2016 Philipp Oppermann |  |
 | bitflags | 2.13.2 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
-| bitstream-io | 4.10.0 | MIT/Apache-2.0 | shipped | Copyright (c) 2017 Brian Langenberger |  |
 | blake2 | 0.10.6 | MIT OR Apache-2.0 | shipped | Copyright (c) 2015-2016 The blake2-rfc Developers, Cesar Barros; Copyright (c) 2017 Artyom Pavlov |  |
 | block-buffer | 0.10.4 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018-2019 The RustCrypto Project Developers |  |
 | block-buffer | 0.12.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018-2025 The RustCrypto Project Developers |  |
@@ -67,7 +54,6 @@ platform, so `shipped` over-counts for any one binary.
 | borsh-derive | 1.8.1 | Apache-2.0 | shipped | Copyright 2019 Near |  |
 | brotli | 8.0.4 | BSD-3-Clause AND MIT | shipped | Copyright (c) 2016 Dropbox, Inc.; Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors. |  |
 | brotli-decompressor | 5.0.3 | BSD-3-Clause/MIT | shipped | Copyright (c) 2016 Dropbox, Inc. |  |
-| built | 0.8.1 | MIT | build | Copyright (c) 2017-2023 Lukas Lueg |  |
 | bumpalo | 3.20.3 | MIT OR Apache-2.0 | shipped | Copyright (c) 2019 Nick Fitzgerald |  |
 | bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT | shipped | Copyright (c) 2019 Daniel "Lokathor" Gee. |  |
 | bytemuck_derive | 1.12.1 | Zlib OR Apache-2.0 OR MIT | shipped | Copyright (c) 2019 Daniel "Lokathor" Gee. |  |
@@ -87,7 +73,6 @@ platform, so `shipped` over-counts for any one binary.
 | cms | 0.3.0-rc.2 | Apache-2.0 OR MIT | shipped | Copyright (c) 2020-2025 The RustCrypto Project Developers |  |
 | cobs | 0.3.0 | MIT OR Apache-2.0 | shipped | Copyright (c) 2015 The cobs.rs Developers |  |
 | color | 0.3.3 | Apache-2.0 OR MIT | shipped | (none stated) |  |
-| color_quant | 1.1.0 | MIT | shipped | Copyright (c) 2016 PistonDevelopers |  |
 | compact_str | 0.9.1 | MIT | shipped | Copyright (c) 2021 Parker Timmerman |  |
 | console | 0.16.6 | MIT | shipped | Copyright (c) 2017 Armin Ronacher <armin.ronacher@active-4.com> |  |
 | const-oid | 0.10.2 | Apache-2.0 OR MIT | shipped | Copyright (c) 2020-2026 The RustCrypto Project Developers |  |
@@ -106,7 +91,6 @@ platform, so `shipped` over-counts for any one binary.
 | crossbeam-epoch | 0.9.21 | MIT OR Apache-2.0 | shipped | Copyright (c) 2019 The Crossbeam Project Developers |  |
 | crossbeam-queue | 0.3.14 | MIT OR Apache-2.0 | shipped | Copyright (c) 2019 The Crossbeam Project Developers |  |
 | crossbeam-utils | 0.8.23 | MIT OR Apache-2.0 | shipped | Copyright (c) 2019 The Crossbeam Project Developers |  |
-| crunchy | 0.2.4 | MIT | shipped | Copyright 2017-2023 Eira Fransham. |  |
 | crypto-bigint | 0.7.11 | Apache-2.0 OR MIT | shipped | Copyright (c) 2021-2026 The RustCrypto Project Developers |  |
 | crypto-common | 0.1.7 | MIT OR Apache-2.0 | shipped | Copyright (c) 2021 RustCrypto Developers |  |
 | crypto-common | 0.2.2 | MIT OR Apache-2.0 | shipped | Copyright (c) 2021-2026 RustCrypto Developers |  |
@@ -144,17 +128,13 @@ platform, so `shipped` over-counts for any one binary.
 | embedded-io | 0.6.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2023 The embedded-io authors |  |
 | encode_unicode | 1.0.0 | Apache-2.0 OR MIT | shipped | (none stated) |  |
 | encoding_rs | 0.8.44 | (Apache-2.0 OR MIT) AND BSD-3-Clause | test | Copyright Mozilla Foundation; Copyright © WHATWG (Apple, Google, Mozilla, Microsoft). |  |
-| equator | 0.4.2 | MIT | shipped | Copyright (c) 2023 sarah |  |
-| equator-macro | 0.4.2 | MIT | shipped | Copyright (c) 2023 sarah |  |
 | equivalent | 1.0.3 | Apache-2.0 OR MIT | shipped | Copyright (c) 2016--2023 |  |
 | errno | 0.3.14 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 Chris Wong |  |
 | esaxx-rs | 0.1.10 | Apache-2.0 | shipped | (none stated) |  |
 | etcetera | 0.11.0 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | euclid | 0.22.14 | MIT OR Apache-2.0 | shipped | Copyright (c) 2012-2013 Mozilla Foundation |  |
 | event-listener | 5.4.2 | Apache-2.0 OR MIT | shipped | (none stated) |  |
-| exr | 1.74.0 | BSD-3-Clause | shipped | Copyright (c) Contributors to the OpenEXR Project. All rights reserved.; Copyright (c) Contributors to the exrs Project. All rights reserved. |  |
 | fastrand | 2.5.0 | Apache-2.0 OR MIT | shipped | (none stated) |  |
-| fax | 0.2.7 | MIT | shipped | Copyright © 2021 The pdf-rs contributers. |  |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | fearless_simd | 0.7.0 | Apache-2.0 OR MIT | shipped | Copyright (c) 2018 Raph Levien |  |
 | fearless_simd | 1.2.0 | Apache-2.0 OR MIT | shipped | Copyright (c) 2018 Raph Levien |  |
@@ -181,7 +161,6 @@ platform, so `shipped` over-counts for any one binary.
 | getrandom | 0.2.17 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018-2024 The rust-random Project Developers; Copyright (c) 2014 The Rust Project Developers |  |
 | getrandom | 0.3.4 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018-2025 The rust-random Project Developers; Copyright (c) 2014 The Rust Project Developers |  |
 | getrandom | 0.4.3 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018-2026 The rust-random Project Developers; Copyright (c) 2014 The Rust Project Developers |  |
-| gif | 0.14.2 | MIT OR Apache-2.0 | shipped | Copyright (c) 2015 nwin |  |
 | glam | 0.30.10 | MIT OR Apache-2.0 | shipped | Copyright 2020 Cameron Hart |  |
 | glam | 0.31.1 | MIT OR Apache-2.0 | shipped | Copyright 2020 Cameron Hart |  |
 | glam | 0.32.1 | MIT OR Apache-2.0 | shipped | Copyright 2020 Cameron Hart |  |
@@ -189,7 +168,6 @@ platform, so `shipped` over-counts for any one binary.
 | glifo | 0.4.0 | Apache-2.0 OR MIT | shipped | Copyright 2025 the Vello Authors |  |
 | group | 0.14.0 | MIT/Apache-2.0 | shipped | (none stated) |  |
 | guillotiere | 0.7.0 | MIT/Apache-2.0 | shipped | Copyright 2019 Nicolas Silva; Copyright (c) 2019 Nicolas Silva |  |
-| half | 2.7.1 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | hash32 | 0.2.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018 Jorge Aparicio |  |
 | hashbrown | 0.16.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2016 Amanieu d'Antras |  |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2016 Amanieu d'Antras |  |
@@ -226,14 +204,13 @@ platform, so `shipped` over-counts for any one binary.
 | idna | 1.1.0 | MIT OR Apache-2.0 | shipped | Copyright (c) 2013-2025 The rust-url developers |  |
 | idna_adapter | 1.2.2 | Apache-2.0 OR MIT | shipped | Copyright (c) The rust-url developers |  |
 | image | 0.25.10 | MIT OR Apache-2.0 | shipped | (none stated) |  |
-| image-webp | 0.2.4 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | image_hasher | 3.1.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2015-2017 The `img_hash` Crate Developers |  |
 | imageproc | 0.27.0 | MIT | shipped | Copyright (c) 2015 PistonDevelopers |  |
-| imgref | 1.12.3 | CC0-1.0 OR Apache-2.0 | shipped | (none stated) |  |
 | indexmap | 2.14.2 | Apache-2.0 OR MIT | shipped | Copyright (c) 2016--2017 |  |
 | indicatif | 0.18.6 | MIT | shipped | Copyright (c) 2017 Armin Ronacher <armin.ronacher@active-4.com> |  |
 | inout | 0.2.6 | MIT OR Apache-2.0 | shipped | Copyright (c) 2022-2025 The RustCrypto Project Developers; Copyright (c) 2022 Artyom Pavlov |  |
-| interpolate_name | 0.2.4 | MIT | shipped | Copyright (c) 2018 Luca Barbato |  |
+| instant-xml | 0.7.7 | Apache-2.0 OR MIT | shipped | (none stated) |  |
+| instant-xml-macros | 0.7.2 | Apache-2.0 OR MIT | shipped | (none stated) |  |
 | ipnetwork | 0.21.1 | MIT OR Apache-2.0 | shipped | Copyright 2020 Developers of the ipnetwork project |  |
 | itertools | 0.14.0 | MIT OR Apache-2.0 | shipped | Copyright (c) 2015 |  |
 | itertools | 0.15.0 | MIT OR Apache-2.0 | shipped | Copyright (c) 2015 |  |
@@ -246,10 +223,8 @@ platform, so `shipped` over-counts for any one binary.
 | jsonwebtoken | 10.4.0 | MIT | shipped | Copyright (c) 2015 Vincent Prouillet |  |
 | kurbo | 0.13.1 | Apache-2.0 OR MIT | shipped | Copyright (c) 2018 Raph Levien |  |
 | lazy_static | 1.5.1 | MIT OR Apache-2.0 | shipped | (none stated) |  |
-| lebe | 0.5.3 | BSD-3-Clause | shipped | Copyright (c) 2022 Contributors to the lebe Project. All rights reserved. |  |
 | lettre | 0.11.23 | MIT | shipped | Copyright (c) 2014-2024 Alexis Mousset <contact@amousset.me>; Copyright (c) 2019-2025 Paolo Barbolini <paolo@paolo565.org>; Copyright (c) 2018 K. <kayo@illumium.org> |  |
 | libc | 0.2.191 | MIT OR Apache-2.0 | shipped | Copyright (c) The Rust Project Developers |  |
-| libfuzzer-sys | 0.4.13 | (MIT OR Apache-2.0) AND NCSA | shipped | Copyright (c) 2010 The Rust Project Developers |  |
 | libloading | 0.8.9 | ISC | shipped | Copyright © 2015, Simonas Kazlauskas |  |
 | libloading | 0.9.0 | ISC | shipped | Copyright © 2015, Simonas Kazlauskas |  |
 | libm | 0.2.16 | MIT | shipped | Copyright (c) 2018 Jorge Aparicio; Copyright © 2005-2020 Rich Felker, et al.; Copyright © 1993,2004 Sun Microsystems or; Copyright © 2003-2011 David Schultz or |  |
@@ -260,7 +235,6 @@ platform, so `shipped` over-counts for any one binary.
 | litemap | 0.8.3 | Unicode-3.0 | shipped | Copyright © 2020-2024 Unicode, Inc. |  |
 | lock_api | 0.4.14 | MIT OR Apache-2.0 | shipped | Copyright (c) 2016 The Rust Project Developers |  |
 | log | 0.4.35 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
-| loop9 | 0.1.5 | MIT | shipped | (none stated) |  |
 | lopdf | 0.47.0 | MIT | test | Copyright (c) 2016 Junfeng Liu |  |
 | lru-cache | 0.1.2 | MIT/Apache-2.0 | shipped | Copyright (c) 2015 The Rust Project Developers |  |
 | macro_rules_attribute | 0.2.3 | Apache-2.0 OR MIT OR Zlib | shipped | Copyright 2019 Daniel Henry-Mantilla <daniel.henry.mantilla@gmail.com>; Copyright (c) 2019 Daniel Henry-Mantilla <daniel.henry.mantilla@gmail.com> |  |
@@ -269,7 +243,6 @@ platform, so `shipped` over-counts for any one binary.
 | matchit | 0.8.4 | MIT AND BSD-3-Clause | shipped | Copyright (c) 2022 Ibraheem Ahmed; Copyright (c) 2013, Julien Schmidt |  |
 | matrixmultiply | 0.3.11 | MIT/Apache-2.0 | shipped | Copyright (c) 2016 - 2023 Ulrik Sverdrup "bluss"; Copyright (c) 2021 DutchGhost [constparse.rs] |  |
 | maxminddb | 0.27.3 | ISC | shipped | Copyright (c) 2015, Gregory J. Oschwald <oschwald@gmail.com> |  |
-| maybe-rayon | 0.1.1 | MIT | shipped | Copyright (c) 2021 Joshua Holmer |  |
 | md-5 | 0.11.0 | MIT OR Apache-2.0 | shipped | Copyright (c) 2016-2026 The RustCrypto Project Developers; Copyright (c) 2016 Artyom Pavlov; Copyright (c) 2009-2013 Mozilla Foundation; Copyright (c) 2006-2009 Graydon Hoare |  |
 | memchr | 2.8.3 | Unlicense OR MIT | shipped | Copyright (c) 2015 Andrew Gallant |  |
 | mime | 0.3.18 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 Sean McArthur |  |
@@ -286,23 +259,19 @@ platform, so `shipped` over-counts for any one binary.
 | nalgebra | 0.35.0 | Apache-2.0 | shipped | Copyright 2020 Sébastien Crozet |  |
 | nalgebra-macros | 0.3.0 | Apache-2.0 | shipped | Copyright 2020 Sébastien Crozet |  |
 | ndarray | 0.17.2 | MIT OR Apache-2.0 | shipped | Copyright (c) 2015 - 2021 Ulrik Sverdrup "bluss", |  |
-| new_debug_unreachable | 1.0.6 | MIT | shipped | Copyright (c) 2015 Jonathan Reem |  |
-| no_std_io2 | 0.9.4 | Apache-2.0 OR MIT | shipped | Copyright (c) 2020-2021 Brendan Molloy <brendan@bbqsrc.net> |  |
+| nix | 0.31.3 | MIT | shipped | Copyright (c) 2015 Carl Lerche + nix-rust Authors |  |
 | nom | 7.1.3 | MIT | shipped | Copyright (c) 2014-2019 Geoffroy Couprie |  |
 | nom | 8.0.0 | MIT | shipped | Copyright (c) 2014-2019 Geoffroy Couprie |  |
-| noop_proc_macro | 0.3.0 | MIT | shipped | Copyright (c) 2019 Luca Barbato |  |
-| nu-ansi-term | 0.50.3 | MIT | shipped | Copyright (c) 2014 Benjamin Sago; Copyright (c) 2021-2022 The Nushell Project Developers |  |
 | num | 0.4.3 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | num-bigint | 0.4.8 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | num-complex | 0.4.6 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | num-conv | 0.2.2 | MIT OR Apache-2.0 | shipped | Copyright (c) Jacob Pratt |  |
-| num-derive | 0.4.2 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | num-integer | 0.1.47 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | num-iter | 0.1.46 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | num-rational | 0.4.2 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers |  |
 | oar-ocr | 0.10.2 | Apache-2.0 | shipped | Copyright 2025 Wang Xin (GreatV) |  |
-| oar-ocr-core | 0.10.2 | Apache-2.0 | shipped | (none stated) |  |
+| oar-ocr-core | 0.10.2 | Apache-2.0 | shipped | Copyright 2025 Wang Xin (GreatV) |  |
 | oar-ocr-derive | 0.10.2 | Apache-2.0 | shipped | (none stated) |  |
 | oid-registry | 0.8.1 | MIT OR Apache-2.0 | test | Copyright (c) 2017 Pierre Chifflier |  |
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | shipped | (none stated) |  |
@@ -312,7 +281,6 @@ platform, so `shipped` over-counts for any one binary.
 | openssl-probe | 0.2.2 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 Alex Crichton |  |
 | ort | 2.0.0-rc.13 | MIT OR Apache-2.0 | shipped | Copyright (c) 2023-2026 pyke.io; Copyright (c) 2020 Nicolas Bigaouette |  |
 | ort-sys | 2.0.0-rc.13 | MIT OR Apache-2.0 | shipped | Copyright (c) 2023-2026 pyke.io; Copyright (c) 2020 Nicolas Bigaouette |  |
-| owned_ttf_parser | 0.25.1 | Apache-2.0 | shipped | (none stated) |  |
 | p256 | 0.14.0 | Apache-2.0 OR MIT | shipped | Copyright (c) 2020-2026 RustCrypto Developers |  |
 | p384 | 0.14.0 | Apache-2.0 OR MIT | shipped | Copyright (c) 2020-2021 RustCrypto Developers |  |
 | parking | 2.2.1 | Apache-2.0 OR MIT | shipped | Copyright 2014-2020 The Rust Project Developers |  |
@@ -320,7 +288,6 @@ platform, so `shipped` over-counts for any one binary.
 | parking_lot_core | 0.9.12 | MIT OR Apache-2.0 | shipped | Copyright (c) 2016 The Rust Project Developers |  |
 | password-hash | 0.5.0 | MIT OR Apache-2.0 | shipped | Copyright (c) 2020-2023 RustCrypto Developers |  |
 | paste | 1.0.15 | MIT OR Apache-2.0 | shipped | (none stated) |  |
-| pastey | 0.1.1 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | pastey | 0.2.3 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | peak_alloc | 0.3.0 | MIT | test | (none stated) |  |
 | pem | 4.0.0 | MIT | test | Copyright (c) 2016 Jonathan Creekmore |  |
@@ -350,12 +317,8 @@ platform, so `shipped` over-counts for any one binary.
 | primeorder | 0.14.0 | Apache-2.0 OR MIT | shipped | Copyright (c) 2020-2023 RustCrypto Developers |  |
 | proc-macro-crate | 3.5.0 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | proc-macro2 | 1.0.107 | MIT OR Apache-2.0 | shipped | (none stated) |  |
-| profiling | 1.0.18 | MIT OR Apache-2.0 | shipped | (none stated) |  |
-| profiling-procmacros | 1.0.18 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | proptest | 1.12.0 | MIT OR Apache-2.0 | test | Copyright (c) 2016 FullContact, Inc |  |
 | pxfm | 0.1.30 | BSD-3-Clause OR Apache-2.0 | shipped | Copyright 2024 Radzivon Bartoshyk; Copyright (c) Radzivon Bartoshyk. All rights reserved. |  |
-| qoi | 0.4.1 | MIT/Apache-2.0 | shipped | Copyright (c) 2022 Ivan Smirnov |  |
-| quick-error | 2.0.1 | MIT/Apache-2.0 | shipped | Copyright (c) 2015 The quick-error Developers |  |
 | quick-xml | 0.41.0 | MIT | shipped | Copyright (c) 2016 Johann Tuffe |  |
 | quote | 1.0.47 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | r-efi | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later | shipped | (none stated) |  |
@@ -371,8 +334,6 @@ platform, so `shipped` over-counts for any one binary.
 | rand_distr | 0.6.0 | MIT OR Apache-2.0 | shipped | Copyright 2018 Developers of the Rand project |  |
 | rand_xorshift | 0.5.0 | MIT OR Apache-2.0 | test | Copyright 2018 Developers of the Rand project; Copyright (c) 2014 The Rust Project Developers |  |
 | rangemap | 1.8.0 | MIT/Apache-2.0 | test | Copyright 2019-2022 Jeff Parsons, and [contributors](https://github.com/jeffparsons/rangemap/contributors); Copyright 2019 Jeffrey Parsons |  |
-| rav1e | 0.8.1 | BSD-2-Clause | shipped | Copyright (c) 2017-2023, the rav1e contributors | PATENTS |
-| ravif | 0.13.0 | BSD-3-Clause | shipped | Copyright (c) 2020, Kornel |  |
 | rawpointer | 0.2.1 | MIT/Apache-2.0 | shipped | Copyright (c) 2015 |  |
 | rayon | 1.12.0 | MIT OR Apache-2.0 | shipped | Copyright (c) 2010 The Rust Project Developers |  |
 | rayon-cond | 0.4.0 | Apache-2.0/MIT | shipped | Copyright (c) 2018 Josh Stone |  |
@@ -388,7 +349,6 @@ platform, so `shipped` over-counts for any one binary.
 | regex-syntax | 0.6.29 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers; Copyright © 1991-2018 Unicode, Inc. All rights reserved. |  |
 | regex-syntax | 0.8.11 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 The Rust Project Developers; Copyright © 1991-2018 Unicode, Inc. All rights reserved. |  |
 | rfc6979 | 0.6.0 | Apache-2.0 OR MIT | shipped | Copyright 2018-2022 RustCrypto Developers; Copyright (c) 2018-2026 RustCrypto Developers |  |
-| rgb | 0.8.53 | MIT | shipped | Copyright (c) 2019 Kornel |  |
 | ring | 0.17.14 | Apache-2.0 AND ISC | shipped | Copyright (c) 2009 The Go Authors. All rights reserved.; Copyright 2015 The Chromium Authors. All rights reserved.; Copyright 2015-2025 Brian Smith.; Copyright 2015-2020 the fiat-crypto authors (see the AUTHORS file) |  |
 | rsa | 0.10.0 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | rust_decimal | 1.43.0 | MIT | shipped | Copyright (c) 2016 Paul Mason |  |
@@ -431,7 +391,6 @@ platform, so `shipped` over-counts for any one binary.
 | signature | 3.0.0 | Apache-2.0 OR MIT | shipped | Copyright (c) 2018-2026 RustCrypto Developers |  |
 | simba | 0.10.2 | Apache-2.0 | shipped | Copyright 2020 Sébastien Crozet |  |
 | simd-adler32 | 0.3.10 | MIT | shipped | Copyright (c) [2021] [Marvin Countryman] |  |
-| simd_helpers | 0.1.0 | MIT | shipped | (none stated) |  |
 | simdutf8 | 0.1.5 | MIT OR Apache-2.0 | test | (none stated) |  |
 | siphasher | 1.0.4 | MIT OR Apache-2.0 | shipped | Copyright 2012-2016 The Rust Project Developers.; Copyright 2016-2026 Frank Denis. |  |
 | skrifa | 0.44.0 | MIT OR Apache-2.0 | shipped | Copyright 2019 Fontations Developers; Copyright (c) 2019 Fontations Developers |  |
@@ -465,7 +424,6 @@ platform, so `shipped` over-counts for any one binary.
 | thiserror | 2.0.21 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | thiserror-impl | 2.0.21 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | thread_local | 1.1.10 | MIT OR Apache-2.0 | shipped | Copyright (c) 2016 The Rust Project Developers |  |
-| tiff | 0.11.3 | MIT | shipped | Copyright (c) 2018 PistonDevelopers |  |
 | time | 0.3.55 | MIT OR Apache-2.0 | shipped | Copyright (c) Jacob Pratt et al. |  |
 | time-core | 0.1.9 | MIT OR Apache-2.0 | shipped | Copyright (c) Jacob Pratt et al. |  |
 | time-macros | 0.2.32 | MIT OR Apache-2.0 | shipped | Copyright (c) Jacob Pratt et al. |  |
@@ -488,8 +446,7 @@ platform, so `shipped` over-counts for any one binary.
 | tracing-core | 0.1.36 | MIT | shipped | Copyright (c) 2019 Tokio Contributors; Copyright (c) 2014 Mathijs van de Nes |  |
 | tracing-subscriber | 0.3.23 | MIT | shipped | Copyright (c) 2019 Tokio Contributors |  |
 | transpose | 0.2.3 | MIT OR Apache-2.0 | shipped | Copyright 2022 The transpose developers; Copyright (c) 2022 The transpose Developers |  |
-| ttf-parser | 0.25.1 | MIT OR Apache-2.0 | shipped | Copyright (c) 2018 Yevhenii Reizner |  |
-| typed-path | 0.12.4 | MIT OR Apache-2.0 | shipped | (none stated) |  |
+| typed-path | 0.13.0 | MIT OR Apache-2.0 | shipped | (none stated) |  |
 | typenum | 1.20.1 | MIT OR Apache-2.0 | shipped | Copyright 2014 Paho Lurie-Gregg; Copyright (c) 2014 Paho Lurie-Gregg |  |
 | unarray | 0.1.4 | MIT OR Apache-2.0 | test | (none stated) |  |
 | unicode-bidi | 0.3.18 | MIT OR Apache-2.0 | shipped | Copyright (c) 2015 The Rust Project Developers |  |
@@ -511,7 +468,6 @@ platform, so `shipped` over-counts for any one binary.
 | utf8_iter | 1.1.0 | Apache-2.0 OR MIT | shipped | Copyright Mozilla Foundation |  |
 | utf_types | 1.0.0 | Apache-2.0 OR MIT | shipped | Copyright Mozilla Foundation |  |
 | uuid | 1.29.2 | Apache-2.0 OR MIT | shipped | Copyright (c) 2014 The Rust Project Developers; Copyright (c) 2018 Ashley Mannix, Christopher Armstrong, Dylan DPC, Hunar Roop Kahlon |  |
-| v_frame | 0.3.9 | BSD-2-Clause | shipped | Copyright (c) 2017-2022, the rav1e contributors |  |
 | vcpkg | 0.2.15 | MIT/Apache-2.0 | build | Copyright (c) 2017 Jim McGrath |  |
 | vello_common | 0.3.0 | Apache-2.0 OR MIT | shipped | Copyright 2020 the Vello Authors |  |
 | vello_cpu | 0.3.0 | Apache-2.0 OR MIT | shipped | Copyright 2020 the Vello Authors |  |
@@ -523,7 +479,6 @@ platform, so `shipped` over-counts for any one binary.
 | wasm-bindgen-macro-support | 0.2.130 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 Alex Crichton |  |
 | wasm-bindgen-shared | 0.2.130 | MIT OR Apache-2.0 | shipped | Copyright (c) 2014 Alex Crichton |  |
 | web-time | 1.1.0 | MIT OR Apache-2.0 | shipped | Copyright 2023 dAxpeDDa; Copyright (c) 2023 dAxpeDDa |  |
-| weezl | 0.1.12 | MIT OR Apache-2.0 | shipped | Copyright (c) HeroicKatora 2020 |  |
 | weezl | 0.2.1 | MIT OR Apache-2.0 | test | Copyright (c) HeroicKatora 2020 |  |
 | whoami | 2.1.3 | Apache-2.0 OR BSL-1.0 OR MIT | shipped | (none stated) |  |
 | wide | 1.7.1 | Zlib OR Apache-2.0 OR MIT | shipped | Copyright 2020 Daniel "Lokathor" Gee; Copyright (c) 2020 Daniel "Lokathor" Gee; Copyright (c) 2020 Daniel "Lokathor" Gee. |  |
@@ -547,7 +502,7 @@ platform, so `shipped` over-counts for any one binary.
 | x509-ocsp | 0.3.0-rc.1 | Apache-2.0 OR MIT | shipped | Copyright (c) 2021-2025 The RustCrypto Project Developers |  |
 | x509-parser | 0.18.1 | MIT OR Apache-2.0 | test | Copyright (c) 2017 Pierre Chifflier |  |
 | x509-tsp | 0.2.0-rc.0 | Apache-2.0 OR MIT | shipped | Copyright (c) 2023-2025 The RustCrypto Project Developers |  |
-| y4m | 0.8.0 | MIT | shipped | Copyright (c) 2015-2019 PistonDevelopers; Copyright (c) 2019 image-rs contributors |  |
+| xmlparser | 0.13.6 | MIT/Apache-2.0 | shipped | Copyright (c) 2018 Reizner Evgeniy |  |
 | yasna | 0.6.0 | MIT OR Apache-2.0 | test | Copyright (c) 2016 Masaki Hara |  |
 | yoke | 0.8.4 | Unicode-3.0 | shipped | Copyright © 2020-2024 Unicode, Inc. |  |
 | yoke-derive | 0.8.4 | Unicode-3.0 | shipped | Copyright © 2020-2024 Unicode, Inc. |  |
@@ -560,11 +515,10 @@ platform, so `shipped` over-counts for any one binary.
 | zerotrie | 0.2.5 | Unicode-3.0 | shipped | Copyright © 2020-2024 Unicode, Inc. |  |
 | zerovec | 0.11.9 | Unicode-3.0 | shipped | Copyright © 2020-2024 Unicode, Inc. |  |
 | zerovec-derive | 0.11.7 | Unicode-3.0 | shipped | Copyright © 2020-2024 Unicode, Inc. |  |
-| zip | 8.6.0 | MIT | shipped | Copyright (c) 2014 Mathijs van de Nes |  |
+| zip | 9.3.0 | MIT | shipped | Copyright (c) 2014 Mathijs van de Nes |  |
 | zlib-rs | 0.6.8 | Zlib | shipped | (none stated) |  |
 | zmij | 1.0.23 | MIT | shipped | (none stated) |  |
 | zune-core | 0.5.3 | MIT OR Apache-2.0 OR Zlib | shipped | Copyright (c) zune-image developers |  |
-| zune-inflate | 0.2.54 | MIT OR Apache-2.0 OR Zlib | shipped | (none stated) |  |
 | zune-jpeg | 0.5.15 | MIT OR Apache-2.0 OR Zlib | shipped | Copyright (c) zune-image developers |  |
 
 ## Vendored and embedded files (16)

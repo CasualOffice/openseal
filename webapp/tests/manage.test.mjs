@@ -202,6 +202,19 @@ test("audit links: a dense, linked chain passes; a broken link, a gap or a wrong
   assert.deepEqual(auditLinks(null), { ok: true, n: 0, problems: [] });
 });
 
+test("audit links: the server's own shape, `sha256:<hex>` hashes, passes (S1-10)", () => {
+  // As `GET /api/v1/envelopes/{id}/audit` answers (casual-sign-server `audit`, `Hash256`):
+  // every real envelope showed "Audit trail links do not match" (slice-1 and slice-2
+  // demos, run 44023485128) because only bare hex was read.
+  const H = (c) => `sha256:${c.repeat(64)}`;
+  const real = { items: [{ seq: 0, hash: H("a"), prev: null }, { seq: 1, hash: H("b"), prev: H("a") }], chain_head: H("b") };
+  assert.deepEqual(auditLinks(real), { ok: true, n: 2, problems: [] });
+  assert.equal(auditLinks({ ...real, chain_head: H("c") }).ok, false);
+  assert.equal(auditLinks({ items: [real.items[0], { ...real.items[1], prev: H("c") }], chain_head: H("b") }).ok, false);
+  assert.equal(auditLinks({ items: [{ seq: 0, hash: "sha256:short", prev: null }] }).ok, false);
+  assert.equal(auditLinks({ items: [{ seq: 0, hash: `sha1:${"a".repeat(64)}`, prev: null }] }).ok, false);
+});
+
 test("a document fingerprint is shown only when the server recorded one", () => {
   assert.equal(documentFingerprint({ delivered_sha256: null, upload_sha256: null }), null);
   assert.equal(documentFingerprint({ upload_sha256: "AB".repeat(32) }), "ab".repeat(32));

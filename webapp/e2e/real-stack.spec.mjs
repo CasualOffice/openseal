@@ -243,6 +243,9 @@ test.describe("slice 1 (VS-01)", () => {
       expect(page.url()).toBe(detail);
       await expect(page.locator(".os-page-head .os-badge")).toHaveText("Completed", { timeout: 2_000 });
     }).toPass({ timeout: 120_000, intervals: [2_000] });
+    // The server's trail (`sha256:` hashes) reads as linked on the envelope page (S1-10:
+    // the slice-1 demo of run 44023485128 showed "Audit trail links do not match").
+    await expect(page.getByTestId("evidence-links")).toContainText("Audit trail linked");
     fs.mkdirSync(OUT, { recursive: true });
     const keep = async (p, click, file) => {
       const [dl] = await Promise.all([p.waitForEvent("download"), click()]);

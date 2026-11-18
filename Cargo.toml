@@ -34,8 +34,10 @@ members = [
     "server/clipper2-rust",
 ]
 # The fuzz workspace is separate: cargo-fuzz needs nightly-only dependencies that must
-# stay out of the product dependency graph (as OpenCalc and OpenPresent).
-exclude = ["fuzz"]
+# stay out of the product dependency graph (as OpenCalc and OpenPresent). `third_party/`
+# holds vendored upstream crates patched in below (docs/19 §Vendored crates): they are
+# not ours, so they stay out of our fmt, clippy and test runs.
+exclude = ["fuzz", "third_party"]
 
 [workspace.package]
 edition = "2024"
@@ -64,8 +66,18 @@ panic = "warn"
 # `oar-ocr-core` (modeld's OCR, ML-02) depends on `clipper2-rust`, which is BSL-1.0: owner
 # instruction 32 allows that licence only inside the ONNX Runtime binary. Our own
 # Apache-2.0 crate of the same name stands in for it (server/clipper2-rust, ML-02C).
+#
+# `oar-ocr` and `oar-ocr-core` 0.10.2 (the latest release) are vendored with only their
+# manifests changed, and one test added (third_party/*/PROVENANCE.md): `oar-ocr` requires
+# `zip` 9.0.5 instead of 8.6, which clears RUSTSEC-2026-0367, -0368, -0369, -0429 and
+# -0545..-0548 (DEP-06), and both take `image` and `imageproc` without default features,
+# which drops every image codec (avif's `rav1e` encoder among them, LEG-08) and
+# `ab_glyph` text drawing (`ttf-parser`, RUSTSEC-2026-0192), none used by modeld (DEP-07).
+# Drop both entries once an upstream release makes the same changes.
 [patch.crates-io]
 clipper2-rust = { path = "server/clipper2-rust" }
+oar-ocr = { path = "third_party/oar-ocr" }
+oar-ocr-core = { path = "third_party/oar-ocr-core" }
 
 [profile.release]
 lto = "thin"

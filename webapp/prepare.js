@@ -38,12 +38,14 @@ import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, n
 import { takeFiles } from "./handoff.js";
 import { sendSummary } from "./people.js";
 import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary, recipientPatch } from "./preparemodel.js";
-import { stepControl, recipientRow, libraryItem, toolButton, armHint, ghostBar, templateBanner, appliedChip, loadingPage, checksList, piiCard, assignList, markOcr, sparkle, spinner, KIND_GLYPH } from "./prepareview.js";
+import { stepControl, recipientRow, libraryItem, toolButton, armHint, ghostBar, templateBanner, appliedChip, loadingPage, checksList, piiCard, assignList, markOcr, sparkle, spinner, kindGlyph } from "./prepareview.js";
 import { mlStatus, featureOn, loadSuggestions, acceptSuggestion, dismissSuggestion, suggestions as mlSuggestions, percent, isUnavailable } from "./ml.js";
 
+// Icon names by field kind; `title` and `text` here are kinds, not text (i18n-ignore marks
+// the lines for tests/i18n-slices.test.mjs).
 const FIELD_ICON = {
-  signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", company: "layers", title: "type",
-  text: "text-cursor-input", number: "list-ordered", checkbox: "square-check", radio_group: "circle-dashed", dropdown: "chevron-down", attachment: "paperclip", note: "info",
+  signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", company: "layers", title: "type", // i18n-ignore: icon names
+  text: "text-cursor-input", number: "list-ordered", checkbox: "square-check", radio_group: "circle-dashed", dropdown: "chevron-down", attachment: "paperclip", note: "info", // i18n-ignore: icon names
 };
 /// The members of a field the editor sets besides its place, owner, `required` and `label`
 /// (UX-05), by their wire names (api.js `FIELD_MEMBERS`); kept on the editor's field as is.
@@ -1530,7 +1532,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const del = h("button", { type: "button", class: "os-props__delete", text: t("prepare.delete-field"), attrs: { "aria-label": t("prepare.delete-this-field") } });
     del.addEventListener("click", () => run("field.delete"));
     props.append(h("div", { class: `os-props__head os-r${colourOf(f.recipientKey)}` },
-      h("span", { class: "os-props__chip", attrs: { "aria-hidden": "true" }, text: KIND_GLYPH[f.type] || "T" }),
+      h("span", { class: "os-props__chip", attrs: { "aria-hidden": "true" }, text: kindGlyph(f.type) }),
       h("h3", { class: "os-props__title" }, t(`ftype.${f.type}`), h("span", { class: "os-sr-only", text: t("prepare.field-props", { type: t(`ftype.${f.type}`) }).slice(t(`ftype.${f.type}`).length) })), del));
     // A member set or cleared (blank removes it, as the server stores it), one undo step.
     const setM = (k, v) => {
@@ -1650,7 +1652,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         S.dirty = true;
         renderFieldsOnly(); renderProps();
       });
-      geo.append(h("label", { class: "os-geo__item", attrs: { for: id } }, h("span", { class: "os-geo__k", text: t(`prepare.geo-${k}-short`) }), inp, h("span", { class: "os-geo__unit", attrs: { "aria-hidden": "true" }, text: "pt" })));
+      geo.append(h("label", { class: "os-geo__item", attrs: { for: id } }, h("span", { class: "os-geo__k", text: t(`prepare.geo-${k}-short`) }), inp, h("span", { class: "os-geo__unit", attrs: { "aria-hidden": "true" }, text: t("prepare.geo-unit") })));
     }
     const adv = h("details", { class: "os-details os-advanced os-props__sec", open: advancedOpen },
       h("summary", { text: t("prepare.position") }), geo, h("p", { class: "os-muted os-small", text: t("prepare.position-help", { page: pageIndex(f.docKey, f.page) + 1 }) }));
