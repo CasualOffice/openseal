@@ -92,3 +92,40 @@ export function groupSecret(secret = "") {
 export function signInFailure(err) {
   return err?.code === "CS-AUTH-0007" ? "signin.invalid" : null;
 }
+
+/// Whether re-authenticating needs a code as well as the password (ASVS-07): the person
+/// has a second factor, which every session of theirs has passed (`second_factor`
+/// `passed`).
+export function stepUpNeedsCode(session) {
+  return session?.second_factor === "passed";
+}
+
+/// The step-up form's error for a refusal: `{ field: "password" | "code", key }`, or
+/// null for a failure the API client's own message describes.
+export function stepUpFailure(err) {
+  if (err?.code === "CS-AUTH-0007") return { field: "password", key: "stepup.password-wrong" };
+  if (err?.code === "CS-AUTH-0012") return { field: "code", key: "stepup.code-wrong" };
+  if (err?.code === "CS-API-0001" && Array.isArray(err.errors) && err.errors.some((e) => e?.pointer === "/code")) {
+    return { field: "code", key: "stepup.code-missing" };
+  }
+  return null;
+}
+
+/// The person's sessions as the list shows them (ASVS-06): this one first, then the most
+/// recently active. Each `{ id, client, workspace, current, lastSeen, created }`; a
+/// session the server could not name a browser for is `client: null` (the view says
+/// "Unknown browser").
+export function sessionRows(items) {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((s) => s && typeof s.id === "string")
+    .map((s) => ({
+      id: s.id,
+      client: typeof s.client === "string" && s.client.trim() ? s.client.trim().slice(0, 64) : null,
+      workspace: typeof s.workspace?.name === "string" ? s.workspace.name : "",
+      current: s.current === true,
+      lastSeen: s.last_seen_at || null,
+      created: s.created_at || null,
+    }))
+    .sort((a, b) => (a.current !== b.current ? (a.current ? -1 : 1) : String(b.lastSeen).localeCompare(String(a.lastSeen))));
+}

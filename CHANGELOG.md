@@ -9,6 +9,10 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
   on a draft (`UX-12`).
 
 ### Added
+- Staff sessions end after 30 minutes without activity and 8 hours in all by default, each settable per workspace
+  and tightened by the organization; a person sees where they are signed in and signs out of any or all of those
+  sessions; creating API clients, role and policy changes, webhook destinations and the workspace's security settings
+  need the password (and second factor) again within five minutes (`ASVS-06`, `ASVS-07`, migration 0042).
 - A redesigned web app from an audit against DocuSign and SignNow (`UX-01`, all seven packages `UX-02` to `UX-08`):
   - a design system, with destructive actions in a colour distinct from the seal red, and the Inter font bundled;
   - a send editor with click-to-place fields, every field kind the signing page fills with its properties, recipient

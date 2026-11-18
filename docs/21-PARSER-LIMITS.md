@@ -221,7 +221,10 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Staff password | 12–256 characters | CS-API-0001 |
 | Saved signature or initials (`PATCH /users/me`, `UXW-37`) | a PNG or JPEG of 1 byte to 5 MiB (base64 text at most 6,990,508 characters); a name 1–255 characters after trimming | CS-API-0001 |
 | Password-reset link (`POST /auth/password-reset/confirm`, `UXW-38`) | a token of 1–128 characters; valid one hour from sending, once; at most one email a minute per user | CS-AUTH-0002 |
-| Staff session / access token / embedded view link | 8 hours / 1 hour / 5 minutes | CS-AUTH-0002 |
+| Staff session / access token / embedded view link | 8 hours by default (the workspace's `session_max_age`, 15 minutes to 30 days, `ASVS-06`) / 1 hour / 5 minutes | CS-AUTH-0002 |
+| Staff session idle (`session_idle`, `ASVS-06`); activity written | 30 minutes by default, 5 minutes to 12 hours; at most every 15 seconds | CS-AUTH-0002, CS-API-0001 |
+| Step-up window (`ASVS-07`); re-authentication attempts per user | 5 minutes after the sign-in or `POST /auth/reauthenticate`; 10 per minute (the login rate) | CS-AUTH-0013, CS-API-0003 |
+| Own sessions listed (`GET /auth/sessions`); a session's browser name | 200; 1–64 characters from a closed list | — |
 | API client expiry | 1–3,650 days | CS-API-0001 |
 | Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
 

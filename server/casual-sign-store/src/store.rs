@@ -175,7 +175,7 @@ impl Store {
         crate::migrate::install_seal_token_key(&self.pool, key).await
     }
 
-    /// Every staff user's sealed TOTP seed (`HRD-12`, migration 0042), as the schema
+    /// Every staff user's sealed TOTP seed (`HRD-12`, migration 0043), as the schema
     /// owner: what `casual-sign-server mfa-reseal` moves under a new second-factor key.
     /// Sealed values only; the key never reaches the database.
     ///
@@ -411,7 +411,7 @@ pub struct RecipientTokenTarget {
 }
 
 /// A live staff session a cookie names (migration 0008).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct StaffSessionTarget {
     /// The account it is for.
     pub account_id: AccountId,
@@ -429,6 +429,17 @@ pub struct StaffSessionTarget {
     /// 0036, ASVS-31), tightened by its organization's `login.mfa_required` (ORG-08,
     /// migration 0039): the stricter applies.
     pub mfa_policy: MfaPolicy,
+    /// The workspace's settings: its `session_idle` and `session_max_age` (ASVS-06,
+    /// migration 0042).
+    pub settings: serde_json::Value,
+    /// The workspace's organization policy (`session.idle`, `session.max_age`, ORG-08).
+    pub organization_policy: serde_json::Value,
+    /// When the sign-in began (a workspace switch carries it).
+    pub created_at: OffsetDateTime,
+    /// When the session last made a request.
+    pub last_seen_at: OffsetDateTime,
+    /// When its holder last proved the password and second factor (ASVS-07).
+    pub reauth_at: Option<OffsetDateTime>,
 }
 
 /// Who in an account must sign in with a second factor (`settings.mfa_policy`, ASVS-01).
@@ -599,7 +610,9 @@ impl EntryPoints<'_> {
                       user_id AS "user_id!", csrf_sha256 AS "csrf_sha256!",
                       mfa_verified AS "mfa_verified!", mfa_enrolled AS "mfa_enrolled!",
                       mfa_policy AS "mfa_policy!",
-                      organization_policy AS "organization_policy!"
+                      organization_policy AS "organization_policy!",
+                      settings AS "settings!", created_at AS "created_at!",
+                      last_seen_at AS "last_seen_at!", reauth_at
                  FROM openseal_resolve_staff_session($1, $2)"#,
             token_sha256.as_slice(),
             now
@@ -619,6 +632,11 @@ impl EntryPoints<'_> {
                     &r.organization_policy,
                     &r.mfa_policy,
                 )),
+                settings: r.settings,
+                organization_policy: r.organization_policy,
+                created_at: r.created_at,
+                last_seen_at: r.last_seen_at,
+                reauth_at: r.reauth_at,
             })
         })
         .transpose()

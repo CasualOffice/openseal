@@ -28,7 +28,7 @@ use crate::mfa::{RECOVERY_CODES, recovery_code, recovery_hash};
 use crate::totp;
 
 /// The session making the call: these routes are for staff sessions only.
-fn session(c: &Call) -> Result<StaffSessionId, ApiError> {
+pub(crate) fn session(c: &Call) -> Result<StaffSessionId, ApiError> {
     match c.p.credential {
         Credential::Session(s) => Ok(s),
         Credential::ApiKey(_) | Credential::AccessToken(_) => Err(ApiError::invalid("/credential")),
@@ -58,11 +58,11 @@ fn secret_json(v: &serde_json::Value) -> Response {
     r
 }
 
-fn now_step(c: &Call) -> u64 {
+pub(crate) fn now_step(c: &Call) -> u64 {
     totp::step_at(c.st.now().unix_timestamp())
 }
 
-fn key(c: &Call) -> Result<std::sync::Arc<crate::mfa::MfaKey>, ApiError> {
+pub(crate) fn key(c: &Call) -> Result<std::sync::Arc<crate::mfa::MfaKey>, ApiError> {
     c.st.mfa_key()
         .cloned()
         .ok_or_else(|| ApiError::not_available("second factor not configured"))

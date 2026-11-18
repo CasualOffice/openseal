@@ -461,6 +461,8 @@ and `client`:
 | `auth.mfa_enrol` | server, console | A TOTP factor confirmed, or its confirmation refused |
 | `auth.password_reset_request`, `auth.password_reset`, `auth.password_change` | server | Reset asked for (alike for any address), a reset link spent or refused, a password changed or the current one refused |
 | `auth.invite_accept` | server | An invitation link spent or refused |
+| `auth.reauthenticate` | server | A re-authentication before a sensitive action (`ASVS-07`): passed or refused (`factor: password`, `totp` or `recovery_code`; the code of the refusal) |
+| `auth.session_end` | server | Other sessions of a staff user ended by them (`ASVS-06`): `scope: one` or `others`, and `count` |
 | `auth.token` | server | An OAuth client-credentials token issued or refused |
 | `auth.lockout` | server | A recipient locked out by failed authentications, and each later request refused for it (`CS-AUTH-0004`) |
 | `access.unauthenticated`, `access.denied`, `access.rate_limited` | server, console (keyd: denied, rate limited) | Every `401`, `403` and `429`; keyd: an admin operation asked by a signing caller, a signature over the caller's rate |

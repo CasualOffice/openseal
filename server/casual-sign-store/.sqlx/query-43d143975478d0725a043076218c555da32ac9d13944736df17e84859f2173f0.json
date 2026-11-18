@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE staff_sessions SET revoked_at = $3 WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL AND expires_at > $3 RETURNING user_id, method, created_at, expires_at, mfa_at",
+  "query": "UPDATE staff_sessions SET revoked_at = $3 WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL AND expires_at > $3 RETURNING user_id, method, created_at, expires_at, mfa_at, reauth_at, client_label",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,28 @@
             "name": "mfa_at"
           }
         }
+      },
+      {
+        "ordinal": 5,
+        "name": "reauth_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "staff_sessions",
+            "name": "reauth_at"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "client_label",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "staff_sessions",
+            "name": "client_label"
+          }
+        }
       }
     ],
     "parameters": {
@@ -71,8 +93,10 @@
       false,
       false,
       false,
+      true,
+      true,
       true
     ]
   },
-  "hash": "0cf292a94617a1573ad7d343d3dc1e4d0147bc0942df7397e0127fc4520ad78f"
+  "hash": "43d143975478d0725a043076218c555da32ac9d13944736df17e84859f2173f0"
 }

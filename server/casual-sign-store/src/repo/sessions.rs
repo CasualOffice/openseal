@@ -38,6 +38,13 @@ pub struct NewSession {
     pub created_at: OffsetDateTime,
     /// Until when.
     pub expires_at: OffsetDateTime,
+    /// When it last made a request: its start, or now for a workspace switch (ASVS-06).
+    pub last_seen_at: OffsetDateTime,
+    /// When its holder last proved the password (and second factor): the sign-in, or
+    /// carried by a switch (ASVS-07).
+    pub reauth_at: Option<OffsetDateTime>,
+    /// A coarse browser and system name ("Firefox on macOS"), from a closed list.
+    pub client_label: Option<String>,
 }
 
 /// A session ended by [`Sessions::take`]: whose it was and how they signed in.
@@ -53,6 +60,35 @@ pub struct TakenSession {
     pub expires_at: OffsetDateTime,
     /// When it passed its second factor, if it did (ASVS-01).
     pub mfa_at: Option<OffsetDateTime>,
+    /// When its holder last re-authenticated (ASVS-07): a switch carries it.
+    pub reauth_at: Option<OffsetDateTime>,
+    /// Its browser and system name.
+    pub client_label: Option<String>,
+}
+
+/// One of a person's own sessions, in any of their workspaces (ASVS-06).
+#[derive(Debug, Clone, PartialEq)]
+pub struct OwnSession {
+    /// The session.
+    pub id: StaffSessionId,
+    /// Its workspace.
+    pub account_id: crate::ids::AccountId,
+    /// The workspace's name.
+    pub account_name: String,
+    /// How it signed in.
+    pub method: LoginMethod,
+    /// When it signed in.
+    pub created_at: OffsetDateTime,
+    /// When it last made a request.
+    pub last_seen_at: OffsetDateTime,
+    /// The sign-in's absolute end, as stored at sign-in.
+    pub expires_at: OffsetDateTime,
+    /// Its browser and system name.
+    pub client_label: Option<String>,
+    /// The workspace's settings, for its idle and absolute limits.
+    pub settings: serde_json::Value,
+    /// The workspace's organization policy, likewise.
+    pub organization_policy: serde_json::Value,
 }
 
 /// A live session's own user's TOTP factor (ASVS-01, migration 0032).
@@ -83,7 +119,8 @@ impl Sessions<'_> {
         let acct = self.tx.acct();
         sqlx::query!(
             "INSERT INTO staff_sessions (id, account_id, user_id, token_sha256, csrf_sha256, \
-             method, created_at, expires_at) VALUES ($2, $1, $3, $4, $5, $6, $7, $8)",
+             method, created_at, expires_at, last_seen_at, reauth_at, client_label) \
+             VALUES ($2, $1, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
             acct,
             s.id.0,
             s.user_id.0,
@@ -91,7 +128,10 @@ impl Sessions<'_> {
             s.csrf_sha256.as_slice(),
             s.method.as_str(),
             s.created_at,
-            s.expires_at
+            s.expires_at,
+            s.last_seen_at,
+            s.reauth_at,
+            s.client_label.as_deref()
         )
         .execute(self.tx.conn())
         .await
@@ -136,7 +176,7 @@ impl Sessions<'_> {
         let row = sqlx::query!(
             "UPDATE staff_sessions SET revoked_at = $3 \
              WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL AND expires_at > $3 \
-             RETURNING user_id, method, created_at, expires_at, mfa_at",
+             RETURNING user_id, method, created_at, expires_at, mfa_at, reauth_at, client_label",
             acct,
             id.0,
             at
@@ -151,6 +191,8 @@ impl Sessions<'_> {
                 created_at: r.created_at,
                 expires_at: r.expires_at,
                 mfa_at: r.mfa_at,
+                reauth_at: r.reauth_at,
+                client_label: r.client_label,
             })
         })
         .transpose()
@@ -174,6 +216,117 @@ impl Sessions<'_> {
         .await
         .map_err(db)?;
         affected(done.rows_affected(), "session")
+    }
+
+    /// Record that a session of this account made a request at `at`: written only when
+    /// the stored time is more than 15 seconds older, so an active session costs at most
+    /// one write every 15 seconds (ASVS-06, migration 0042).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn touch(&mut self, id: StaffSessionId, at: OffsetDateTime) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "UPDATE staff_sessions SET last_seen_at = $3 \
+             WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL \
+               AND last_seen_at < $3::timestamptz - interval '15 seconds'",
+            acct,
+            id.0,
+            at
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(())
+    }
+
+    /// Record that a live session of this account re-authenticated at `at` (ASVS-07).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when this account has no such live session.
+    pub async fn set_reauth_at(&mut self, id: StaffSessionId, at: OffsetDateTime) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE staff_sessions SET reauth_at = $3, last_seen_at = $3 \
+             WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL",
+            acct,
+            id.0,
+            at
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "session")
+    }
+
+    /// The live session's own user's unrevoked, unexpired sessions in every workspace
+    /// they are a member of (at most 200, most recently active first); the caller applies
+    /// each workspace's idle and absolute limits (ASVS-06, migration 0042).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`; `CS-DB-0010` for an unreadable method.
+    pub async fn own_sessions(
+        &mut self,
+        session: StaffSessionId,
+        now: OffsetDateTime,
+    ) -> Result<Vec<OwnSession>> {
+        let rows = sqlx::query!(
+            r#"SELECT session_id AS "session_id!", account_id AS "account_id!",
+                      account_name AS "account_name!", method AS "method!",
+                      created_at AS "created_at!", last_seen_at AS "last_seen_at!",
+                      expires_at AS "expires_at!", client_label,
+                      settings AS "settings!", organization_policy AS "organization_policy!"
+                 FROM openseal_own_sessions($1, $2)"#,
+            session.0,
+            now
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter()
+            .map(|r| {
+                Ok(OwnSession {
+                    id: StaffSessionId(r.session_id),
+                    account_id: crate::ids::AccountId(r.account_id),
+                    account_name: r.account_name,
+                    method: LoginMethod::parse(&r.method, "method")?,
+                    created_at: r.created_at,
+                    last_seen_at: r.last_seen_at,
+                    expires_at: r.expires_at,
+                    client_label: r.client_label,
+                    settings: r.settings,
+                    organization_policy: r.organization_policy,
+                })
+            })
+            .collect()
+    }
+
+    /// End the live session's own user's session `target` (in any workspace), or every
+    /// other one with `None`; never the calling session, never another user's. Answers how
+    /// many ended (ASVS-06).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn end_own(
+        &mut self,
+        session: StaffSessionId,
+        target: Option<StaffSessionId>,
+        now: OffsetDateTime,
+    ) -> Result<u64> {
+        let n = sqlx::query_scalar!(
+            "SELECT openseal_end_own_sessions($1, $2, $3)",
+            session.0,
+            target.map(|t| t.0),
+            now
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(u64::try_from(n.unwrap_or(0)).unwrap_or(0))
     }
 
     /// The live session's own user's TOTP factor; `None` when the session is not live or
