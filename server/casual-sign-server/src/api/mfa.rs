@@ -75,24 +75,28 @@ struct VerifyIn {
     code: Option<String>,
     #[serde(default)]
     recovery_code: Option<String>,
+    /// A passkey's assertion answering the session's `verify` challenge (CON-13).
+    #[serde(default)]
+    passkey: Option<super::factors::AssertionIn>,
 }
 
-/// `POST /auth/mfa/verify {code} | {recovery_code}`: pass the session's second factor
-/// with a code from the user's authenticator, or by spending a recovery code. `401
-/// CS-AUTH-0012` for a wrong code, a code already used, or a spent recovery code.
+/// `POST /auth/mfa/verify {code} | {recovery_code} | {passkey}`: pass the session's
+/// second factor with a code from the user's authenticator, by spending a recovery code,
+/// or with a passkey's assertion (CON-13). `401 CS-AUTH-0012` for a wrong code, a code
+/// already used, a spent recovery code, or a refused assertion.
 pub(crate) async fn verify(c: Call, body: Bytes) -> Response {
     let mut factor = "totp";
-    let mut reused = false;
-    let r = verify_inner(&c, &body, &mut factor, &mut reused)
+    let mut reason: Option<&'static str> = None;
+    let r = verify_inner(&c, &body, &mut factor, &mut reason)
         .await
         .unwrap_or_else(IntoResponse::into_response);
     crate::security::answered(&c.st, Kind::Mfa, &r, |ev| {
         let ev = ev.with("factor", Value::Word(factor));
-        // ASVS 2.8.5: a code for a time step already used is logged as such.
-        if reused {
-            ev.with("reason", Value::Word("reused"))
-        } else {
-            ev
+        // ASVS 2.8.5: a code for a time step already used is logged as such, and a
+        // passkey whose counter did not move (a clone) likewise.
+        match reason {
+            Some(w) => ev.with("reason", Value::Word(w)),
+            None => ev,
         }
     });
     r
@@ -102,7 +106,7 @@ async fn verify_inner(
     c: &Call,
     body: &[u8],
     factor: &mut &'static str,
-    reused: &mut bool,
+    reason: &mut Option<&'static str>,
 ) -> Result<Response, ApiError> {
     let s = session(c)?;
     limit(c)?;
@@ -112,8 +116,14 @@ async fn verify_inner(
     }
     let now = c.st.now();
     let mut tx = c.tx().await?;
-    match (req.code, req.recovery_code) {
-        (Some(code), None) => {
+    match (req.code, req.recovery_code, req.passkey) {
+        (None, None, Some(a)) => {
+            *factor = "passkey";
+            super::factors::pass_with_passkey(c, &mut tx, s, "verify", &a, reason).await?;
+            tx.commit().await?;
+            Ok(json(StatusCode::OK, &json!({ "second_factor": "passed" })))
+        }
+        (Some(code), None, None) => {
             let own = tx
                 .sessions()
                 .own_totp(s, now)
@@ -130,7 +140,7 @@ async fn verify_inner(
             // The code matched; refused now only for a step already used. A database
             // error here is not a reused code (`reason: reused` is the replay alert).
             if tx.sessions().verify_own_totp(s, step, now).await?.is_none() {
-                *reused = true;
+                *reason = Some("reused");
                 return Err(ApiError::second_factor_refused());
             }
             // HRD-12: a seed still under the previous key moves under the current one,
@@ -142,7 +152,7 @@ async fn verify_inner(
             tx.commit().await?;
             Ok(json(StatusCode::OK, &json!({ "second_factor": "passed" })))
         }
-        (None, Some(code)) => {
+        (None, Some(code), None) => {
             let hash = recovery_hash(&code).ok_or_else(ApiError::second_factor_refused)?;
             let left = tx
                 .sessions()
@@ -175,6 +185,19 @@ pub(crate) async fn enrol(c: Call) -> Result<Response, ApiError> {
         .ok_or_else(ApiError::expired)?;
     if own.confirmed {
         return Err(ApiError::not_available("already enrolled"));
+    }
+    // A second factor beside a passkey (CON-13): only from a session that passed it and
+    // re-authenticated within five minutes, as a further passkey is.
+    let f = tx
+        .sessions()
+        .own_factors(s, now)
+        .await?
+        .ok_or_else(ApiError::expired)?;
+    if f.any() {
+        if c.p.second_factor != crate::auth::SecondFactor::Passed {
+            return Err(ApiError::second_factor_required("verify"));
+        }
+        c.p.require_recent_auth(now)?;
     }
     let seed = random_bytes::<{ totp::SEED_BYTES }>()?;
     let sealed = key.seal(own.user_id.0, &seed)?;

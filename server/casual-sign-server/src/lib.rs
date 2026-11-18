@@ -43,6 +43,7 @@ mod security;
 mod state;
 pub mod totp;
 pub mod web;
+pub mod webauthn;
 
 pub mod api;
 

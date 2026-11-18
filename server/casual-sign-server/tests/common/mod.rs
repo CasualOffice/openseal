@@ -20,6 +20,7 @@
 pub mod bulk;
 pub mod flow;
 pub mod harness;
+pub mod passkey;
 pub mod templates;
 
 use casual_sign_store::Store;

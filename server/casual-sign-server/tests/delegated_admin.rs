@@ -82,11 +82,14 @@ fn grant_routes() -> BTreeSet<(&'static str, &'static str)> {
                 )
             )
         })
-        // Re-sending an invitation and revoking a key grant nothing.
+        // Re-sending an invitation, resetting a member's lost factors (an administrator's
+        // alone, ASVS-32: `tests/passkeys.rs`) and revoking a key grant nothing.
         .filter(|r| {
             !matches!(
                 (r.method, r.path),
-                ("POST", "/api/v1/users/{id}/invite") | ("DELETE", "/api/v1/api-clients/{id}")
+                ("POST", "/api/v1/users/{id}/invite")
+                    | ("POST", "/api/v1/users/{id}/second-factor/reset")
+                    | ("DELETE", "/api/v1/api-clients/{id}")
             )
         })
         .map(|r| (r.method, r.path))

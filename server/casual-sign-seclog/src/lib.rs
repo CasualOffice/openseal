@@ -114,7 +114,8 @@ pub enum Kind {
     SignIn,
     /// A session ended by its holder.
     SignOut,
-    /// A second factor checked (TOTP or recovery code): passed, wrong, or reused.
+    /// A second factor checked (TOTP, passkey or recovery code): passed, wrong, reused,
+    /// or a passkey whose counter did not move (a clone).
     Mfa,
     /// A second factor enrolled.
     MfaEnrol,
@@ -159,11 +160,15 @@ pub enum Kind {
     /// Other sessions of a staff user ended by them from a session of theirs
     /// (`ASVS-06`), with how many.
     SessionEnd,
+    /// A staff second factor removed (`ASVS-32`, `CON-13`): a passkey or the TOTP
+    /// authenticator by its holder, or every factor of a member reset by an
+    /// administrator after proving the person's identity (ASVS 2.5.7).
+    MfaRemove,
 }
 
 impl Kind {
     /// Every kind.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::SignIn,
         Self::SignOut,
         Self::Mfa,
@@ -186,6 +191,7 @@ impl Kind {
         Self::Alert,
         Self::Reauth,
         Self::SessionEnd,
+        Self::MfaRemove,
     ];
 
     /// The name in the line's `kind`.
@@ -214,6 +220,7 @@ impl Kind {
             Self::Alert => "alert.abnormal_activity",
             Self::Reauth => "auth.reauthenticate",
             Self::SessionEnd => "auth.session_end",
+            Self::MfaRemove => "auth.mfa_remove",
         }
     }
 
@@ -237,7 +244,8 @@ impl Kind {
             | Self::DocumentRead
             | Self::Alert
             | Self::Reauth
-            | Self::SessionEnd => &[Server],
+            | Self::SessionEnd
+            | Self::MfaRemove => &[Server],
             Self::KeyUse => &[Keyd],
             Self::CallerRefused => &[Keyd, Modeld],
             Self::BackendFailed => &[Worker],

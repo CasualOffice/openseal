@@ -434,6 +434,22 @@ pub fn render(template: Template, f: &Fill<'_>) -> (String, String) {
                     "second factor was removed",
                     "A second factor was removed from your account. If you did this, there is nothing to do.",
                 ),
+                N::PasskeyAdded => (
+                    "passkey was added",
+                    "A passkey was added to your account as a second factor for signing in. If you did this, there is nothing to do.",
+                ),
+                N::PasskeyRemoved => (
+                    "passkey was removed",
+                    "A passkey was removed from your account. If you did this, there is nothing to do.",
+                ),
+                N::RecoveryCodesReplaced => (
+                    "recovery codes were replaced",
+                    "New recovery codes were made for your account; the earlier ones no longer work. If you did this, there is nothing to do.",
+                ),
+                N::FactorsReset => (
+                    "second factors were reset",
+                    "An administrator removed every second factor from your account, after checking your identity, because you lost access to them. You will set up a new one the next time you sign in. If you did not ask for this, tell your administrator now.",
+                ),
                 _ => (
                     "sign-in settings changed",
                     "The sign-in settings of your account changed. If you did this, there is nothing to do.",

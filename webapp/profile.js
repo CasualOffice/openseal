@@ -8,10 +8,11 @@
 
 import { h, clear, initials, fmtDate } from "./dom.js";
 import { t } from "./i18n.js";
-import { openPanel, field, checkbox, button, toast, toastError } from "./ui/index.js";
+import { openPanel, openDialog, confirmDialog, field, checkbox, button, toast, toastError } from "./ui/index.js";
 import { errorMessage } from "./api.js";
 import { sessionRows } from "./authmodel.js";
 import { strengthMeter } from "./pwmeter.js";
+import { createPasskey, canAddPasskey, ceremonyError } from "./passkey.js";
 
 const NOTIFY = ["completed", "declined", "viewed"];
 const MIN_PASSWORD = 12;
@@ -106,6 +107,7 @@ export async function openProfile(ctx, { focus = null, onSaved = null } = {}) {
         h("section", { class: "os-profile__section", attrs: { "aria-labelledby": "profile-h-pw" } },
           h("h3", { id: "profile-h-pw", class: "os-profile__h", text: t("profile.password") }),
           current.el, next.el),
+        factorsSection(ctx),
         sessionsSection(ctx));
       if (focus === "notifications") queueMicrotask(() => { checks.completed.input.focus(); notif.scrollIntoView?.({ block: "nearest" }); });
     },
@@ -207,6 +209,125 @@ export function sessionsSection(ctx) {
     const alone = rows.every((r) => r.current);
     note.textContent = alone ? t("sessions.none-other") : "";
     others.hidden = alone;
+  }
+
+  load();
+  return section;
+}
+
+/// The person's second factors (CON-13, ASVS-32): their passkeys (add, rename, remove),
+/// the authenticator app (remove, to set up another), and new recovery codes. Each change
+/// but adding a first factor is sensitive: the API client asks for the password and the
+/// current factor first when the last proof is more than five minutes old (stepup.js).
+export function factorsSection(ctx) {
+  const list = h("ul", { class: "os-sessions", attrs: { "data-testid": "passkeys-list", "aria-labelledby": "profile-h-passkeys" } });
+  const note = h("p", { class: "os-muted os-small", attrs: { "aria-live": "polite", "data-testid": "factors-note" } });
+  const app = h("p", { class: "os-muted os-small", attrs: { "data-testid": "factors-app" } });
+  const codesLeft = h("p", { class: "os-muted os-small", attrs: { "data-testid": "factors-codes" } });
+  const quiet = (err) => ctx.failed?.(err) || err?.code === "CS-AUTH-0013";
+  let session = null;
+
+  const add = button(t("factors.add-passkey"), {
+    icon: "key-round", variant: "secondary", size: "sm", command: "profile.add-passkey",
+    attrs: { "data-testid": "passkey-add" },
+    onClick: async () => {
+      try {
+        const done = await createPasskey(ctx.api, t("passkey.default-name"));
+        toast(t("factors.passkey-added"), "success");
+        if (Array.isArray(done?.recovery_codes) && done.recovery_codes.length) await showCodes(done.recovery_codes);
+      } catch (err) {
+        const k = ceremonyError(err);
+        if (k) toast(t(k), "error"); else if (!quiet(err)) toastError(err);
+      }
+      await load();
+    },
+  });
+  const removeApp = button(t("factors.app-remove"), {
+    variant: "subtle", size: "sm", command: "profile.remove-totp", attrs: { "data-testid": "totp-remove" },
+    onClick: async () => {
+      if (!(await confirmDialog(t("factors.app-remove-title"), t("factors.app-remove-text"), { confirm: t("factors.remove"), danger: true }))) return;
+      try { await ctx.api.removeTotp(); toast(t("factors.app-removed"), "success"); } catch (err) { if (!quiet(err)) toastError(err); }
+      await load();
+    },
+  });
+  const newCodes = button(t("factors.codes-new"), {
+    variant: "subtle", size: "sm", command: "profile.new-recovery-codes", attrs: { "data-testid": "codes-new" },
+    onClick: async () => {
+      if (!(await confirmDialog(t("factors.codes-new-title"), t("factors.codes-new-text"), { confirm: t("factors.codes-new") }))) return;
+      try {
+        const r = await ctx.api.replaceRecoveryCodes();
+        await showCodes(Array.isArray(r?.recovery_codes) ? r.recovery_codes : []);
+      } catch (err) { if (!quiet(err)) toastError(err); }
+      await load();
+    },
+  });
+  const section = h("section", { class: "os-profile__section", attrs: { "aria-labelledby": "profile-h-factors", "data-testid": "profile-factors" } },
+    h("h3", { id: "profile-h-factors", class: "os-profile__h", text: t("factors.title") }),
+    h("p", { class: "os-muted os-small", text: t("factors.text") }),
+    h("h4", { id: "profile-h-passkeys", class: "os-label", text: t("factors.passkeys") }),
+    list, note, add,
+    h("h4", { class: "os-label", text: t("factors.app") }), app, removeApp,
+    h("h4", { class: "os-label", text: t("factors.codes") }), codesLeft, newCodes);
+
+  async function showCodes(codes) {
+    await openDialog({
+      title: t("factors.codes-title"),
+      description: t("mfa.codes-lede"),
+      build(body) {
+        body.append(h("div", { attrs: { "data-testid": "factors-recovery-codes" } }, ...codes.map((c) => h("p", {}, h("code", { text: String(c) })))));
+      },
+      actions: [{ label: t("mfa.continue"), variant: "primary", value: true }],
+    });
+  }
+
+  async function rename(k) {
+    const name = field(t("factors.name"), { id: "passkey-name", value: k.name || "", maxLength: 64, required: true });
+    const v = await openDialog({
+      title: t("factors.rename-title"),
+      build(body) { body.append(name.el); },
+      actions: [
+        { label: t("action.cancel"), value: null },
+        { label: t("factors.rename"), variant: "primary", attrs: { "data-testid": "passkey-rename-save" }, onClick: () => name.input.value.trim() || undefined },
+      ],
+    });
+    if (!v) return;
+    try { await ctx.api.renamePasskey(k.id, v); toast(t("factors.renamed"), "success"); } catch (err) { if (!quiet(err)) toastError(err); }
+    await load();
+  }
+
+  async function remove(k) {
+    if (!(await confirmDialog(t("factors.remove-title"), t("factors.remove-text", { name: k.name }), { confirm: t("factors.remove"), danger: true }))) return;
+    try { await ctx.api.removePasskey(k.id); toast(t("factors.removed"), "success"); } catch (err) { if (!quiet(err)) toastError(err); }
+    await load();
+  }
+
+  async function load() {
+    let items;
+    try {
+      session = await ctx.api.session();
+      items = (await ctx.api.passkeys())?.items || [];
+    } catch (err) {
+      if (ctx.failed?.(err)) return;
+      clear(list);
+      note.textContent = t("factors.failed");
+      return;
+    }
+    clear(list);
+    for (const k of items) {
+      const meta = t("factors.passkey-meta", { created: fmtDate(k.created_at), used: k.last_used_at ? fmtDate(k.last_used_at) : t("factors.never") });
+      list.append(h("li", { class: "os-sessions__row", attrs: { "data-testid": "passkey-row" } },
+        h("div", { class: "os-sessions__who" }, h("b", { text: k.name || t("passkey.default-name") }), h("span", { class: "os-muted os-small", text: meta })),
+        button(t("factors.rename"), { variant: "subtle", size: "sm", attrs: { "aria-label": t("factors.rename-label", { name: k.name }), "data-testid": "passkey-rename" }, onClick: () => rename(k) }),
+        button(t("factors.remove"), { variant: "subtle", size: "sm", attrs: { "aria-label": t("factors.remove-label", { name: k.name }), "data-testid": "passkey-remove" }, onClick: () => remove(k) })));
+    }
+    note.textContent = items.length ? "" : t("factors.no-passkeys");
+    const f = session?.factors;
+    add.hidden = !canAddPasskey(session);
+    app.textContent = t(f?.totp ? "factors.app-on" : "factors.app-off");
+    removeApp.hidden = !f?.totp;
+    const left = Number(f?.recovery_codes_left ?? 0);
+    codesLeft.textContent = t("factors.codes-left", { n: left });
+    newCodes.hidden = !(f?.totp || items.length);
   }
 
   load();

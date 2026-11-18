@@ -234,6 +234,17 @@ async fn every_server_security_event_is_emitted_without_personal_data() {
         .call("POST", "/api/v1/auth/sessions/end-others", &s2, None, &[])
         .await;
     assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+    // A factor removal refused (CON-13): `auth.mfa_remove`, a passkey that is not theirs.
+    let r = api
+        .call(
+            "DELETE",
+            "/api/v1/auth/mfa/passkeys/0190f5a4-0000-7000-8000-000000000001",
+            &s2,
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND, "{:?}", r.json());
 
     // Password change refused (wrong current password) and done; sign out.
     let r = api
