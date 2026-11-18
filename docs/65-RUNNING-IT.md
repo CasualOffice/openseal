@@ -233,6 +233,57 @@ A seal that failed after keyd signed signs again on the next attempt (keyd's log
 envelope, `KEYD-03` reconciles); sealed bytes stored by an attempt that was not recorded stay in the write-once blob
 store unreferenced, are never served, and are not yet reclaimed (`HRD-09`).
 
+## Load and recovery numbers (`HRD-04`)
+
+`tools/load/load_compose.py run` (workflow `load`: by hand and weekly, never on push or pull request; needs Docker
+with Compose v2) brings up the same hardened stack as the chaos run above (`deploy/compose.production.yml` built
+from the commit, `tools/chaos/compose.chaos.yml` with the TSA gate holding nothing, two workers) plus the CI-only
+`tools/load/compose.load.yml` (the mail sink keeps every message). The edge proxy is trusted as in production
+(`OPENSEAL_TRUSTED_PROXIES` covers Docker's address pools) and each signer's requests carry their own address, so
+the per-address ceremony limit counts per signer as it would behind a real proxy.
+
+- **Load.** Senders create and send envelopes through the API (one signer, access code, one signature field), never
+  more than `--in-flight` agreements open at once: a slot frees only when the envelope is sealed, so a stalled seal
+  slows the senders. Signers take the link from the e-mail and run session, authenticate, consent, view, adopt and
+  finish. A failed request is retried as a client would (finish is applied once).
+- **Steady state.** After a 60 s warm-up, `--baseline` seconds (default 300) give completed envelopes per minute and
+  latency percentiles (p50, p95, p99, linear between ranks).
+- **Chaos under load.** Every worker `SIGKILL`ed from the host (Docker restarts them; the jobs they held wait for
+  their 300 s lease), keyd stopped for `--hold` seconds (default 30), PostgreSQL killed (`stop -t 0`) for `--hold`
+  seconds. Nothing is made due early: back-offs and leases run in real time.
+- **Recovery time**, from the moment the service is back: *throughput back* is the first completion from which a
+  whole minute completes at least 80 % of the steady-state rate; *backlog sealed* is when the last envelope sent before
+  the service returned is sealed; *recovery* is the later of the two. A case not recovered within
+  `--recover-timeout` (900 s) fails the run.
+- **Where numbers come from.** Seal time is `envelope.completing` to `envelope.completed` in the audit trail;
+  end-to-end is `envelope.sent` to `envelope.completed`; invitation is `envelope.sent` to the invitation job's
+  `finished_at`; throughput counts `envelope.completed`. Send and sign have no server start time, so they are the
+  driver's round trips over loopback (`POST /api/v1/envelopes`, `POST …/finish`).
+- **Verdict.** Every envelope ends `completed` on exactly one sealed version (never two), `verify-evidence` and
+  keyd's `verify-oplog` pass, and pyHanko validates a sample of 20 sealed PDFs. It writes
+  `target/load-compose/report.json` and `report.md` (also shown on the run's summary page and uploaded as the
+  `load-report` artifact), and exits non-zero naming each problem.
+
+Run it: **Actions → load → Run workflow** (inputs: senders, signers, most open, steady-state seconds, chaos cases),
+or `gh workflow run load.yml -f senders=2 -f signers=8`. Locally on a Linux host with Docker:
+`python3 -I tools/load/load_compose.py run [--no-build] --verify-python PY`. The driver's statistics and verdict have
+unit tests (`python3 -I -m unittest discover -s tools/load -p 'test_*.py'`).
+
+**Published numbers.** First run pending: the workflow lands with this section, and the table is filled from the
+first green `load` run on `main`, with its run id, commit and runner. Nothing below is an estimate.
+
+| Measure | Value | Run |
+| --- | --- | --- |
+| Runner (CPUs, memory) | first run pending | — |
+| Completed envelopes per minute, steady state | first run pending | — |
+| Send latency p50 / p95 / p99 (s) | first run pending | — |
+| Sign latency p50 / p95 / p99 (s) | first run pending | — |
+| Seal time p50 / p95 / p99 (s) | first run pending | — |
+| Recovery after every worker killed (s) | first run pending | — |
+| Recovery after keyd down 30 s (s) | first run pending | — |
+| Recovery after PostgreSQL down 30 s (s) | first run pending | — |
+| Envelopes sealed twice | first run pending | — |
+
 ## Production checklist
 
 | Area | Do |
@@ -420,7 +471,8 @@ The server counts, per principal and per client address (by id or keyed pseudony
 or a misuse looks like, over a sliding window (`server/casual-sign-server/src/anomaly.rs`). When a count reaches its
 threshold it writes one `alert.abnormal_activity` security event and raises one **operator alert**: by default a
 `WARN` line `"event":"abnormal_activity"` (`rule`, `code`, `count`, `threshold`, `window_s`, `principal`, `client`,
-`suppressed`, `dropped`), the same channel as the worker's `job_dead` and `seal_failed` lines. Route it to the
+`suppressed`, `dropped`), the same channel as the worker's `job_dead` and `seal_failed` lines (`ERROR`, with `code`,
+`account`, `envelope` and `job`; `ASVS-13B`). Route it to the
 operator's pager or chat from the collector, as those. An embedder can pass its own sink
 (`AppState::set_alert_sink`).
 
@@ -432,6 +484,8 @@ operator's pager or chat from the collector, as those. An embedder can pass its 
 | `access_denied` | Answers `403` | principal, address | `OPENSEAL_ALERT_DENIED` | 50 |
 | `document_reads` | Staff reads (`data.document_read`): mass download | principal, address | `OPENSEAL_ALERT_DOCUMENT_READS` | 500 |
 | `voids` | Envelopes voided | principal, address | `OPENSEAL_ALERT_VOIDS` | 25 |
+| `sends` | Envelopes sent one at a time (`POST /envelopes` with `status: sent`, `POST /envelopes/{id}/send`; a draft is not counted) | principal, address | `OPENSEAL_ALERT_SENDS` | 300 |
+| `bulk_sends` | Bulk sends made (`POST /bulk-sends` answered `201`; a check of the list is not counted) | principal, address | `OPENSEAL_ALERT_BULK_SENDS` | 10 |
 
 `OPENSEAL_ALERT_WINDOW_SECS` (default 300, 10 to 86,400) is the window; a threshold of `0` turns its rule off. **One
 alert per burst:** after an alert the subject is quiet for `OPENSEAL_ALERT_COOLDOWN_SECS` (default 900); trips
@@ -455,9 +509,10 @@ same rules at the collector over every instance's lines. For example, over 5 min
 | `kind = data.document_read`, count ≥ 500 | `principal` |
 | `event = abnormal_activity` or `kind = alert.abnormal_activity` | any: page at once |
 
-The access log (`event = request`) carries neither principal nor client, so the `requests` and `voids` rules have no
-collector-side equivalent per subject; across instances, alert on the total rate of `route =
-/api/v1/envelopes/{id}/void` with `status = 200`, and rely on each instance's own `requests` rule.
+The access log (`event = request`) carries neither principal nor client (`ASVS-13C`), so the `requests`, `voids`,
+`sends` and `bulk_sends` rules have no collector-side equivalent per subject; across instances, alert on the total rate
+of `route = /api/v1/envelopes/{id}/void` with `status = 200` (and of `/api/v1/envelopes/{id}/send` with `200`,
+`/api/v1/bulk-sends` with `201`), and rely on each instance's own rules.
 
 ## Configuration
 

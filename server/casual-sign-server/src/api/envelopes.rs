@@ -686,6 +686,9 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
     if let Ok(v) = HeaderValue::from_str(&format!("/api/v1/envelopes/{env}")) {
         r.headers_mut().insert(header::LOCATION, v);
     }
+    if send {
+        r.extensions_mut().insert(crate::security::EnvelopeSent);
+    }
     Ok(r)
 }
 

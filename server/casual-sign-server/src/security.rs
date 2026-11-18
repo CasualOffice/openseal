@@ -37,6 +37,11 @@ use crate::state::AppState;
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ProblemCode(pub &'static str);
 
+/// Marks a `POST /envelopes` that created and sent the envelope, which the abnormal
+/// activity detector counts as a send (`ASVS-13A`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct EnvelopeSent;
+
 /// Marks a refusal of an upload's content by admission (`casual-sign-sdk`).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct AdmissionRefused;
@@ -252,7 +257,8 @@ fn detect(st: &AppState, rule: Rule, subjects: &[Subject<'_>]) {
     }
 }
 
-/// Count the request itself, and a void, by the request's principal and address.
+/// Count the request itself, and a void, a send or a bulk send made, by the request's
+/// principal and address.
 fn count_request(st: &AppState, method: &Method, resp: &Response) {
     let Ok((who, client, route)) = SCOPE.try_with(|s| {
         let who = s
@@ -272,11 +278,22 @@ fn count_request(st: &AppState, method: &Method, resp: &Response) {
         subjects.push(Subject::Address(c));
     }
     detect(st, Rule::Requests, &subjects);
-    if *method == Method::POST
-        && resp.status().is_success()
-        && route == Some("/api/v1/envelopes/{id}/void")
-    {
-        detect(st, Rule::Voids, &subjects);
+    if *method != Method::POST || !resp.status().is_success() {
+        return;
+    }
+    let rule = match route {
+        Some("/api/v1/envelopes/{id}/void") => Some(Rule::Voids),
+        Some("/api/v1/envelopes/{id}/send") => Some(Rule::Sends),
+        // A draft is not a send: the handler marks a create that sent.
+        Some("/api/v1/envelopes") if resp.extensions().get::<EnvelopeSent>().is_some() => {
+            Some(Rule::Sends)
+        }
+        // A check of the list (`validate_only`) answers `200`; a bulk send made, `201`.
+        Some("/api/v1/bulk-sends") if resp.status() == StatusCode::CREATED => Some(Rule::BulkSends),
+        _ => None,
+    };
+    if let Some(rule) = rule {
+        detect(st, rule, &subjects);
     }
 }
 

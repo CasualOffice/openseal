@@ -39,7 +39,7 @@ The largest gaps: staff authentication beyond TOTP (no WebAuthn, `CON-13`; no wa
 TOTP is the default only for administrators since `ASVS-31`), personal-data controls (self-service export and
 erasure, retention purge: `ASVS-16`, `ASVS-18`), unsigned release images (`ASVS-15`), and log shipping shown only as
 configuration (`ASVS-08A`). Built and green on CI on `main` since the first assessment: the security event log
-(`ASVS-08`), anomaly alerting (`ASVS-13`; envelope sends are not yet counted, `ASVS-13A`), the backup and restore drill
+(`ASVS-08`), anomaly alerting (`ASVS-13`; envelope and bulk sends counted since `ASVS-13A`), the backup and restore drill
 (`ASVS-14`, job `backup-drill`) and the administrators' TOTP default (`ASVS-31`); merged since: staff session idle and
 absolute limits with a session list (`ASVS-06`) and step-up before sensitive actions (`ASVS-07`), Met at the merge and
 green once CI on `main` passes. The evidence core is
@@ -613,7 +613,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 11.1.4 | 1 | All | Anti-automation for excessive calls | Met | Per-principal API, per-link and per-address ceremony limits (`-server/tests/threats.rs` `ceremony_calls_are_limited_per_link_and_per_client_address`) | — |
 | 11.1.5 | 1 | All | Limits against business risks | Met | Access-code lockout (`-server/tests/threats.rs` `an_access_code_locks_after_the_accounts_attempts...`); voided envelopes open nothing | — |
 | 11.1.6 | 2 | All | No TOCTOU or race conditions | Met | Quotas by conditional update (`SEC-U01`); chain head locked; workflow commands transactional; the seal's record fenced by the job lease (`SEC-S12`, `HRD-01`) | — |
-| 11.1.7 | 2 | All | Monitor unusual business events | Partly | Mass document reads and runs of voids per principal and address are counted and alerted (`-server/src/anomaly.rs`, docs/65 §Abnormal activity); envelope sends and bulk sends are not counted, and the console has no detector | ASVS-13A, ASVS-13B |
+| 11.1.7 | 2 | All | Monitor unusual business events | Partly | Mass document reads, runs of voids, envelope sends and bulk sends per principal and address are counted and alerted (`-server/src/anomaly.rs`; `-server/tests/anomaly.rs` `a_burst_of_envelope_sends_raises_one_alert`, `a_burst_of_bulk_sends_raises_one_alert_and_a_check_of_the_list_does_not_count`, seen red; docs/65 §Abnormal activity); the worker's `job_dead` and `seal_failed` alerts are `ERROR` lines (`-worker/tests/alert_level.rs`, seen red); the access log carries no principal or client for collector rules across instances, and the console has no detector | ASVS-13C, ASVS-13D |
 | 11.1.8 | 2 | All | Configurable alerting on automated attacks | Met | Authentication-failure, `403`, `429` and request bursts alert per principal and address, thresholds, window, cooldown and alert rate set by `OPENSEAL_ALERT_*` (docs/65 §Abnormal activity); one alert per burst, bounded memory (`-server/tests/anomaly.rs`, `anomaly.rs` unit tests, seen red; `SEC-D07`) | — |
 
 ### V12 Files and Resources
