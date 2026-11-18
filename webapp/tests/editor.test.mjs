@@ -10,7 +10,7 @@ import { FIELD_TYPES, FIELD_GROUPS, takesInput, requiredByDefault, validationFro
 import { FIELD_TYPES_READY, createClient } from "../api.js";
 import { createMockFetch, MOCK } from "../mock.js";
 import { makePdf } from "../mockpdf.js";
-import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary } from "../preparemodel.js";
+import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary, matchSentRecipients, matchSentFields } from "../preparemodel.js";
 
 // ---- signing steps ---------------------------------------------------------------------------
 test("orders stay compact; the API's are read leniently", () => {
@@ -287,4 +287,46 @@ test("OCR pages are numbered as laid out; personal data groups by its busiest pa
   const p = piiSummary([{ kind: "personal_data", label: "Email address", page: 3 }, { kind: "personal_data", label: "Email address", page: 3 }, { kind: "personal_data", label: "Phone number", page: 3 }, { kind: "personal_data", label: "Phone number", page: 1 }, { kind: "personal_data", label: "x", page: 3, state: "dismissed" }]);
   assert.deepEqual(p, { page: 3, total: 3, pages: 2, labels: [["Email address", 2], ["Phone number", 1]] });
   assert.equal(piiSummary([]), null);
+});
+
+// ---- A save the sender kept editing through (E2E-13) -----------------------------------------
+test("sent recipients take the server's ids by what they were sent as, not by the answer's order", () => {
+  const sent = [
+    { type: "signer", name: "Bo", email: "bo@example.com", routing_order: 2 },
+    { type: "signer", name: "Ana", email: "Ana@example.com", routing_order: 1 },
+    { type: "cc", name: "Cy", email: "cy@example.com", routing_order: 3 },
+  ];
+  // The server lists by step, and may write an email in its own case.
+  const server = [
+    { id: "r-ana", type: "signer", name: "Ana", email: "ana@example.com", routing_order: 1 },
+    { id: "r-bo", type: "signer", name: "Bo", email: "bo@example.com", routing_order: 2 },
+    { id: "r-cy", type: "cc", name: "Cy (copy)", email: "cy@example.com", routing_order: 3 },
+  ];
+  // Cy's name differs: the one at the same index, which is still free.
+  assert.deepEqual(matchSentRecipients(sent, server), ["r-bo", "r-ana", "r-cy"]);
+  // Two the same: each takes one.
+  const twin = { type: "signer", name: "Al", email: "al@example.com", routing_order: 1 };
+  assert.deepEqual(matchSentRecipients([twin, twin], [{ id: "a", ...twin }, { id: "b", ...twin }]), ["a", "b"]);
+  assert.deepEqual(matchSentRecipients([twin], []), [null]);
+});
+
+test("sent fields take the server's ids by kind, owner, document and place; held ids are skipped", () => {
+  const at = (x, y) => ({ page: 1, x, y, width: "120", height: "30" });
+  const sent = [
+    { type: "text", recipient_id: "r1", document_id: "d1", placement: at("72", "500") },
+    { type: "signature", recipient_id: "r1", document_id: "d1", placement: at("72", "100.5") },
+    { type: "signature", recipient_id: "r2", document_id: "d1", placement: at("72", "100.5") },
+  ];
+  // By position on the server, numbers as numbers; f0 is held by a field already saved.
+  const p = (y) => ({ page: 1, x: 72, y, width: 120, height: 30 });
+  const server = [
+    { id: "f0", type: "signature", recipient_id: "r1", document_id: "d1", placement: p(100.5) },
+    { id: "f1", type: "signature", recipient_id: "r2", document_id: "d1", placement: p(100.5) },
+    { id: "f2", type: "signature", recipient_id: "r1", document_id: "d1", placement: p(100.5) },
+    { id: "f3", type: "text", recipient_id: "r1", document_id: "d1", placement: p(500) },
+  ];
+  assert.deepEqual(matchSentFields(sent, server, new Set(["f0"])), ["f3", "f2", "f1"]);
+  // Elsewhere on the page, on another page, or for someone else: no match.
+  const off = [{ ...sent[0], placement: at("73", "500") }, { ...sent[0], placement: { ...at("72", "500"), page: 2 } }, { ...sent[0], recipient_id: "r2" }];
+  assert.deepEqual(matchSentFields(off, server), [null, null, null]);
 });

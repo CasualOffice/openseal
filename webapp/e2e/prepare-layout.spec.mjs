@@ -262,6 +262,97 @@ test("the ceremony's field kinds are placed and configured, and come back from t
   expect(env2.fields.find((f) => f.type === "text").validation).toBeUndefined();
 });
 
+// ---- A save the sender keeps editing through (E2E-13) ----------------------------------------
+// compose-e2e on WebKit (PR #29): a field placed while the first save was on the way was
+// dropped when the save's answer replaced the editor's state, and Continue then stayed held
+// on "Every signer needs a field". The mock holds one call until the test lets it go.
+
+/// Hold the next `method` call whose path matches `path` until `release`.
+async function holdNext(page, method, path) {
+  await page.evaluate(([m, p]) => {
+    const re = new RegExp(p);
+    window.__osHeld = new Promise((arrived) => {
+      globalThis.__opensealMockHold = (mm, pp) => {
+        if (mm !== m || !re.test(pp)) return null;
+        globalThis.__opensealMockHold = null;
+        return new Promise((go) => { window.__osRelease = go; arrived(); });
+      };
+    });
+  }, [method, path.source]);
+}
+const held = (page) => page.evaluate(() => window.__osHeld);
+const release = (page) => page.evaluate(() => window.__osRelease());
+const addField = (page, kind) => page.locator(".os-palette").getByRole("button", { name: `Add ${kind} field` }).press("Enter");
+const draftOf = async (page) => {
+  const id = decodeURIComponent(page.url().split("#/prepare/")[1] || "");
+  return (await mockDb(page)).envelopes.find((e) => e.id === id);
+};
+
+test("a field placed while a new draft's first save is on the way is kept, and saved next (E2E-13)", async ({ page }) => {
+  await toFields(page);
+  await addField(page, "Text");
+  await holdNext(page, "POST", /^\/api\/v1\/envelopes$/);
+  await page.getByTestId("save-draft").click();
+  await held(page);
+  await addField(page, "Signature");
+  await expect(page.locator(".os-field")).toHaveCount(2);
+  await release(page);
+  await expect(page.locator(".os-toast").last()).toContainText("Draft saved.");
+  await expect(page).toHaveURL(/#\/prepare\/[^/]+$/);
+  // The save sent the text field: the signature placed during it stays, unsaved.
+  await expect(page.locator(".os-field")).toHaveCount(2);
+  await expect(page.getByTestId("save-status")).toContainText("Unsaved");
+  const first = (await draftOf(page)).fields;
+  expect(first.map((f) => f.type)).toEqual(["text"]);
+  // The next save adds the signature and leaves the saved text field as it is: not
+  // removed and made again, which the audit trail would record.
+  await page.getByTestId("save-draft").click();
+  await expect(page.getByTestId("save-status")).toContainText("Saved");
+  const env = await draftOf(page);
+  const ana = env.recipients[0].id;
+  expect(env.fields.map((f) => [f.type, f.recipient_id]).sort()).toEqual([["signature", ana], ["text", ana]]);
+  expect(env.fields.find((f) => f.type === "text").id).toBe(first[0].id);
+  // Continue is not held: the signer has a field.
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator('.os-stepper__btn[aria-current="step"]')).toContainText("Review");
+});
+
+test("fields added and removed while a saved draft's save is on the way are kept as the sender left them (E2E-13)", async ({ page }) => {
+  await toFields(page, [["Ana Signer", "ana@example.com"], ["Bo Signer", "bo@example.com"]]);
+  await placingFor(page, "Ana Signer");
+  await addField(page, "Signature");
+  await page.getByTestId("save-draft").click();
+  await expect(page.getByTestId("save-status")).toContainText("Saved");
+  const ana = (await draftOf(page)).recipients.find((r) => r.name === "Ana Signer").id;
+  // A new field makes the next save add fields; that call is held.
+  await placingFor(page, "Ana Signer");
+  await addField(page, "Text");
+  await holdNext(page, "POST", /^\/api\/v1\/envelopes\/[^/]+\/fields$/);
+  await page.getByTestId("save-draft").click();
+  await held(page);
+  // Meanwhile: Ana's saved signature removed, and a signature placed for Bo.
+  await page.locator('.os-field[data-field="signature"]').click();
+  await page.keyboard.press("Delete");
+  await placingFor(page, "Bo Signer");
+  await addField(page, "Signature");
+  await expect(page.locator(".os-field")).toHaveCount(2);
+  await release(page);
+  // The save ends with the draft still unsaved: what it sent is saved, the rest is not.
+  await expect(page.getByTestId("save-status")).toContainText("Unsaved");
+  await expect(page.locator(".os-field")).toHaveCount(2);
+  const text = (await draftOf(page)).fields.find((f) => f.type === "text").id;
+  await page.getByTestId("save-draft").click();
+  await expect(page.getByTestId("save-status")).toContainText("Saved");
+  const env = await draftOf(page);
+  const bo = env.recipients.find((r) => r.name === "Bo Signer").id;
+  expect(env.fields.map((f) => [f.type, f.recipient_id]).sort()).toEqual([["signature", bo], ["text", ana]].sort());
+  expect(env.fields.find((f) => f.type === "text").id).toBe(text);
+  // Reopened, the editor shows the same two.
+  await page.reload();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await expect(page.locator(".os-field")).toHaveCount(2);
+});
+
 // ---- Review, template mode, documents --------------------------------------------------------
 
 test("documents: Next waits for a PDF", async ({ page }) => {

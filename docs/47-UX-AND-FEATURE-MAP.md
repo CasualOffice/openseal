@@ -591,6 +591,15 @@ Spec: `webapp/e2e/editor.spec.mjs`; pure rules in `webapp/tests/editor.test.mjs`
   Each is one undo step. Templates do not offer it (the API detects on an envelope's documents).
 - Found on the way: a save (including autosave) put "placing fields for" back to the first signer; it now keeps
   the one chosen.
+- E2E-13 (2026-11-19, found by compose-e2e on WebKit): a save replaced the editor's state with the server's answer,
+  so a field, recipient or edit made while the save was on the way was lost (a field placed during the first save
+  vanished, and Continue then stayed held on "Every signer needs a field"). Now a save that ran unchanged reloads
+  the draft as before; one during which anything changed keeps the editor's state, takes from the answer only the
+  envelope's id and the ids of what it sent (matched by what each was sent as, since the server lists fields by
+  position and recipients by step), clears undo, and leaves the draft unsaved, so the next save (autosave or Save)
+  sends the rest. One save runs at a time: Save, Send or Detect during an autosave waits for it. Known gap: a
+  document removed while a new draft's first save is on the way stays on the server (a saved draft's documents
+  cannot be removed in the editor, and the save sends no removal; E2E-14).
 
 ### Tests (WEB-09, WEB-10)
 
