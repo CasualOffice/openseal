@@ -84,14 +84,15 @@ pub trait AlertSink: Send + Sync {
     fn alert(&self, alert: &OperatorAlert);
 }
 
-/// Alerts as log lines on standard error.
+/// Alerts as log lines on standard error, at `ERROR` so a collector rule on level pages
+/// on them (`ASVS-13B`; [`crate::log`] maps an unknown level to `INFO`).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LogAlerts;
 
 impl AlertSink for LogAlerts {
     fn alert(&self, a: &OperatorAlert) {
         crate::log(
-            "ALERT",
+            "ERROR",
             &a.kind,
             &[
                 ("code", a.code.clone()),

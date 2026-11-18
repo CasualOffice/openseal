@@ -4,7 +4,8 @@
 //! it (`POST /s/{token}/otp/verify`). Shown: resends are limited; an expired code, a
 //! superseded code and a replayed (used) code are refused; a wrong code five times locks
 //! the recipient and revokes the link; the chain records challenged, failed and passed;
-//! and the code is never in the chain, a job, a job step or any log line, in clear.
+//! and the code is never in the chain, a job, a job step or any log line, in clear: the
+//! `tracing` output, the server's security events and the worker's lines all captured.
 //!
 //! Needs `OPENSEAL_TEST_DATABASE_URL`; without it the test prints a note and passes
 //! vacuously, as the store's tests do.
@@ -30,6 +31,7 @@ use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use base64::Engine as _;
+use casual_sign_seclog::{SecurityLog, Service};
 use casual_sign_server::{AppState, Blobs, Config, JwtKeys};
 use common::{Env, TestClock};
 use http_body_util::BodyExt as _;
@@ -184,6 +186,8 @@ fn events(chain: &Value, recipient: &str, kind: &str) -> usize {
 async fn an_emailed_one_time_code_authenticates_once_and_locks_after_wrong_tries() {
     let logs = Logs::default();
     let sink = logs.clone();
+    let (worker_log, worker_lines) = SecurityLog::memory(Service::Worker);
+    casual_sign_worker::set_security_log(worker_log);
     let _ = tracing_subscriber::fmt()
         .with_max_level(tracing_subscriber::filter::LevelFilter::TRACE)
         .with_ansi(false)
@@ -204,6 +208,11 @@ async fn an_emailed_one_time_code_authenticates_once_and_locks_after_wrong_tries
     )
     .unwrap();
     st.set_mfa_key(common::mfa_key());
+    // The server's security events and the worker's lines go to their own sinks, not
+    // through `tracing`: captured too, so "never in a log line" covers every line
+    // either process writes (E2E-10).
+    let (server_log, server_lines) = SecurityLog::memory(Service::Server);
+    st.set_security_log(server_log);
     let app = casual_sign_server::app(st);
     // `Env` already made an organization; this workspace gets one of its own.
     let org = env.db.organization("Codes").await;
@@ -462,7 +471,11 @@ async fn an_emailed_one_time_code_authenticates_once_and_locks_after_wrong_tries
         .fetch_all(&env.db.admin)
         .await
         .unwrap();
-    let logged = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+    let mut logged = String::from_utf8(logs.0.lock().unwrap().clone()).unwrap();
+    for line in server_lines.lines().into_iter().chain(worker_lines.lines()) {
+        logged.push_str(&line);
+        logged.push('\n');
+    }
     for code in &codes {
         for c in &canonical {
             assert!(
@@ -478,8 +491,20 @@ async fn an_emailed_one_time_code_authenticates_once_and_locks_after_wrong_tries
             !steps.iter().any(|j| j.contains(code.as_str())),
             "a code in a step"
         );
-        // As a value of its own: six digits also occur inside timestamps and hex ids.
-        assert!(!standalone(&logged, code), "a code in the log");
+        // As a value of its own: six digits also occur inside timestamps (the
+        // microseconds of every `tracing` line, `…:33.246944Z`) and hex ids; a match
+        // there is chance, not a leak (E2E-10, run 43503843137).
+        // A failure names the line, with the code masked, so it can be told from chance.
+        assert!(
+            !standalone(&logged, code),
+            "a code in the log: {}",
+            logged
+                .lines()
+                .filter(|l| standalone(l, code))
+                .map(|l| l.replace(code.as_str(), "<code>"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
     }
 }
 
