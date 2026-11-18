@@ -273,20 +273,21 @@ or `gh workflow run load.yml -f senders=2 -f signers=8`. Locally on a Linux host
 `python3 -I tools/load/load_compose.py run [--no-build] --verify-python PY`. The driver's statistics and verdict have
 unit tests (`python3 -I -m unittest discover -s tools/load -p 'test_*.py'`).
 
-**Published numbers.** First run pending: the workflow lands with this section, and the table is filled from the
-first green `load` run on `main`, with its run id, commit and runner. Nothing below is an estimate.
+**Published numbers.** From the first green `load` run on `main`: run 44403312475, commit `562e174`, 2026-11-18,
+hardened profile, 2 workers, 2 senders, 8 signers, at most 16 agreements open. Measured, not estimated. A worker
+kill shows the 300 s lease by design: the killed worker's envelopes wait for their leases, the others keep sealing.
 
 | Measure | Value | Run |
 | --- | --- | --- |
-| Runner (CPUs, memory) | first run pending | — |
-| Completed envelopes per minute, steady state | first run pending | — |
-| Send latency p50 / p95 / p99 (s) | first run pending | — |
-| Sign latency p50 / p95 / p99 (s) | first run pending | — |
-| Seal time p50 / p95 / p99 (s) | first run pending | — |
-| Recovery after every worker killed (s) | first run pending | — |
-| Recovery after keyd down 30 s (s) | first run pending | — |
-| Recovery after PostgreSQL down 30 s (s) | first run pending | — |
-| Envelopes sealed twice | first run pending | — |
+| Runner (CPUs, memory) | ubuntu-latest, 4 CPUs, 15.6 GiB | [44403312475](https://github.com/CasualOffice/openseal/actions/runs/44403312475) |
+| Completed envelopes per minute, steady state | 194.6 (3601 of 3601 completed in the run) | [44403312475](https://github.com/CasualOffice/openseal/actions/runs/44403312475) |
+| Send latency p50 / p95 / p99 (s) | 0.085 / 0.125 / 0.164 (client round trip) | [44403312475](https://github.com/CasualOffice/openseal/actions/runs/44403312475) |
+| Sign latency p50 / p95 / p99 (s) | 0.025 / 0.050 / 0.065 (client round trip) | [44403312475](https://github.com/CasualOffice/openseal/actions/runs/44403312475) |
+| Seal time p50 / p95 / p99 (s) | 1.894 / 2.830 / 3.181 (server, `completing` → `completed`) | [44403312475](https://github.com/CasualOffice/openseal/actions/runs/44403312475) |
+| Recovery after every worker killed (s) | throughput back 1.1; backlog sealed 300.1 (the lease) | [44403312475](https://github.com/CasualOffice/openseal/actions/runs/44403312475) |
+| Recovery after keyd down 30 s (s) | 28.1 (down 36.9) | [44403312475](https://github.com/CasualOffice/openseal/actions/runs/44403312475) |
+| Recovery after PostgreSQL down 30 s (s) | throughput back 0.2; backlog sealed 263.3 (down 37.0) | [44403312475](https://github.com/CasualOffice/openseal/actions/runs/44403312475) |
+| Envelopes sealed twice | 0 | [44403312475](https://github.com/CasualOffice/openseal/actions/runs/44403312475) |
 
 ## Production checklist
 
