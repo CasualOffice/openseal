@@ -28,26 +28,27 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 210 | 107 | 93 | 10 |
-| Partly | 32 | 10 | 17 | 5 |
-| Not met | 12 | 4 | 6 | 2 |
+| Met | 214 | 109 | 95 | 10 |
+| Partly | 31 | 9 | 17 | 5 |
+| Not met | 9 | 3 | 4 | 2 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
 The largest gaps: staff authentication beyond TOTP (no WebAuthn, `CON-13`; no way to replace a lost factor, `ASVS-32`;
-TOTP is the default only for administrators since `ASVS-31`), staff session management (no idle timeout or session
-list, `ASVS-06`; no step-up before sensitive changes, `ASVS-07`), personal-data controls (self-service export and
+TOTP is the default only for administrators since `ASVS-31`), personal-data controls (self-service export and
 erasure, retention purge: `ASVS-16`, `ASVS-18`), unsigned release images (`ASVS-15`), and log shipping shown only as
 configuration (`ASVS-08A`). Built and green on CI on `main` since the first assessment: the security event log
 (`ASVS-08`), anomaly alerting (`ASVS-13`; envelope sends are not yet counted, `ASVS-13A`), the backup and restore drill
-(`ASVS-14`, job `backup-drill`) and the administrators' TOTP default (`ASVS-31`). The evidence core is
+(`ASVS-14`, job `backup-drill`) and the administrators' TOTP default (`ASVS-31`); merged since: staff session idle and
+absolute limits with a session list (`ASVS-06`) and step-up before sensitive actions (`ASVS-07`), Met at the merge and
+green once CI on `main` passes. The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
 
 ## Findings
 
-Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-08`, `ASVS-09`, `ASVS-11`, `ASVS-12`, `ASVS-13`, `ASVS-14`, `ASVS-24`, `ASVS-26`, `ASVS-30`, `ASVS-31` and `ASVS-34` are closed.
+Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are closed; `ASVS-02`, `ASVS-04`, `ASVS-05`, `ASVS-08`, `ASVS-09`, `ASVS-11`, `ASVS-12`, `ASVS-13`, `ASVS-14`, `ASVS-24`, `ASVS-26`, `ASVS-30`, `ASVS-31` and `ASVS-34` are closed; `ASVS-06` and `ASVS-07` are built, closing on a green CI run on `main`.
 
 | Row | Sev | Requirements | What is missing |
 | --- | --- | --- | --- |
@@ -56,8 +57,8 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-03 | P2 | ASVS 2.1.8 | Password strength indication on the set-password screens; needs the owner's design approval before any UI change |
 | ASVS-04 (Done) | P1 | ASVS 2.2.3, 2.5.5 | Closed 2026-11-13: a password set, changed or reset and a factor added each email the user one notice with no secret; `ASVS-32` notifies a factor's removal when it adds one. Was: Email the user when their password is changed, reset or set from an invitation, and when a factor is added or removed |
 | ASVS-05 (Done) | P1 | ASVS 3.2.3, 3.4.4 | Closed 2026-11-13: the staff cookie is `__Host-os_session` whenever `Secure`; the ceremony cookie keeps `Path=/s/`. Was: Name the staff session cookie `__Host-os_session` whenever cookies are `Secure` (and the ceremony cookie with a `__Host-` or narrowest-path equivalent) |
-| ASVS-06 | P1 | ASVS 3.3.2, 3.3.4; relates to `UXW-13` | Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password |
-| ASVS-07 | P1 | ASVS 3.7.1, 4.3.3 | Step-up re-authentication (password or second factor within the last 5 minutes) before creating API clients or keys, granting administrator profiles, changing webhook URLs and changing the user's email |
+| ASVS-06 (Built) | P1 | ASVS 3.3.2, 3.3.4; relates to `UXW-13` | Built 2026-11-19: idle and absolute limits per workspace (defaults 30 minutes, 8 hours) tightened by the organization's, a session list in every workspace, ending any or all after a re-authentication; closes on a green CI run. Was: Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password |
+| ASVS-07 (Built) | P1 | ASVS 3.7.1, 4.3.3 | Built 2026-11-19: password and second factor within five minutes before the sensitive actions docs/40 lists (`403 CS-AUTH-0013`), the web app prompting and repeating; closes on a green CI run. Was: Step-up re-authentication (password or second factor within the last 5 minutes) before creating API clients or keys, granting administrator profiles, changing webhook URLs and changing the user's email |
 | ASVS-08 (Done) | P1 | ASVS 1.7.1, 1.7.2, 2.8.5, 7.1.3, 7.1.4, 7.2.1, 7.2.2, 8.3.5, 9.2.5; `SEC-D01` stays (no personal data) | Security event log: staff sign-in success and failure, logout, reset, lockout, operator TOTP rejection, rate-limit hits and every 401/403 with request id and a hashed principal; one JSON log format across server, worker, keyd and modeld; staff document downloads recorded; worker logs keyd and TSA connection failures with their code; docs/65 explains shipping logs to a remote collector |
 | ASVS-08A | P2 | ASVS 1.7.2 | Show the log-forwarding Compose override delivering to a live syslog-over-TLS collector on a Linux Docker host (found by `ASVS-08`) |
 | ASVS-08B | P2 | ASVS 7.2.2 | Ceremony refusals carry their code and recipient in `access.denied`; another account's object (answered 404) is logged as a refusal (found by `ASVS-08`) |
@@ -327,9 +328,9 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 3.3.1 | 1 | All | Logout and expiry invalidate the token server-side | Met | `POST /auth/logout` revokes the session row and clears the cookie (`admin.rs` `logout`); resolver refuses revoked or expired rows (`-store/src/repo/sessions.rs`) | — |
-| 3.3.2 | 1 | All | Periodic re-authentication (absolute and idle) | Partly | Absolute 8 h staff session (`Config::session_ttl`); no idle timeout for staff (operators have 30 min idle, `-console/src/lib.rs`) | ASVS-06 |
+| 3.3.2 | 1 | All | Periodic re-authentication (absolute and idle) | Met | Every staff request is checked against the workspace's `session_idle` and `session_max_age`, tightened by the organization's `session.idle` and `session.max_age` (defaults 30 minutes and 8 hours; `-server/src/auth.rs` `authenticate`, `casual_sign_policy::org::effective_session`, migration 0042); `-server/tests/sessions.rs` `an_idle_session_ends_and_activity_keeps_one_until_its_absolute_limit`, seen red (docs/07 `SEC-A16`); operators 30 minutes idle (`-console/src/lib.rs`) | ASVS-06 |
 | 3.3.3 | 2 | All | Option to end other sessions after password change | Met | A new password ends the user's sessions in every account (`patch_user`, `SEC-ID-01`; `revoke_all`) | — |
-| 3.3.4 | 2 | All | Users view and log out of active sessions | Not met | No session list or per-session logout | ASVS-06 |
+| 3.3.4 | 2 | All | Users view and log out of active sessions | Met | `GET /auth/sessions` lists the person's live sessions in every workspace, the current marked; `DELETE /auth/sessions/{id}` and `POST /auth/sessions/end-others` end any or all after a re-authentication (`-server/src/api/sessions.rs`, migration 0042); the profile panel shows them (`webapp/profile.js`); `-server/tests/sessions.rs` `a_person_lists_their_own_sessions_and_ends_others_after_re_authenticating`, `webapp/e2e/sessions.spec.mjs` | ASVS-06 |
 
 **V3.4 Cookie-based Session Management**
 
@@ -360,7 +361,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.7.1 | 1 | All | Re-authentication before sensitive actions | Not met | No step-up before creating API clients, granting administrators or changing webhook URLs | ASVS-07 |
+| 3.7.1 | 1 | All | Re-authentication before sensitive actions | Met | Password, and the second factor when the user has one, within five minutes before creating API clients, role and profile changes, administrator and organization grants, the organization's policy, the workspace's security settings, a webhook's destination and ending other sessions (`403 CS-AUTH-0013`; `POST /auth/reauthenticate`; `Principal::require_recent_auth`); the web app prompts and repeats (`webapp/stepup.js`); `-server/tests/sessions.rs` `sensitive_actions_need_a_recent_re_authentication_from_a_session_only`, seen red. No endpoint changes a user's email yet | ASVS-07 |
 
 ### V4 Access Control
 
@@ -387,7 +388,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 4.3.1 | 1 | All | Administrative interfaces use MFA | Met | Platform console: password plus mandatory TOTP (`-console/src/lib.rs`); tenant administrators: TOTP by default (`mfa_policy` unset reads as `administrators`, migration 0036; `-server/tests/mfa.rs` `a_fresh_accounts_administrator_owes_a_factor_with_no_setting`), and the server does not start without the key that seals the seeds (`-server/tests/startup.rs`). An account's administrators may explicitly choose `optional` (docs/40 §2) | — |
 | 4.3.2 | 1 | All | No directory browsing or metadata exposure | Met | Web app read into memory at start, only the web app's kinds of file served (`-server/src/web.rs`, test `only_the_web_apps_kinds_of_file_are_served`); test folders and Node manifests skipped | — |
-| 4.3.3 | 2 | All | Step-up or adaptive authorization for high-value actions | Not met | None | ASVS-07 |
+| 4.3.3 | 2 | All | Step-up or adaptive authorization for high-value actions | Met | Step-up re-authentication before the high-value administrative actions (3.7.1; docs/40 As built `ASVS-07`) | ASVS-07 |
 
 ### V5 Validation, Sanitization and Encoding
 

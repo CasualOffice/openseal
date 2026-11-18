@@ -540,6 +540,17 @@ the rules above, and what does not:
   references to the anchor and the envelope), both insert-only with the audit chain's UPDATE, DELETE and TRUNCATE
   triggers; index `audit_events (account_id, at)` for the day's events; definer `openseal_enqueue_anchor_jobs(day,
   start, end, now)` (a period over a day is `CS-DB-0008`).
+- **Staff session activity (built, `ASVS-06`, `ASVS-07`, migration 0042, docs/40 As built):** `staff_sessions` gains
+  `last_seen_at` (not null; the last request, written at most every 15 s; existing rows take `created_at`),
+  `reauth_at` (the last proof of the password and any second factor: the sign-in or `POST /auth/reauthenticate`;
+  a workspace switch carries it) and `client_label` (1 to 64 characters, a browser and system name from a closed
+  list, never the User-Agent; not personal data). `openseal_resolve_staff_session` also answers the workspace's
+  `settings` and those times, so the server applies `session_idle` / `session_max_age` tightened by the
+  organization's `session.idle` / `session.max_age` on every request (the limits are not stored on the row). Definer
+  `openseal_own_sessions(session, now)` lists the live session's own user's sessions in every workspace they are an
+  enabled member of (with each workspace's name, settings and organization policy); `openseal_end_own_sessions(
+  session, target, now)` ends one of them, or every other with a NULL target, never the calling session and never
+  another user's; both reach rows only through `openseal_live_session_user` (not granted). No new table.
 - **Seal reconciliation (built, `CON-09`, migration 0038):** tenant table `seal_signatures` (account, envelope,
   digest 32/48/64 bytes, keyd alias, time; key account, envelope, digest; insert-only from the worker, in the
   transaction that stores the sealed bytes); `platform.seal_digests(from, to)` and `platform.seal_digests_of(ids)`,

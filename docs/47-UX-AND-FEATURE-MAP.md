@@ -291,7 +291,17 @@ The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign us
   email (read-only), saved signature and initials adopted with the signer's own component (`signature.js`, its styles
   loaded on demand), email notification choices (completed, declined, viewed) and a password change that needs the
   current password. Its calls are `GET`/`PATCH /users/me`, served (`UXW-37`); a password change ends the user's other
-  sessions.
+  sessions. Its last section, **Where you're signed in** (`ASVS-06`), lists the person's sessions in every workspace
+  (`GET /auth/sessions`): browser and system, workspace and last activity, this one first and marked "This browser";
+  each other one has **Sign out**, and **Sign out of all other sessions** ends the rest; with none other it says "You
+  are not signed in anywhere else".
+- **Step-up prompt** (`stepup.js`, `ASVS-07`): when a sensitive action (a new API client, a role or profile change, an
+  organization grant or policy, a webhook's destination, the workspace's security settings, signing other sessions
+  out) is refused for want of a recent re-authentication (`403 CS-AUTH-0013`), the API client opens a modal
+  "Confirm it's you": the password, and the authenticator's code when the person has a second factor, with the
+  refusal said beside the field it concerns. On Continue the action is made again by itself, so the person does not
+  start over; Cancel leaves it undone. Not asked again for five minutes. Tests: `webapp/tests/sessions.test.mjs`,
+  `webapp/e2e/sessions.spec.mjs` (Chromium and WebKit).
 - **Help menu**: Keyboard shortcuts, Verify a signed PDF, About OpenSeal. The **shortcuts panel** lists every table,
   grouped (Everywhere, with ⌘K for the command menu; Send editor; Placing fields, the editor's single-key tools from
   `preparemodel.TOOL_KEYS`, V and S I D N E O T C, which prepare.js dispatches itself on the Fields step), one row per
