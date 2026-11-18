@@ -345,6 +345,10 @@ pub fn classify(method: &str, template: &str) -> Option<Kind> {
         "/api/v1/permission-profiles",
         "/api/v1/api-clients",
         "/api/v1/webhooks",
+        // Retention rules, legal holds and a purge request (ASVS-18).
+        "/api/v1/retention",
+        "/api/v1/envelopes/{id}/legal-hold",
+        "/api/v1/envelopes/{id}/purge",
     ];
     const READS: &[&str] = &[
         "/api/v1/envelopes/{id}/documents/{doc}/content",
@@ -367,13 +371,16 @@ pub fn classify(method: &str, template: &str) -> Option<Kind> {
         "/api/v1/templates/{id}/documents/{doc}/analysis",
         "/api/v1/organizations/me/audit",
         "/api/v1/admin-events",
+        // A member's export of their own data (ASVS-16): a read of personal data.
+        "/api/v1/users/me/export",
     ];
     if method == "GET" {
         return READS.contains(&template).then_some(Kind::DocumentRead);
     }
     // A member's own profile and password are not administration; a password change
     // is its own event.
-    if template == "/api/v1/users/me" {
+    // An erasure of one's own identity (ASVS-16) is an administrative change.
+    if template == "/api/v1/users/me" && method != "DELETE" {
         return None;
     }
     ADMIN

@@ -487,7 +487,7 @@ pub(crate) async fn administered(
 
 /// The member `id`, `404` when there is none or a group-scoped caller does not
 /// administer them (an object outside the caller's scope answers as another tenant's).
-async fn member_in_scope(
+pub(crate) async fn member_in_scope(
     c: &Call,
     tx: &mut TenantTx,
     id: UserId,
@@ -654,7 +654,7 @@ pub(crate) async fn granted_profile(
 /// the caller holds (UXW-07, `grantable`): someone who manages users with a custom
 /// profile cannot re-profile, disable, rename, reset, re-invite (PRF-01) or remove a
 /// member above them. The caller's own record is theirs to change as the route allows.
-async fn outranks(
+pub(crate) async fn outranks(
     c: &Call,
     tx: &mut casual_sign_store::TenantTx,
     target: &casual_sign_store::repo::accounts::Member,
@@ -1874,7 +1874,7 @@ fn mark_type(raw: &[u8], pointer: &str) -> Result<(), ApiError> {
     }
 }
 
-async fn me_json(c: &Call, tx: &mut TenantTx) -> Result<Value, ApiError> {
+pub(crate) async fn me_json(c: &Call, tx: &mut TenantTx) -> Result<Value, ApiError> {
     let m = tx
         .users()
         .get(c.p.user)
