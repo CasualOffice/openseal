@@ -307,3 +307,68 @@ async fn a_completed_envelope_is_purged_by_its_rule_with_its_chain_kept_whole() 
         .await
         .unwrap();
 }
+
+async fn canonical(env: &Env, e: Uuid) -> Vec<Vec<u8>> {
+    sqlx::query_scalar("SELECT canonical FROM audit_events WHERE envelope_id = $1 ORDER BY seq")
+        .bind(e)
+        .fetch_all(&env.db.admin)
+        .await
+        .unwrap()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn erasing_the_sender_leaves_their_sealed_agreement_and_every_chain_intact() {
+    // ASVS-16: the erasure of a member pseudonymises their identity and touches no
+    // evidence: the sealed bytes, the audit chain and the admin log all stay and verify.
+    let Some(env) = Env::new("erasure_keeps_evidence").await else {
+        return;
+    };
+    let done = env.draft(vec![]).await;
+    env.send(done).await;
+    env.run().await;
+    env.sign(done, done.r1, done.f1, "Ada Lovelace").await;
+    env.run().await;
+    env.sign(done, done.r2, done.f2, "Grace Hopper").await;
+    env.run().await;
+    assert_eq!(env.state(done.env).await.status, EnvelopeStatus::Completed);
+    let sealed = env.sealed_bytes(done.env).await;
+    let before = canonical(&env, done.env).await;
+
+    let mut tx = env.db.store.for_account(env.account).begin().await.unwrap();
+    tx.privacy()
+        .erase_member(env.sender, now(&env))
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let (name, email, erased): (String, String, Option<OffsetDateTime>) =
+        sqlx::query_as("SELECT name, email, erased_at FROM users WHERE id = $1")
+            .bind(env.sender.0)
+            .fetch_one(&env.db.admin)
+            .await
+            .unwrap();
+    assert_eq!(name, "Erased user");
+    assert!(email.ends_with("@erased.invalid"), "{email}");
+    assert!(erased.is_some());
+    let action: String = sqlx::query_scalar(
+        "SELECT action FROM admin_events WHERE account_id = $1 ORDER BY seq DESC LIMIT 1",
+    )
+    .bind(env.account.0)
+    .fetch_one(&env.db.admin)
+    .await
+    .unwrap();
+    assert_eq!(action, "member.erased");
+
+    assert_eq!(env.sealed_bytes(done.env).await, sealed);
+    assert_eq!(canonical(&env, done.env).await, before);
+    assert!(!env.state(done.env).await.purged);
+    Store::from_pool(env.db.admin.clone())
+        .verify_evidence()
+        .await
+        .unwrap();
+
+    // Once only.
+    let mut tx = env.db.store.for_account(env.account).begin().await.unwrap();
+    let again = tx.privacy().erase_member(env.sender, now(&env)).await;
+    assert_eq!(again.unwrap_err().code(), "CS-DB-0003");
+}
