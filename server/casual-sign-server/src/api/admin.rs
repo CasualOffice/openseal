@@ -3,6 +3,7 @@
 //! token endpoint, and the JWKS that verifies its tokens (docs/40 §2).
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::extract::{Path, State};
@@ -28,7 +29,8 @@ use crate::auth::{API_KEY_PREFIX, CSRF_HEADER, Credential, SCOPES, profile_grant
 use crate::authz::{self, Action, Grant};
 use crate::call::Call;
 use crate::crypto::{
-    AUDIENCE, Claims, hash_password, random_secret, same, sha256, verify_password,
+    AUDIENCE, Claims, StaffPassword, hash_staff_password, random_secret, same, sha256,
+    verify_staff_password,
 };
 use crate::dto::parse;
 use crate::error::ApiError;
@@ -706,8 +708,9 @@ pub(crate) async fn create_user(c: Call, body: Bytes) -> Result<Response, ApiErr
         Some(p) => {
             check_password(p)?;
             let p = p.clone();
+            let pepper = c.st.pepper();
             Some(
-                tokio::task::spawn_blocking(move || hash_password(&p))
+                tokio::task::spawn_blocking(move || hash_staff_password(pepper.as_deref(), &p))
                     .await
                     .map_err(|_| ApiError::internal("argon2"))??,
             )
@@ -839,10 +842,12 @@ async fn accept_inner(
     };
     *who = Some((Who::User(user.0), Some(account.0)));
     let password = req.password.clone();
-    let phc = tokio::task::spawn_blocking(move || hash_password(&password))
-        .await
-        .map_err(|_| ApiError::internal("argon2").into_response())?
-        .map_err(IntoResponse::into_response)?;
+    let pepper = st.pepper();
+    let phc =
+        tokio::task::spawn_blocking(move || hash_staff_password(pepper.as_deref(), &password))
+            .await
+            .map_err(|_| ApiError::internal("argon2").into_response())?
+            .map_err(IntoResponse::into_response)?;
     let inner = async {
         // The link reached the member's own address: they set their own password, even
         // when they belong to other accounts too, and their sessions end in every one
@@ -951,9 +956,11 @@ pub(crate) async fn patch_user(
     let phc = match req.password {
         Some(p) => {
             check_password(&p)?;
-            let phc = tokio::task::spawn_blocking(move || hash_password(&p))
-                .await
-                .map_err(|_| ApiError::internal("argon2"))??;
+            let pepper = c.st.pepper();
+            let phc =
+                tokio::task::spawn_blocking(move || hash_staff_password(pepper.as_deref(), &p))
+                    .await
+                    .map_err(|_| ApiError::internal("argon2"))??;
             Some(Personal(phc))
         }
         None => None,
@@ -1276,13 +1283,24 @@ async fn login_inner(
     };
     let dummy = st.0.dummy_phc.clone();
     let password = req.password.clone();
-    let ok = tokio::task::spawn_blocking(move || {
-        let ok = verify_password(&password, phc.as_deref().unwrap_or(&dummy));
-        ok && phc.is_some()
+    let pepper = st.pepper();
+    let stored = phc.clone();
+    // A hash from before the pepper, or under the previous one, is made again under the
+    // current pepper now that the password is known (ASVS 2.4.5, `ASVS-29`).
+    let checked = tokio::task::spawn_blocking(move || {
+        let pepper = pepper.as_deref();
+        match verify_staff_password(pepper, &password, phc.as_deref().unwrap_or(&dummy)) {
+            StaffPassword::Right { rehash } if phc.is_some() => Some(
+                rehash
+                    .then(|| hash_staff_password(pepper, &password).ok())
+                    .flatten(),
+            ),
+            _ => None,
+        }
     })
     .await
-    .unwrap_or(false);
-    let (Some((user, account)), true) = (target, ok) else {
+    .unwrap_or(None);
+    let (Some((user, account)), Some(rehashed)) = (target, checked) else {
         return Err(ApiError::bad_credentials().into_response());
     };
     *who = Some((Who::User(user.0), Some(account.0)));
@@ -1319,6 +1337,13 @@ async fn login_inner(
         })
         .await
         .map_err(|e| ApiError::from(e).into_response())?;
+    if let (Some(new), Some(old)) = (rehashed, stored) {
+        // `false` when the password changed meanwhile: that change stands.
+        tx.users()
+            .rehash_password(user, &Personal(old), &Personal(new))
+            .await
+            .map_err(|e| ApiError::from(e).into_response())?;
+    }
     tx.commit()
         .await
         .map_err(|e| ApiError::from(e).into_response())?;
@@ -1642,9 +1667,28 @@ pub async fn bootstrap(
     admin_name: &str,
     password: &str,
 ) -> Result<Bootstrapped, ApiError> {
+    bootstrap_with_pepper(store, None, name, admin_email, admin_name, password).await
+}
+
+/// [`bootstrap`], the administrator's password hashed under `pepper` (ASVS 2.4.5,
+/// `ASVS-29`): the binary's `bootstrap` command passes the server's
+/// `OPENSEAL_PASSWORD_PEPPER`, so the first hash is peppered too.
+///
+/// # Errors
+///
+/// As [`bootstrap`].
+pub async fn bootstrap_with_pepper(
+    store: &Store,
+    pepper: Option<crate::crypto::PasswordPepper>,
+    name: &str,
+    admin_email: &str,
+    admin_name: &str,
+    password: &str,
+) -> Result<Bootstrapped, ApiError> {
+    let pepper = pepper.map(Arc::new);
     check_password(password)?;
     let email = normalize_email(admin_email)?;
-    let phc = phc_of(password).await?;
+    let phc = phc_of(pepper, password).await?;
     let organization = OrganizationId(Uuid::now_v7());
     let account = AccountId(Uuid::now_v7());
     let profiles = new_profiles();
@@ -1686,7 +1730,7 @@ pub async fn bootstrap_workspace(
 ) -> Result<Bootstrapped, ApiError> {
     check_password(password)?;
     let email = normalize_email(admin_email)?;
-    let phc = phc_of(password).await?;
+    let phc = phc_of(None, password).await?;
     let account = AccountId(Uuid::now_v7());
     let profiles = new_profiles();
     // One transaction: a failing first administrator (a duplicate email, say) leaves no
@@ -1708,9 +1752,12 @@ pub async fn bootstrap_workspace(
     .await
 }
 
-async fn phc_of(password: &str) -> Result<String, ApiError> {
+async fn phc_of(
+    pepper: Option<Arc<crate::crypto::PasswordPepper>>,
+    password: &str,
+) -> Result<String, ApiError> {
     let pw = password.to_owned();
-    tokio::task::spawn_blocking(move || hash_password(&pw))
+    tokio::task::spawn_blocking(move || hash_staff_password(pepper.as_deref(), &pw))
         .await
         .map_err(|_| ApiError::internal("argon2"))?
 }
@@ -1957,9 +2004,11 @@ async fn patch_me_inner(c: &Call, body: &[u8], changing: &mut bool) -> Result<Re
         let stored = tx.users().own_password_hash(s, now).await?;
         let dummy = c.st.0.dummy_phc.clone();
         let phc = stored.as_ref().map(|p| p.get().clone());
+        let pepper = c.st.pepper();
         let verified = tokio::task::spawn_blocking(move || {
-            let ok = verify_password(&current, phc.as_deref().unwrap_or(&dummy));
-            ok.then(|| hash_password(&new))
+            let pepper = pepper.as_deref();
+            let ok = verify_staff_password(pepper, &current, phc.as_deref().unwrap_or(&dummy));
+            (ok != StaffPassword::Wrong).then(|| hash_staff_password(pepper, &new))
         })
         .await
         .map_err(|_| ApiError::internal("argon2"))?;
@@ -2097,10 +2146,12 @@ async fn confirm_inner(
     };
     *who = Some((Who::User(user.0), Some(account.0)));
     let password = req.password.clone();
-    let phc = tokio::task::spawn_blocking(move || hash_password(&password))
-        .await
-        .map_err(|_| ApiError::internal("argon2").into_response())?
-        .map_err(IntoResponse::into_response)?;
+    let pepper = st.pepper();
+    let phc =
+        tokio::task::spawn_blocking(move || hash_staff_password(pepper.as_deref(), &password))
+            .await
+            .map_err(|_| ApiError::internal("argon2").into_response())?
+            .map_err(IntoResponse::into_response)?;
     let inner = async {
         let mut tx = st.store().for_account(account).begin().await?;
         let who = tx

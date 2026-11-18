@@ -175,6 +175,43 @@ impl Store {
         crate::migrate::install_seal_token_key(&self.pool, key).await
     }
 
+    /// Every staff user's sealed TOTP seed (`HRD-12`, migration 0043), as the schema
+    /// owner: what `casual-sign-server mfa-reseal` moves under a new second-factor key.
+    /// Sealed values only; the key never reaches the database.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`, or `CS-DB-0009` when the role is not the schema owner.
+    pub async fn totp_seeds(&self) -> Result<Vec<(UserId, Vec<u8>)>> {
+        let rows = sqlx::query!(
+            r#"SELECT id, totp_seed_sealed AS "seed!" FROM users
+                WHERE totp_seed_sealed IS NOT NULL ORDER BY id"#
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(rows.into_iter().map(|r| (UserId(r.id), r.seed)).collect())
+    }
+
+    /// Replace `user`'s sealed TOTP seed `old` by `new` (`HRD-12`), as the schema owner;
+    /// `false` when the seed is no longer `old` (re-sealed or re-enrolled meanwhile).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`, or `CS-DB-0009` when the role is not the schema owner.
+    pub async fn reseal_totp_seed(&self, user: UserId, old: &[u8], new: &[u8]) -> Result<bool> {
+        let done = sqlx::query_scalar!(
+            r#"SELECT openseal_reseal_totp_seed($1, $2, $3) AS "done!""#,
+            user.0,
+            old,
+            new
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(db)?;
+        Ok(done)
+    }
+
     /// The tenancy scope for `account`: the only door to tenant tables.
     #[must_use]
     pub fn for_account(&self, account: AccountId) -> Tenant<'_> {

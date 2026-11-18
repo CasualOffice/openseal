@@ -158,6 +158,30 @@ test("accept invite ticks its rules as the person types", async ({ page }) => {
   await expect(page.locator("#inv-error")).toBeEmpty();
 });
 
+test("accept invite shows how strong the password looks, without blocking it", async ({ page }) => {
+  // ASVS 2.1.8, ASVS-03: advice only; the server's policy is what refuses.
+  test.skip(REAL, "the invitation token comes from the mock");
+  await page.goto(app("#/accept-invite?token=not-a-real-token"));
+  const meter = page.getByTestId("pw-strength");
+  await expect(meter).toBeHidden();
+  const pw = page.getByLabel("Password", { exact: true });
+  await pw.fill("password1234");
+  await expect(meter).toBeVisible();
+  await expect(meter).toHaveAttribute("data-score", "0");
+  await expect(page.getByTestId("pw-strength-level")).toHaveText("Password strength: Very weak");
+  await expect(page.getByTestId("pw-strength-advice")).toContainText("It contains a common password or word.");
+  await expect(pw).toHaveAttribute("aria-describedby", /inv-strength/);
+  // Long enough for the form's own rule: the checklist is met whatever the meter says.
+  await expect(page.locator('[data-rule="length"]')).toHaveClass(/is-met/);
+  await pw.fill("xkcd-mule-orbit-tango-lamp");
+  await expect(meter).toHaveAttribute("data-score", "4");
+  await expect(page.getByTestId("pw-strength-level")).toHaveText("Password strength: Strong");
+  await expect(page.getByTestId("pw-strength-advice")).toHaveText("");
+  await pw.fill("");
+  await expect(meter).toBeHidden();
+  await expectAccessible(page, "accept invite with the strength meter");
+});
+
 test("an invitation link without a token says so and offers sign-in", async ({ page }) => {
   await page.goto(app("#/accept-invite"));
   await expect(page.getByTestId("invite-missing")).toContainText("This link has no invitation in it.");

@@ -2729,6 +2729,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       try { idp = store?.getItem("openseal.mock.idp") || null; } catch { idp = null; }
       return json(200, { items: idp ? [{ id: "idp-demo", name: idp, url: "/sso/idp-demo/start" }] : [] });
     }
+    // Test hook (E2E-13): `globalThis.__opensealMockHold(method, path)`, when a page sets
+    // it, may answer a promise that holds this call until the test lets it go, as a slow
+    // network does: the e2e edits the draft while its save is on the way.
+    const hold = globalThis.__opensealMockHold;
+    if (typeof hold === "function") await hold(method, url.pathname);
     await load();
     const headers = {};
     for (const [k, v] of Object.entries(init.headers || {})) headers[k.toLowerCase()] = v;

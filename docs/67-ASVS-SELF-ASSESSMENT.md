@@ -16,7 +16,9 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 - **Method.** Each requirement was checked against the code, tests and documents on `main` at 2026-11-13 by reading
   the named file or test. Re-assessed 2026-11-17 against `main` at `900d0b6` (PR #16 merged, CI run 44018844840 green) for every requirement
   whose evidence changed since (staff MFA default, the security event log, anomaly alerting, the restore drill, keyd
-  seal tokens); work still on an open pull request is named as such and never counted as Met. A test is cited only where it exists; where the threat model records a control seen red, its
+  seal tokens); work still on an open pull request is named as such and never counted as Met. Re-assessed 2026-11-19 for 2.1.8,
+  2.4.5, 3.6.1, 12.3.4 and 14.4.2 in the change that builds them (`ASVS-03`, `ASVS-10`, `ASVS-22`, `ASVS-29`), counted
+  Met as of its merge; their docs/14 rows stay In progress until CI is green on `main`. A test is cited only where it exists; where the threat model records a control seen red, its
   `SEC-*` id is cited. Nothing was penetration-tested and no scanner was run for this document.
 - **Paths.** `-server/src/x.rs` means `server/casual-sign-server/src/x.rs`; likewise `-worker`, `-store`, `-keyd`,
   `-console`, `-modeld`, `-secrets`, `-host` under `server/`. Engine crates are under `crates/`.
@@ -28,9 +30,9 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 214 | 109 | 95 | 10 |
-| Partly | 31 | 9 | 17 | 5 |
-| Not met | 9 | 3 | 4 | 2 |
+| Met | 219 | 112 | 96 | 11 |
+| Partly | 30 | 8 | 17 | 5 |
+| Not met | 5 | 1 | 3 | 1 |
 | N/A | 24 | 7 | 15 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
@@ -54,7 +56,7 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | --- | --- | --- | --- |
 | ASVS-01 | P0 | ASVS 2.2.1, 2.3.2, 2.5.6, 2.5.7, 2.6.x, 4.3.1, 1.2.4; `SEC-A09` | Staff multi-factor authentication in the tenant server: TOTP (reuse `-console/src/totp.rs` and its sealed seeds) and WebAuthn (`CON-13`), mandatory for administrators and enforceable by organization policy; one-time recovery codes (112 bits, single use, hashed); the factor is required in password reset; identity proofing before a lost factor is replaced |
 | ASVS-02 (Done) | P1 | ASVS 2.1.7; `SEC-A09` | Closed 2026-11-13: every path that sets a password refuses one on a bundled list of breached passwords, offline; the optional operator lookup is `ASVS-36`. Was: Refuse breached and common passwords at set, change and reset |
-| ASVS-03 | P2 | ASVS 2.1.8 | Password strength indication on the set-password screens; needs the owner's design approval before any UI change |
+| ASVS-03 | P2 | ASVS 2.1.8 | Built 2026-11-19 (in progress until a green run on `main`): an advisory strength meter on every staff set-password screen; the owner approved its design as built (owner instruction 60). Was: Password strength indication on the set-password screens; needs the owner's design approval before any UI change |
 | ASVS-04 (Done) | P1 | ASVS 2.2.3, 2.5.5 | Closed 2026-11-13: a password set, changed or reset and a factor added each email the user one notice with no secret; `ASVS-32` notifies a factor's removal when it adds one. Was: Email the user when their password is changed, reset or set from an invitation, and when a factor is added or removed |
 | ASVS-05 (Done) | P1 | ASVS 3.2.3, 3.4.4 | Closed 2026-11-13: the staff cookie is `__Host-os_session` whenever `Secure`; the ceremony cookie keeps `Path=/s/`. Was: Name the staff session cookie `__Host-os_session` whenever cookies are `Secure` (and the ceremony cookie with a `__Host-` or narrowest-path equivalent) |
 | ASVS-06 (Built) | P1 | ASVS 3.3.2, 3.3.4; relates to `UXW-13` | Built 2026-11-19: idle and absolute limits per workspace (defaults 30 minutes, 8 hours) tightened by the organization's, a session list in every workspace, ending any or all after a re-authentication; closes on a green CI run. Was: Staff session idle timeout (account setting, default 30 minutes), a list of the user's own sessions, and ending any or all after re-entering the password |
@@ -64,7 +66,7 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-08B | P2 | ASVS 7.2.2 | Ceremony refusals carry their code and recipient in `access.denied`; another account's object (answered 404) is logged as a refusal (found by `ASVS-08`) |
 | ASVS-08C | P2 | ASVS 8.3.5 | A change to an envelope or a field (create, `PATCH`, send, void, correct, resend, adding or changing fields) answers with every field's value; log it as a read of that data too, or answer without the values (found by `ASVS-08` review) |
 | ASVS-09 (Done) | P1 | ASVS 4.2.2, 13.1.5, 13.2.5 | Closed 2026-11-13: `/api/v1` answers `415 CS-API-0007` to a body that is not JSON. Was: `/api/v1` refuses a request body that is not `Content-Type: application/json` (`415`), including `POST /auth/login`, closing login CSRF by a cross-site form |
-| ASVS-10 | P2 | ASVS 12.3.4, 14.4.2 | `Content-Disposition` on API responses (`attachment` for JSON; `attachment` or `inline` with a server-made filename for documents and certificates) |
+| ASVS-10 | P2 | ASVS 12.3.4, 14.4.2 | Built 2026-11-19 (in progress until a green run on `main`): every server and console API answer with a body is `attachment` with a server-made filename. Was: `Content-Disposition` on API responses (`attachment` for JSON; `attachment` or `inline` with a server-made filename for documents and certificates) |
 | ASVS-11 (Done) | P1 | ASVS 12.4.2 | Closed 2026-11-14: every upload is scanned by ClamAV's clamd in its own container before it is read or stored; malware is refused and recorded in the admin log; fail closed with an operator switch; a clean document's admission report, bound by the chain, says so. Was: Malware scanning seam for uploads: an optional scanner (ICAP or ClamAV in its own container) called before admission, its verdict recorded in the audit chain |
 | ASVS-12 (Done) | P2 | ASVS 6.2.8 | Closed 2026-11-13: comparisons call `aws_lc_rs::constant_time`. Was: Replace the hand-rolled hash comparison `same` in `-server/src/crypto.rs` (and any copy in the console) with a vetted constant-time primitive (`subtle` or `aws-lc-rs`), per CLAUDE.md: cryptography is never hand-rolled |
 | ASVS-13 (Done) | P1 | ASVS 8.1.4, 11.1.7, 11.1.8; `VS-20` | Closed 2026-11-14; envelope and bulk sends left as `ASVS-13A`. Was: Detect and alert on abnormal activity: request and 429 rates per principal and address, authentication failure bursts, mass downloads, bulk voids; thresholds configurable; alerts to the operator's channel |
@@ -76,14 +78,14 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-19 | P1 | ASVS 1.2.2, 1.6.2, 1.9.1, 1.9.2, 1.14.1, 1.14.4, 1.14.5, 2.10.1, 9.1.1, 9.1.3, 9.2.2, 14.1.3 | Built by `HRD-06` (2026-11-14): `deploy/compose.production.yml` with per-service secrets, TLS to PostgreSQL and the object store, every service hardened, checked by `tools/check-deploy.py`, and the `http` public URL refused. Left: the whole stack started on it (`HRD-01`), static database and object-store passwords (2.10.1), TLS at the edge is the operator's (9.1.1, 9.1.3). Was: Production deployment template: per-service secrets (seal key and PIN only in keyd), TLS to PostgreSQL (`sslmode=verify-full`) and the object store, the same container hardening as modeld for every service, a documented TLS edge, and a start-up refusal of an `http` public URL outside development |
 | ASVS-20 | P2 | ASVS 3.1.1, 8.3.1, 13.1.3 | Record the accepted risk of the bearer token in the signing link path (`/s/{token}`, bound to the first browser, no-referrer, route template in logs) in docs/07 `SEC-A01` and an ADR |
 | ASVS-21 | P2 | ASVS 2.2.4, 2.7.1 (L3 ceremony) | Phishing-resistant signer authentication option (a passkey for returning signers) as an alternative to SMS codes |
-| ASVS-22 | P2 | ASVS 3.6.1 (L3 ceremony) | Recipient sign-in: send `max_age` in the OIDC request and refuse an ID token whose `auth_time` is older |
+| ASVS-22 | P2 | ASVS 3.6.1 (L3 ceremony) | Built 2026-11-19 (in progress until a green run on `main`): `max_age` sent per provider, `auth_time` checked. Was: Recipient sign-in: send `max_age` in the OIDC request and refuse an ID token whose `auth_time` is older |
 | ASVS-23 | P2 | ASVS 10.1.1, 10.2.3 to 10.2.6 (L3) | Malicious-code review for ceremony, sealing and keyd: a static scan for hard-coded credentials, time comparisons and hidden routes in CI, and a recorded manual review (feeds `SEC-REV-01`) |
 | ASVS-24 (Done) | P2 | ASVS 14.1.5 (L3 sealing, keyd) | Closed 2026-11-14 (`HRD-06`): keyd and the worker log each setting's SHA-256 and refuse a configuration that differs from `OPENSEAL_CONFIG_MANIFEST` (`CS-KEY-0014`). Was: keyd and the worker log the SHA-256 of their security configuration (allow list, client CA, trust anchors, TSA list) at start and refuse a change without a restart; the operator can compare it |
 | ASVS-25 | P2 | ASVS 8.3.6 | Hold passwords, one-time codes and link tokens from requests in zeroizing buffers and drop them after use |
 | ASVS-26 (Done) | P1 | ASVS 7.4.3 | Closed 2026-11-13, server and console (`ASVS-34` with it). Was: A last-resort panic layer on the server answering `500` problem details with the request id (and the same in the console) |
 | ASVS-27 | P2 | ASVS 1.1.3 | A security-constraint line in docs/14 rows that add a user-facing feature (who may do it, what is refused), checked when the row is written |
-| ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key (closed 2026-11-14) | Runbook in docs/65 §Rotation (`HRD-06`), exercised by tests for the database login, the API token key, keyd identities and webhook secrets; left: object-store credentials exercised (`HRD-11`) and the second-factor key (`HRD-12`). Was: Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
-| ASVS-29 | P2 | ASVS 2.4.5 | Optional password pepper held outside the database (a secret file through `casual-sign-secrets`), with rehash on login |
+| ASVS-28 | P2 | ASVS 1.6.1, 1.6.3; `CON-10` covers the seal key (closed 2026-11-14) | Runbook in docs/65 §Rotation (`HRD-06`), exercised by tests for the database login, the API token key, keyd identities and webhook secrets; left: object-store credentials exercised (`HRD-11`) and the second-factor key (`HRD-12`), both built 2026-11-19 (the S3 drill is CI `chaos-compose` case 8; the second-factor key's re-seal tested and seen red), closing on a green main run; the console operators' key is `HRD-16`. Was: Key and secret rotation runbook: API token signing key (`kid` overlap via JWKS), keyd and modeld TLS identities, database and object-store credentials |
+| ASVS-29 | P2 | ASVS 2.4.5 | Built 2026-11-19 (in progress until a green run on `main`): `OPENSEAL_PASSWORD_PEPPER`, in the production profile, with rehash at sign-in and a rotation runbook. Was: Optional password pepper held outside the database (a secret file through `casual-sign-secrets`), with rehash on login |
 | ASVS-30 (Done) | P2 | ASVS 5.2.3 | Closed 2026-11-13: the test went red without the guard and docs/07 `SEC-M02` was updated. Was: docs/07 `SEC-M02` still read Planned although `-worker/src/email.rs` refuses CR/LF and encodes headers: confirm its test goes red without the guard and update the row |
 | ASVS-34 (Done) | P2 | ASVS 7.4.3 | Closed 2026-11-13 with `ASVS-26`. Was: The console's last-resort panic layer answering a `500` problem, as the server's since `ASVS-26` |
 | ASVS-35 | P2 | ASVS 7.1.2, 7.4.3 | The worker's and keyd's binaries replace the default panic hook (it prints the message) with one logging the place only, as the server and console since `ASVS-26` |
@@ -141,7 +143,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | --- | --- | --- | --- | --- | --- | --- |
 | 1.6.1 | 2 | All | Key management policy and lifecycle | Met | docs/31 §5 (keyd), docs/65 production checklist and §Rotation: the seal key rotates by two key custodians with a start time, keyd serving both keys meanwhile (`CON-10`, migration 0035, tests seen red); database login, token key, keyd identities and webhook secrets with tests; the second-factor key's rotation is `HRD-12` (1.6.3) | — |
 | 1.6.2 | 2 | All | Key material protected in vaults; secrets out of code | Met | Seal key only in keyd behind PKCS#11 (`SEC-S04`); secrets from files (`casual-sign-secrets`); in the production profile `deploy/compose.production.yml`, checked by `tools/check-deploy.py` in CI (`HRD-06`; the whole stack's start on it is `HRD-01`'s) each secret is mounted only into the services that read it, the seal PIN and chain into keyd alone (`SEC-H02`); the evaluation compose file still shares one volume | — |
-| 1.6.3 | 2 | All | Keys and passwords replaceable with a re-encryption process | Partly | Passwords and API clients replaceable through the API; rotation runbooks with tests for the database login (no restart, `-store/tests/rotation.rs`), the API token key (`kid` overlap), keyd TLS identities and webhook secrets (docs/65 §Rotation); the second-factor key cannot be rotated yet | HRD-12 |
+| 1.6.3 | 2 | All | Keys and passwords replaceable with a re-encryption process | Partly | Passwords and API clients replaceable through the API; rotation runbooks with tests for the database login (no restart, `-store/tests/rotation.rs`), the API token key (`kid` overlap), keyd TLS identities and webhook secrets (docs/65 §Rotation); the staff second-factor key rotates with a previous-key overlap and a re-seal (on use, or `mfa-reseal`; `HRD-12`, built 2026-11-19, tests seen red); the console operators' second-factor key cannot be rotated yet | HRD-12, HRD-16 |
 | 1.6.4 | 2 | All | Client-side secrets treated as insecure | Met | No secret in the web app; the CSRF token is per session, the session cookie is `HttpOnly`; WASM verifier holds no key | — |
 
 **V1.7 Errors, Logging and Auditing Architecture**
@@ -210,7 +212,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 2.1.5 | 1 | All | Users can change their password | Met | `PATCH /users/me {password, current_password}` (`admin.rs`, UXW-37) | — |
 | 2.1.6 | 1 | All | Change requires current and new password | Met | `PATCH /users/me` verifies `current_password` before setting the new one (`admin.rs` around `current_password`) | — |
 | 2.1.7 | 1 | All | Passwords checked against breached/common lists | Met | Every path that sets a password refuses one of the 46,146 breached passwords of 12 to 256 characters bundled in `-server/data/common-passwords.txt` (`-server/src/passwords.rs`; `422` `common_password`); `-server/tests/self_service.rs` `a_breached_password_is_refused_wherever_a_password_is_set`, seen red (`ASVS-02`). An operator lookup is optional (`ASVS-36`); the console's operators are `ASVS-37` | ASVS-02 |
-| 2.1.8 | 1 | All | Password strength meter | Not met | None on the set-password screens (`webapp/acceptinvite.js`, `webapp/profile.js`) | ASVS-03 |
+| 2.1.8 | 1 | All | Password strength meter | Met | Every screen that sets a staff password shows a meter (four bars and "Password strength: …") with up to two pieces of advice, scored in the browser by `webapp/pwstrength.js` (common passwords and words, repeats, sequences, keyboard rows, years, the person's own name and email) and drawn by `webapp/pwmeter.js` on `acceptinvite.js`, `profile.js` and `admin.js` (adding a member with a password); advisory only, the server's policy (12 to 256 characters, not breached, 2.1.7) is what refuses. `webapp/tests/pwstrength.test.mjs` (seen red with common-word matching removed), e2e `signin-dashboard.spec.mjs` `accept invite shows how strong the password looks…` (seen red with the meter not updated) and `admin.spec.mjs` `admin users…`, chromium and webkit. The reset link's page is not built yet (`UXW-38A`); it takes the same meter. The console's own password screens are `ASVS-40` | ASVS-03 |
 | 2.1.9 | 1 | All | No composition rules | Met | `check_password` checks length only | — |
 | 2.1.10 | 1 | All | No periodic rotation or history rules | Met | None in code or settings | — |
 | 2.1.11 | 1 | All | Paste and password managers allowed | Met | Password fields carry `autocomplete` `current-password`/`new-password`; no paste blocking (`webapp/authview.js`, `signin.js`) | — |
@@ -244,7 +246,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 2.4.2 | 2 | All | Salt at least 32 bits | Met | 16-byte random salt per hash (`hash_password`) | — |
 | 2.4.3 | 2 | All | PBKDF2 iterations | N/A | PBKDF2 not used | — |
 | 2.4.4 | 2 | All | bcrypt work factor | N/A | bcrypt not used | — |
-| 2.4.5 | 2 | All | Additional secret-salt (pepper) KDF iteration | Not met | No pepper held outside the database | ASVS-29 |
+| 2.4.5 | 2 | All | Additional secret-salt (pepper) KDF iteration | Met | Staff password hashes are Argon2id keyed with `OPENSEAL_PASSWORD_PEPPER`, a secret held outside the database (a `_FILE`; the production profile mounts `password-pepper`, made by `init-secrets.sh`); each hash names its pepper (PHC `keyid`), a hash from before the pepper or under the previous one during a rotation verifies and is re-made at the next sign-in (migration 0044, `openseal_rehash_password`), docs/65 §Rotation (`-server/src/crypto.rs` `hash_staff_password`, `verify_staff_password`). `crypto::tests::a_peppered_hash_does_not_verify_without_its_pepper` and `-server/tests/password_pepper.rs` (a server on the same database without the pepper refuses the right password), seen red. The console's operator passwords are not peppered yet (`ASVS-39`) | ASVS-29 |
 
 **V2.5 Credential Recovery**
 
@@ -354,7 +356,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3.6.1 | 3 | Ceremony, sealing, keyd | L3 (ceremony): RP specifies maximum authentication time to the IdP | Not met | Recipient OIDC request sends no `max_age` and does not check `auth_time` (`idp.rs`) | ASVS-22 |
+| 3.6.1 | 3 | Ceremony, sealing, keyd | L3 (ceremony): RP specifies maximum authentication time to the IdP | Met | The recipient sign-in request sends `max_age` (each provider's `max_age_seconds`, 0 to 86400, default 600) and an ID token without `auth_time`, or older than `max_age` plus 120 seconds of skew, is refused (`-server/src/idp.rs`); `-server/tests/ceremony_sso.rs` refuses both and checks the request's `max_age`, seen red with the age check removed | ASVS-22 |
 | 3.6.2 | 3 | Ceremony, sealing, keyd | L3: CSP informs RP of last authentication | N/A | OpenSeal is not a credential service provider | — |
 
 **V3.7 Defenses Against Session Management Exploits**
@@ -639,7 +641,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 12.3.1 | 1 | All | Filenames not used by the file system | Met | Blobs stored by content hash (`-store/src/blob/fs.rs`) | — |
 | 12.3.2 | 1 | All | Filename metadata validated against traversal | Met | As 12.3.1; names are display metadata only | — |
 | 12.3.3 | 1 | All | Filename metadata not executed | Met | As 12.3.1 | — |
-| 12.3.4 | 1 | All | Reflective file download | Partly | No `Content-Disposition` on downloads or JSON responses | ASVS-10 |
+| 12.3.4 | 1 | All | Reflective file download | Met | Every API answer with a body carries `Content-Disposition: attachment` with a fixed, server-made filename (`api.json`, `document.pdf`, `export.csv`, `image.png`, …), never one from the request (`-server/src/http.rs` `name_attachment`, `-console/src/auth.rs`); see 14.4.2 | ASVS-10 |
 | 12.3.5 | 1 | All | File metadata not passed to OS commands | Met | No shell or system call takes a filename | — |
 | 12.3.6 | 2 | All | No functionality from untrusted sources | Met | No remote includes; modeld loads only manifest-listed files (`SEC-I04`) | — |
 
@@ -736,7 +738,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 14.4.1 | 1 | All | Every response has Content-Type with charset | Met | JSON `application/json`, pages `text/html; charset=utf-8` (`web.rs`), PDFs `application/pdf` | — |
-| 14.4.2 | 1 | All | API responses carry `Content-Disposition` | Not met | Not set | ASVS-10 |
+| 14.4.2 | 1 | All | API responses carry `Content-Disposition` | Met | Every answer under `/api/`, `/s/` and `/.well-known/` with a body (the signing page excepted), refusals and panics included, is `attachment` with a server-made filename, JSON as `application/json` (`-server/src/http.rs` `request_context`); the console's `/console/v1/` likewise. `-server` `routes::tests::every_route_answers_as_a_named_attachment` over the route table; the server's test harness checks every answer of every test, and the contract scenario that every file route of `api/openapi.yaml` answered a file (the sealed outputs checked in `-worker/tests/end_to_end.rs`); the console's `tests/contract.rs` and harness likewise; seen red with the header removed | ASVS-10 |
 | 14.4.3 | 1 | All | CSP in place | Met | API `default-src 'none'; frame-ancestors 'none'`; pages `PAGE_CSP` (`web.rs`; `-server/tests/web.rs`) | — |
 | 14.4.4 | 1 | All | `X-Content-Type-Options: nosniff` on all responses | Met | `http.rs`; `-server/tests/threats.rs` `assert_security_headers` | — |
 | 14.4.5 | 1 | All | HSTS on all responses | Met | `max-age=63072000; includeSubDomains` (`http.rs`) | — |

@@ -223,4 +223,18 @@ export const COMMON = {
   "ftype.dropdown": "Dropdown",
   "ftype.note": "Note",
   "ftype.attachment": "Attachment",
+  // Password strength indication (ASVS-03): pwstrength.js scores, pwmeter.js shows.
+  "pwstrength.label": "Password strength: {level}",
+  "pwstrength.0": "Very weak",
+  "pwstrength.1": "Weak",
+  "pwstrength.2": "Fair",
+  "pwstrength.3": "Good",
+  "pwstrength.4": "Strong",
+  "pwstrength.hint-common": "It contains a common password or word.",
+  "pwstrength.hint-personal": "It contains a name or email address.",
+  "pwstrength.hint-repeat": "It repeats one character.",
+  "pwstrength.hint-sequence": "It contains a sequence such as abcd, 1234 or qwerty.",
+  "pwstrength.hint-year": "It contains a year, which is easy to guess.",
+  "pwstrength.hint-longer": "A longer password, such as a few unrelated words, is stronger.",
+  "pwstrength.hint-mix": "Mixing in capitals, digits or symbols helps.",
 };

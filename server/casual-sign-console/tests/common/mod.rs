@@ -322,6 +322,24 @@ impl Console {
         let status = resp.status();
         let headers = resp.headers().clone();
         let bytes = resp.into_body().collect().await.unwrap().to_bytes();
+        // ASVS 14.4.2, `ASVS-10`: every console API answer with a body is a named attachment.
+        let media = headers
+            .get(header::CONTENT_TYPE)
+            .map(|v| v.to_str().unwrap_or("?").to_owned());
+        if path.starts_with("/console/v1/")
+            && media
+                .as_deref()
+                .is_some_and(|m| !m.starts_with("text/html"))
+        {
+            let d = headers
+                .get(header::CONTENT_DISPOSITION)
+                .map(|v| v.to_str().unwrap_or("?").to_owned())
+                .unwrap_or_default();
+            assert!(
+                d.starts_with("attachment; filename=\"") && d.ends_with('"'),
+                "ASVS-10: {method} {path} ({status}, {media:?}): Content-Disposition {d:?}"
+            );
+        }
         Resp {
             status,
             headers,

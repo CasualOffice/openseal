@@ -11,6 +11,7 @@ import { t } from "./i18n.js";
 import { openPanel, field, checkbox, button, toast, toastError } from "./ui/index.js";
 import { errorMessage } from "./api.js";
 import { sessionRows } from "./authmodel.js";
+import { strengthMeter } from "./pwmeter.js";
 
 const NOTIFY = ["completed", "declined", "viewed"];
 const MIN_PASSWORD = 12;
@@ -39,6 +40,11 @@ export async function openProfile(ctx, { focus = null, onSaved = null } = {}) {
   const checks = Object.fromEntries(NOTIFY.map((k) => [k, checkbox(t(`profile.notify.${k}`), { id: `profile-notify-${k}`, checked: !!me.notifications?.[k] })]));
   const current = field(t("profile.password-current"), { id: "profile-pw-current", type: "password", autocomplete: "current-password", maxLength: 256 });
   const next = field(t("profile.password-new"), { id: "profile-pw-new", type: "password", autocomplete: "new-password", maxLength: 256, help: t("profile.password-help", { n: MIN_PASSWORD }) });
+  // How strong the new password looks, for this person (ASVS-03); advice only.
+  const meter = strengthMeter("profile-pw-strength");
+  next.el.insertBefore(meter.el, next.el.querySelector(".os-field-error"));
+  next.input.setAttribute("aria-describedby", `${next.input.getAttribute("aria-describedby")} profile-pw-strength`);
+  next.input.addEventListener("input", () => meter.update(next.input.value, [me.name, me.email]));
 
   const markRow = (mark) => {
     const saved = me[mark]?.image_base64;

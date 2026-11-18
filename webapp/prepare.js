@@ -37,7 +37,7 @@ import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from ".
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
 import { sendSummary } from "./people.js";
-import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary, recipientPatch } from "./preparemodel.js";
+import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary, recipientPatch, matchSentRecipients, matchSentFields } from "./preparemodel.js";
 import { stepControl, recipientRow, libraryItem, toolButton, armHint, ghostBar, templateBanner, appliedChip, loadingPage, checksList, piiCard, assignList, markOcr, sparkle, spinner, kindGlyph } from "./prepareview.js";
 import { mlStatus, featureOn, loadSuggestions, acceptSuggestion, dismissSuggestion, suggestions as mlSuggestions, percent, isUnavailable } from "./ml.js";
 
@@ -97,7 +97,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let dirty = false;
   let savedAt = null;
   let saving = false;
-  Object.defineProperty(S, "dirty", { get: () => dirty, set: (v) => { dirty = !!v; syncStatus(); if (dirty) scheduleAutosave(); } });
+  // Counts changes: a save compares it before and after to know whether the sender changed
+  // anything while it ran (E2E-13).
+  let revision = 0;
+  Object.defineProperty(S, "dirty", { get: () => dirty, set: (v) => { dirty = !!v; if (dirty) revision += 1; syncStatus(); if (dirty) scheduleAutosave(); } });
   ctx.contexts = ["editor", "global"];
   const pdfs = new Map(); // doc key → pdf.js handle
 
@@ -1821,13 +1824,36 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.fields = (env.fields || []).map((f) => {
       const p = fromWire(f.placement);
       if (!p || !dkey.has(f.document_id)) return null;
-      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", ...membersOf(f), server: JSON.stringify({ r: f.recipient_id, p: f.placement, q: !!f.required, l: f.label || "", m: membersOf(f) }) };
+      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", ...membersOf(f), server: serverKey(f) };
     }).filter(Boolean);
     // Keep whom fields are being placed for across a save (the list keeps its order).
     S.active = S.recipients[prevActive]?.key || S.recipients[0]?.key || null;
     S.selected = null;
     S.undo = []; S.redo = [];
     S.dirty = false;
+  }
+  /// A saved field as the save compares it with the editor's (what changed is patched).
+  const serverKey = (f) => JSON.stringify({ r: f.recipient_id, p: f.placement, q: !!f.required, l: f.label || "", m: membersOf(f) });
+
+  /// After a save during which the sender changed something (E2E-13): keep the editor's
+  /// state, which is newer than the server's, and take from the server only what the next
+  /// save needs: the envelope's id, the id of each field this save made (`sent`: the
+  /// field and what it was sent as), and each saved field as the server now has it. The
+  /// draft stays unsaved, so the next save sends the rest: what was added has no id, what
+  /// was removed is on the server but not here, and what was changed differs from the
+  /// server's copy.
+  function keepEdits(env, sent) {
+    S.id = env.id;
+    S.scheduled = !!env.send_at;
+    S.serverOptions = ""; // the next save sends reminders and expiry again
+    const local = new Set(S.fields.filter((f) => f.id).map((f) => f.id));
+    const ids = matchSentFields(sent.map(([, b]) => b), env.fields, local);
+    sent.forEach(([f], i) => { if (!f.id && ids[i]) f.id = ids[i]; });
+    const byId = new Map((env.fields || []).map((f) => [f.id, f]));
+    for (const f of S.fields) { const s = f.id && byId.get(f.id); if (s) f.server = serverKey(s); }
+    // Undo steps from before the save would bring back objects without their ids.
+    S.undo = []; S.redo = [];
+    S.dirty = true;
   }
 
   // ---- Loading a template (WEB-09) ----------------------------------------------------------
@@ -1908,11 +1934,17 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   });
   const etagNow = async () => (await ctx.api.getEnvelope(S.id)).etag;
 
+  // One save at a time: a second (Save during an autosave, Send, Detect) waits for the
+  // first, so a new draft is never created twice (E2E-13).
+  let inFlight = null;
   async function save() {
+    while (inFlight) { try { await inFlight; } catch { /* its caller reports it */ } }
+    const had = !!S.id;
     saving = true;
     syncStatus();
-    const had = !!S.id;
-    try { await saveNow(); savedAt = new Date(); } finally { saving = false; syncStatus(); }
+    const run = saveNow();
+    inFlight = run;
+    try { await run; savedAt = new Date(); } finally { if (inFlight === run) inFlight = null; saving = false; syncStatus(); }
     renderAll();
     await renderStage();
     // A new draft now has an id: the model's results for it can be read.
@@ -1959,6 +1991,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // 512 MiB of base64 text), and the server refuses it anyway (FG-006, E2E-05).
     const total = S.docs.reduce((n, d) => n + (d.bytes?.length || 0), 0);
     if (total > MAX_ENVELOPE) throw Object.assign(new Error("envelope too large"), { status: 413, code: "CS-API-0006" });
+    // E2E-13: what changes while the requests are on the way is not in them. Replacing the
+    // editor's state with the server's answer would drop it; `keepEdits` keeps it instead.
+    const rev = revision;
     if (!S.id) {
       const body = {
         subject: S.subject.trim(),
@@ -1970,10 +2005,21 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         recipients: S.recipients.map((r, i) => ({ ref: `r${i}`, ...recipientBody(r) })),
         fields: S.fields.map((f) => fieldBody(f, `r${S.recipients.findIndex((r) => r.key === f.recipientKey)}`, S.docs.findIndex((d) => d.key === f.docKey))),
       };
+      const sentDocs = S.docs.slice();
+      const sentRecs = S.recipients.slice();
+      const sentFields = S.fields.slice();
       const env = await ctx.api.createEnvelope(body);
-      S.recipients.forEach((r, i) => { r.id = env.recipients?.[i]?.id || null; });
+      const recIds = matchSentRecipients(body.recipients, env.recipients);
+      sentRecs.forEach((r, i) => { r.id = recIds[i]; });
       ctx.replaceHash(`#/prepare/${encodeURIComponent(env.id)}`);
-      await loadFromServer(env);
+      if (revision === rev) { await loadFromServer(env); return; }
+      // The documents keep the bytes they were sent with, as one added to a saved draft does.
+      sentDocs.forEach((d, i) => { d.id = env.documents?.[i]?.id || d.id; });
+      // Each field as it was sent, with the ids the server gave its recipient and document.
+      keepEdits(env, sentFields.map((f, i) => {
+        const b = body.fields[i];
+        return [f, { type: b.type, recipient_id: recIds[Number(String(b.recipient).slice(1))] ?? null, document_id: sentDocs[b.document]?.id ?? null, placement: { page: b.page, x: b.x, y: b.y, width: b.width, height: b.height } }];
+      }));
     } else {
       // A scheduled draft is not edited (CS-WF-0022): saving a change cancels the
       // schedule; Send sets it again from "Send at" (WF-02).
@@ -2008,15 +2054,20 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         const members = Object.fromEntries(MEMBERS.map((k) => [k, blankMember(f[k]) ? null : f[k]]));
         await ctx.api.patchField(S.id, f.id, await etagNow(), { recipient_id: body.recipient, placement: toWire(f.page, f), required: !!body.required, label: f.label || null, ...members });
       }
-      const newFields = S.fields.filter((x) => !x.id);
-      if (newFields.length) await ctx.api.addFields(S.id, newFields.map((f) => fieldBody(f, rid(f.recipientKey), did(f.docKey))));
+      // A field whose recipient or document was added after their step above waits for the
+      // next save (E2E-13).
+      const waits = (f) => S.recipients.some((r) => r.key === f.recipientKey && !r.id) || S.docs.some((d) => d.key === f.docKey && !d.id);
+      const newFields = S.fields.filter((x) => !x.id && !waits(x));
+      const sent = newFields.map((f) => [f, fieldBody(f, rid(f.recipientKey), did(f.docKey))]);
+      if (sent.length) await ctx.api.addFields(S.id, sent.map(([, b]) => b));
       const { envelope: e2, etag } = await ctx.api.getEnvelope(S.id);
       const optsChanged = JSON.stringify(sendOptions()) !== S.serverOptions;
       if (optsChanged || (e2.subject || "") !== S.subject.trim() || (e2.message || "") !== S.message || !!e2.signing_options?.capture_location !== S.captureLocation) {
         await ctx.api.patchEnvelope(S.id, etag, { subject: S.subject.trim(), message: S.message, signing_options: { ...(e2.signing_options || {}), capture_location: S.captureLocation }, ...(optsChanged ? sendOptions() : {}) });
       }
       const { envelope: final } = await ctx.api.getEnvelope(S.id);
-      await loadFromServer(final);
+      if (revision === rev) { await loadFromServer(final); return; }
+      keepEdits(final, sent.map(([f, b]) => [f, { type: b.type, recipient_id: b.recipient, document_id: b.document, placement: { page: b.page, x: b.x, y: b.y, width: b.width, height: b.height } }]));
     }
   }
 

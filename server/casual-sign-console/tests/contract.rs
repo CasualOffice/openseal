@@ -112,6 +112,17 @@ async fn every_listed_route_is_served() {
                 .unwrap()
                 .contains("frame-ancestors 'none'")
         );
+        // ASVS 14.4.2, `ASVS-10`: every answer with a body is a named attachment.
+        if h.contains_key("content-type") {
+            assert!(
+                h["content-disposition"]
+                    .to_str()
+                    .unwrap()
+                    .starts_with("attachment; filename=\""),
+                "{method} {p}: {:?}",
+                h.get("content-disposition")
+            );
+        }
     }
     let resp = app
         .clone()

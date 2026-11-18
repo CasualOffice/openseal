@@ -1304,4 +1304,80 @@ mod tests {
             .unwrap();
         assert_eq!(call(app, bare).await.0, StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
+
+    /// ASVS 14.4.2, `ASVS-10`: every route of the table, and an unknown API path and a
+    /// panic, answers with `Content-Disposition: attachment` and a filename, here on the
+    /// refusals a server without its database makes (the contract scenario checks the
+    /// successful answers, files included).
+    #[tokio::test]
+    async fn every_route_answers_as_a_named_attachment() {
+        // As `offline`, but a request that needs the database fails at once.
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(50))
+            .connect_lazy("postgres://nobody:none@127.0.0.1:9/none")
+            .unwrap();
+        let dir = std::env::temp_dir().join(format!("os-routes-{}", uuid::Uuid::now_v7()));
+        let st = AppState::new(
+            casual_sign_store::Store::from_pool(pool),
+            Blobs::Fs(Arc::new(
+                casual_sign_store::blob::FsBlobStore::new(dir).unwrap(),
+            )),
+            crate::crypto::JwtKeys::generate().unwrap(),
+            Arc::new(SystemClock),
+            Config::default(),
+        )
+        .unwrap();
+        let app = app(st.clone());
+        let mut paths: Vec<(&str, String)> = table()
+            .iter()
+            .map(|r| {
+                let path = r
+                    .path
+                    .split('/')
+                    .map(|s| {
+                        if s.starts_with('{') {
+                            "0190a0a0-0000-7000-8000-000000000000"
+                        } else {
+                            s
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join("/");
+                (r.method, path)
+            })
+            .collect();
+        paths.push(("GET", "/api/v1/no-such-route".to_owned()));
+        for (method, path) in paths {
+            let req = Request::builder()
+                .method(method)
+                .uri(&path)
+                .header("accept", "application/json")
+                .body(Body::empty())
+                .unwrap();
+            let r = app.clone().oneshot(req).await.unwrap();
+            let h = r.headers();
+            let media = h
+                .get("content-type")
+                .map(|v| v.to_str().unwrap().to_owned());
+            if media.as_deref().is_none_or(|m| m.starts_with("text/html")) {
+                continue;
+            }
+            let d = h
+                .get("content-disposition")
+                .map(|v| v.to_str().unwrap().to_owned())
+                .unwrap_or_default();
+            assert!(
+                d.starts_with("attachment; filename=\""),
+                "{method} {path} ({}, {media:?}): {d:?}",
+                r.status()
+            );
+        }
+        let routes: Router<AppState> = Router::new().route("/api/v1/boom", get(boom));
+        let req = Request::get("/api/v1/boom").body(Body::empty()).unwrap();
+        let r = finish(routes, st).oneshot(req).await.unwrap();
+        assert_eq!(
+            r.headers()["content-disposition"],
+            "attachment; filename=\"api.json\""
+        );
+    }
 }

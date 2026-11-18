@@ -12,8 +12,9 @@ inside the devtools image, so no sudo), imports the seal key into SoftHSM in key
 volume, records keyd's and the worker's configuration manifests, and starts
 deploy/compose.production.yml with tools/chaos/compose.chaos.yml (CI only: a STARTTLS
 mail sink, a TSA behind a gate that holds each request a few seconds, the evidence
-verifier). Two workers run. Then, each envelope with one signer who passes an access
-code, through the API and the emailed link:
+verifier). Two workers run, and the profile's two server replicas behind its proxy.
+Then, each envelope with one signer who passes an access code, through the API and the
+emailed link:
 
 1. paused: worker A paused (cgroup freeze) mid-seal past its 300 s lease; worker B takes
    the job over and seals; A, resumed, must record nothing (lease fence).
@@ -28,6 +29,14 @@ code, through the API and the emailed link:
 7. object-store: the object store killed mid-seal; the seal job fails without landing
    bytes, is pushed to its last attempt and hands over to a new seal job (never dead);
    the store back, sealed.
+8. rotation (HRD-11): two signers read their envelopes through the proxy the whole
+   time (view and document bytes, from the object store) while the object store
+   credentials rotate as docs/65 §Rotation says: a second identity added and the store
+   told to reload (SIGHUP, no restart), the new access key and secret written in place,
+   the two server replicas restarted one at a time (each drains: `GET /readyz` 503 while
+   it still serves), the workers restarted, the old identity removed. The old
+   credentials must then be refused by the store, an envelope seals under the new ones,
+   and a second rolling restart follows: not one signer request may fail.
 
 PostgreSQL and the object store are killed with no grace period (`docker compose stop
 -t 0`: SIGKILL at once, and Docker leaves them down until the driver starts them).
@@ -52,6 +61,7 @@ import json
 import os
 import pathlib
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -73,6 +83,7 @@ ACCESS_CODE = "chaos-4711"
 UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
 LEASE_WAIT = 420  # the worker's lease (300 s) and a seal after it
+DRAIN_SECONDS = 5  # OPENSEAL_DRAIN_SECONDS in deploy/compose.production.yml
 
 
 class ChaosError(Exception):
@@ -175,8 +186,80 @@ def need_uuid(value: str) -> str:
     return value
 
 
+def with_identity(doc: dict, name: str, access_key: str, secret_key: str) -> dict:
+    """SeaweedFS's `s3-identities.json` with a second identity beside the first (HRD-11
+    drill, docs/65 §Rotation): the same rights, new credentials."""
+    ids = doc.get("identities") or []
+    if not ids:
+        raise ChaosError("s3-identities.json has no identity to copy")
+    if any(c.get("accessKey") == access_key for i in ids for c in i.get("credentials") or []):
+        raise ChaosError("the new access key is already in s3-identities.json")
+    new = {"name": name, "credentials": [{"accessKey": access_key, "secretKey": secret_key}],
+           "actions": list(ids[0].get("actions") or [])}
+    return {**doc, "identities": [*ids, new]}
+
+
+def without_access_key(doc: dict, access_key: str) -> dict:
+    """`s3-identities.json` without the identity holding `access_key` (the old one)."""
+    ids = doc.get("identities") or []
+    kept = [i for i in ids if all(c.get("accessKey") != access_key for c in i.get("credentials") or [])]
+    if len(kept) == len(ids):
+        raise ChaosError("no identity holds the old access key")
+    if not kept:
+        raise ChaosError("removing the old access key would leave no identity")
+    return {**doc, "identities": kept}
+
+
+def dropped(results: list[tuple[int, str]]) -> list[str]:
+    """The signer requests that failed during the drill: anything but a 2xx answer (`0`
+    is no answer at all), counted by status and request."""
+    counts: dict[str, int] = {}
+    for status, what in results:
+        if not 200 <= status < 300:
+            key = f"{status} {what}"
+            counts[key] = counts.get(key, 0) + 1
+    return [f"{k} x{n}" for k, n in sorted(counts.items())]
+
+
+def sigv4_list_buckets(host: str, access_key: str, secret_key: str, when: time.struct_time) -> dict[str, str]:
+    """The headers of an AWS Signature V4 `GET /` (ListBuckets) to `host`: what an S3
+    client presents, so the store's answer says whether these credentials are valid."""
+    import hashlib
+    import hmac
+
+    amz, day = time.strftime("%Y%m%dT%H%M%SZ", when), time.strftime("%Y%m%d", when)
+    empty = hashlib.sha256(b"").hexdigest()
+    signed = "host;x-amz-content-sha256;x-amz-date"
+    canonical = f"GET\n/\n\nhost:{host}\nx-amz-content-sha256:{empty}\nx-amz-date:{amz}\n\n{signed}\n{empty}"
+    scope = f"{day}/us-east-1/s3/aws4_request"
+    to_sign = f"AWS4-HMAC-SHA256\n{amz}\n{scope}\n{hashlib.sha256(canonical.encode()).hexdigest()}"
+    k = ("AWS4" + secret_key).encode()
+    for part in (day, "us-east-1", "s3", "aws4_request"):
+        k = hmac.new(k, part.encode(), hashlib.sha256).digest()
+    sig = hmac.new(k, to_sign.encode(), hashlib.sha256).hexdigest()
+    return {"x-amz-date": amz, "x-amz-content-sha256": empty,
+            "Authorization": f"AWS4-HMAC-SHA256 Credential={access_key}/{scope}, SignedHeaders={signed}, Signature={sig}"}
+
+
+def s3_probe(endpoint: str, ca: str, access_key: str, secret_key: str) -> int:
+    """The store's HTTP status for a ListBuckets with these credentials (200 valid, 403
+    refused), over TLS verified against the deployment's CA; 0 when nothing answers."""
+    import ssl
+
+    host = urllib.parse.urlsplit(endpoint).netloc
+    req = urllib.request.Request(endpoint.rstrip("/") + "/", headers=sigv4_list_buckets(host, access_key, secret_key, time.gmtime()))
+    ctx = ssl.create_default_context(cafile=ca)
+    try:
+        with urllib.request.urlopen(req, timeout=10, context=ctx) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except (urllib.error.URLError, OSError):
+        return 0
+
+
 class Cookies:
-    """A browser's cookies, sent over the plain-HTTP hop to the server's loopback port
+    """A browser's cookies, sent over the plain-HTTP hop to the proxy's loopback port
     as the edge proxy would forward them. (The profile's cookies are `Secure` and
     `__Host-`, which Python's cookie jar keeps off plain HTTP.)"""
 
@@ -435,7 +518,7 @@ class Ceremony:
         self._consent(view)
         v = self.api.call("POST", f"{path}/authenticate", {"method": "access_code", "code": ACCESS_CODE})
         self._consent(v)
-        doc = v["envelope"]["documents"][0]["id"]
+        doc = self.doc = v["envelope"]["documents"][0]["id"]
         self.api.call("POST", f"{path}/documents/{doc}/viewed", {"pages_seen": [1]})
         a = self.api.call("POST", f"{path}/adopt", {"mark": "signature", "method": "draw", "image_base64": PNG})
         self.body = {"values": [{"field": field, "value": {"signature": a["adoption_id"]}}]}
@@ -447,6 +530,43 @@ class Ceremony:
 
     def finish(self) -> int:
         return self.api.request("POST", f"{self.path}/finish", self.body)[0]
+
+
+class Traffic:
+    """Signers reading their envelopes through the proxy the whole time a drill runs
+    (HRD-11): each ceremony, in its own thread, asks for its signing view and the
+    document's bytes (a read from the object store) in turn, paced under the ceremony
+    rate limit. Every answer is recorded; `dropped` judges them."""
+
+    def __init__(self, ceremonies: list[Ceremony], pace: float = 0.6):
+        self.pace = pace
+        self.results: list[tuple[int, str]] = []
+        self.lock = threading.Lock()
+        self.halt = threading.Event()
+        self.threads = [threading.Thread(target=self._loop, args=(c, c.doc), daemon=True) for c in ceremonies]
+
+    def _loop(self, cer: Ceremony, doc: str) -> None:
+        reqs = [(cer.path, "view", None),
+                (f"{cer.path}/documents/{doc}/content", "document", {"Accept": "application/pdf"})]
+        i = 0
+        while not self.halt.is_set():
+            path, what, headers = reqs[i % len(reqs)]
+            status = cer.api.request("GET", path, headers=headers, timeout=30)[0]
+            with self.lock:
+                self.results.append((status, what))
+            i += 1
+            self.halt.wait(self.pace)
+
+    def start(self) -> None:
+        for t in self.threads:
+            t.start()
+
+    def stop(self) -> list[tuple[int, str]]:
+        self.halt.set()
+        for t in self.threads:
+            t.join(60)
+        with self.lock:
+            return list(self.results)
 
 
 # ------------------------------------------------------------------ the run
@@ -468,10 +588,33 @@ class Run:
 
     # ---- setup
 
-    def helper(self, script: str, *args: str, input: bytes | None = None) -> None:
-        """A shell in the devtools image, as root, with the checkout and the work folder."""
-        sh(["docker", "run", "--rm", "-i", "-v", f"{ROOT}:/repo:ro", "-v", f"{self.work}:{self.work}",
-            "--entrypoint", "sh", DEVTOOLS, "-c", script, "sh", *args], input=input, timeout=600)
+    def helper(self, script: str, *args: str, input: bytes | None = None) -> bytes:
+        """A shell in the devtools image, as root, with the checkout and the work folder;
+        its standard output."""
+        return sh(["docker", "run", "--rm", "-i", "-v", f"{ROOT}:/repo:ro", "-v", f"{self.work}:{self.work}",
+                   "--entrypoint", "sh", DEVTOOLS, "-c", script, "sh", *args], input=input, timeout=600).stdout
+
+    def read_secret(self, name: str) -> bytes:
+        """A file of the deployment's secrets (root-owned, mode 0400), read as root."""
+        return self.helper('cat "$1"', f"{self.work}/secrets/{name}")
+
+    def write_secret(self, name: str, data: bytes) -> None:
+        """Rewrite a secret file in place, as docs/65 §Rotation says: Docker mounts the
+        file, so a new inode would not be seen; owner and mode stay."""
+        self.helper('cat > "$1"', f"{self.work}/secrets/{name}", input=data)
+
+    def probe(self, access_key: str, secret_key: str) -> int:
+        """The object store's answer to these credentials, asked from the data network
+        over TLS verified against the deployment's CA (`s3-probe`)."""
+        p = sh(["docker", "run", "--rm", "-i", "--network", f"{PROJECT}_data",
+                "-v", f"{TOOLS}:/opt/chaos:ro", "-v", f"{self.work}/secrets/internal-ca.pem:/ca.pem:ro",
+                "--entrypoint", "python3", DEVTOOLS, "-I", "/opt/chaos/chaos_compose.py", "s3-probe",
+                "--endpoint", "https://s3:8333", "--ca", "/ca.pem", "--access-key", access_key],
+               input=secret_key.encode(), timeout=120)
+        try:
+            return int(p.stdout.decode().strip() or "0")
+        except ValueError:
+            raise ChaosError("s3-probe printed no status") from None
 
     def setup(self) -> None:
         c = self.compose
@@ -739,6 +882,66 @@ class Run:
         wait_healthy(c.containers("s3"))
         self.check(self.wait_done(eid) == "completed", "object store: not completed after the store returned")
 
+    def rolling_restart(self) -> None:
+        """Restart the two server replicas one at a time, as docs/65 §Rotation says: each
+        drains (`GET /readyz` 503 for the drain period while still serving) and stops,
+        the proxy sends everything to the other; the next waits until this one is healthy
+        and the proxy's checks have taken it back."""
+        c = self.compose
+        for svc in ("server", "server-2"):
+            c.run("restart", svc, timeout=180)
+            wait_healthy(c.containers(svc))
+            time.sleep(DRAIN_SECONDS + 2)
+
+    def rotation(self, note: dict) -> None:
+        """8 (HRD-11): with signers reading through the proxy the whole time, the object
+        store credential rotation of docs/65 §Rotation (a second identity, the store told
+        to reload, the new key written, both server replicas restarted one at a time, the
+        workers restarted, the old identity removed), then an envelope sealed under the new
+        credentials alone and another rolling restart. Not one signer request may fail."""
+        c = self.compose
+        readers = [self.ceremony(f"rotation-reader-{i}") for i in (1, 2)]
+        eid, cer = self.ceremony("rotation-seal")
+        old_ak = self.read_secret("s3-access-key").decode().strip()
+        old_sk = self.read_secret("s3-secret-key").decode().strip()
+        new_ak, new_sk = f"openseal-{self.run_tag[-8:]}", secrets.token_hex(32)
+        self.check(self.probe(old_ak, old_sk) == 200, "rotation: the store refuses the current credentials")
+        self.check(self.probe(new_ak, new_sk) == 403, "rotation: the store took the new credentials before they were added")
+        traffic = Traffic([r for _, r in readers])
+        traffic.start()
+        try:
+            time.sleep(5)
+            ids = json.loads(self.read_secret("s3-identities.json"))
+            self.write_secret("s3-identities.json", json.dumps(with_identity(ids, "openseal-next", new_ak, new_sk)).encode())
+            c.run("kill", "-s", "SIGHUP", "s3", timeout=60)
+            until("the store taking the new credentials", 60, lambda: self.probe(new_ak, new_sk) == 200, every=2)
+            self.write_secret("s3-access-key", f"{new_ak}\n".encode())
+            self.write_secret("s3-secret-key", f"{new_sk}\n".encode())
+            self.rolling_restart()
+            c.run("restart", "worker", timeout=300)
+            wait_healthy(c.containers("worker"))
+            ids = json.loads(self.read_secret("s3-identities.json"))
+            self.write_secret("s3-identities.json", json.dumps(without_access_key(ids, old_ak)).encode())
+            c.run("kill", "-s", "SIGHUP", "s3", timeout=60)
+            until("the store refusing the old credentials", 60, lambda: self.probe(old_ak, old_sk) == 403, every=2)
+            note["old_credentials"] = "refused by the store"
+            # The new credentials alone: signers keep reading, the worker writes a seal.
+            self.finish("rotation-seal", cer)
+            self.check(self.wait_done(eid) == "completed", "rotation: not sealed under the new credentials")
+            # A restart for the token key is the same rolling restart.
+            self.rolling_restart()
+            time.sleep(5)
+        finally:
+            results = traffic.stop()
+        lost = dropped(results)
+        note.update(signer_requests=len(results), dropped=lost)
+        self.check(len(results) >= 60, f"rotation: only {len(results)} signer requests made")
+        self.check(not lost, f"rotation: signer requests failed: {lost}")
+        self.check(self.probe(new_ak, new_sk) == 200, "rotation: the new credentials no longer work")
+        for label, (reid, r) in zip(("rotation-reader-1", "rotation-reader-2"), readers):
+            self.finish(label, r)
+            self.check(self.wait_done(reid) == "completed", f"{label}: not completed after the rotation")
+
     def restore_everything(self) -> None:
         """Whatever a failed scenario left down comes back before the final checks."""
         c = self.compose
@@ -829,6 +1032,8 @@ class Run:
             self.restore_everything()
             self.scenario("object store down mid-seal through the last attempt", self.object_store)
             self.restore_everything()
+            self.scenario("rolling restarts and the object store credential rotation under signer traffic", self.rotation)
+            self.restore_everything()
             rows = self.verdict()
         except (ChaosError, KeyError, IndexError, TypeError, ValueError, OSError, subprocess.TimeoutExpired) as e:
             self.problems.append(f"setup or verdict: {e}")
@@ -858,7 +1063,15 @@ def main(argv: list[str]) -> int:
     g.add_argument("--listen", required=True)
     g.add_argument("--target", required=True)
     g.add_argument("--delay", type=float, required=True)
+    p = sub.add_parser("s3-probe")
+    p.add_argument("--endpoint", required=True)
+    p.add_argument("--ca", required=True)
+    p.add_argument("--access-key", required=True)
     args = ap.parse_args(argv)
+    if args.cmd == "s3-probe":
+        # The secret key on standard input, never in a process's arguments.
+        print(s3_probe(args.endpoint, args.ca, args.access_key, sys.stdin.read().strip()))
+        return 0
     if args.cmd == "tsa-gate":
         gate = TsaGate(hostport(args.listen), hostport(args.target), args.delay)
         print(f"tsa-gate: listening, {args.delay:g} s hold", flush=True)

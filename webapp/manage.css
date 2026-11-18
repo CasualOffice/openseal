@@ -535,7 +535,8 @@
 
 /* Sidebar Views. */
 .os-navview .os-dot { margin: 0 0.25rem; }
-.os-navview__n { margin-left: auto; font-size: var(--os-fs-12); color: var(--os-muted); font-variant-numeric: tabular-nums; }
+/* --os-text-2, not --os-muted: muted is 4.3:1 on the hovered or current row (#e9e8e5), under AA (axe, E2E-13). */
+.os-navview__n { margin-left: auto; font-size: var(--os-fs-12); color: var(--os-text-2); font-variant-numeric: tabular-nums; }
 
 /* Below 75rem the inspector slides over the list; on phones it is a full page. */
 .os-agr__scrim { display: none; }

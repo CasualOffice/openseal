@@ -72,6 +72,8 @@ pub struct Api {
     pub db: TestDb,
     pub peer: Mutex<SocketAddr>,
     pub called: Mutex<BTreeSet<(String, String)>>,
+    /// Every answer to a route of the table, in order (ASVS 14.4.2, `ASVS-10`).
+    pub answers: Mutex<Vec<Answer>>,
     /// The blob directory the server stores into.
     pub blob_dir: std::path::PathBuf,
     /// Whether the server marks cookies `Secure` (and so names its session cookie
@@ -79,8 +81,62 @@ pub struct Api {
     pub secure_cookies: bool,
     /// Every security event line the server wrote (ASVS-08).
     pub security: casual_sign_seclog::Memory,
+    /// The settings the server runs with.
+    pub config: Config,
     /// The second factor of each staff user the harness enrolled, by email (ASVS-31).
     pub factors: Mutex<HashMap<String, Factor>>,
+}
+
+/// One answer the server gave to a route of the table: its headers that say what the body
+/// is, and whether the body parses as JSON (ASVS 14.4.2, `ASVS-10`).
+#[derive(Debug, Clone)]
+pub struct Answer {
+    pub method: String,
+    pub route: String,
+    pub status: StatusCode,
+    pub content_type: Option<String>,
+    pub disposition: Option<String>,
+    pub json_body: bool,
+    pub empty: bool,
+}
+
+impl Answer {
+    /// What is wrong with the answer, if anything: a body with no `Content-Type`; any
+    /// answer with a body type other than the signing page (`text/html`) without
+    /// `Content-Disposition: attachment; filename="…"` naming a plain file name; a JSON
+    /// body under a type that is not JSON.
+    pub fn problem(&self) -> Option<String> {
+        let media = self.content_type.as_deref().unwrap_or_default();
+        let what = format!(
+            "{} {} ({}, {media:?})",
+            self.method, self.route, self.status
+        );
+        let Some(media) = self.content_type.as_deref() else {
+            return (!self.empty).then(|| format!("{what}: a body with no Content-Type"));
+        };
+        if media.starts_with("text/html") {
+            return None;
+        }
+        let named = self
+            .disposition
+            .as_deref()
+            .and_then(|d| d.strip_prefix("attachment; filename=\""))
+            .and_then(|n| n.strip_suffix('"'))
+            .is_some_and(|n| {
+                !n.is_empty()
+                    && n.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+            });
+        if !named {
+            return Some(format!(
+                "{what}: Content-Disposition {:?}",
+                self.disposition
+            ));
+        }
+        let essence = media.split(';').next().unwrap_or_default().trim();
+        (self.json_body && !self.empty && !essence.ends_with("json"))
+            .then(|| format!("{what}: a JSON body as {media}"))
+    }
 }
 
 /// A staff user's TOTP factor as the harness enrolled it through the API (ASVS-31):
@@ -188,7 +244,7 @@ impl Api {
             blobs,
             JwtKeys::generate().unwrap(),
             clock.clone(),
-            config,
+            config.clone(),
         )
         .unwrap();
         let (log, security) =
@@ -207,9 +263,33 @@ impl Api {
             db,
             peer: Mutex::new("198.51.100.7:50000".parse().unwrap()),
             called: Mutex::new(BTreeSet::new()),
+            answers: Mutex::new(Vec::new()),
             blob_dir: dir,
             secure_cookies,
+            config,
         })
+    }
+
+    /// The server restarted on the same database, blobs and clock with `mfa` as its
+    /// second-factor key (a key rotation, HRD-12). Sessions survive (database rows);
+    /// access tokens do not (a new token key), and security events start afresh.
+    pub fn restart_with(&mut self, mfa: MfaKey) {
+        let blobs = Blobs::Fs(Arc::new(FsBlobStore::new(self.blob_dir.clone()).unwrap()));
+        let st = AppState::new(
+            self.db.store.clone(),
+            blobs,
+            JwtKeys::generate().unwrap(),
+            self.clock.clone(),
+            self.config.clone(),
+        )
+        .unwrap();
+        let (log, security) =
+            casual_sign_seclog::SecurityLog::memory(casual_sign_seclog::Service::Server);
+        st.set_security_log(log);
+        st.set_mfa_key(mfa);
+        self.security = security;
+        self.app = app(st.clone());
+        self.st = st;
     }
 
     pub fn set_peer(&self, peer: &str) {
@@ -251,15 +331,49 @@ impl Api {
         if let Some(t) = template_of(path) {
             self.called.lock().unwrap().insert((method.to_owned(), t));
         }
-        let resp = self.app.clone().oneshot(req).await.unwrap();
+        // Boxed: the router's future is large, and every test's future would otherwise
+        // hold it inline on the test thread's stack.
+        let resp = Box::pin(self.app.clone().oneshot(req)).await.unwrap();
         let status = resp.status();
         let headers = resp.headers().clone();
         let body = resp.into_body().collect().await.unwrap().to_bytes();
+        self.record(method, path, status, &headers, &body);
         Resp {
             status,
             headers,
             body,
         }
+    }
+
+    /// Keep what an answer to a route of the table says its body is (ASVS 14.4.2). Not
+    /// inlined, and nothing of it held across an `await`: the contract scenario's future
+    /// is large already.
+    #[inline(never)]
+    fn record(&self, method: &str, path: &str, status: StatusCode, h: &HeaderMap, body: &[u8]) {
+        let Some(route) = template_of(path) else {
+            return;
+        };
+        let text = |name| {
+            h.get(name)
+                .map(|v: &axum::http::HeaderValue| v.to_str().unwrap_or("?").to_owned())
+        };
+        let a = Answer {
+            method: method.to_owned(),
+            route,
+            status,
+            content_type: text(axum::http::header::CONTENT_TYPE),
+            disposition: text(axum::http::header::CONTENT_DISPOSITION),
+            json_body: serde_json::from_slice::<Value>(body).is_ok(),
+            empty: body.is_empty(),
+        };
+        // Every answer of every test that uses this harness (ASVS 14.4.2, `ASVS-10`).
+        if let Some(problem) = a.problem() {
+            // Printed first: a panic deep in a large test future may overflow the
+            // stack while unwinding, and the message would be lost.
+            eprintln!("ASVS-10: {problem}");
+            panic!("ASVS-10: {problem}");
+        }
+        self.answers.lock().unwrap().push(a);
     }
 
     pub async fn call(
@@ -429,6 +543,11 @@ impl Api {
     pub fn called(&self) -> BTreeSet<(String, String)> {
         self.called.lock().unwrap().clone()
     }
+
+    /// Every answer to a route of the table so far.
+    pub fn answers(&self) -> Vec<Answer> {
+        self.answers.lock().unwrap().clone()
+    }
 }
 
 /// The session a login response set.
@@ -568,6 +687,36 @@ pub fn openapi_levels() -> BTreeMap<(String, String), String> {
 }
 
 /// `(METHOD, path) -> x-permission` from the OpenAPI document.
+/// The operations of `api/openapi.yaml` that answer a file: a success response with a
+/// media type other than JSON (the ceremony view's `text/html` page aside), with that
+/// media type (ASVS 14.4.2, `ASVS-10`).
+pub fn openapi_downloads() -> BTreeMap<(String, String), BTreeSet<String>> {
+    let doc: Value = serde_norway::from_str(OPENAPI).unwrap();
+    let mut out = BTreeMap::new();
+    for (path, item) in doc["paths"].as_object().unwrap() {
+        for (method, op) in item.as_object().unwrap() {
+            if method == "parameters" {
+                continue;
+            }
+            let mut media = BTreeSet::new();
+            for (code, r) in op["responses"].as_object().unwrap() {
+                if !code.starts_with('2') {
+                    continue;
+                }
+                for m in r["content"].as_object().into_iter().flat_map(|c| c.keys()) {
+                    if !m.ends_with("json") && m != "text/html" {
+                        media.insert(m.clone());
+                    }
+                }
+            }
+            if !media.is_empty() {
+                out.insert((method.to_uppercase(), path.clone()), media);
+            }
+        }
+    }
+    out
+}
+
 pub fn openapi_operations() -> BTreeMap<(String, String), String> {
     let doc: Value = serde_norway::from_str(OPENAPI).unwrap();
     assert_eq!(doc["openapi"], "3.1.0");

@@ -14,7 +14,7 @@
 //
 // Messages are returned as `{key, params}` for `t()`, never as English.
 
-import { FIELD_TYPES, clampRect } from "./geometry.js";
+import { FIELD_TYPES, clampRect, fromWire } from "./geometry.js";
 import { settingsOf } from "./templatesync.js";
 
 /// The library's kinds with their single-key shortcuts, in the canvas's order, then the
@@ -193,4 +193,38 @@ export function recipientPatch(server, want) {
   const hidden = (list) => [...(list || [])].sort().join("\n");
   if (server && hidden(server.excluded_documents) !== hidden(want.excluded_documents)) patch.excluded_documents = want.excluded_documents || [];
   return Object.keys(patch).length ? patch : null;
+}
+
+// ---- A save the sender kept editing through (E2E-13) -------------------------------------
+// A save takes time, and the sender may add, move or remove things while it runs. Replacing
+// the editor's state with the server's answer would lose those changes, so then the editor
+// keeps its own state and takes from the answer only the ids of what it sent. The server
+// does not answer in the order things were sent (fields come back by position, recipients
+// by step), so each sent object is matched by what it was sent as.
+
+/// The server's id for each recipient sent in a create, by index of `sent` (bodies as
+/// `recipientBody` builds them): the first not yet taken with the same type, name, email
+/// and step; else the one at the same index, if not taken; else `null`.
+export function matchSentRecipients(sent, server) {
+  const list = server || [];
+  const taken = new Set();
+  const key = (r) => [r.type || "signer", String(r.name || ""), String(r.email || "").toLowerCase(), Number(r.routing_order) || 0].join("\n");
+  const take = (s) => { if (!s) return null; taken.add(s.id); return s.id; };
+  const exact = sent.map((b) => take(list.find((x) => !taken.has(x.id) && key(x) === key(b))));
+  return exact.map((id, i) => id || take(list[i] && !taken.has(list[i].id) ? list[i] : null));
+}
+
+/// The server's id for each field sent, by index of `sent` (`{recipient_id, document_id,
+/// type, placement}` as it was sent): the first field of `server` that no id in `held`
+/// names and that is the same kind, for the same recipient, on the same document, at the
+/// same place (to the hundredth of a point the wire carries); else `null`.
+export function matchSentFields(sent, server, held = new Set()) {
+  const taken = new Set(held);
+  const near = (a, b) => !!a && !!b && a.page === b.page && ["x", "y", "width", "height"].every((k) => Math.abs(a[k] - b[k]) < 0.006);
+  return sent.map((b) => {
+    const at = fromWire(b.placement);
+    const s = (server || []).find((x) => !taken.has(x.id) && x.type === b.type && x.recipient_id === b.recipient_id && x.document_id === b.document_id && near(fromWire(x.placement), at));
+    if (s) taken.add(s.id);
+    return s ? s.id : null;
+  });
 }

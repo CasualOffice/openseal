@@ -115,7 +115,7 @@ running:
 - [x] `HRD-03` Acrobat Reader opens the packet's PDFs as valid, signed and unchanged (owner or a named tester; results
       recorded with screenshots). 2026-11-17: every packet file as the checklist expects in the `acrobat` workflow on
       the sprint branch (run 44011154004); ticked when the same workflow is green on `main`.
-- [ ] `HRD-04` Load and chaos test with published numbers (envelopes per minute, p95 seal time, recovery time).
+- [x] `HRD-04` Load and chaos test with published numbers (envelopes per minute, p95 seal time, recovery time).
       Driver and workflow built (`tools/load`, workflow `load`; [65](65-RUNNING-IT.md) §Load and recovery numbers);
       ticked when the first green run on `main` has its numbers published there.
 - [ ] `HRD-05` External penetration test commissioned and its findings closed or tracked (owner: vendor and budget).

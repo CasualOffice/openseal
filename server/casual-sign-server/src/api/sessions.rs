@@ -28,7 +28,7 @@ use super::mfa::{key, now_step, session};
 use super::{json, path_id};
 use crate::auth::{STEP_UP_WINDOW_SECS, ran_out};
 use crate::call::Call;
-use crate::crypto::verify_password;
+use crate::crypto::{StaffPassword, verify_staff_password};
 use crate::dto::parse;
 use crate::error::ApiError;
 use crate::mfa::recovery_hash;
@@ -173,9 +173,15 @@ async fn reauth_inner(
     let phc = tx.users().own_password_hash(s, now).await?.map(|p| p.0);
     let dummy = c.st.0.dummy_phc.clone();
     let password = req.password;
+    // Under the pepper, as at sign-in (ASVS-29); the sign-in re-makes an old hash.
+    let pepper = c.st.pepper();
     let ok = tokio::task::spawn_blocking(move || {
-        let ok = verify_password(&password, phc.as_deref().unwrap_or(&dummy));
-        ok && phc.is_some()
+        let ok = verify_staff_password(
+            pepper.as_deref(),
+            &password,
+            phc.as_deref().unwrap_or(&dummy),
+        );
+        ok != StaffPassword::Wrong && phc.is_some()
     })
     .await
     .unwrap_or(false);
@@ -190,8 +196,8 @@ async fn reauth_inner(
                 let sealed = own
                     .and_then(|o| o.seed_sealed.map(|x| (o.user_id, x)))
                     .ok_or_else(ApiError::second_factor_refused)?;
-                let seed = key(c)?.open(sealed.0.0, &sealed.1)?;
-                let step = totp::matching_step(&seed, code.trim(), now_step(c))
+                let opened = key(c)?.open(sealed.0.0, &sealed.1)?;
+                let step = totp::matching_step(&opened.seed, code.trim(), now_step(c))
                     .ok_or_else(ApiError::second_factor_refused)?;
                 let step = i64::try_from(step).map_err(|_| ApiError::internal("step"))?;
                 // Single use, as at sign-in: a code for a step already used is refused.
@@ -199,6 +205,13 @@ async fn reauth_inner(
                     .verify_own_totp(s, step, now)
                     .await?
                     .ok_or_else(ApiError::second_factor_refused)?;
+                // HRD-12: as at sign-in, a seed still under the previous key moves under
+                // the current one once its code has passed.
+                if let Some(new) = opened.resealed {
+                    tx.sessions()
+                        .reseal_own_totp(s, &sealed.1, &new, now)
+                        .await?;
+                }
             }
             (None, Some(code)) => {
                 *factor = "recovery_code";

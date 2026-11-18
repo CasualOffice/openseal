@@ -266,6 +266,10 @@ for (const [label, width, height] of [["1440", 1440, 900], ["390", 390, 844]]) {
       await add.getByText("Send an invitation email").click();
       await add.getByRole("button", { name: "Add user" }).click();
       await expect(add.getByLabel("Password")).toHaveAttribute("aria-invalid", "true");
+      // ASVS-03: the strength meter weighs the member's own name, as advice.
+      await add.getByLabel("Password").fill("kimlee12345678");
+      await expect(add.getByTestId("pw-strength-level")).toHaveText("Password strength: Very weak");
+      await expect(add.getByTestId("pw-strength-advice")).toContainText("It contains a name or email address.");
       await add.getByLabel("Password").fill("a-long-enough-password");
       await add.getByRole("button", { name: "Add user" }).click();
       await expect(page.getByText("User added.")).toBeVisible();

@@ -67,6 +67,7 @@ pub(crate) async fn context(
         .map(|m| m.as_str().to_owned());
     // Kept only to take the UUIDs a security event names.
     let path = req.uri().path().to_owned();
+    let api = path.starts_with("/console/v1/");
     let mut resp = next.run(req).await;
     crate::security::after(&state, ctx, &method, route.as_deref(), &path, &slot, &resp);
     let h = resp.headers_mut();
@@ -92,7 +93,52 @@ pub(crate) async fn context(
     ] {
         h.entry(k).or_insert(HeaderValue::from_static(v));
     }
+    if api {
+        name_attachment(h);
+    }
     resp
+}
+
+/// Give a console API answer `Content-Disposition: attachment` with a filename the
+/// console makes from its media type, unless its handler named one (ASVS 12.3.4, 14.4.2,
+/// `ASVS-10`): a browser that opens an API URL itself saves the answer instead of
+/// rendering it in the console's origin. An answer with no body type gets none. As
+/// `casual-sign-server`'s `http::name_attachment` (neither crate may depend on the other:
+/// a fix to one belongs in both).
+pub(crate) fn name_attachment(h: &mut HeaderMap) {
+    let Some(media) = h
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| {
+            v.split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase()
+        })
+    else {
+        return;
+    };
+    if media.is_empty() || media == "text/html" {
+        return;
+    }
+    let named = h
+        .get(header::CONTENT_DISPOSITION)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| {
+            let v = v.trim_start().to_ascii_lowercase();
+            v.starts_with("attachment") && v.contains("filename=")
+        });
+    if !named {
+        let value = match media.as_str() {
+            "application/json" | "application/problem+json" => "attachment; filename=\"api.json\"",
+            "text/csv" => "attachment; filename=\"export.csv\"",
+            "application/pdf" => "attachment; filename=\"document.pdf\"",
+            "text/plain" => "attachment; filename=\"api.txt\"",
+            _ => "attachment; filename=\"download.bin\"",
+        };
+        h.insert(header::CONTENT_DISPOSITION, HeaderValue::from_static(value));
+    }
 }
 
 /// The value of cookie `name`, if sent once.

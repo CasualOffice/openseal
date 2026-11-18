@@ -43,6 +43,7 @@ import {
 } from "./adminmodel.js";
 import { intelligence } from "./adminintel.js";
 import { ersdCard } from "./adminersd.js";
+import { strengthMeter } from "./pwmeter.js";
 import { button, emptyState, skeletonRows, skeletonBlock, errorState, openPanel, confirmDialog, toast, toastError, selectField, toggle, menuButton, checkbox, tabs } from "./ui/index.js";
 
 const PROFILES = ["admin", "sender", "viewer"];
@@ -514,8 +515,13 @@ function users(panel, ctx) {
         f.invite = inv.input;
         f.invite.setAttribute("aria-describedby", "u-invite-help");
         f.password = h("input", { id: "u-password", class: "os-input", type: "password", autocomplete: "new-password", maxLength: 256, attrs: { "aria-describedby": "u-password-help" } });
+        // How strong the member's password looks (ASVS-03); advice only.
+        const meter = strengthMeter("u-password-strength");
+        f.password.setAttribute("aria-describedby", "u-password-help u-password-strength");
+        f.password.addEventListener("input", () => meter.update(f.password.value, [f.name.value, f.email.value]));
         const pw = h("div", { class: "os-fieldrow", hidden: true },
           h("label", { class: "os-label", attrs: { for: "u-password" }, text: t("admin.password") }), f.password,
+          meter.el,
           h("p", { id: "u-password-help", class: "os-help", text: t("admin.password-help") }));
         const help = h("p", { id: "u-invite-help", class: "os-help", text: t("admin.invite-help") });
         f.invite.addEventListener("change", () => { pw.hidden = f.invite.checked; help.textContent = t(f.invite.checked ? "admin.invite-help" : "admin.no-invite-help"); });

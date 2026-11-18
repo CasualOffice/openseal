@@ -140,6 +140,59 @@ class Profile(unittest.TestCase):
         self.assertEqual(argv[-2:], ["up", "-d"])
 
 
+class Rotation(unittest.TestCase):
+    """HRD-11: the object store credential drill's file edits and its verdict."""
+
+    IDS = {"identities": [{"name": "openseal", "credentials": [{"accessKey": "openseal", "secretKey": "old"}],
+                           "actions": ["Read:openseal", "Write:openseal"]}]}
+
+    def test_a_second_identity_gets_the_first_ones_rights_and_new_credentials(self):
+        doc = cc.with_identity(self.IDS, "openseal-next", "next", "new")
+        self.assertEqual(len(doc["identities"]), 2)
+        self.assertEqual(doc["identities"][0], self.IDS["identities"][0])
+        added = doc["identities"][1]
+        self.assertEqual(added["credentials"], [{"accessKey": "next", "secretKey": "new"}])
+        self.assertEqual(added["actions"], ["Read:openseal", "Write:openseal"])
+        self.assertEqual(len(self.IDS["identities"]), 1, "the input is not changed")
+        with self.assertRaises(cc.ChaosError):
+            cc.with_identity(self.IDS, "again", "openseal", "x")
+        with self.assertRaises(cc.ChaosError):
+            cc.with_identity({"identities": []}, "n", "a", "s")
+
+    def test_removing_the_old_access_key_keeps_only_the_new_identity(self):
+        doc = cc.without_access_key(cc.with_identity(self.IDS, "openseal-next", "next", "new"), "openseal")
+        self.assertEqual([i["name"] for i in doc["identities"]], ["openseal-next"])
+        with self.assertRaises(cc.ChaosError):
+            cc.without_access_key(doc, "openseal")  # already gone: the drill is out of order
+        with self.assertRaises(cc.ChaosError):
+            cc.without_access_key(self.IDS, "openseal")  # would leave no identity
+
+    def test_any_answer_but_2xx_is_a_dropped_signer_request(self):
+        self.assertEqual(cc.dropped([(200, "view"), (206, "document")]), [])
+        self.assertEqual(cc.dropped([(200, "view"), (0, "view"), (502, "document"), (0, "view"), (429, "view")]),
+                         ["0 view x2", "429 view x1", "502 document x1"])
+
+    def test_the_probe_signs_with_the_secret_and_names_the_access_key(self):
+        when = time.gmtime(1_794_391_200)
+        a = cc.sigv4_list_buckets("s3:8333", "openseal", "secret", when)
+        self.assertEqual(a, cc.sigv4_list_buckets("s3:8333", "openseal", "secret", when))
+        self.assertTrue(a["Authorization"].startswith("AWS4-HMAC-SHA256 Credential=openseal/20261111/us-east-1/s3/aws4_request, "))
+        self.assertEqual(a["x-amz-date"], "20261111T100000Z")
+        other = cc.sigv4_list_buckets("s3:8333", "openseal", "other", when)
+        self.assertNotEqual(a["Authorization"], other["Authorization"])
+
+    def test_the_profile_runs_two_server_replicas_behind_the_proxy_with_a_drain(self):
+        text = cc.PROFILE.read_text(encoding="utf-8")
+        self.assertIn("\n  server:\n    <<: *server\n", text)
+        self.assertIn("\n  server-2:\n    <<: *server\n", text)
+        self.assertIn(f'OPENSEAL_DRAIN_SECONDS: "{cc.DRAIN_SECONDS}"', text)
+        cfg = (ROOT / "deploy" / "production" / "haproxy.cfg").read_text(encoding="utf-8")
+        self.assertIn("server server server:8080 check port 9090", cfg)
+        self.assertIn("server server-2 server-2:8080 check port 9090", cfg)
+        self.assertIn("OPENSEAL_OPS_LISTEN: 0.0.0.0:9090", text)
+        self.assertIn("uri /readyz", cfg)
+
+
 class Gate(unittest.TestCase):
     def setUp(self):
         self.upstream = socket.create_server(("127.0.0.1", 0))

@@ -241,10 +241,12 @@ pub(crate) struct Inner {
     pub webapp: std::sync::OnceLock<Arc<crate::web::WebApp>>,
     pub idps: std::sync::OnceLock<Arc<crate::idp::RecipientIdps>>,
     pub mfa: std::sync::OnceLock<Arc<crate::mfa::MfaKey>>,
+    pub pepper: std::sync::OnceLock<Arc<crate::crypto::PasswordPepper>>,
     pub scanner: std::sync::OnceLock<Arc<crate::scan::Scanner>>,
     pub security: std::sync::OnceLock<casual_sign_seclog::SecurityLog>,
     pub anomaly: crate::anomaly::Detector,
     pub alerts: std::sync::OnceLock<Arc<dyn crate::anomaly::AlertSink>>,
+    pub draining: std::sync::atomic::AtomicBool,
 }
 
 impl AppState {
@@ -274,10 +276,12 @@ impl AppState {
             webapp: std::sync::OnceLock::new(),
             idps: std::sync::OnceLock::new(),
             mfa: std::sync::OnceLock::new(),
+            pepper: std::sync::OnceLock::new(),
             scanner: std::sync::OnceLock::new(),
             security: std::sync::OnceLock::new(),
             anomaly,
             alerts: std::sync::OnceLock::new(),
+            draining: std::sync::atomic::AtomicBool::new(false),
         })))
     }
 
@@ -304,6 +308,18 @@ impl AppState {
     /// factor. Set once; a second call is ignored.
     pub fn set_mfa_key(&self, key: crate::mfa::MfaKey) {
         let _ = self.0.mfa.set(Arc::new(key));
+    }
+
+    /// Key staff password hashes with `pepper` (ASVS 2.4.5, `ASVS-29`): new hashes are
+    /// made under it, and a hash from before it is re-made at the user's next sign-in.
+    /// Set once, before the first request; a second call is ignored.
+    pub fn set_password_pepper(&self, pepper: crate::crypto::PasswordPepper) {
+        let _ = self.0.pepper.set(Arc::new(pepper));
+    }
+
+    /// The staff password pepper, when one is configured.
+    pub(crate) fn pepper(&self) -> Option<Arc<crate::crypto::PasswordPepper>> {
+        self.0.pepper.get().cloned()
     }
 
     /// Scan every upload with `scanner` before it is read or stored (ASVS-11). Without
@@ -345,6 +361,19 @@ impl AppState {
 
     pub(crate) fn anomaly(&self) -> &crate::anomaly::Detector {
         &self.0.anomaly
+    }
+
+    /// Start draining before a stop (`HRD-11`): the ops listener's `GET /readyz` answers
+    /// `503` from now on, so the proxy sends new requests elsewhere; every request that
+    /// reaches the API is still served.
+    pub fn set_draining(&self) {
+        self.0
+            .draining
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn draining(&self) -> bool {
+        self.0.draining.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub(crate) fn mfa_key(&self) -> Option<&Arc<crate::mfa::MfaKey>> {

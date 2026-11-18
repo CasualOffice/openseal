@@ -20,7 +20,8 @@ YAML. The rules, for every service:
   `NAME_FILE`, pointing under `/run/secrets/` at a secret the service mounts; no
   development key switch;
 - images pinned by digest, or OpenSeal's own tagged by `OPENSEAL_VERSION`;
-- only the server publishes a port, on the loopback address (the edge proxy's side);
+- only the proxy in front of the server replicas publishes a port, on the loopback
+  address (the edge proxy's side; HRD-11);
 - TLS between services: the object store over `https` with the private CA, Postgres
   with `ssl=on`, TLS 1.3 and an `hba_file` with no plain `host` line, SMTP never
   `plain`; the database, object store and keyd on internal networks only;
@@ -249,8 +250,8 @@ def check(doc: dict, base: Path) -> list[str]:
             host, is_published = published(port)
             if not is_published:
                 continue
-            if name != "server":
-                bad(name, "publishes a port (only the server does, behind the edge proxy)")
+            if name != "proxy":
+                bad(name, "publishes a port (only the proxy does, behind the edge proxy)")
             elif host not in ("127.0.0.1", "::1", "[::1]"):
                 bad(name, "publishes on a non-loopback address")
 
@@ -374,7 +375,8 @@ MUTATIONS = [
     ("plain smtp", _env("worker", "OPENSEAL_SMTP_SECURITY", "plain"), "worker: SMTP without TLS"),
     ("no keyd manifest", _env("keyd", "OPENSEAL_CONFIG_MANIFEST", _DELETE), "keyd: no configuration manifest"),
     ("no worker manifest", _env("worker", "OPENSEAL_CONFIG_MANIFEST", _DELETE), "worker: no configuration manifest"),
-    ("public port", _set(["services", "server", "ports"], ["8080:8080"]), "server: publishes on a non-loopback"),
+    ("public port", _set(["services", "proxy", "ports"], ["8080:8080"]), "proxy: publishes on a non-loopback"),
+    ("replica port", _set(["services", "server-2", "ports"], ["127.0.0.1:8081:8080"]), "server-2: publishes a port"),
     ("postgres port", _set(["services", "postgres", "ports"], ["127.0.0.1:5432:5432"]), "postgres: publishes a port"),
     ("postgres outside", lambda d: d["services"]["postgres"]["networks"].update({"edge": None}),
      "postgres: on network edge, which is not internal"),

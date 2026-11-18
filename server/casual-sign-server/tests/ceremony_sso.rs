@@ -3,9 +3,11 @@
 //! answers the token endpoint (checking the PKCE verifier against the challenge the
 //! server sent the browser with) and the JWKS. The recipient passes only with an ID token
 //! from the named issuer, for this client, unexpired by the server's clock, with this
-//! sign-in's nonce and the recipient's verified email; a token from another issuer, an
-//! expired one, one for another email, a replayed nonce and a replayed `state` each fail
-//! and are counted. A pass records the issuer and the SHA-256 of the subject.
+//! sign-in's nonce and the recipient's verified email, and an `auth_time` within the
+//! provider's `max_age`, which the request sends (ASVS 3.6.1, `ASVS-22`); a token from
+//! another issuer, an expired one, one for another email, a replayed nonce, a replayed
+//! `state`, one without `auth_time` and one whose `auth_time` is too old each fail and are
+//! counted. A pass records the issuer and the SHA-256 of the subject.
 
 #![allow(
     clippy::unwrap_used,
@@ -197,6 +199,7 @@ async fn start(api: &Api, token: &str, h: &Headers, idp: &Arc<Mutex<Idp>>) -> (S
     let url = v["sso_authorization_url"].as_str().unwrap().to_owned();
     assert!(url.starts_with("http://127.0.0.1:"), "{url}");
     assert_eq!(param(&url, "code_challenge_method"), "S256");
+    assert_eq!(param(&url, "max_age"), "300");
     assert_eq!(
         param(&url, "redirect_uri"),
         "https://sign.example.test/s/oidc"
@@ -227,7 +230,7 @@ async fn a_signer_passes_sso_only_with_a_valid_token_from_the_named_issuer() {
     let file = json!({"providers": [{"id": "corp", "name": "Example Corp", "issuer": ISSUER,
         "authorization_endpoint": format!("{base}/authorize"),
         "token_endpoint": format!("{base}/token"), "jwks_uri": format!("{base}/jwks"),
-        "client_id": CLIENT, "client_secret": "client-secret"}]});
+        "client_id": CLIENT, "client_secret": "client-secret", "max_age_seconds": 300}]});
     api.st.set_recipient_idps(
         casual_sign_server::idp::RecipientIdps::from_json(
             file.to_string().as_bytes(),
@@ -295,7 +298,8 @@ async fn a_signer_passes_sso_only_with_a_valid_token_from_the_named_issuer() {
     let now = common::harness::start().unix_timestamp();
     let claims = |nonce: &str| {
         json!({"iss": ISSUER, "aud": CLIENT, "sub": "user-4711", "exp": now + 3600,
-            "iat": now, "nonce": nonce, "email": EMAIL, "email_verified": true})
+            "iat": now, "auth_time": now, "nonce": nonce, "email": EMAIL,
+            "email_verified": true})
     };
     let refused = |r: &Resp, what: &str| {
         assert_eq!(
@@ -337,8 +341,22 @@ async fn a_signer_passes_sso_only_with_a_valid_token_from_the_named_issuer() {
     idp.lock().unwrap().id_token = Some(id_token(&pkcs8, &claims(&own)));
     refused(&finish(&api, &token, &h, &state).await, "replayed state");
 
-    // The valid sign-in passes, and the document is shown (a minute on: sign-ins are
-    // limited to 5 a minute per link).
+    // A minute on (sign-ins are limited to 5 a minute per link): a token that does not
+    // say when the signer authenticated, and one whose authentication is older than the
+    // provider's `max_age` of 300 seconds (ASVS 3.6.1).
+    api.clock.advance(std::time::Duration::from_secs(61));
+    let (state, nonce) = start(&api, &token, &h, &idp).await;
+    let mut c = claims(&nonce);
+    c.as_object_mut().unwrap().remove("auth_time");
+    idp.lock().unwrap().id_token = Some(id_token(&pkcs8, &c));
+    refused(&finish(&api, &token, &h, &state).await, "no auth_time");
+    let (state, nonce) = start(&api, &token, &h, &idp).await;
+    let mut c = claims(&nonce);
+    c["auth_time"] = json!(now - 600);
+    idp.lock().unwrap().id_token = Some(id_token(&pkcs8, &c));
+    refused(&finish(&api, &token, &h, &state).await, "auth_time too old");
+
+    // The valid sign-in passes, and the document is shown.
     api.clock.advance(std::time::Duration::from_secs(61));
     let (state, nonce) = start(&api, &token, &h, &idp).await;
     idp.lock().unwrap().id_token = Some(id_token(&pkcs8, &claims(&nonce)));
@@ -360,7 +378,7 @@ async fn a_signer_passes_sso_only_with_a_valid_token_from_the_named_issuer() {
         "PKCE verifier mismatch"
     );
 
-    // The trail: five failures, then a pass naming the issuer and the subject's hash.
+    // The trail: seven failures, then a pass naming the issuer and the subject's hash.
     let audit = ok(
         api.call(
             "GET",
@@ -375,7 +393,7 @@ async fn a_signer_passes_sso_only_with_a_valid_token_from_the_named_issuer() {
     );
     let events = audit["items"].as_array().unwrap();
     let of = |t: &str| events.iter().filter(|e| e["type"] == t).collect::<Vec<_>>();
-    assert_eq!(of("recipient.auth_failed").len(), 5, "{audit}");
+    assert_eq!(of("recipient.auth_failed").len(), 7, "{audit}");
     let passed = of("recipient.auth_passed");
     assert_eq!(passed.len(), 1, "{audit}");
     let data = &passed[0]["event"]["data"];

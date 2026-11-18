@@ -489,7 +489,12 @@ user enrolled, and the account's `settings.mfa_policy` (an unknown value reads a
 row was rewritten, and an account's explicit `optional` is kept. No new table. Migration 0039 (`ORG-08`): the
 resolver also answers the organization's `policy`, and the stricter of `mfa_policy` and the organization's
 `login.mfa_required` applies (`casual_sign_policy::org::effective_mfa`); no row is rewritten. The envelope projection
-carries `sender_user_id` from the state, which a transfer (`ORG-09`) changes. No new table.
+carries `sender_user_id` from the state, which a transfer (`ORG-09`) changes. No new table. Migration 0043 (`HRD-12`, second-factor key
+rotation) adds two definer functions, no table: `openseal_reseal_own_totp` (granted to the application role, keyed
+by the user's own live session) replaces a sealed seed only when it is still the value the server opened, and a
+confirmed factor only once that session has passed it (`Sessions::reseal_own_totp`); `openseal_reseal_totp_seed`
+(schema owner only, `Store::reseal_totp_seed` beside `Store::totp_seeds`) does the same per user for
+`casual-sign-server mfa-reseal`.
 
 ### Designed (ADR-028): tenancy with organizations
 
@@ -540,6 +545,11 @@ the rules above, and what does not:
   references to the anchor and the envelope), both insert-only with the audit chain's UPDATE, DELETE and TRUNCATE
   triggers; index `audit_events (account_id, at)` for the day's events; definer `openseal_enqueue_anchor_jobs(day,
   start, end, now)` (a period over a day is `CS-DB-0008`).
+- **Password re-hash under the pepper (built, `ASVS-29`, migration 0044):** definer
+  `openseal_rehash_password(user, expected_hash, new_hash)` (granted to `openseal_app`, which cannot select
+  `users.password_hash`) replaces an enabled local member's hash of the current account with the same password hashed
+  under the server's pepper, only while the stored hash is still the one a sign-in just verified; it ends no session.
+  No table is added.
 - **Staff session activity (built, `ASVS-06`, `ASVS-07`, migration 0042, docs/40 As built):** `staff_sessions` gains
   `last_seen_at` (not null; the last request, written at most every 15 s; existing rows take `created_at`),
   `reauth_at` (the last proof of the password and any second factor: the sign-in or `POST /auth/reauthenticate`;

@@ -12,7 +12,8 @@ Writes three files into DIR:
 
 - `images.json`: the release's version and, per service, repository, tag and digest;
 - `compose.release.yml`: a Compose override for `deploy/compose.production.yml` that
-  sets every OpenSeal service (keyd, migrate, server, worker) to `repository:tag@digest`,
+  sets every OpenSeal service (keyd, migrate, both server replicas, worker) to
+  `repository:tag@digest`,
   so Docker pulls exactly the bytes that were signed, whatever later happens to the tag;
 - `openseal-release.env`: `OPENSEAL_IMAGE_PREFIX` and `OPENSEAL_VERSION`, which the
   production profile requires even when the override replaces its image lines.
@@ -33,7 +34,8 @@ from pathlib import Path
 # The services shipped as images, and the production profile's services that run each.
 SERVICES: dict[str, tuple[str, ...]] = {
     "keyd": ("keyd",),
-    "server": ("migrate", "server"),
+    # Both server replicas behind the profile's proxy (HRD-11).
+    "server": ("migrate", "server", "server-2"),
     "worker": ("worker",),
 }
 VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
