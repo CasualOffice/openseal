@@ -245,6 +245,7 @@ pub(crate) struct Inner {
     pub security: std::sync::OnceLock<casual_sign_seclog::SecurityLog>,
     pub anomaly: crate::anomaly::Detector,
     pub alerts: std::sync::OnceLock<Arc<dyn crate::anomaly::AlertSink>>,
+    pub draining: std::sync::atomic::AtomicBool,
 }
 
 impl AppState {
@@ -278,6 +279,7 @@ impl AppState {
             security: std::sync::OnceLock::new(),
             anomaly,
             alerts: std::sync::OnceLock::new(),
+            draining: std::sync::atomic::AtomicBool::new(false),
         })))
     }
 
@@ -345,6 +347,18 @@ impl AppState {
 
     pub(crate) fn anomaly(&self) -> &crate::anomaly::Detector {
         &self.0.anomaly
+    }
+
+    /// Start draining before a stop (`HRD-11`): `GET /readyz` answers `503` from now
+    /// on, so the proxy sends new requests elsewhere; everything else is still served.
+    pub fn set_draining(&self) {
+        self.0
+            .draining
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn draining(&self) -> bool {
+        self.0.draining.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     pub(crate) fn mfa_key(&self) -> Option<&Arc<crate::mfa::MfaKey>> {

@@ -332,6 +332,13 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     )
     .await;
     assert_eq!(jwks["keys"][0]["alg"], "ES256");
+    let ready = ok(
+        api.call("GET", "/readyz", &Auth::None, None, &[]).await,
+        StatusCode::OK,
+        "ready",
+    )
+    .await;
+    assert_eq!(ready["status"], "ready");
 
     // The OAuth client creates an envelope with an embedded signer, and asks for its view.
     let emb = ok(

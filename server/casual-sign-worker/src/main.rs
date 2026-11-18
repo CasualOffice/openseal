@@ -5,7 +5,7 @@
 //! | `OPENSEAL_DATABASE_URL` (or `_FILE`) | PostgreSQL URL as the application role |
 //! | `OPENSEAL_BLOB_DIR` | The filesystem blob store's root, or: |
 //! | `OPENSEAL_S3_ENDPOINT`, `OPENSEAL_S3_BUCKET`, `OPENSEAL_S3_REGION` (default `us-east-1`) | An S3-compatible bucket instead, as the API server's |
-//! | `OPENSEAL_S3_ACCESS_KEY`, `OPENSEAL_S3_SECRET_KEY` (or `_FILE`) | Its credentials |
+//! | `OPENSEAL_S3_ACCESS_KEY`, `OPENSEAL_S3_SECRET_KEY` (each or `_FILE`) | Its credentials (rotated by rewriting the files and restarting, docs/65 §Rotation) |
 //! | `OPENSEAL_S3_VIRTUAL_HOST=1` | Virtual-host URLs (AWS) rather than path style |
 //! | `OPENSEAL_WORKER_NAME` | Recorded on claimed jobs (default `worker`) |
 //! | `OPENSEAL_BASE_URL` | Signing links are `{base}/s/{token}` |
@@ -263,7 +263,13 @@ fn s3_config() -> Result<Option<S3Config>, WorkerError> {
         endpoint,
         bucket: need("OPENSEAL_S3_BUCKET")?,
         region: var("OPENSEAL_S3_REGION").unwrap_or_else(|| "us-east-1".into()),
-        access_key: need("OPENSEAL_S3_ACCESS_KEY")?,
+        // A file too (`_FILE`), so a credential rotation rewrites files only (HRD-11).
+        access_key: secret("OPENSEAL_S3_ACCESS_KEY")?
+            .map(|s| s.expose().to_owned())
+            .filter(|v| !v.is_empty())
+            .ok_or(WorkerError::Config {
+                setting: "OPENSEAL_S3_ACCESS_KEY",
+            })?,
         secret_key: secret_key.expose().to_owned(),
         path_style: var("OPENSEAL_S3_VIRTUAL_HOST").as_deref() != Some("1"),
         ca_pem: match var("OPENSEAL_S3_CA") {

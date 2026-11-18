@@ -1634,6 +1634,28 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Jwks'}
         default: {$ref: '#/components/responses/Problem'}
+  /readyz:
+    get:
+      operationId: ready
+      summary: "Whether this replica takes new requests (HRD-11): 503 CS-API-0018 while it drains before a stop"
+      description: >-
+        For the proxy in front of several server replicas: a replica that is stopping first answers
+        503 here for `OPENSEAL_DRAIN_SECONDS`, still serving every other request, so the proxy's
+        health check sends new requests elsewhere before it stops taking connections (docs/65
+        §Rotation). Never cached.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status: {type: string, enum: [ready]}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/accounts/me:
     get:
       operationId: getAccount

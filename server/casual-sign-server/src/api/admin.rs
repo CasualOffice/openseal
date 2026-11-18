@@ -1537,6 +1537,20 @@ pub(crate) async fn jwks(State(st): State<AppState>) -> Response {
     r
 }
 
+/// `GET /readyz` (`HRD-11`): `200` while this server takes new requests; `503
+/// CS-API-0018` once it is draining before a stop, so the proxy's health check sends new
+/// requests to another replica while this one finishes what it has. Never cached.
+pub(crate) async fn ready(State(st): State<AppState>) -> Response {
+    let mut r = if st.draining() {
+        ApiError::draining().into_response()
+    } else {
+        json(StatusCode::OK, &json!({ "status": "ready" }))
+    };
+    r.headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    r
+}
+
 // Bootstrap -----------------------------------------------------------------------------
 
 /// What [`bootstrap`] or [`bootstrap_workspace`] made.

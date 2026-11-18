@@ -259,6 +259,35 @@ impl Sessions<'_> {
         Ok(user.map(UserId))
     }
 
+    /// Re-seal the session's own user's TOTP seed under a new second-factor key
+    /// (`HRD-12`): replace `old`, the sealed value the server just opened, by `new`. A
+    /// confirmed factor is re-sealed only once this session has passed it. `None` when
+    /// the seed is no longer `old`, the factor is confirmed and not passed, or the
+    /// session is not live.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn reseal_own_totp(
+        &mut self,
+        session: StaffSessionId,
+        old: &[u8],
+        new: &[u8],
+        now: OffsetDateTime,
+    ) -> Result<Option<UserId>> {
+        let user = sqlx::query_scalar!(
+            "SELECT openseal_reseal_own_totp($1, $2, $3, $4)",
+            session.0,
+            old,
+            new,
+            now
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(user.map(UserId))
+    }
+
     /// Pass the session's second factor with a code for `step`, only when that step is
     /// later than every step accepted before for the user (a code is single use).
     /// `None` when refused.

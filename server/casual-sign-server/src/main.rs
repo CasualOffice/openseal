@@ -156,11 +156,16 @@ fn reload_every() -> Result<Option<std::time::Duration>, String> {
 fn mfa_key() -> Result<casual_sign_server::MfaKey, String> {
     match secret("OPENSEAL_MFA_KEY")? {
         Some(b64) => {
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(b64.trim())
-                .map_err(|_| "OPENSEAL_MFA_KEY: not base64".to_owned())?;
-            casual_sign_server::MfaKey::new(&bytes)
-                .map_err(|_| "OPENSEAL_MFA_KEY: not 32 bytes".to_owned())
+            let key = casual_sign_server::MfaKey::new(&mfa_bytes("OPENSEAL_MFA_KEY", &b64)?)
+                .map_err(|_| "OPENSEAL_MFA_KEY: not 32 bytes".to_owned())?;
+            // A rotation's overlap (HRD-12, docs/65 §Rotation): seeds sealed under the
+            // replaced key still open, and move under the new one.
+            match secret("OPENSEAL_MFA_PREVIOUS_KEY")? {
+                Some(p) => key
+                    .with_previous(&mfa_bytes("OPENSEAL_MFA_PREVIOUS_KEY", &p)?)
+                    .map_err(|_| "OPENSEAL_MFA_PREVIOUS_KEY: not 32 bytes".to_owned()),
+                None => Ok(key),
+            }
         }
         None if std::env::var("OPENSEAL_DEV_INSECURE_KEY").as_deref() == Ok("1") => {
             note(
@@ -172,6 +177,61 @@ fn mfa_key() -> Result<casual_sign_server::MfaKey, String> {
         }
         None => Err("OPENSEAL_MFA_KEY is not set".into()),
     }
+}
+
+/// How long a stopping server stays up, not ready, before it stops taking connections
+/// (`OPENSEAL_DRAIN_SECONDS`, default 0, at most 300; `HRD-11`).
+fn drain_for() -> Result<std::time::Duration, String> {
+    match std::env::var("OPENSEAL_DRAIN_SECONDS") {
+        Err(_) => Ok(std::time::Duration::ZERO),
+        Ok(s) => match s.trim().parse::<u64>() {
+            Ok(n) if n <= 300 => Ok(std::time::Duration::from_secs(n)),
+            _ => Err("OPENSEAL_DRAIN_SECONDS: not a number of seconds up to 300".into()),
+        },
+    }
+}
+
+/// A second-factor key's bytes from its base64 text.
+fn mfa_bytes(name: &str, b64: &str) -> Result<Vec<u8>, String> {
+    base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .map_err(|_| format!("{name}: not base64"))
+}
+
+/// `mfa-reseal` (`HRD-12`): every staff TOTP seed still sealed under
+/// `OPENSEAL_MFA_PREVIOUS_KEY` re-sealed under `OPENSEAL_MFA_KEY`, as the schema owner.
+/// Fails when a seed opens under neither key, so the previous key is not retired while
+/// it still matters to someone.
+async fn mfa_reseal() -> ExitCode {
+    let key = match secret("OPENSEAL_MFA_KEY") {
+        Ok(Some(_)) => match mfa_key() {
+            Ok(k) => k,
+            Err(e) => return fail(&e),
+        },
+        Ok(None) => return fail("OPENSEAL_MFA_KEY is not set"),
+        Err(e) => return fail(&e),
+    };
+    let url = match secret("OPENSEAL_MIGRATE_DATABASE_URL") {
+        Ok(Some(u)) => u,
+        Ok(None) => return fail("OPENSEAL_MIGRATE_DATABASE_URL is not set"),
+        Err(e) => return fail(&e),
+    };
+    let store = match Store::connect(&url, 2).await {
+        Ok(s) => s,
+        Err(e) => return fail(e.code()),
+    };
+    let r = match casual_sign_server::reseal_all(&store, &key).await {
+        Ok(r) => r,
+        Err(e) => return fail(e.code()),
+    };
+    println!(
+        "mfa seeds: resealed={} current={} changed={} unopened={}",
+        r.resealed, r.current, r.changed, r.unopened
+    );
+    if r.unopened > 0 {
+        return fail("mfa-reseal: seeds open under neither key (keep the previous key)");
+    }
+    ExitCode::SUCCESS
 }
 
 /// The S3 bucket named by `OPENSEAL_S3_*`, when `OPENSEAL_S3_ENDPOINT` is set.
@@ -192,7 +252,10 @@ fn s3_config() -> Result<Option<S3Config>, String> {
         endpoint,
         bucket: need("OPENSEAL_S3_BUCKET")?,
         region: std::env::var("OPENSEAL_S3_REGION").unwrap_or_else(|_| "us-east-1".into()),
-        access_key: need("OPENSEAL_S3_ACCESS_KEY")?,
+        // A file too (`_FILE`), so a credential rotation rewrites files only (HRD-11).
+        access_key: secret("OPENSEAL_S3_ACCESS_KEY")?
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| "OPENSEAL_S3_ACCESS_KEY is not set".to_owned())?,
         secret_key: secret("OPENSEAL_S3_SECRET_KEY")?
             .ok_or_else(|| "OPENSEAL_S3_SECRET_KEY is not set".to_owned())?,
         path_style: std::env::var("OPENSEAL_S3_VIRTUAL_HOST").as_deref() != Ok("1"),
@@ -473,6 +536,7 @@ async fn main() -> ExitCode {
         Some("healthcheck") => return healthcheck(),
         Some("migrate") => return migrate().await,
         Some("verify-evidence") => return verify_evidence().await,
+        Some("mfa-reseal") => return mfa_reseal().await,
         Some(cmd @ ("blobs-export" | "blobs-import")) => {
             let dir = std::env::args().nth(2);
             return blobs_copy(cmd == "blobs-export", dir.as_ref()).await;
@@ -663,10 +727,25 @@ async fn main() -> ExitCode {
         Err(_) => return fail("cannot listen"),
     };
     let _ = ClientIp::default;
-    let service = app(state).into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let drain = match drain_for() {
+        Ok(d) => d,
+        Err(e) => return fail(&e),
+    };
+    let service = app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     if axum::serve(listener, service)
-        .with_graceful_shutdown(async {
+        .with_graceful_shutdown(async move {
             let _ = tokio::signal::ctrl_c().await;
+            // HRD-11: first stop being ready, keep serving while the proxy's health check
+            // notices, then stop taking connections and finish the requests in hand.
+            if !drain.is_zero() {
+                state.set_draining();
+                note(
+                    Level::Info,
+                    "draining",
+                    &[("seconds", &drain.as_secs().to_string())],
+                );
+                tokio::time::sleep(drain).await;
+            }
         })
         .await
         .is_err()

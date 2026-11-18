@@ -133,6 +133,15 @@ impl ApiError {
             .detail("no head of this envelope's audit chain is anchored yet")
     }
 
+    /// `CS-API-0018` 503 from `GET /readyz`: this server is draining before it stops
+    /// (`HRD-11`); the proxy in front sends new requests to another replica, while
+    /// requests already here are still served.
+    pub fn draining() -> Self {
+        let mut e = Self::new(StatusCode::SERVICE_UNAVAILABLE, "CS-API-0018").detail("draining");
+        e.retry_after = Some(5);
+        e
+    }
+
     /// `CS-API-0003` 429.
     pub fn rate_limited(retry_after: u64) -> Self {
         let mut e = Self::new(StatusCode::TOO_MANY_REQUESTS, "CS-API-0003");

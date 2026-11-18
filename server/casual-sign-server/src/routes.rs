@@ -205,6 +205,8 @@ pub fn table() -> Vec<Route> {
         r("POST", "/api/v1/auth/switch", Member, JSON, switch::switch),
         r("POST", "/api/v1/oauth/token", Public, JSON, admin::token),
         r("GET", "/.well-known/jwks.json", Public, JSON, admin::jwks),
+        // A replica's readiness for the proxy in front of it (HRD-11).
+        r("GET", "/readyz", Public, JSON, admin::ready),
         // Account, users, API clients.
         r("GET", "/api/v1/accounts/me", Member, JSON, admin::account),
         r(

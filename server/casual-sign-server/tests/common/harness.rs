@@ -79,6 +79,8 @@ pub struct Api {
     pub secure_cookies: bool,
     /// Every security event line the server wrote (ASVS-08).
     pub security: casual_sign_seclog::Memory,
+    /// The settings the server runs with.
+    pub config: Config,
     /// The second factor of each staff user the harness enrolled, by email (ASVS-31).
     pub factors: Mutex<HashMap<String, Factor>>,
 }
@@ -188,7 +190,7 @@ impl Api {
             blobs,
             JwtKeys::generate().unwrap(),
             clock.clone(),
-            config,
+            config.clone(),
         )
         .unwrap();
         let (log, security) =
@@ -209,7 +211,30 @@ impl Api {
             called: Mutex::new(BTreeSet::new()),
             blob_dir: dir,
             secure_cookies,
+            config,
         })
+    }
+
+    /// The server restarted on the same database, blobs and clock with `mfa` as its
+    /// second-factor key (a key rotation, HRD-12). Sessions survive (database rows);
+    /// access tokens do not (a new token key), and security events start afresh.
+    pub fn restart_with(&mut self, mfa: MfaKey) {
+        let blobs = Blobs::Fs(Arc::new(FsBlobStore::new(self.blob_dir.clone()).unwrap()));
+        let st = AppState::new(
+            self.db.store.clone(),
+            blobs,
+            JwtKeys::generate().unwrap(),
+            self.clock.clone(),
+            self.config.clone(),
+        )
+        .unwrap();
+        let (log, security) =
+            casual_sign_seclog::SecurityLog::memory(casual_sign_seclog::Service::Server);
+        st.set_security_log(log);
+        st.set_mfa_key(mfa);
+        self.security = security;
+        self.app = app(st.clone());
+        self.st = st;
     }
 
     pub fn set_peer(&self, peer: &str) {

@@ -51,7 +51,7 @@ pub use api::envelopes::issue_invitation_token;
 pub use auth::{Credential, Principal, SCOPES, SecondFactor};
 pub use crypto::JwtKeys;
 pub use error::{ApiError, FieldProblem};
-pub use mfa::MfaKey;
+pub use mfa::{MfaKey, Reseal, ResealReport, reseal_all};
 pub use routes::{Access, Route, app, table};
 pub use scan::{Scanner, ScannerConfig};
 pub use state::{AppState, Blobs, Clock, Config, ManualClock, RateLimits, SystemClock};
