@@ -199,7 +199,24 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     try { if (v) store?.setItem("openseal.csrf", v); else store?.removeItem("openseal.csrf"); } catch { /* storage off */ }
   };
 
-  async function request(method, path, { body, query, ifMatch, raw = false, ceremony = false, signal, accept = null } = {}) {
+  /// Asked when a sensitive call answers `403 CS-AUTH-0013` (ASVS-07): resolves true once
+  /// the person has re-authenticated (the call is then made again, once), false or null
+  /// when they cancelled (the refusal stands). Set by the app with `setStepUp`.
+  let stepUp = null;
+
+  /// Make a call; a sensitive one refused for want of a recent re-authentication asks
+  /// `stepUp` and, when it succeeds, is made again with a fresh idempotency key.
+  async function request(method, path, opts = {}) {
+    try {
+      return await send(method, path, opts);
+    } catch (err) {
+      if (!(err instanceof ApiError) || err.code !== "CS-AUTH-0013" || !stepUp || opts.ceremony) throw err;
+      if (!(await stepUp(err))) throw err;
+      return send(method, path, opts);
+    }
+  }
+
+  async function send(method, path, { body, query, ifMatch, raw = false, ceremony = false, signal, accept = null } = {}) {
     let url = baseUrl + path;
     if (query) {
       const q = new URLSearchParams();
@@ -260,6 +277,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
   return {
     request,
     hasCsrf: () => !!csrf,
+    /// Set what asks the person to re-authenticate before a sensitive call (ASVS-07):
+    /// `async (err) => boolean`; null turns it off.
+    setStepUp(fn) { stepUp = typeof fn === "function" ? fn : null; },
     /// Whether a call of `NOT_ON_SERVER` (by its name there) works on this backend.
     available,
 
@@ -301,6 +321,19 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// Pass the session's second factor (ASVS-01): `{code}` from the authenticator, or
     /// `{recovery_code}`; `401 CS-AUTH-0012` when wrong or already used.
     verifySecondFactor: (body) => data(request("POST", "/api/v1/auth/mfa/verify", { body })),
+    /// Prove the password again before a sensitive action (ASVS-07): `{password, code?}`
+    /// or `{password, recovery_code?}`; `{reauthenticated_until}`. `401 CS-AUTH-0007`
+    /// for a wrong password, `401 CS-AUTH-0012` for a wrong code, `422` (`/code`) when the
+    /// person has a second factor and sent no code. Never itself asks `stepUp`.
+    reauthenticate: (body) => data(send("POST", "/api/v1/auth/reauthenticate", { body })),
+    /// The person's own live sessions in every workspace (ASVS-06): `{items: [{id,
+    /// workspace: {id, name}, method, client, created_at, last_seen_at, idle_expires_at,
+    /// expires_at, current}]}`.
+    sessions: () => data(request("GET", "/api/v1/auth/sessions")),
+    /// End one of the person's other sessions (needs a recent re-authentication).
+    endSession: (id) => data(request("DELETE", `/api/v1/auth/sessions/${encodeURIComponent(id)}`)),
+    /// End every other session of the person: `{ended}` (needs a recent re-authentication).
+    endOtherSessions: () => data(request("POST", "/api/v1/auth/sessions/end-others")),
     /// Start TOTP enrolment: `{otpauth_uri, secret}`, shown once.
     enrolTotp: () => data(request("POST", "/api/v1/auth/mfa/totp/enrol")),
     /// Confirm enrolment with a first code: `{second_factor, recovery_codes}`, shown once.

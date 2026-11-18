@@ -6,10 +6,11 @@
 // `profile` as unavailable gets a panel that shows who is signed in and says changing
 // it is not available yet, never a form that cannot save.
 
-import { h, initials } from "./dom.js";
+import { h, clear, initials, fmtDate } from "./dom.js";
 import { t } from "./i18n.js";
 import { openPanel, field, checkbox, button, toast, toastError } from "./ui/index.js";
 import { errorMessage } from "./api.js";
+import { sessionRows } from "./authmodel.js";
 
 const NOTIFY = ["completed", "declined", "viewed"];
 const MIN_PASSWORD = 12;
@@ -98,7 +99,8 @@ export async function openProfile(ctx, { focus = null, onSaved = null } = {}) {
           notif),
         h("section", { class: "os-profile__section", attrs: { "aria-labelledby": "profile-h-pw" } },
           h("h3", { id: "profile-h-pw", class: "os-profile__h", text: t("profile.password") }),
-          current.el, next.el));
+          current.el, next.el),
+        sessionsSection(ctx));
       if (focus === "notifications") queueMicrotask(() => { checks.completed.input.focus(); notif.scrollIntoView?.({ block: "nearest" }); });
     },
     actions: [
@@ -137,6 +139,72 @@ export async function openProfile(ctx, { focus = null, onSaved = null } = {}) {
       },
     ],
   });
+}
+
+/// The person's sessions (ASVS-06): every browser they are signed in from, in every
+/// workspace, this one marked; any other can be signed out, or all of them at once. Ending
+/// one is a sensitive action: the API client asks for the password first when the last
+/// one was more than five minutes ago (ASVS-07, stepup.js).
+export function sessionsSection(ctx) {
+  const list = h("ul", { class: "os-sessions", attrs: { "data-testid": "sessions-list", "aria-labelledby": "profile-h-sessions" } });
+  const note = h("p", { class: "os-muted os-small", attrs: { "aria-live": "polite", "data-testid": "sessions-note" } });
+  const quiet = (err) => ctx.failed?.(err) || err?.code === "CS-AUTH-0013";
+  const others = button(t("sessions.end-others"), {
+    variant: "secondary", size: "sm", attrs: { "data-testid": "sessions-end-others" },
+    onClick: async () => {
+      try {
+        const r = await ctx.api.endOtherSessions();
+        toast(t("sessions.ended-others", { n: r?.ended ?? 0 }), "success");
+      } catch (err) { if (!quiet(err)) toastError(err); }
+      await load();
+    },
+  });
+  const section = h("section", { class: "os-profile__section", attrs: { "aria-labelledby": "profile-h-sessions", "data-testid": "profile-sessions" } },
+    h("h3", { id: "profile-h-sessions", class: "os-profile__h", text: t("sessions.title") }),
+    h("p", { class: "os-muted os-small", text: t("sessions.text") }),
+    list, note, others);
+
+  async function end(row) {
+    try {
+      await ctx.api.endSession(row.id);
+      toast(t("sessions.ended"), "success");
+    } catch (err) { if (!quiet(err)) toastError(err); }
+    await load();
+  }
+
+  async function load() {
+    let rows;
+    try {
+      rows = sessionRows((await ctx.api.sessions())?.items);
+    } catch (err) {
+      if (ctx.failed?.(err)) return;
+      clear(list);
+      note.textContent = t("sessions.failed");
+      others.hidden = true;
+      return;
+    }
+    clear(list);
+    for (const r of rows) {
+      const client = r.client || t("sessions.unknown-client");
+      const when = fmtDate(r.lastSeen);
+      list.append(h("li", { class: "os-sessions__row", attrs: { "data-testid": "session-row", "data-current": String(r.current) } },
+        h("div", { class: "os-sessions__who" },
+          h("b", { text: client }),
+          r.current ? h("span", { class: "os-sessions__this", attrs: { "data-testid": "session-current" }, text: t("sessions.this") }) : null,
+          h("span", { class: "os-muted os-small", text: t("sessions.where", { workspace: r.workspace, when }) })),
+        r.current ? null : button(t("sessions.end"), {
+          variant: "subtle", size: "sm",
+          attrs: { "aria-label": t("sessions.end-label", { client, when }), "data-testid": "session-end" },
+          onClick: () => end(r),
+        })));
+    }
+    const alone = rows.every((r) => r.current);
+    note.textContent = alone ? t("sessions.none-other") : "";
+    others.hidden = alone;
+  }
+
+  load();
+  return section;
 }
 
 /// Add a stylesheet of this app once (the adopt panel's styles live in sign.css).

@@ -39,6 +39,9 @@ if (mock) {
   api = createClient({ baseUrl: base, store: safeSession() });
 }
 initMl(api);
+// ASVS-07: a sensitive call refused for want of a recent re-authentication asks for the
+// password (and code) and is made again.
+api.setStepUp(async () => (await import("./stepup.js")).stepUpDialog(api));
 
 function safeSession() {
   try { return globalThis.sessionStorage; } catch { return null; }

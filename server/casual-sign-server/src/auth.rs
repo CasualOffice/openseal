@@ -164,7 +164,7 @@ pub struct Principal {
     /// serve a session that owes one.
     pub second_factor: SecondFactor,
     /// Until when a session may take sensitive actions without proving the password
-    /// again (ASVS-07): its last re-authentication plus [`STEP_UP_WINDOW_SECS`]. `None`
+    /// again (ASVS-07): its last re-authentication plus `STEP_UP_WINDOW_SECS`. `None`
     /// for a session that never proved it, and for API keys and tokens, which are not
     /// asked (they are credentials of their own, made by a member who signed in).
     pub reauth_until: Option<OffsetDateTime>,
@@ -230,7 +230,7 @@ impl Principal {
 
 impl Principal {
     /// Refuse a staff session that has not proved its holder's password (and second
-    /// factor) within the last [`STEP_UP_WINDOW_SECS`] (`403 CS-AUTH-0013`, ASVS-07):
+    /// factor) within the last `STEP_UP_WINDOW_SECS` (`403 CS-AUTH-0013`, ASVS-07):
     /// called by every sensitive action (docs/40 §2 lists them). API keys and access
     /// tokens pass.
     ///
