@@ -489,7 +489,12 @@ user enrolled, and the account's `settings.mfa_policy` (an unknown value reads a
 row was rewritten, and an account's explicit `optional` is kept. No new table. Migration 0039 (`ORG-08`): the
 resolver also answers the organization's `policy`, and the stricter of `mfa_policy` and the organization's
 `login.mfa_required` applies (`casual_sign_policy::org::effective_mfa`); no row is rewritten. The envelope projection
-carries `sender_user_id` from the state, which a transfer (`ORG-09`) changes. No new table.
+carries `sender_user_id` from the state, which a transfer (`ORG-09`) changes. No new table. Migration 0042 (`HRD-12`, second-factor key
+rotation) adds two definer functions, no table: `openseal_reseal_own_totp` (granted to the application role, keyed
+by the user's own live session) replaces a sealed seed only when it is still the value the server opened, and a
+confirmed factor only once that session has passed it (`Sessions::reseal_own_totp`); `openseal_reseal_totp_seed`
+(schema owner only, `Store::reseal_totp_seed` beside `Store::totp_seeds`) does the same per user for
+`casual-sign-server mfa-reseal`.
 
 ### Designed (ADR-028): tenancy with organizations
 

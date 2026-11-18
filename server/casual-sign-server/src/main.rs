@@ -11,18 +11,21 @@
 //! | `OPENSEAL_BLOB_DIR` | Directory of the file blob store, or: |
 //! | `OPENSEAL_S3_ENDPOINT`, `OPENSEAL_S3_BUCKET` | An S3-compatible bucket instead (created at start when missing) |
 //! | `OPENSEAL_S3_REGION` | Its region (default `us-east-1`) |
-//! | `OPENSEAL_S3_ACCESS_KEY`, `OPENSEAL_S3_SECRET_KEY` (secret) | Its credentials |
+//! | `OPENSEAL_S3_ACCESS_KEY`, `OPENSEAL_S3_SECRET_KEY` (secret; each may be a `_FILE`) | Its credentials (rotated by rewriting the files and a rolling restart, docs/65 §Rotation) |
 //! | `OPENSEAL_S3_VIRTUAL_HOST=1` | Virtual-host URLs (AWS) rather than path style (MinIO, SeaweedFS) |
 //! | `OPENSEAL_S3_CA` | PEM file of the CA the object store's TLS certificate chains to, besides the platform's roots (a private CA, the production profile) |
 //! | `OPENSEAL_SECRET_RELOAD_SECONDS` | How often the database URL file is read again for a rotated credential (default 30; `0` never; docs/65 §Rotation) |
 //! | `OPENSEAL_WEBAPP_DIR` | The web app's folder (`webapp/`), served at `/` (row WEB-04); none: API only |
 //! | `OPENSEAL_PUBLIC_URL` | Public base URL (links, token issuer) |
 //! | `OPENSEAL_LISTEN` | Address to listen on (default `127.0.0.1:8080`) |
+//! | `OPENSEAL_OPS_LISTEN` | Address of the ops listener (`CON-05`): `GET /livez` (`204`) and `GET /readyz` (`204`; `503` while draining or while the database does not answer); never the public port; unset: none |
+//! | `OPENSEAL_DRAIN_SECONDS` | On `SIGINT`, how long to keep serving while `/readyz` answers `503`, before taking no new connections (default 0, at most 300; `HRD-11`: the proxy in front of several replicas moves new requests away first) |
 //! | `OPENSEAL_TRUSTED_PROXIES` | Comma-separated CIDRs whose forwarding headers count |
 //! | `OPENSEAL_GEOIP_DB` | Optional GeoIP `.mmdb` the operator supplies (row GEO-01) |
 //! | `OPENSEAL_ML_BUNDLE_ID` | The model bundle deployed with `casual-sign-modeld` (docs/33 §7); none: document analysis is not installed |
 //! | `OPENSEAL_LOG_PSEUDONYM_KEY` (secret) | 32 bytes as base64: keys the pseudonyms security events give a presented e-mail or client address (ASVS-08); share it with the console so they match; none: a key per process; malformed: the server does not start (`CS-LOG-0001`) |
 //! | `OPENSEAL_MFA_KEY` (secret) | 32 bytes as base64: seals staff TOTP seeds (ASVS-01). Required outside development: administrators owe a second factor by default (ASVS-31), and without the key none could enrol, so the server does not start without it; keep it with the backups, since a seed sealed under a lost key opens only by recovery code |
+//! | `OPENSEAL_MFA_PREVIOUS_KEY` (secret) | Optional, during a rotation (`HRD-12`): the key `OPENSEAL_MFA_KEY` replaced; seeds sealed under it still open and are re-sealed under the new key when used, or by `mfa-reseal` |
 //! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key and second-factor key, plain-HTTP cookies |
 //! | `OPENSEAL_CLAMD_ADDR` | `host:port` of ClamAV's clamd (ASVS-11): every upload is scanned before it is read or stored; none: nothing is scanned (a warning at start) |
 //! | `OPENSEAL_CLAMD_TIMEOUT_SECS` | Most seconds one scan may take, 1 to 600 (default 60) |
@@ -57,6 +60,11 @@
 //!   its key: documents, certificates of completion, signature captures and the images
 //!   they name, logos and attachments. It exits 0 only when all of it verifies,
 //!   printing the counts.
+//!
+//! `casual-sign-server mfa-reseal` (`HRD-12`, docs/65 §Rotation) connects as the schema
+//! owner (`OPENSEAL_MIGRATE_DATABASE_URL`, secret) and re-seals every staff TOTP seed
+//! still under `OPENSEAL_MFA_PREVIOUS_KEY` under `OPENSEAL_MFA_KEY`, printing the counts;
+//! it fails while any seed opens under neither key.
 //!
 //! `casual-sign-server healthcheck` asks the server on `OPENSEAL_LISTEN` (its port, on
 //! the loopback address) for `/.well-known/jwks.json` and exits 0 on `200`: a
@@ -731,14 +739,25 @@ async fn main() -> ExitCode {
         Ok(d) => d,
         Err(e) => return fail(&e),
     };
+    // The ops listener (CON-05): `/livez` and `/readyz` on a port of their own, never the
+    // public one; it answers until the process exits, so through the drain too.
+    if let Ok(ops) = std::env::var("OPENSEAL_OPS_LISTEN") {
+        let Ok(ops_listener) = tokio::net::TcpListener::bind(&ops).await else {
+            return fail("OPENSEAL_OPS_LISTEN: cannot listen");
+        };
+        let ops_service = casual_sign_server::ops_app(state.clone()).into_make_service();
+        tokio::spawn(async move {
+            let _ = axum::serve(ops_listener, ops_service).await;
+        });
+    }
     let service = app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     if axum::serve(listener, service)
         .with_graceful_shutdown(async move {
             let _ = tokio::signal::ctrl_c().await;
             // HRD-11: first stop being ready, keep serving while the proxy's health check
             // notices, then stop taking connections and finish the requests in hand.
+            state.set_draining();
             if !drain.is_zero() {
-                state.set_draining();
                 note(
                     Level::Info,
                     "draining",

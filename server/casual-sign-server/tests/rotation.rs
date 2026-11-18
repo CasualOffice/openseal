@@ -5,10 +5,10 @@
 //!   verifies, and ends under the new key: on use, or by `casual-sign-server
 //!   mfa-reseal` for users who do not sign in; a server with the new key alone then
 //!   verifies every one of them.
-//! - `HRD-11`: a stopping replica drains. `GET /readyz` answers `503 CS-API-0018` for
-//!   `OPENSEAL_DRAIN_SECONDS` while every other request is still served, so the proxy in
-//!   front of two replicas moves new requests to the other before this one stops taking
-//!   connections.
+//! - `HRD-11`: a stopping replica drains. The ops listener's `GET /readyz` answers `503`
+//!   for `OPENSEAL_DRAIN_SECONDS` while every API request is still served, so the proxy
+//!   in front of two replicas moves new requests to the other before this one stops
+//!   taking connections.
 
 // Test code: a panic is the failure report (CLAUDE.md).
 #![allow(
@@ -274,18 +274,37 @@ async fn an_enrolment_begun_under_the_old_key_is_confirmed_under_the_new_one() {
     api.db.drop().await;
 }
 
+/// The ops listener's answer to `GET path` (`CON-05`), in process.
+async fn ops(api: &Api, path: &str) -> (StatusCode, String) {
+    use tower::ServiceExt as _;
+    let r = casual_sign_server::ops_app(api.st.clone())
+        .oneshot(
+            axum::http::Request::get(path)
+                .body(axum::body::Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let cache = r.headers()["cache-control"].to_str().unwrap().to_owned();
+    (r.status(), cache)
+}
+
 #[tokio::test]
 async fn a_draining_server_is_not_ready_but_still_serves() {
     let Some(api) = Api::new("rotation_drain", Rls::On).await else {
         return;
     };
-    let r = api.call("GET", "/readyz", &Auth::None, None, &[]).await;
-    assert_eq!(r.status, StatusCode::OK);
-    assert_eq!(r.headers["cache-control"], "no-store");
+    assert_eq!(
+        ops(&api, "/readyz").await,
+        (StatusCode::NO_CONTENT, "no-store".into())
+    );
+    assert_eq!(ops(&api, "/livez").await.0, StatusCode::NO_CONTENT);
     api.st.set_draining();
-    let r = api.call("GET", "/readyz", &Auth::None, None, &[]).await;
-    assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(r.code(), "CS-API-0018");
+    assert_eq!(
+        ops(&api, "/readyz").await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(ops(&api, "/livez").await.0, StatusCode::NO_CONTENT);
     let r = api
         .call("GET", "/.well-known/jwks.json", &Auth::None, None, &[])
         .await;
@@ -297,7 +316,45 @@ async fn a_draining_server_is_not_ready_but_still_serves() {
     api.db.drop().await;
 }
 
-/// One plain HTTP GET to the server's port: the status, or `None` when nothing answers.
+#[tokio::test]
+async fn a_server_whose_database_does_not_answer_is_not_ready() {
+    use std::sync::Arc;
+    use tower::ServiceExt as _;
+    // A pool to a port nothing listens on: every ping fails.
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(Duration::from_secs(2))
+        .connect_lazy("postgres://nobody:nothing@127.0.0.1:1/none")
+        .unwrap();
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("ready-db-{}", uuid::Uuid::now_v7()));
+    let st = casual_sign_server::AppState::new(
+        casual_sign_store::Store::from_pool(pool),
+        casual_sign_server::Blobs::Fs(Arc::new(
+            casual_sign_store::blob::FsBlobStore::new(dir.clone()).unwrap(),
+        )),
+        casual_sign_server::JwtKeys::generate().unwrap(),
+        Arc::new(casual_sign_server::ManualClock::at(common::harness::start())),
+        casual_sign_server::Config::default(),
+    )
+    .unwrap();
+    for (path, want) in [
+        ("/readyz", StatusCode::SERVICE_UNAVAILABLE),
+        ("/livez", StatusCode::NO_CONTENT),
+    ] {
+        let r = casual_sign_server::ops_app(st.clone())
+            .oneshot(
+                axum::http::Request::get(path)
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(r.status(), want, "{path}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// One plain HTTP GET to one of the server's ports: the status, or `None` when nothing answers.
 fn get(port: u16, path: &str) -> Option<u16> {
     let mut c = std::net::TcpStream::connect(("127.0.0.1", port)).ok()?;
     c.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
@@ -316,11 +373,14 @@ async fn on_sigint_the_server_drains_then_stops() {
     let Some(api) = Api::new("rotation_drain_process", Rls::On).await else {
         return;
     };
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let free = || {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
+    };
+    let (port, ops_port) = (free(), free());
     let blobs = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("drain-{}", uuid::Uuid::now_v7()));
     let mut child = Command::new(SERVER)
@@ -330,13 +390,14 @@ async fn on_sigint_the_server_drains_then_stops() {
         .env("OPENSEAL_PUBLIC_URL", "http://127.0.0.1")
         .env("OPENSEAL_BLOB_DIR", &blobs)
         .env("OPENSEAL_LISTEN", format!("127.0.0.1:{port}"))
+        .env("OPENSEAL_OPS_LISTEN", format!("127.0.0.1:{ops_port}"))
         .env("OPENSEAL_DRAIN_SECONDS", "3")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(30);
-    while get(port, "/readyz") != Some(200) {
+    while get(ops_port, "/readyz") != Some(204) {
         assert!(Instant::now() < deadline, "the server never became ready");
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -347,7 +408,7 @@ async fn on_sigint_the_server_drains_then_stops() {
         .unwrap();
     assert!(kill.success());
     let deadline = Instant::now() + Duration::from_secs(2);
-    while get(port, "/readyz") != Some(503) {
+    while get(ops_port, "/readyz") != Some(503) {
         assert!(
             Instant::now() < deadline,
             "readyz did not turn 503 on SIGINT"
@@ -372,7 +433,8 @@ async fn on_sigint_the_server_drains_then_stops() {
         "stopped after {:?}, before the drain ended",
         signalled.elapsed()
     );
-    assert_eq!(get(port, "/readyz"), None);
+    assert_eq!(get(port, "/.well-known/jwks.json"), None);
+    assert_eq!(get(ops_port, "/readyz"), None);
     let _ = std::fs::remove_dir_all(blobs);
     api.db.drop().await;
 }

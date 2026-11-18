@@ -349,8 +349,9 @@ impl AppState {
         &self.0.anomaly
     }
 
-    /// Start draining before a stop (`HRD-11`): `GET /readyz` answers `503` from now
-    /// on, so the proxy sends new requests elsewhere; everything else is still served.
+    /// Start draining before a stop (`HRD-11`): the ops listener's `GET /readyz` answers
+    /// `503` from now on, so the proxy sends new requests elsewhere; every request that
+    /// reaches the API is still served.
     pub fn set_draining(&self) {
         self.0
             .draining

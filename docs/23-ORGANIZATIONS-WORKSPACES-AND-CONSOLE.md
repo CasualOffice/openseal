@@ -895,7 +895,7 @@ workspace (organization admins can too); view usage; and turn self-sign-up on (Q
 
 | Service | Ops listener (`OPENSEAL_OPS_LISTEN`, loopback by default, never the public port) | Key metrics (Prometheus text; no personal data, no account ids as labels) |
 | --- | --- | --- |
-| server | `/livez`, `/readyz` (DB, blob store), `/metrics` | requests by route template and status, latency, rate-limit refusals, `CS-*` counts by code, login failures |
+| server | `/livez`, `/readyz` (DB; `503` while draining before a stop, `HRD-11`; built 2026-11-19, listening only when `OPENSEAL_OPS_LISTEN` is set; the production profile sets `0.0.0.0:9090`, unpublished, for its proxy), `/metrics` (not yet). The blob store is not in readiness, a change from this design's first draft: with several replicas behind a proxy, a shared store's outage would take every replica out and refuse even the requests that do not need it | requests by route template and status, latency, rate-limit refusals, `CS-*` counts by code, login failures |
 | worker | same (DB, blob store, SMTP, keyd reachable) | jobs claimed, done, retried and dead by kind and code; seal duration; TSA latency and failures by endpoint; webhook and e-mail failures |
 | keyd | none: `health` over its own protocol, read by the console and the worker's `/readyz` | signatures by alias and outcome, latency, refusals, log sequence (through `oplog-head` and `health`) |
 | console | same as server | operator logins, MFA failures, approvals pending |

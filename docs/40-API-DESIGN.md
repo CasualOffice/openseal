@@ -449,7 +449,9 @@ default, also when unset: administrators and anyone who enrolled; `ASVS-31`, mig
 every call but the sign-in steps is `403 CS-AUTH-0011` with `detail` `enrol`. An explicit choice stands: accounts that
 had written `optional` before the default changed keep it, as a recorded decision of their administrators, and
 `mfa_policy: null` removes any choice and returns the account to the default. Because the default asks for a factor,
-the server does not start without `OPENSEAL_MFA_KEY` outside development (docs/65); an administrator who loses their
+the server does not start without `OPENSEAL_MFA_KEY` outside development (docs/65; it rotates with
+`OPENSEAL_MFA_PREVIOUS_KEY`, each seed re-sealed under the new key when its user next proves a code or by
+`casual-sign-server mfa-reseal`, `HRD-12`, docs/65 §Rotation); an administrator who loses their
 authenticator signs in with one of their recovery codes (`ASVS-32` adds replacing the factor). A user with a confirmed factor owes it in every session, whatever
 the policy, so a password reset or a new password does not bypass it. A session that owes a factor reaches only the
 routes marked `x-permission: signing-in` (`GET /auth/session`, `POST /auth/logout` and the three below); every other
