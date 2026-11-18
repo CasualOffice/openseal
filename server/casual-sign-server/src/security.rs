@@ -180,6 +180,7 @@ fn rule_of(ev: &SecurityEvent) -> Option<Rule> {
         Kind::SignIn
         | Kind::Mfa
         | Kind::MfaEnrol
+        | Kind::Reauth
         | Kind::PasswordReset
         | Kind::PasswordChange
         | Kind::InviteAccept

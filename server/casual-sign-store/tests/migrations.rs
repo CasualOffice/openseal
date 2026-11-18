@@ -121,7 +121,7 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // (CON-09), a tenant table; 0039 none (ORG-08: the staff-session resolver answers the
     // organization policy); 0040 none in `public` (KEYD-02: the token key is in
     // `openseal_keyd`); 0041 `chain_anchors` and `chain_anchor_leaves` (FG-158), tenant
-    // tables.
+    // tables; 0042 none (ASVS-06: activity columns on `staff_sessions`).
     assert_eq!(tables.len(), 66, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",

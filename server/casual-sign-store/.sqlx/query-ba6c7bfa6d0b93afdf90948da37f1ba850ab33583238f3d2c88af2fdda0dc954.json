@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT account_id AS \"account_id!\", session_id AS \"session_id!\",\n                      user_id AS \"user_id!\", csrf_sha256 AS \"csrf_sha256!\",\n                      mfa_verified AS \"mfa_verified!\", mfa_enrolled AS \"mfa_enrolled!\",\n                      mfa_policy AS \"mfa_policy!\",\n                      organization_policy AS \"organization_policy!\"\n                 FROM openseal_resolve_staff_session($1, $2)",
+  "query": "SELECT account_id AS \"account_id!\", session_id AS \"session_id!\",\n                      user_id AS \"user_id!\", csrf_sha256 AS \"csrf_sha256!\",\n                      mfa_verified AS \"mfa_verified!\", mfa_enrolled AS \"mfa_enrolled!\",\n                      mfa_policy AS \"mfa_policy!\",\n                      organization_policy AS \"organization_policy!\",\n                      settings AS \"settings!\", created_at AS \"created_at!\",\n                      last_seen_at AS \"last_seen_at!\", reauth_at\n                 FROM openseal_resolve_staff_session($1, $2)",
   "describe": {
     "columns": [
       {
@@ -50,6 +50,30 @@
         "name": "organization_policy!",
         "type_info": "Jsonb",
         "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "settings!",
+        "type_info": "Jsonb",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 10,
+        "name": "last_seen_at!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 11,
+        "name": "reauth_at",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
       }
     ],
     "parameters": {
@@ -66,8 +90,12 @@
       null,
       null,
       null,
+      null,
+      null,
+      null,
+      null,
       null
     ]
   },
-  "hash": "01509bbbc866c17917ceb59bde2c8ddbd168e2a1bf4f73664788035e2eff0afa"
+  "hash": "ba6c7bfa6d0b93afdf90948da37f1ba850ab33583238f3d2c88af2fdda0dc954"
 }

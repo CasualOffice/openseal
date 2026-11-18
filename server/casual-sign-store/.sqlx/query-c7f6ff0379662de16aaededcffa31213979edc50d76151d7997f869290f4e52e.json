@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE staff_sessions SET last_seen_at = $3 WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL AND last_seen_at < $3::timestamptz - interval '15 seconds'",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c7f6ff0379662de16aaededcffa31213979edc50d76151d7997f869290f4e52e"
+}

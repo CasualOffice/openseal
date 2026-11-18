@@ -253,7 +253,7 @@ is part of the public API or its compatibility promise. As built: docs/23 §5.6.
 
 ## As built (stage 2C, `casual-sign-server`)
 
-The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 161 operations (68 at stage 2C, 19 added by `WEB-06`, 9 by `WEB-19`, the rest by later rows; counted 2026-11-13), each with its `x-permission`
+The OpenAPI 3.1 document is [`api/openapi.yaml`](../api/openapi.yaml): 169 operations (68 at stage 2C, 19 added by `WEB-06`, 9 by `WEB-19`, 4 by `ASVS-06` and `ASVS-07`, the rest by later rows; counted 2026-11-19), each with its `x-permission`
 (the scope it needs, SEC-A05). The router is built from one table (`routes::table`), and a contract test keeps the
 table and the document equal in both directions, scope by scope. **As built (`ORG-07`):** `x-permission` names a
 workspace action of the catalogue (docs/23 §2.2, `users.invite`, `settings.sending`, ...) or an organization action
@@ -292,7 +292,8 @@ breached passwords, case ignored (`422 CS-API-0001`, field code `common_password
 changed or reset and a second factor added each email the user a notice with no secret (job `send_security_notice`).
 
 **Authentication (§2).** Local login (`POST /auth/login`, Argon2id, an unknown email costs a wrong password's time)
-gives an `HttpOnly`, `Secure`, `SameSite=Lax` session cookie (8 h) and a CSRF token every changing request echoes in
+gives an `HttpOnly`, `Secure`, `SameSite=Lax` session cookie (8 h by default, 30 minutes idle; the workspace's
+limits since `ASVS-06`, below) and a CSRF token every changing request echoes in
 `X-CSRF-Token`; `POST /auth/logout`; `GET /auth/session`. **Workspace switching (`ORG-04`, docs/23 §2.3):** `GET
 /auth/workspaces` lists, by organization, the workspaces the session's person holds an enabled membership in (read
 through the session's own hash, `openseal_user_workspaces`), the session's own marked `current`; `POST /auth/switch
@@ -467,6 +468,53 @@ All three are staff sessions only (`422 CS-API-0001` for a key or token) and are
 rate. Not built yet: WebAuthn (`CON-13`), replacing or resetting a
 lost factor and regenerating recovery codes (`ASVS-32`). The web app shows the code step and enrolment on the sign-in
 card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a QR code is `ASVS-33`.
+
+## As built (`ASVS-06`, `ASVS-07`, staff sessions and step-up)
+
+**Idle and absolute limits (`ASVS-06`).** Every request on a staff session is checked against its workspace's
+`settings.session_idle` and `settings.session_max_age` (seconds; `PATCH /accounts/me`, the `settings.security`
+action), each tightened by the organization's `session.idle` and `session.max_age` (ORG-08: tighten-only, so a looser
+workspace value is `422 CS-ORG-0002`, and the stricter applies on read). Defaults when neither sets one: **idle 30
+minutes, absolute 8 hours** (ASVS 3.3.2 at level 2); workspace bounds: idle 5 minutes to 12 hours, absolute 15
+minutes to 30 days. A session with no request for the idle limit, or older than the absolute limit counted from its
+sign-in, is `401 CS-AUTH-0002` with `detail` `idle` or `lifetime`; a shorter limit reaches sessions already open. A
+request counts as activity (written at most every 15 seconds); a workspace switch carries the sign-in's time and
+never extends it. A new sign-in's cookie and stored expiry are the workspace's absolute limit (the server's
+`session_ttl`, 8 h, when nothing sets one). The web app makes no background requests, so an unattended tab goes
+idle; only the document-analysis view polls while an analysis runs.
+
+**The person's own sessions (`ASVS-06`).**
+
+| Endpoint | As built |
+| --- | --- |
+| `GET /auth/sessions` | The caller's live sessions in **every workspace** they are an enabled member of (`openseal_own_sessions`, migration 0042), each workspace's limits applied: `{id, workspace: {id, name}, method, client, created_at, last_seen_at, idle_expires_at, expires_at, current}`, at most 200, most recently active first. `client` is a coarse browser and system name from a closed list ("Firefox on macOS"), never the User-Agent. Another user's sessions are never listed |
+| `DELETE /auth/sessions/{id}` | Ends one of the caller's other sessions (step-up). `404` for a session that is not theirs, has ended or does not exist alike; the calling session is `422` (use `POST /auth/logout`) |
+| `POST /auth/sessions/end-others` | Ends every other session of the caller in every workspace (step-up); `{ended}` |
+
+**Step-up (`ASVS-07`).** A session may take a sensitive action only within **five minutes** of proving its holder's
+password, and second factor when they have one: at sign-in, or by `POST /auth/reauthenticate {password, code?}` or
+`{password, recovery_code?}` (`{reauthenticated_until}`; `401 CS-AUTH-0007` wrong password, `401 CS-AUTH-0012` wrong or reused
+code, `422 CS-API-0001` at `/code` when a factor is owed and none was sent; rate-limited per user at the login rate;
+a TOTP code is single use, a recovery code is spent). Outside the window a sensitive call is `403 CS-AUTH-0013`
+(`detail` `reauthenticate`) and changes nothing. `GET /auth/session` answers `reauthenticated_until` (null when the
+window is closed). A workspace switch carries the last proof, never extends it. API keys and access tokens are not
+asked: they are credentials of their own, made by a member who signed in. The sensitive actions:
+
+- creating an API key or OAuth client (`POST /api-clients`);
+- changing a member's permission profile, setting another member's password (`PATCH /users/{id}`), and adding a
+  member with the administrator profile (`POST /users`);
+- creating or changing a permission profile (`POST`, `PATCH /permission-profiles…`);
+- organization roles (`POST /organizations/me/admins`, `PATCH /organizations/me/admins/{user}`) and the
+  organization's policy (`PATCH /organizations/me` with `policy`);
+- the workspace's security settings (`PATCH /accounts/me` with `mfa_policy`, `session_idle`, `session_max_age`);
+- a webhook's destination (`POST /webhooks`, `PATCH /webhooks/{id}` with `url`);
+- ending other sessions (above).
+
+A person's own new password already needs the current one (`PATCH /users/me`). No endpoint changes a user's email
+yet; when one is built it calls the same check (`Principal::require_recent_auth`). The web app's API client answers
+`CS-AUTH-0013` by asking for the password (and code) in a dialog (`webapp/stepup.js`) and repeating the call once;
+cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `factor`) and `auth.session_end` (with
+`scope` and `count`); a refused sensitive call is `access.denied` with `CS-AUTH-0013` (docs/65 §Logs).
 
 ## As built (`ASVS-05`, `ASVS-09`, `ASVS-26`)
 

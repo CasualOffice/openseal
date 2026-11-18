@@ -255,6 +255,13 @@
 .os-profile__h { font-size: var(--os-fs-16); margin: 0 0 var(--os-s2); }
 .os-profile__email { margin: 0; overflow-wrap: anywhere; }
 .os-profile__mark { margin-top: var(--os-s3); }
+/* ASVS-06: the person's sessions, in the profile panel. */
+.os-sessions { list-style: none; margin: var(--os-s2) 0; padding: 0; }
+.os-sessions__row { display: flex; align-items: center; justify-content: space-between; gap: var(--os-s3); padding: var(--os-s2) 0; border-top: 1px solid var(--os-border); }
+.os-sessions__row:first-child { border-top: 0; }
+.os-sessions__who { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--os-s1) var(--os-s2); min-width: 0; }
+.os-sessions__who .os-small { flex-basis: 100%; }
+.os-sessions__this { font-size: var(--os-fs-12, 0.75rem); font-weight: 600; color: var(--os-success, currentColor); }
 .os-profile__mark-head { display: flex; align-items: center; justify-content: space-between; gap: var(--os-s3); }
 .os-profile__mark-head .os-label { margin: 0; }
 /* A saved mark is a black-ink PNG: shown on white in both themes, as it will print. */

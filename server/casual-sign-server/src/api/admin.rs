@@ -107,7 +107,7 @@ struct AccountPatch {
 /// security, the workflow policy signing, branding its own, everything else sending.
 fn setting_action(key: &str) -> Action {
     match key {
-        "mfa_policy" => Action::SettingsSecurity,
+        "mfa_policy" | "session_idle" | "session_max_age" => Action::SettingsSecurity,
         "workflow_policy" => Action::SettingsSigning,
         "branding" => Action::BrandsManage,
         _ => Action::SettingsSending,
@@ -132,6 +132,18 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
         // Each key is its action's (ORG-07, docs/23 §2.2): the route needs
         // `settings.sending`, and a key of another kind needs its own action as well.
         c.p.require_action(setting_action(&k))?;
+        // Security settings only after a recent re-authentication (ASVS-07).
+        if setting_action(&k) == Action::SettingsSecurity {
+            c.p.require_recent_auth(c.st.now())?;
+        }
+        // The session limits (ASVS-06): seconds within the workspace bounds; the
+        // organization's tighten-only keys are checked below.
+        if (k == "session_idle" || k == "session_max_age")
+            && !v.is_null()
+            && !casual_sign_policy::org::valid_session_setting(&k, &v)
+        {
+            return Err(ApiError::invalid(&format!("/settings/{k}")));
+        }
         if k == "workflow_policy"
             && serde_json::from_value::<casual_sign_workflow::Policy>(v.clone()).is_err()
         {
@@ -710,6 +722,15 @@ pub(crate) async fn create_user(c: Call, body: Bytes) -> Result<Response, ApiErr
     let mut tx = c.tx().await?;
     let id = UserId(Uuid::now_v7());
     let profile = granted_profile(&c, &mut tx, &req.profile, id).await?;
+    // Making an administrator only after a recent re-authentication (ASVS-07).
+    if tx
+        .users()
+        .profile(profile)
+        .await?
+        .is_some_and(|p| p.kind == casual_sign_store::repo::accounts::ProfileKind::Admin)
+    {
+        c.p.require_recent_auth(c.st.now())?;
+    }
     // Seats are checked against the plan under the seat counters' lock, so two parallel
     // invites cannot both take the last seat (PLAN-04, `CS-PLAN-0003`).
     let seats = tx.gauge_lock(Meter::Seats).await?;
@@ -882,6 +903,11 @@ pub(crate) async fn patch_user(
     let target = member_in_scope(&c, &mut tx, id).await?;
     outranks(&c, &mut tx, &target).await?;
     let req: UserPatch = parse(&body)?;
+    // A role change, or setting another member's password, only after a recent
+    // re-authentication (ASVS-07). The user's own password needs the current one.
+    if req.profile.is_some() || (req.password.is_some() && id != c.p.user) {
+        c.p.require_recent_auth(c.st.now())?;
+    }
     if req.disabled.is_some() {
         c.p.require_action(Action::UsersDisable)?;
     }
@@ -1024,6 +1050,8 @@ struct ClientIn {
 /// (`client_id` + `client_secret`). The secret is in this response only (SEC-A10).
 pub(crate) async fn create_client(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let req: ClientIn = parse(&body)?;
+    // A new credential: only after a recent re-authentication (ASVS-07).
+    c.p.require_recent_auth(c.st.now())?;
     let kind = match req.kind.as_str() {
         "api_key" => ApiClientKind::ApiKey,
         "oauth_app" => ApiClientKind::OauthApp,
@@ -1176,10 +1204,12 @@ pub(crate) fn cookie(name: &str, value: &str, max_age: u64, secure: bool) -> Opt
 pub(crate) async fn login(
     State(st): State<AppState>,
     axum::Extension(ip): axum::Extension<ClientIp>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     let mut who = None;
-    let r = match login_inner(&st, ip, &body, &mut who).await {
+    let label = crate::auth::client_label(&headers);
+    let r = match login_inner(&st, ip, &body, label, &mut who).await {
         Ok(r) | Err(r) => r,
     };
     security::answered(&st, Kind::SignIn, &r, |ev| {
@@ -1207,6 +1237,7 @@ async fn login_inner(
     st: &AppState,
     ip: ClientIp,
     body: &[u8],
+    label: Option<String>,
     who: &mut Identified,
 ) -> Result<Response, Response> {
     let req: LoginIn = parse(body).map_err(IntoResponse::into_response)?;
@@ -1258,14 +1289,20 @@ async fn login_inner(
     let now = st.now();
     let secret = random_secret().map_err(IntoResponse::into_response)?;
     let csrf = random_secret().map_err(IntoResponse::into_response)?;
-    let expires = crate::state::plus_std(now, st.config().session_ttl)
-        .map_err(IntoResponse::into_response)?;
     let mut tx = st
         .store()
         .for_account(account)
         .begin()
         .await
         .map_err(|e| ApiError::from(e).into_response())?;
+    // The sign-in lasts the workspace's absolute limit (ASVS-06): `session_max_age`
+    // tightened by the organization's `session.max_age`, else the server's
+    // `session_ttl`. The guard also checks it on every request, so a later, shorter
+    // limit reaches this session too.
+    let ttl = session_ttl(st, &mut tx)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    let expires = crate::state::plus_std(now, ttl).map_err(IntoResponse::into_response)?;
     tx.sessions()
         .create(&NewSession {
             id: StaffSessionId(Uuid::now_v7()),
@@ -1275,6 +1312,10 @@ async fn login_inner(
             method: LoginMethod::Password,
             created_at: now,
             expires_at: expires,
+            last_seen_at: now,
+            // Signing in proves the password; a factor owed is passed next (ASVS-07).
+            reauth_at: Some(now),
+            client_label: label,
         })
         .await
         .map_err(|e| ApiError::from(e).into_response())?;
@@ -1291,13 +1332,32 @@ async fn login_inner(
     if let Some(v) = cookie(
         session_cookie(st.config().secure_cookies),
         &secret,
-        st.config().session_ttl.as_secs(),
+        ttl.as_secs(),
         st.config().secure_cookies,
     ) {
         r.headers_mut().insert(header::SET_COOKIE, v);
     }
     r.extensions_mut().insert(SecretBearing);
     Ok(r)
+}
+
+/// The absolute limit of a new sign-in to the transaction's workspace (ASVS-06): the
+/// stricter of its `session_max_age` and its organization's `session.max_age`, else the
+/// server's `session_ttl`.
+async fn session_ttl(st: &AppState, tx: &mut TenantTx) -> Result<std::time::Duration, ApiError> {
+    let a = tx.account().get().await?;
+    let org = tx.account().organization_policy().await?;
+    let set = casual_sign_policy::org::workspace_value(
+        casual_sign_policy::org::Key::SessionMaxAge,
+        &a.settings,
+    )
+    .is_some()
+        || org.get("session.max_age").is_some();
+    if !set {
+        return Ok(st.config().session_ttl);
+    }
+    let limits = casual_sign_policy::org::effective_session(&org, &a.settings);
+    Ok(std::time::Duration::from_secs(limits.max_age))
 }
 
 /// `POST /auth/logout`: end the current session.
@@ -1339,6 +1399,12 @@ pub(crate) async fn session(c: Call) -> Result<Response, ApiError> {
             "scopes": c.p.scopes, "admin": c.p.admin,
             "actions": c.p.actions.iter().map(|a| a.as_str()).collect::<Vec<_>>(),
             "second_factor": c.p.second_factor.as_str(),
+            // ASVS-07: until when sensitive actions are served without proving the
+            // password again; null when they need it now (and for keys and tokens,
+            // which are never asked).
+            "reauthenticated_until": c.p.reauth_until
+                .filter(|u| *u > c.st.now())
+                .map(rfc3339),
         }),
     ))
 }

@@ -192,6 +192,30 @@ components:
           description: The workspace actions held (ORG-07, docs/23 §2.2), narrowed by a key's scopes
           items: {$ref: '#/components/schemas/ActionName'}
         second_factor: {type: string, enum: [none, passed, verify, enrol]}
+        reauthenticated_until:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            Until when a staff session's sensitive actions are served without proving the
+            password again (ASVS-07); null when they need it now, and for API keys and
+            tokens, which are never asked
+    OwnSession:
+      type: object
+      description: One of the caller's own sessions (ASVS-06)
+      properties:
+        id: {type: string}
+        workspace:
+          type: object
+          properties:
+            id: {type: string}
+            name: {type: string}
+        method: {type: string, enum: [password, oidc, webauthn]}
+        client: {type: [string, 'null'], description: 'Browser and system, from a closed list ("Firefox on macOS")'}
+        created_at: {type: string, format: date-time}
+        last_seen_at: {type: string, format: date-time}
+        idle_expires_at: {type: [string, 'null'], format: date-time}
+        expires_at: {type: string, format: date-time}
+        current: {type: boolean}
     MyWorkspaces:
       type: object
       properties:
@@ -1467,6 +1491,101 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/MyWorkspaces'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/reauthenticate:
+    post:
+      operationId: reauthenticate
+      summary: "Prove the password again before a sensitive action (ASVS-07)"
+      description: >-
+        `password`, and when the user has a second factor also `code` (single use) or
+        `recovery_code` (spent). Opens a five-minute window in which the session's
+        sensitive actions are served; outside it they answer `403 CS-AUTH-0013` and the
+        client asks for this and repeats the request. `401 CS-AUTH-0007` for a wrong
+        password, `401 CS-AUTH-0012` for a wrong or reused code, `422 CS-API-0001`
+        (`/code`) when a factor is needed and none was sent. Rate-limited per user as
+        login is. A staff session only.
+      x-permission: ""
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [password]
+              properties:
+                password: {type: string}
+                code: {type: string}
+                recovery_code: {type: string}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reauthenticated_until: {type: string, format: date-time}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/sessions:
+    get:
+      operationId: listMySessions
+      summary: "The caller's own live sessions, in every workspace of theirs (ASVS-06)"
+      description: >-
+        Each workspace's idle and absolute limits applied; the calling session is marked
+        `current`. Another user's sessions are never listed. A staff session only.
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/OwnSession'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/sessions/end-others:
+    post:
+      operationId: endMyOtherSessions
+      summary: "End every other session of the caller (ASVS-06)"
+      description: >-
+        In every workspace. Needs a re-authentication within five minutes
+        (`403 CS-AUTH-0013`).
+      x-permission: ""
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ended: {type: integer}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/sessions/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    delete:
+      operationId: endMySession
+      summary: "End one of the caller's other sessions (ASVS-06)"
+      description: >-
+        `404` for a session that is not the caller's, has ended, or does not exist; the
+        calling session itself is `422` (use `POST /auth/logout`). Needs a
+        re-authentication within five minutes (`403 CS-AUTH-0013`).
+      x-permission: ""
+      responses:
+        '204': {description: Ended}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/auth/switch:
     post:
