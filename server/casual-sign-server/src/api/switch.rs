@@ -128,6 +128,11 @@ pub(crate) async fn switch(c: Call, body: Bytes) -> Result<Response, ApiError> {
             method: taken.method,
             created_at: taken.created_at,
             expires_at: taken.expires_at,
+            last_seen_at: now,
+            // The sign-in's last proof of the password holds here too, never extended
+            // (ASVS-07).
+            reauth_at: taken.reauth_at,
+            client_label: taken.client_label.clone(),
         })
         .await?;
     // The sign-in's second factor holds in the new workspace too (ASVS-01).

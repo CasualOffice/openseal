@@ -158,6 +158,8 @@ struct SubIn {
 pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let req: SubIn = parse(&body)?;
     check_url(&req.url)?;
+    // Where events go: only after a recent re-authentication (ASVS-07).
+    c.p.require_recent_auth(c.st.now())?;
     check_events(&req.event_types)?;
     let ok_ref = |r: &String| {
         (1..=64).contains(&r.len())
@@ -283,6 +285,8 @@ pub(crate) async fn patch(
     let req: SubPatch = parse(&body)?;
     if let Some(u) = &req.url {
         check_url(u)?;
+        // A new destination only after a recent re-authentication (ASVS-07).
+        c.p.require_recent_auth(c.st.now())?;
     }
     if let Some(t) = &req.event_types {
         check_events(t)?;

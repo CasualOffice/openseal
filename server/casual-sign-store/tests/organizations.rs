@@ -1192,6 +1192,9 @@ async fn session(db: &TestDb, account: AccountId, user: UserId, tag: &str) {
             method: LoginMethod::Password,
             created_at: now(),
             expires_at: now() + time::Duration::hours(8),
+            last_seen_at: now(),
+            reauth_at: None,
+            client_label: None,
         })
         .await
         .unwrap();

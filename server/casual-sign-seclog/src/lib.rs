@@ -153,11 +153,17 @@ pub enum Kind {
     /// Abnormal activity detected: a principal or client address over a detection
     /// threshold (`ASVS-13`, ASVS 8.1.4, 11.1.7, 11.1.8), or the detector's table full.
     Alert,
+    /// A staff re-authentication before a sensitive action (`ASVS-07`): the password and
+    /// any second factor proved again, or refused.
+    Reauth,
+    /// Other sessions of a staff user ended by them from a session of theirs
+    /// (`ASVS-06`), with how many.
+    SessionEnd,
 }
 
 impl Kind {
     /// Every kind.
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 22] = [
         Self::SignIn,
         Self::SignOut,
         Self::Mfa,
@@ -178,6 +184,8 @@ impl Kind {
         Self::CallerRefused,
         Self::BackendFailed,
         Self::Alert,
+        Self::Reauth,
+        Self::SessionEnd,
     ];
 
     /// The name in the line's `kind`.
@@ -204,6 +212,8 @@ impl Kind {
             Self::CallerRefused => "transport.caller_refused",
             Self::BackendFailed => "transport.backend_failed",
             Self::Alert => "alert.abnormal_activity",
+            Self::Reauth => "auth.reauthenticate",
+            Self::SessionEnd => "auth.session_end",
         }
     }
 
@@ -225,7 +235,9 @@ impl Kind {
             | Self::Lockout
             | Self::UploadRefused
             | Self::DocumentRead
-            | Self::Alert => &[Server],
+            | Self::Alert
+            | Self::Reauth
+            | Self::SessionEnd => &[Server],
             Self::KeyUse => &[Keyd],
             Self::CallerRefused => &[Keyd, Modeld],
             Self::BackendFailed => &[Worker],

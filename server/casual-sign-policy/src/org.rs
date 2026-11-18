@@ -160,6 +160,8 @@ impl Key {
             Key::RemindersDefault => Some("first_reminder_days"),
             Key::LocaleDateFormat => Some("workflow_policy.date_format"),
             Key::BrandingDefaultBrand => Some("branding"),
+            Key::SessionIdle => Some("session_idle"),
+            Key::SessionMaxAge => Some("session_max_age"),
             _ => None,
         }
     }
@@ -648,6 +650,65 @@ pub fn effective_mfa(org: &Value, setting: &str) -> &'static str {
     }
 }
 
+/// A staff session's idle limit when neither the workspace nor its organization sets
+/// one: 30 minutes (ASVS-06, ASVS 3.3.2 at level 2).
+pub const DEFAULT_SESSION_IDLE: u64 = 1_800;
+/// A staff session's absolute limit when neither sets one: 8 hours (ASVS-06).
+pub const DEFAULT_SESSION_MAX_AGE: u64 = 28_800;
+/// The shortest idle limit a workspace may set, in seconds: 5 minutes.
+pub const MIN_SESSION_IDLE: u64 = 300;
+/// The longest idle limit a workspace may set: 12 hours.
+pub const MAX_SESSION_IDLE: u64 = 43_200;
+/// The shortest absolute limit a workspace may set: 15 minutes.
+pub const MIN_SESSION_MAX_AGE: u64 = 900;
+/// The longest absolute limit a workspace may set: 30 days.
+pub const MAX_SESSION_MAX_AGE: u64 = 2_592_000;
+
+/// The limits a workspace's staff sessions run under, in seconds (ASVS-06).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionLimits {
+    /// A session with no request for this long has ended.
+    pub idle: u64,
+    /// A session this long after its sign-in has ended.
+    pub max_age: u64,
+}
+
+/// Whether `v` is a value a workspace may store for `session_idle` or
+/// `session_max_age` (seconds, within the workspace bounds above).
+#[must_use]
+pub fn valid_session_setting(setting: &str, v: &Value) -> bool {
+    match setting {
+        "session_idle" => int_in(v, MIN_SESSION_IDLE, MAX_SESSION_IDLE),
+        "session_max_age" => int_in(v, MIN_SESSION_MAX_AGE, MAX_SESSION_MAX_AGE),
+        _ => false,
+    }
+}
+
+/// The idle and absolute limits of a workspace's staff sessions: the stricter of the
+/// workspace's `session_idle` / `session_max_age` and its organization's `session.idle`
+/// / `session.max_age` (tighten-only, so [`effective`] already picks the stricter), the
+/// defaults where neither sets one. An unreadable organization policy fails closed, to
+/// the shortest limits a workspace may set.
+#[must_use]
+pub fn effective_session(org: &Value, settings: &Value) -> SessionLimits {
+    let Ok(policy) = OrgPolicy::parse(org) else {
+        return SessionLimits {
+            idle: MIN_SESSION_IDLE,
+            max_age: MIN_SESSION_MAX_AGE,
+        };
+    };
+    let mut e = effective(&policy, settings);
+    let mut take = |key: Key, dflt: u64| {
+        e.remove(&key)
+            .and_then(|x| x.value.as_u64())
+            .unwrap_or(dflt)
+    };
+    SessionLimits {
+        idle: take(Key::SessionIdle, DEFAULT_SESSION_IDLE),
+        max_age: take(Key::SessionMaxAge, DEFAULT_SESSION_MAX_AGE),
+    }
+}
+
 /// The first security key a change from `old` to `new` loosens: unlocks, removes, or
 /// sets looser than before. Loosening security is reserved to an organization owner
 /// (`403 CS-ORG-0013`, `SEC-O11`).
@@ -841,5 +902,34 @@ mod tests {
         // Defaults are not security: changing them is an admin's.
         let a = pol(json!({"reminders.default": {"value": 1, "locked": true}}));
         assert_eq!(loosened(&a, &OrgPolicy::default()), None);
+    }
+
+    #[test]
+    fn session_limits_take_the_stricter_of_workspace_and_organization() {
+        let none = json!({});
+        let d = effective_session(&none, &json!({}));
+        assert_eq!((d.idle, d.max_age), (1_800, 28_800));
+        // The workspace's own, when the organization sets nothing.
+        let w = effective_session(
+            &none,
+            &json!({"session_idle": 600, "session_max_age": 3_600}),
+        );
+        assert_eq!((w.idle, w.max_age), (600, 3_600));
+        // The organization's when it is stricter, or the workspace sets nothing.
+        let org = json!({"session.idle": {"value": 900}, "session.max_age": {"value": 7_200}});
+        let o = effective_session(&org, &json!({"session_idle": 1_200}));
+        assert_eq!((o.idle, o.max_age), (900, 7_200));
+        let o = effective_session(&org, &json!({"session_idle": 300}));
+        assert_eq!(o.idle, 300);
+        // A looser workspace write is refused (tighten-only).
+        let p = pol(org.clone());
+        assert!(check_write(&p, &json!({}), &json!({"session_idle": 1_200})).is_err());
+        assert!(check_write(&p, &json!({}), &json!({"session_idle": 600})).is_ok());
+        // Unreadable policy: the shortest limits.
+        let bad = effective_session(&json!({"nope": 1}), &json!({}));
+        assert_eq!((bad.idle, bad.max_age), (300, 900));
+        assert!(valid_session_setting("session_idle", &json!(300)));
+        assert!(!valid_session_setting("session_idle", &json!(299)));
+        assert!(!valid_session_setting("session_max_age", &json!(2_592_001)));
     }
 }
