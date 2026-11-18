@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT keep_days FROM retention_rules WHERE account_id = $1 AND data_class = $2 FOR UPDATE",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "keep_days",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "retention_rules",
+            "name": "keep_days"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "bbe1f6c4cb53979a1728b5f5a78d59b327e00f6755da56cb842a2408a28537ab"
+}

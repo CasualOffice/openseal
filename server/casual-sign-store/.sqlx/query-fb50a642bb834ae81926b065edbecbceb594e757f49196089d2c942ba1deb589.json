@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE bulk_send_rows SET input = '{}'::jsonb WHERE account_id = $1 AND envelope_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb50a642bb834ae81926b065edbecbceb594e757f49196089d2c942ba1deb589"
+}

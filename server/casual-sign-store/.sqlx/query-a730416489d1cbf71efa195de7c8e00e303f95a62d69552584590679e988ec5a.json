@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM staff_sessions AS s\n               JOIN retention_rules AS r ON r.account_id = s.account_id AND r.data_class = 'sessions'\n              WHERE s.account_id = $1\n                AND LEAST(COALESCE(s.revoked_at, s.expires_at), s.expires_at)\n                    + make_interval(days => r.keep_days) <= $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "a730416489d1cbf71efa195de7c8e00e303f95a62d69552584590679e988ec5a"
+}
