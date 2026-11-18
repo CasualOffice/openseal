@@ -77,7 +77,9 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(39, "0039_organization_policy.sql"),
     migration!(40, "0040_keyd_seal_tokens.sql"),
     migration!(41, "0041_chain_anchors.sql"),
-    migration!(42, "0042_password_rehash.sql"),
+    migration!(42, "0042_staff_session_activity.sql"),
+    migration!(43, "0043_mfa_key_rotation.sql"),
+    migration!(44, "0044_password_rehash.sql"),
 ];
 
 /// The migration ledger. Also the first statement of migration 0001.

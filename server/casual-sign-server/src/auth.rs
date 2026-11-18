@@ -16,6 +16,7 @@ use casual_sign_store::{
     AccountId, ApiClientId, GroupId, MfaPolicy, OrganizationAdmin, PermissionProfileId,
     StaffSessionId, TenantTx, UserId,
 };
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::authz::{self, Action, Actor, Grant, Membership};
@@ -50,6 +51,21 @@ pub(crate) fn session_cookie(secure: bool) -> &'static str {
 }
 /// The header that carries a staff session's CSRF token.
 pub(crate) const CSRF_HEADER: &str = "x-csrf-token";
+/// How long a proof of the password (and second factor) lets a session take sensitive
+/// actions (ASVS-07, docs/40 §2): five minutes, at sign-in and after
+/// `POST /auth/reauthenticate`.
+pub const STEP_UP_WINDOW_SECS: i64 = 300;
+
+/// Whether `secs` seconds after `start` is at or before `now`: a limit counted from
+/// `start` has run out. A limit beyond the calendar never runs out.
+#[must_use]
+pub fn ran_out(start: OffsetDateTime, secs: u64, now: OffsetDateTime) -> bool {
+    let secs = i64::try_from(secs).unwrap_or(i64::MAX);
+    start
+        .checked_add(time::Duration::seconds(secs))
+        .is_some_and(|end| end <= now)
+}
+
 /// API keys start with this, for secret scanning (SEC-A10).
 pub(crate) const API_KEY_PREFIX: &str = "osk_";
 
@@ -147,6 +163,11 @@ pub struct Principal {
     /// A session's second factor; only [`crate::routes::Access::SigningIn`] routes
     /// serve a session that owes one.
     pub second_factor: SecondFactor,
+    /// Until when a session may take sensitive actions without proving the password
+    /// again (ASVS-07): its last re-authentication plus `STEP_UP_WINDOW_SECS`. `None`
+    /// for a session that never proved it, and for API keys and tokens, which are not
+    /// asked (they are credentials of their own, made by a member who signed in).
+    pub reauth_until: Option<OffsetDateTime>,
 }
 
 impl Principal {
@@ -208,6 +229,23 @@ impl Principal {
 }
 
 impl Principal {
+    /// Refuse a staff session that has not proved its holder's password (and second
+    /// factor) within the last `STEP_UP_WINDOW_SECS` (`403 CS-AUTH-0013`, ASVS-07):
+    /// called by every sensitive action (docs/40 §2 lists them). API keys and access
+    /// tokens pass.
+    ///
+    /// # Errors
+    ///
+    /// `CS-AUTH-0013`.
+    pub fn require_recent_auth(&self, now: OffsetDateTime) -> Result<(), ApiError> {
+        match self.credential {
+            Credential::Session(_) if self.reauth_until.is_none_or(|u| u <= now) => {
+                Err(ApiError::reauthentication_required())
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Refuse unless the workspace action is held (`CS-AUTH-0006`; ORG-07).
     ///
     /// # Errors
@@ -299,6 +337,49 @@ pub(crate) fn cookie<'h>(headers: &'h HeaderMap, name: &str) -> Option<&'h str> 
         .map(|(_, v)| v)
 }
 
+/// A coarse name for the browser and system a `User-Agent` names, from a closed list
+/// ("Firefox on macOS"), so a person can tell their sessions apart (ASVS-06). Never the
+/// header itself: nothing it holds beyond these words is kept.
+#[must_use]
+pub fn client_label(headers: &HeaderMap) -> Option<String> {
+    let ua = headers.get(header::USER_AGENT)?.to_str().ok()?;
+    let has = |s: &str| ua.contains(s);
+    let browser = if has("Edg/") {
+        "Edge"
+    } else if has("OPR/") || has("Opera") {
+        "Opera"
+    } else if has("Firefox/") || has("FxiOS/") {
+        "Firefox"
+    } else if has("Chrome/") || has("CriOS/") || has("Chromium/") {
+        "Chrome"
+    } else if has("Safari/") {
+        "Safari"
+    } else if has("curl/") {
+        "curl"
+    } else {
+        "Browser"
+    };
+    let system = if has("iPhone") || has("iPad") {
+        Some("iOS")
+    } else if has("Android") {
+        Some("Android")
+    } else if has("Mac OS X") || has("Macintosh") {
+        Some("macOS")
+    } else if has("Windows") {
+        Some("Windows")
+    } else if has("CrOS") {
+        Some("ChromeOS")
+    } else if has("Linux") {
+        Some("Linux")
+    } else {
+        None
+    };
+    Some(match system {
+        Some(sys) => format!("{browser} on {sys}"),
+        None => browser.to_owned(),
+    })
+}
+
 fn bearer(headers: &HeaderMap) -> Option<&str> {
     let v = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let (scheme, token) = v.split_once(' ')?;
@@ -357,6 +438,7 @@ async fn as_member(
         profile: profile.id,
         admin_scope,
         second_factor: SecondFactor::NotOwed,
+        reauth_until: None,
     })
 }
 
@@ -447,6 +529,17 @@ pub(crate) async fn authenticate(
             .ok_or_else(ApiError::unauthenticated)?;
         // A refusal from here on names the session's holder (ASVS-08).
         crate::security::identify(s.user_id.0, s.account_id.0, None);
+        // The workspace's idle and absolute limits, tightened by its organization's,
+        // read afresh on every request so a shorter limit reaches open sessions
+        // (ASVS-06, docs/40 §2).
+        let limits =
+            casual_sign_policy::org::effective_session(&s.organization_policy, &s.settings);
+        if ran_out(s.last_seen_at, limits.idle, now) {
+            return Err(ApiError::expired().detail("idle"));
+        }
+        if ran_out(s.created_at, limits.max_age, now) {
+            return Err(ApiError::expired().detail("lifetime"));
+        }
         if !is_safe(method) {
             let sent = headers
                 .get(CSRF_HEADER)
@@ -466,6 +559,12 @@ pub(crate) async fn authenticate(
         )
         .await?;
         p.second_factor = SecondFactor::of(s.mfa_verified, s.mfa_enrolled, s.mfa_policy, p.admin);
+        p.reauth_until = s
+            .reauth_at
+            .and_then(|at| at.checked_add(time::Duration::seconds(STEP_UP_WINDOW_SECS)));
+        // The request counts as activity (written at most every 15 s).
+        tx.sessions().touch(s.session_id, now).await?;
+        tx.commit().await?;
         return Ok(p);
     }
     Err(ApiError::unauthenticated())
@@ -515,6 +614,33 @@ mod tests {
         }
         assert_eq!(Verify.owed(), Some("verify"));
         assert_eq!(Passed.owed(), None);
+    }
+
+    #[test]
+    fn a_client_label_names_only_browser_and_system() {
+        let of = |ua: &'static str| {
+            let mut h = HeaderMap::new();
+            h.insert(header::USER_AGENT, HeaderValue::from_static(ua));
+            client_label(&h)
+        };
+        assert_eq!(
+            of("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15").as_deref(),
+            Some("Safari on macOS")
+        );
+        assert_eq!(
+            of("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 Edg/120.0").as_deref(),
+            Some("Edge on Windows")
+        );
+        assert_eq!(of("secret-token-in-ua").as_deref(), Some("Browser"));
+        assert_eq!(client_label(&HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn a_limit_runs_out_at_its_end_not_before() {
+        let t = OffsetDateTime::UNIX_EPOCH;
+        assert!(!ran_out(t, 60, t + time::Duration::seconds(59)));
+        assert!(ran_out(t, 60, t + time::Duration::seconds(60)));
+        assert!(!ran_out(t, u64::MAX, t + time::Duration::days(3650)));
     }
 
     #[test]

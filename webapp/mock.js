@@ -1492,6 +1492,85 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     fail(404, "CS-API-0002", "Not found");
   }
 
+  /// Until when the session's sensitive actions are served (ASVS-07): five minutes after
+  /// its sign-in or last re-authentication, as an RFC 3339 instant; null once passed.
+  function recentUntil() {
+    const at = db.session?.reauth;
+    if (typeof at !== "number") return null;
+    const until = at + 5 * 60_000;
+    return now().getTime() < until ? new Date(until).toISOString() : null;
+  }
+
+  /// The calls the server asks a recent re-authentication for (docs/40 §2, ASVS-07).
+  function sensitive(method, res, id, sub, body) {
+    if (res === "api-clients" && !id && method === "POST") return true;
+    if (res === "users" && id && id !== "me" && method === "PATCH" && body && ("profile" in body || "password" in body)) return true;
+    if (res === "users" && !id && method === "POST" && body?.profile === "admin") return true;
+    if (res === "webhooks" && !id && method === "POST") return true;
+    if (res === "webhooks" && id && !sub && method === "PATCH" && body && "url" in body) return true;
+    if (res === "accounts" && id === "me" && method === "PATCH" && body?.settings
+      && ["mfa_policy", "session_idle", "session_max_age"].some((k) => k in body.settings)) return true;
+    if (res === "organizations" && id === "me" && !sub && method === "PATCH" && body && "policy" in body) return true;
+    if (res === "organizations" && id === "me" && sub === "admins" && (method === "POST" || method === "PATCH")) return true;
+    if (res === "permission-profiles" && (method === "POST" || method === "PATCH")) return true;
+    if (res === "auth" && id === "sessions" && (method === "DELETE" || (method === "POST" && sub === "end-others"))) return true;
+    return false;
+  }
+
+  /// `POST /auth/reauthenticate`, as the server: the demo password, and a fresh six-digit
+  /// code when the demo user has a second factor.
+  function reauthenticate(body) {
+    for (const k of Object.keys(body || {})) if (!["password", "code", "recovery_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+    if (body?.password !== MOCK.password) fail(401, "CS-AUTH-0007", "Invalid credentials");
+    if (db.mfa?.confirmed) {
+      const c = typeof body?.code === "string" ? body.code.trim() : null;
+      if (c == null) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/code", code: "CS-API-0001" }]);
+      if (!/^[0-9]{6}$/.test(c) || db.mfa.used.includes(c)) fail(401, "CS-AUTH-0012", "Second factor refused");
+      db.mfa.used.push(c);
+    }
+    db.session.reauth = now().getTime();
+    save();
+    return json(200, { reauthenticated_until: recentUntil() });
+  }
+
+  /// The demo user's sessions (ASVS-06): this one, and two others seeded the first time
+  /// the list is asked for (a phone in this workspace, a laptop in the other one).
+  function ownSessions(method, sub, here) {
+    db.otherSessions ||= [
+      { id: "session-phone", workspace: { id: "acct-demo", name: "Demo account" }, method: "password", client: "Safari on iOS", created_at: iso(-180), last_seen_at: iso(-12) },
+      { id: "session-laptop", workspace: { id: "acct-legal", name: "Legal" }, method: "password", client: "Firefox on Windows", created_at: iso(-300), last_seen_at: iso(-25) },
+    ];
+    if (!db.session.id) db.session.id = uid();
+    const workspaces = organization().workspaces;
+    const mine = {
+      id: db.session.id,
+      workspace: { id: here, name: here === "acct-demo" ? account().name : workspaces.find((w) => w.id === here)?.name || here },
+      method: "password", client: db.session.client || null,
+      created_at: db.session.at || iso(), last_seen_at: iso(),
+      current: true,
+    };
+    const row = (s) => ({ ...s, idle_expires_at: new Date(Date.parse(s.last_seen_at) + 30 * 60_000).toISOString(), expires_at: new Date(Date.parse(s.created_at) + 8 * 3600_000).toISOString(), current: false });
+    if (method === "GET" && !sub) {
+      const cur = { ...mine, idle_expires_at: iso(30), expires_at: new Date(Date.parse(mine.created_at) + 8 * 3600_000).toISOString() };
+      return json(200, { items: [cur, ...db.otherSessions.map(row)] });
+    }
+    if (method === "POST" && sub === "end-others") {
+      const n = db.otherSessions.length;
+      db.otherSessions = [];
+      save();
+      return json(200, { ended: n });
+    }
+    if (method === "DELETE" && sub) {
+      if (sub === db.session.id) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/id", code: "CS-API-0001" }]);
+      const before = db.otherSessions.length;
+      db.otherSessions = db.otherSessions.filter((s) => s.id !== sub);
+      if (db.otherSessions.length === before) fail(404, "CS-API-0002", "Not found");
+      save();
+      return json(204, null);
+    }
+    fail(405, "CS-API-0012", "Method not allowed");
+  }
+
   async function staff(method, parts, query, headers, body) {
     if (!db.session) fail(401, "CS-AUTH-0001", "Not authenticated");
     if (method !== "GET" && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
@@ -1513,11 +1592,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       for (const k of Object.keys(body || {})) if (k !== "account_id") fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
       if (typeof body?.account_id !== "string") fail(422, "CS-API-0001", "Invalid request", [{ pointer: "/account_id", code: "type" }]);
       if (!spaces.some((w) => w.id === body.account_id)) fail(403, "CS-ORG-0001", "Not a member of that workspace");
-      db.session = { csrf: uid(), account: body.account_id, mfa: db.session.mfa === true };
+      db.session = { csrf: uid(), account: body.account_id, mfa: db.session.mfa === true, id: uid(), reauth: db.session.reauth ?? null, at: db.session.at || iso(), client: db.session.client || null };
       return json(200, { account_id: body.account_id, user_id: "user-demo", csrf_token: db.session.csrf, expires_at: iso(60 * 12) });
     }
     if (res === "auth" && id === "session" && method === "GET") {
-      return json(200, { account_id: here, user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true, second_factor: secondFactor() });
+      return json(200, { account_id: here, user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true, second_factor: secondFactor(), reauthenticated_until: recentUntil() });
     }
     if (res === "auth" && id === "logout" && method === "POST") { db.session = null; return json(204, null); }
     // The staff second factor (ASVS-01), as the server: a TOTP code is six digits (the
@@ -1525,6 +1604,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "auth" && id === "mfa") return mfa(method, sub, subId, body);
     const owed = secondFactor();
     if (owed === "verify" || owed === "enrol") fail(403, "CS-AUTH-0011", "Second factor required", undefined, owed);
+    // ASVS-06, ASVS-07, as the server: the person's own sessions and re-authentication.
+    if (res === "auth" && id === "reauthenticate" && method === "POST") return reauthenticate(body);
+    if (sensitive(method, res, id, sub, body) && !recentUntil()) fail(403, "CS-AUTH-0013", "Recent re-authentication required", undefined, "reauthenticate");
+    if (res === "auth" && id === "sessions") return ownSessions(method, sub, here);
     if (res === "accounts" && id === "me") {
       // Settings and branding (WEB-06 AD-01), as the server (`AccountPatch`): `PATCH
       // {settings}` only, merged, `null` removing a key; answers `{settings}`. The
@@ -2657,7 +2740,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     try {
       if (url.pathname === "/api/v1/auth/login" && method === "POST") {
         if (body?.email?.toLowerCase() !== MOCK.email || body?.password !== MOCK.password) fail(401, "CS-AUTH-0007", "Invalid credentials");
-        db.session = { csrf: uid() };
+        db.session = { csrf: uid(), id: uid(), reauth: now().getTime(), at: iso(), client: "Chrome on macOS" };
         save();
         return json(200, { account_id: "acct-demo", user_id: "user-demo", csrf_token: db.session.csrf, expires_at: iso(60 * 12) });
       }

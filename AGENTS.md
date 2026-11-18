@@ -86,7 +86,7 @@ Claude attribution or e-mail (instruction 57).
   B-LT default, Verify accessibility scan and demo, public anchoring `FG-158`, ADR-037). `E2E-11` and `E2E-12` are fixed in part or wait on their gate (`E2E-07` to `E2E-09` closed).
 - **Left before production use:** the external penetration test (`HRD-05`), load numbers (`HRD-04`), the rest of
   production hardening (`HRD-06`, `HRD-11`, `HRD-12`), the accessibility audit (`A11Y-01`), counsel's review
-  (`LEG-02`), and the open ASVS findings: 12 requirements Not met and 32 Partly in
+  (`LEG-02`), and the open ASVS findings: 9 requirements Not met and 31 Partly in
   [67](docs/67-ASVS-SELF-ASSESSMENT.md), a self-assessment, not a certification.
   [96](docs/96-FEATURE-FIT-GAP.md) counts 50 of 168 rows working end to end, 27 in part and 15 with their engine built.
 - **Exact state per item:** [14](docs/14-EXECUTION-TRACKER.md); phases, milestones and the hardening gate:

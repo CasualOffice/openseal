@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -39,6 +40,18 @@ class Build(unittest.TestCase):
         self.assertIn(f"  migrate:\n    image: {PREFIX}-server:0.0.2@{D1}\n", compose)
         self.assertIn(f"  keyd:\n    image: {PREFIX}-keyd:0.0.2@{D3}\n", compose)
         self.assertIn(f"OPENSEAL_IMAGE_PREFIX={PREFIX}\nOPENSEAL_VERSION=0.0.2\n", files["openseal-release.env"])
+
+    def test_every_openseal_service_of_the_profile_is_pinned(self) -> None:
+        # HRD-11: the profile runs a second server replica; every service that runs an
+        # OpenSeal image must take the signed digest, not only the first of each kind.
+        profile = (Path(__file__).resolve().parent.parent.parent / "deploy" / "compose.production.yml").read_text()
+        body = profile.split("\nservices:\n", 1)[1].split("\nnetworks:\n", 1)[0]
+        names = re.findall(r"^  ([a-z0-9-]+):\n", body, re.M)
+        third_party = {"postgres", "s3", "proxy"}  # pinned by digest in the profile itself
+        self.assertIn("server-2", names)
+        compose = pr.render(pr.build_release("0.0.2", images()))["compose.release.yml"]
+        for svc in sorted(set(names) - third_party):
+            self.assertIn(f"  {svc}:\n    image: ", compose, svc)
 
     def test_same_input_same_bytes_and_round_trips_through_images_json(self) -> None:
         a = pr.render(pr.build_release("0.0.2", images()))

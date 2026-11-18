@@ -182,6 +182,10 @@ pub(crate) async fn patch_organization(c: Call, body: Bytes) -> Result<Response,
     if req.name.is_none() && req.policy.is_none() {
         return Err(ApiError::invalid("/"));
     }
+    // The organization's policy only after a recent re-authentication (ASVS-07).
+    if req.policy.is_some() {
+        c.p.require_recent_auth(c.st.now())?;
+    }
     if let Some(name) = &req.name {
         let name = name_of(name)?;
         tx.rename(&name).await?;
@@ -361,6 +365,8 @@ pub(crate) async fn add_admin(c: Call, body: Bytes) -> Result<Response, ApiError
     let (mut tx, _) = begin(&c, OrgAction::AdminsManage).await?;
     let req: AdminIn = parse(&body)?;
     let role = role_of(&req.role)?;
+    // An organization role only after a recent re-authentication (ASVS-07).
+    c.p.require_recent_auth(c.st.now())?;
     let user = UserId(Uuid::parse_str(&req.user_id).map_err(|_| ApiError::invalid("/user_id"))?);
     if user == c.p.user {
         return Err(ApiError::grant_refused(
@@ -393,6 +399,7 @@ pub(crate) async fn patch_admin(
     let user = admin_path(&user)?;
     tx.admin(user).await?.ok_or_else(ApiError::not_found)?;
     let req: AdminPatch = parse(&body)?;
+    c.p.require_recent_auth(c.st.now())?;
     let role = role_of(&req.role)?;
     if user == c.p.user {
         return Err(ApiError::grant_refused(

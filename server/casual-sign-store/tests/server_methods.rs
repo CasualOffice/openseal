@@ -75,6 +75,9 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
                 method: LoginMethod::Password,
                 created_at: now(),
                 expires_at: now() + time::Duration::hours(8),
+                last_seen_at: now(),
+                reauth_at: None,
+                client_label: None,
             })
             .await
             .unwrap();
@@ -249,6 +252,9 @@ async fn every_server_method_refuses_another_accounts_ids(rls: Rls) {
             method: LoginMethod::Password,
             created_at: now(),
             expires_at: now() + time::Duration::hours(8),
+            last_seen_at: now(),
+            reauth_at: None,
+            client_label: None,
         })
         .await
         .unwrap_err();
@@ -510,6 +516,9 @@ async fn engine_state_tokens_and_sessions_behave() {
             method: LoginMethod::Password,
             created_at: now(),
             expires_at: now() + time::Duration::hours(1),
+            last_seen_at: now(),
+            reauth_at: None,
+            client_label: None,
         })
         .await
         .unwrap();

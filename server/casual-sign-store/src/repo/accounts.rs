@@ -1382,7 +1382,7 @@ impl Users<'_> {
     /// Replace an enabled local member's password hash (an Argon2id PHC string) with
     /// `phc`, the same password hashed under the current pepper, while the stored hash is
     /// still `expected` (the one a sign-in just verified; ASVS 2.4.5, `ASVS-29`, migration
-    /// 0042). The password is unchanged, so no session ends. Returns whether it was
+    /// 0044). The password is unchanged, so no session ends. Returns whether it was
     /// replaced: `false` when the hash changed meanwhile.
     ///
     /// # Errors

@@ -669,8 +669,9 @@ request that reads or writes settings, login, send) and the worker (retention, r
   replaces the whole document and appends `organization.policy_changed` with each changed key; loosening, unlocking or
   removing a security key (`loosened`) is an owner's alone (`403 CS-ORG-0013`). `GET /organizations/me` answers it.
 - **Workspace writes.** The keys that govern a workspace setting today are `login.mfa_required` (`mfa_policy`),
-  `reminders.default` (`first_reminder_days`), `locale.date_format` (`workflow_policy.date_format`) and
-  `branding.default_brand` (`branding`). `PATCH /accounts/me` runs `check_write`: a governed setting that changes to a
+  `reminders.default` (`first_reminder_days`), `locale.date_format` (`workflow_policy.date_format`),
+  `branding.default_brand` (`branding`), and since `ASVS-06` `session.idle` (`session_idle`) and `session.max_age`
+  (`session_max_age`), seconds. `PATCH /accounts/me` runs `check_write`: a governed setting that changes to a
   locked key, or to a value looser than a tighten-only key, is `422 CS-ORG-0002` naming the setting and the key; a
   setting that does not change is not checked, so an unrelated edit of a workspace that predates a tightening saves.
 - **Reads and sign-in.** `GET /accounts/me` answers `organization_policy.settings`, per governed setting
@@ -678,8 +679,10 @@ request that reads or writes settings, login, send) and the worker (retention, r
   lock with "Set by your organization" and disable the locked inputs. The staff-session resolver answers the
   organization's policy (migration 0039) and the server applies `effective_mfa`, the stricter of the workspace's
   `mfa_policy` and the organization's `login.mfa_required`, on every request, without rewriting the workspace.
+  Likewise the session limits (`ASVS-06`, migration 0042): `effective_session` takes the stricter of each workspace
+  and organization value (defaults 30 minutes idle, 8 hours absolute) on every request (docs/40 As built).
 - **Not yet enforced.** Keys with no workspace setting are validated and stored only: seal profiles and recipient
-  methods at send, session times, the IP list, password rules, API and webhook hosts, frame ancestors, retention and
+  methods at send, the IP list, password rules, API and webhook hosts, frame ancestors, retention and
   region labels (`ORG-39`). Locked defaults are checked on writes but not yet fixed into new envelopes (`ORG-40`).
   The workflow context still takes the workspace's stored policy, so no organization change reaches a sent envelope.
 
@@ -895,7 +898,7 @@ workspace (organization admins can too); view usage; and turn self-sign-up on (Q
 
 | Service | Ops listener (`OPENSEAL_OPS_LISTEN`, loopback by default, never the public port) | Key metrics (Prometheus text; no personal data, no account ids as labels) |
 | --- | --- | --- |
-| server | `/livez`, `/readyz` (DB, blob store), `/metrics` | requests by route template and status, latency, rate-limit refusals, `CS-*` counts by code, login failures |
+| server | `/livez`, `/readyz` (DB; `503` while draining before a stop, `HRD-11`; built 2026-11-19, listening only when `OPENSEAL_OPS_LISTEN` is set; the production profile sets `0.0.0.0:9090`, unpublished, for its proxy), `/metrics` (not yet). The blob store is not in readiness, a change from this design's first draft: with several replicas behind a proxy, a shared store's outage would take every replica out and refuse even the requests that do not need it | requests by route template and status, latency, rate-limit refusals, `CS-*` counts by code, login failures |
 | worker | same (DB, blob store, SMTP, keyd reachable) | jobs claimed, done, retried and dead by kind and code; seal duration; TSA latency and failures by endpoint; webhook and e-mail failures |
 | keyd | none: `health` over its own protocol, read by the console and the worker's `/readyz` | signatures by alias and outcome, latency, refusals, log sequence (through `oplog-head` and `health`) |
 | console | same as server | operator logins, MFA failures, approvals pending |

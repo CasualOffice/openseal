@@ -11,7 +11,8 @@ use axum::routing::{MethodFilter, MethodRouter, on};
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
-    admin, bulk, envelopes as env, folders, groups, mfa, ml, org, switch, templates, webhooks,
+    admin, bulk, envelopes as env, folders, groups, mfa, ml, org, sessions, switch, templates,
+    webhooks,
 };
 use crate::authz::{Action, Level, OrgAction};
 use crate::ceremony;
@@ -193,6 +194,29 @@ pub fn table() -> Vec<Route> {
             Public,
             JSON,
             admin::providers,
+        ),
+        // A person's own sessions and re-authentication (ASVS-06, ASVS-07).
+        r(
+            "POST",
+            "/api/v1/auth/reauthenticate",
+            Member,
+            JSON,
+            sessions::reauthenticate,
+        ),
+        r("GET", "/api/v1/auth/sessions", Member, JSON, sessions::list),
+        r(
+            "POST",
+            "/api/v1/auth/sessions/end-others",
+            Member,
+            JSON,
+            sessions::end_others,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/auth/sessions/{id}",
+            Member,
+            JSON,
+            sessions::end_one,
         ),
         // Workspace switching (docs/23 §2.3, ORG-04).
         r(

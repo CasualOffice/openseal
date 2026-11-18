@@ -346,6 +346,8 @@ pub(crate) async fn profiles(c: Call) -> Result<Response, ApiError> {
 /// `POST /permission-profiles {name, permissions}`: `201` with the new custom profile.
 pub(crate) async fn create_profile(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let req: ProfileIn = parse(&body)?;
+    // A permission profile is a role: only after a recent re-authentication (ASVS-07).
+    c.p.require_recent_auth(c.st.now())?;
     let name = name_of(&req.name)?;
     let permissions = permissions_of(&req.permissions)?;
     let mut tx = c.tx().await?;
@@ -445,6 +447,7 @@ pub(crate) async fn patch_profile(
     let mut tx = c.tx().await?;
     let was = custom(&c, &mut tx, id).await?;
     let req: ProfilePatch = parse(&body)?;
+    c.p.require_recent_auth(c.st.now())?;
     let name = req.name.as_deref().map(name_of).transpose()?;
     let permissions = req.permissions.as_deref().map(permissions_of).transpose()?;
     let permissions = permissions.unwrap_or(was.permissions);

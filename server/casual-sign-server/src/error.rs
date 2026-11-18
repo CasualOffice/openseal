@@ -292,6 +292,13 @@ impl ApiError {
         Self::new(StatusCode::UNAUTHORIZED, "CS-AUTH-0012")
     }
 
+    /// `CS-AUTH-0013` 403: a sensitive action needs the session's holder to have proved
+    /// their password (and second factor) within the last five minutes (ASVS-07); the
+    /// client asks for them, calls `POST /auth/reauthenticate`, and repeats the request.
+    pub fn reauthentication_required() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-AUTH-0013").detail("reauthenticate")
+    }
+
     /// `CS-ORG-0001` 403: no enabled membership in the workspace a switch names, or no
     /// such workspace (docs/23 §2.3).
     pub fn not_a_workspace_member() -> Self {
@@ -380,6 +387,7 @@ impl ApiError {
             "CS-AUTH-0008" => "CSRF token missing or wrong",
             "CS-AUTH-0009" => "Link bound to another browser",
             "CS-AUTH-0010" => "Host does not own this embedding",
+            "CS-AUTH-0013" => "Recent re-authentication required",
             "CS-ORG-0001" => "Not a member of that workspace",
             "CS-ORG-0002" => "Set by your organization",
             "CS-ORG-0005" => "Grant refused",

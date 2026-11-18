@@ -115,7 +115,7 @@ working end to end, 27 in part and 15 with their engine built.
 validate only against that CA. Not yet done: the external penetration test (`HRD-05`), the accessibility audit
 (`A11Y-01`), counsel's review of legal claims and the default disclosure (`LEG-02`), published load numbers (`HRD-04`)
 and the rest of production hardening (`HRD-06`). The OWASP ASVS 4.0.3 self-assessment
-([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md)) finds 12 requirements not met and 32 partly met; it is a
+([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md)) finds 9 requirements not met and 31 partly met; it is a
 self-assessment, not an audit or a certification. Nothing here states that a signature is legally valid or that
 OpenSeal is compliant or certified ([docs/09](docs/09-LEGAL-AND-COMPLIANCE.md)).
 

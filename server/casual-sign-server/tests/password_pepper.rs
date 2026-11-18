@@ -14,7 +14,9 @@ use axum::body::Body;
 use axum::extract::ConnectInfo;
 use axum::http::{Request, StatusCode};
 use base64::Engine as _;
-use casual_sign_server::{AppState, Blobs, Config, JwtKeys, ManualClock, PasswordPepper, app};
+use casual_sign_server::{
+    AppState, Blobs, Clock as _, Config, JwtKeys, ManualClock, PasswordPepper, app, totp,
+};
 use casual_sign_store::blob::FsBlobStore;
 use common::Rls;
 use common::harness::{Api, Auth, PASSWORD, start};
@@ -81,6 +83,30 @@ async fn a_pepper_rehashes_an_old_hash_at_sign_in_and_a_database_copy_alone_cann
         )
         .await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+
+    // Re-authentication before a sensitive change (ASVS-07) checks the peppered hash too.
+    let s = api.login(&email, PASSWORD).await;
+    let code = {
+        let mut f = api.factors.lock().unwrap();
+        let f = f.get_mut(&email).expect("enrolled by the harness");
+        let now = totp::step_at(api.clock.now().unix_timestamp());
+        let step = [now, now + 1]
+            .into_iter()
+            .find(|s| f.last_step.is_none_or(|l| *s > l))
+            .expect("a step not used yet");
+        f.last_step = Some(step);
+        totp::code(&f.seed, step)
+    };
+    let r = api
+        .call(
+            "POST",
+            "/api/v1/auth/reauthenticate",
+            &s,
+            Some(json!({"password": PASSWORD, "code": code})),
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "reauthenticate: {:?}", r.json());
 
     // A server on the same database without the pepper: the right password is refused.
     let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))

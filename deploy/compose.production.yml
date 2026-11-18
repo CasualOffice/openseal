@@ -12,7 +12,8 @@
 # services is TLS: Postgres (verify-full, TLS 1.3, hostssl only), the object store (the
 # deployment's private CA) and keyd (mutual TLS). keyd and the worker refuse to start
 # unless their security settings match the manifests (CS-KEY-0014, ASVS-24). TLS to
-# browsers terminates at your edge proxy, which forwards to the server's port.
+# browsers terminates at your edge proxy, which forwards to `proxy`'s port; `proxy`
+# spreads requests over two server replicas, so either restarts without an outage.
 #
 # tools/check-deploy.py checks every rule above over this file and fails on any
 # violation; run it after every change. Images are pinned by digest or by an
@@ -35,9 +36,51 @@ x-hardened: &hardened
 x-s3: &s3
   OPENSEAL_S3_ENDPOINT: https://s3:8333
   OPENSEAL_S3_BUCKET: openseal
-  OPENSEAL_S3_ACCESS_KEY: openseal
+  # Both from files, so a credential rotation rewrites files only (HRD-11, docs/65 §Rotation).
+  OPENSEAL_S3_ACCESS_KEY_FILE: /run/secrets/s3-access-key
   OPENSEAL_S3_SECRET_KEY_FILE: /run/secrets/s3-secret-key
   OPENSEAL_S3_CA: /run/secrets/internal-ca.pem
+
+# The API server; two replicas of it (`server`, `server-2`) run behind `proxy`, so either
+# restarts without an outage (HRD-11): restart one, wait until it is healthy and a drain
+# period more, then the other (docs/65 §Rotation).
+x-server: &server
+  <<: *hardened
+  image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-server:${OPENSEAL_VERSION:?set OPENSEAL_VERSION}
+  user: "65532:65532"
+  environment:
+    <<: *s3
+    OPENSEAL_DATABASE_URL_FILE: /run/secrets/database-url
+    OPENSEAL_JWT_SIGNING_KEY_FILE: /run/secrets/jwt-signing-key
+    OPENSEAL_MFA_KEY_FILE: /run/secrets/mfa-key
+    OPENSEAL_PASSWORD_PEPPER_FILE: /run/secrets/password-pepper
+    OPENSEAL_PUBLIC_URL: ${OPENSEAL_PUBLIC_URL:?set OPENSEAL_PUBLIC_URL (https)}
+    # The proxy's address is on `edge`: include that network's subnet.
+    OPENSEAL_TRUSTED_PROXIES: ${OPENSEAL_TRUSTED_PROXIES:?set OPENSEAL_TRUSTED_PROXIES}
+    OPENSEAL_SECRET_RELOAD_SECONDS: "30"
+    # The ops listener (GET /livez, /readyz) the proxy checks; never published.
+    OPENSEAL_OPS_LISTEN: 0.0.0.0:9090
+    # On SIGINT: not ready (/readyz 503) but still serving for 5 s, while the proxy's
+    # one-second health check takes this replica out of rotation; then it drains.
+    OPENSEAL_DRAIN_SECONDS: "5"
+  secrets: [database-url, jwt-signing-key, mfa-key, password-pepper, s3-access-key, s3-secret-key, internal-ca.pem]
+  tmpfs: ["/tmp:size=64m,mode=1777"]
+  networks: [data, edge]
+  mem_limit: 2g
+  cpus: 2
+  pids_limit: 256
+  # Graceful shutdown: the server drains on SIGINT (the drain period, then the requests
+  # in hand).
+  stop_signal: SIGINT
+  stop_grace_period: 40s
+  healthcheck:
+    test: ["CMD", "/usr/local/bin/casual-sign-server", "healthcheck"]
+    interval: 5s
+    timeout: 5s
+    retries: 24
+  depends_on:
+    migrate: {condition: service_completed_successfully}
+    s3: {condition: service_healthy}
 
 services:
   postgres:
@@ -183,37 +226,34 @@ services:
     healthcheck: {disable: true}
 
   server:
+    <<: *server
+
+  server-2:
+    <<: *server
+
+  # In front of both replicas (HAProxy, deploy/production/haproxy.cfg): health-checks each
+  # at GET /readyz every second and sends a refused connection to the other. Your edge
+  # proxy (TLS, HSTS) forwards here; bound to the host's loopback address.
+  proxy:
     <<: *hardened
-    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-server:${OPENSEAL_VERSION:?set OPENSEAL_VERSION}
-    user: "65532:65532"
-    environment:
-      <<: *s3
-      OPENSEAL_DATABASE_URL_FILE: /run/secrets/database-url
-      OPENSEAL_JWT_SIGNING_KEY_FILE: /run/secrets/jwt-signing-key
-      OPENSEAL_MFA_KEY_FILE: /run/secrets/mfa-key
-      OPENSEAL_PASSWORD_PEPPER_FILE: /run/secrets/password-pepper
-      OPENSEAL_PUBLIC_URL: ${OPENSEAL_PUBLIC_URL:?set OPENSEAL_PUBLIC_URL (https)}
-      OPENSEAL_TRUSTED_PROXIES: ${OPENSEAL_TRUSTED_PROXIES:?set OPENSEAL_TRUSTED_PROXIES}
-      OPENSEAL_SECRET_RELOAD_SECONDS: "30"
-    secrets: [database-url, jwt-signing-key, mfa-key, password-pepper, s3-secret-key, internal-ca.pem]
-    # The edge proxy (TLS, HSTS) forwards here; bound to the host's loopback address.
+    image: haproxy:3.2-alpine@sha256:1c3568e520453cc8ba98c39501febcf450429c80e6cc27ecad779961d76e597c
+    user: "99:99"
+    volumes:
+      - ./production/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     ports: ["127.0.0.1:${OPENSEAL_HTTP_PORT:-8080}:8080"]
-    tmpfs: ["/tmp:size=64m,mode=1777"]
-    networks: [data, edge]
-    mem_limit: 2g
-    cpus: 2
-    pids_limit: 256
-    # Graceful shutdown: the server drains on SIGINT.
-    stop_signal: SIGINT
-    stop_grace_period: 30s
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    networks: [edge]
+    mem_limit: 256m
+    cpus: 1
+    pids_limit: 64
     healthcheck:
-      test: ["CMD", "/usr/local/bin/casual-sign-server", "healthcheck"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8405/healthz"]
       interval: 5s
       timeout: 5s
-      retries: 24
+      retries: 12
     depends_on:
-      migrate: {condition: service_completed_successfully}
-      s3: {condition: service_healthy}
+      server: {condition: service_healthy}
+      server-2: {condition: service_healthy}
 
   worker:
     <<: *hardened
@@ -247,6 +287,7 @@ services:
       OPENSEAL_CONFIG_MANIFEST: /run/secrets/worker-config-manifest
     secrets:
       - database-url
+      - s3-access-key
       - s3-secret-key
       - internal-ca.pem
       - smtp-password
@@ -273,7 +314,8 @@ networks:
   # internal: no gateway, nothing on them reaches the internet or the host.
   data: {internal: true}
   signing: {internal: true}
-  # The server's published port.
+  # The proxy's published port, the proxy and the server replicas (which also reach
+  # recipients' identity providers through it).
   edge: {}
   # The worker's way out (SMTP, TSAs, webhooks; the SSRF policy applies, SEC-W01).
   egress: {}
@@ -294,6 +336,7 @@ secrets:
   database-url: {file: "${OPENSEAL_SECRETS_DIR}/database-url"}
   migrate-database-url: {file: "${OPENSEAL_SECRETS_DIR}/migrate-database-url"}
   s3-identities.json: {file: "${OPENSEAL_SECRETS_DIR}/s3-identities.json"}
+  s3-access-key: {file: "${OPENSEAL_SECRETS_DIR}/s3-access-key"}
   s3-secret-key: {file: "${OPENSEAL_SECRETS_DIR}/s3-secret-key"}
   s3-tls-chain.pem: {file: "${OPENSEAL_SECRETS_DIR}/s3-tls-chain.pem"}
   s3-tls.key: {file: "${OPENSEAL_SECRETS_DIR}/s3-tls.key"}

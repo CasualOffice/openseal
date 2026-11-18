@@ -222,7 +222,11 @@ resumed (it must record nothing); a worker `SIGKILL`ed from the host's PID names
 finish (Docker's restart policy must restart it); keyd stopped while sealing (a `seal_failed` alert, nothing served,
 workers restarted meanwhile stay up); PostgreSQL killed (`docker compose stop -t 0`) between adopt and finish (the
 finish answers `5xx`, the retry signs once) and mid-seal; the object store killed mid-seal and its seal job pushed
-to its last attempt (it hands over, never dead). Retries are made due with `UPDATE jobs SET run_at = now()`; leases
+to its last attempt (it hands over, never dead); and, last (`HRD-11`), the object store credential rotation and two
+rolling restarts of the server replicas while two signers read their envelopes through `proxy` (§Rotation: not one
+of their requests may fail, the old pair must be refused by the store, an envelope seals under the new pair; a few
+minutes more, in the same job because it reuses the stack the run already built and started, where a workflow of
+its own would build every image again). Retries are made due with `UPDATE jobs SET run_at = now()`; leases
 lapse in real time (the run takes about 20 minutes after the build). It then requires every envelope `completed` on
 exactly one sealed version, served (or `completing` with a `job_dead` alert and nothing served), `verify-evidence`
 and keyd's `verify-oplog` to pass, and pyHanko (`tools/verify-sealed.py`) to validate every sealed PDF; it writes
@@ -307,16 +311,16 @@ first green `load` run on `main`, with its run id, commit and runner. Nothing be
 
 `deploy/compose.production.yml` is the production Compose profile; `docker-compose.yml` stays the evaluation stack.
 What the profile guarantees, and `python3 -I tools/check-deploy.py` checks on every CI run (it renders the file with
-`docker compose config` and fails naming each `service: rule`; `--self-test` breaks each of its 43 rules in turn and
+`docker compose config` and fails naming each `service: rule`; `--self-test` breaks each of its 44 rules in turn and
 proves each is caught):
 
-- **Containers.** Every service runs as a named non-root user (Postgres 70, SeaweedFS 1000, keyd 10001, server and
-  worker 65532), with a read-only root file system (tmpfs only for sockets and scratch), every capability dropped and
+- **Containers.** Every service runs as a named non-root user (Postgres 70, SeaweedFS 1000, keyd 10001, both server
+  replicas and the worker 65532, the HAProxy proxy 99), with a read-only root file system (tmpfs only for sockets and scratch), every capability dropped and
   none added, `no-new-privileges`, memory, CPU and process limits, no core dumps, bounded logs and a health check
   (the worker writes a heartbeat while its database answers, `casual-sign-worker healthcheck`; the one-shot
   `migrate` alone has none). No privileged mode, host namespace or Docker socket. Images are pinned by digest or
   are OpenSeal's own at an `OPENSEAL_VERSION` you built and signed; a release's `compose.release.yml` pins OpenSeal's
-  own by their signed digests too (§Releases). The server stops on `SIGINT`, which drains it.
+  own by their signed digests too (§Releases). The server stops on `SIGINT`, which drains it (below).
 - **Secrets** are Docker secrets: files under `/run/secrets/`, each mounted only into the services that read it (the
   seal key's PIN and chain and keyd's identity into keyd alone, never the server), never an environment value (`docker inspect` and `/proc/1/environ` show only paths). Development switches
   (`OPENSEAL_DEV_INSECURE_KEY`, file keys) are refused by the checker.
@@ -325,15 +329,30 @@ proves each is caught):
   store's S3 gateway serves TLS with a certificate from the internal CA, which the server and worker trust through
   `OPENSEAL_S3_CA`; SeaweedFS's master, volume and filer ports listen on its loopback address only, and its vendor
   telemetry is off (`-master.telemetry=false`, also in the evaluation stack). keyd is mutual TLS (unchanged). SMTP
-  is `starttls`. TLS to browsers terminates at your edge proxy (HSTS there), which forwards to the server's port on
-  the host's loopback address. The server refuses to start with an `http` `OPENSEAL_PUBLIC_URL` (other than to a
+  is `starttls`. TLS to browsers terminates at your edge proxy (HSTS there), which forwards to the `proxy`
+  service's port on the host's loopback address; `proxy` forwards to the server replicas over the `edge` bridge
+  in plain HTTP, as the hop from your edge proxy is. The server refuses to start with an `http` `OPENSEAL_PUBLIC_URL` (other than to a
   loopback address) unless `OPENSEAL_DEV_INSECURE_KEY=1`.
 - **Networks.** `data` (Postgres, object store, server, worker, migrate) and `signing` (keyd and the worker) are
-  internal: no route out. Only the server is on `edge` (its published port) and only the worker on `egress` (SMTP,
+  internal: no route out. Only `proxy` publishes a port; it and the two server replicas are on `edge` (which
+  also carries the servers' calls to recipients' identity providers), and only the worker is on `egress` (SMTP,
   TSAs, webhooks, under the `SEC-W01` address policy). A network HSM needs keyd on a network that routes to the HSM
   alone: add it as an `external` network for keyd only.
 - **Configuration integrity** (below): keyd and the worker refuse to start unless their security settings match the
   manifests.
+- **Zero-downtime restarts** (`HRD-11`). Two server replicas, `server` and `server-2`, run behind `proxy`
+  (HAProxy, `deploy/production/haproxy.cfg`), which checks each at `GET /readyz` on its ops listener (port 9090,
+  `OPENSEAL_OPS_LISTEN`, never published) every second and takes one out after two failed checks. A replica whose
+  database does not answer is taken out; one told to stop (`SIGINT`) answers `503` there for
+  `OPENSEAL_DRAIN_SECONDS` (5) while it still serves whatever reaches it, then takes no new connections and finishes
+  the requests in hand (`stop_grace_period` 40 s). The proxy opens one connection per request (no idle connection to
+  a stopping replica is reused), sends a request whose connection a replica refused to the other, and retries
+  nothing that reached a replica. No request is logged (signing links carry bearer tokens). Restart them one at a
+  time: `docker compose -f deploy/compose.production.yml restart server`, wait until it is healthy
+  (`docker compose ps`) and a drain period more, then `server-2`. Because the forwarded client address now comes
+  through `proxy`, set `OPENSEAL_TRUSTED_PROXIES` to the `edge` network's subnet (`docker network inspect
+  openseal-production_edge`). Each replica keeps its own in-memory rate-limit counters and abnormal-activity
+  windows (`HRD-15`).
 
 Bringing it up: run `deploy/production/init-secrets.sh DIR` once as root on the Docker host. It writes the internal
 TLS CA (its key into `DIR/offline/`: move it off the host), the Postgres, object store, keyd and worker identities,
@@ -379,17 +398,42 @@ Each runbook keeps signers working throughout; each is exercised by a test, name
 | --- | --- | --- | --- |
 | Database login | Create a second login in `openseal_app` (`CREATE ROLE openseal_2 LOGIN PASSWORD '…' IN ROLE openseal_app`); rewrite `database-url` **in place** (`cat new > database-url`: Docker mounts the file, so a new inode is not seen); the server and worker read it again every `OPENSEAL_SECRET_RELOAD_SECONDS` (30) and open every new connection with it; `ALTER ROLE openseal NOLOGIN` (open sessions continue); after 15 minutes, the pool's connection lifetime, no session of the old login is left (`pg_stat_activity`): `DROP ROLE openseal`. The superuser's `migrate-database-url` changes with the next migration | None | `casual-sign-store` `tests/rotation.rs`: eight signer tasks over a rotation with the old login retired at once, 0 failed requests, every session the new login's within one lifetime; seen red with the reload removed (146 to 223 failed requests) |
 | keyd and worker mTLS identities | Issue the new worker certificate from the internal CA (`openssl` as in `init-secrets.sh`); add its fingerprint to `keyd-allow-list` next to the old; record keyd's manifest; restart keyd; switch the worker's `worker-client.key` and chain, record its manifest, restart the worker; remove the old fingerprint, record, restart keyd. keyd's server certificate: issue a new one under the same CA, replace, record, restart. A new CA: list both CAs in `internal-ca.pem` first | Sealing pauses for a keyd restart (seconds); seal jobs retry, signers are not affected | `casual-sign-keyd` `tests/mtls.rs` `a_worker_identity_rotates_with_an_overlap…`; seen red with the allow-list check removed |
-| API token signing key (sessions' counterpart for API clients) | Generate a new P-256 key; mount the old one as `OPENSEAL_JWT_PREVIOUS_KEY_FILE` and the new as `OPENSEAL_JWT_SIGNING_KEY_FILE`; restart the server. Tokens signed by the old key verify until they expire and both keys are in `/.well-known/jwks.json`; after `access_token_ttl` (1 hour) remove the previous key | A server restart; staff and signer sessions survive it (they are database rows) | `casual-sign-server` `crypto::tests::a_rotated_key_keeps_the_previous_keys_tokens_valid…`; seen red verifying with the current key only |
+| API token signing key (sessions' counterpart for API clients) | Generate a new P-256 key. With two replicas, in two rolling restarts (§Production deployment), so that no replica ever meets a token it cannot verify: **1.** mount the new key as `OPENSEAL_JWT_PREVIOUS_KEY_FILE` (verify only) beside the current signing key, rolling restart; **2.** swap them, the new key as `OPENSEAL_JWT_SIGNING_KEY_FILE` and the old as `OPENSEAL_JWT_PREVIOUS_KEY_FILE`, rolling restart. Tokens signed by either key verify on both replicas throughout and both keys are in `/.well-known/jwks.json`; after `access_token_ttl` (1 hour) remove the previous key, rolling restart. (A single server: step 2 alone, a restart) | None with two replicas: each restart drains, the proxy sends signers to the other; staff and signer sessions are database rows | `casual-sign-server` `crypto::tests::a_rotated_key_keeps_the_previous_keys_tokens_valid…`; seen red verifying with the current key only. The rolling restart: `tests/rotation.rs` `on_sigint_the_server_drains_then_stops` and `a_draining_server_is_not_ready_but_still_serves` (seen red with the drain removed and with `/readyz` ignoring it), and CI `chaos-compose` case 8 (two rolling restarts under signer traffic, 0 failed requests) |
 | Staff sessions and CSRF tokens | No key to rotate: each session and its CSRF token are random values stored hashed per session (docs/40 §2), unaffected by any key rotation; signing out ends one | — | — |
 | Webhook secrets | Provision the new secret as a file (`NAME_FILE`) for the worker; add its reference to the subscription's `secret_refs` (up to 4); deliveries now carry one signature per secret; once the receiver has switched, remove the old reference | None | `casual-sign-worker` `webhook::tests::during_rotation_a_receiver_holding_either_secret_accepts…`; seen red signing with the first secret only |
-| Object store credentials | Add a second identity to `s3-identities.json`, restart the store; switch `s3-secret-key` (and the access key) and restart the server and worker; remove the old identity | Server restart | runbook; not yet automated (`HRD-11`) |
-| Second-factor key (`OPENSEAL_MFA_KEY`) | Not rotatable yet: staff TOTP seeds are sealed under it; a re-seal path is `HRD-12` | — | — |
-| Staff password pepper (`OPENSEAL_PASSWORD_PEPPER`, `ASVS-29`) | Generate 32 new random bytes as base64 (`openssl rand -base64 32`); mount the current pepper as `OPENSEAL_PASSWORD_PEPPER_PREVIOUS_FILE` and the new one as `OPENSEAL_PASSWORD_PEPPER_FILE`; restart the server. Each hash names its pepper (the PHC `keyid`), so hashes under either verify, and each user's is re-made under the new pepper at their next successful password sign-in (migration 0042). Keep the previous pepper until every active user has signed in; then remove it and restart. A user whose hash is still under the removed pepper cannot sign in with their password until they reset it (`POST /auth/password-reset`). Hashes made before any pepper verify too and are re-made the same way. Never lose the current pepper: no hash under it verifies without it | A server restart; sessions survive it | `casual-sign-server` `crypto::tests::a_rotated_pepper_keeps_old_hashes_until_they_are_rehashed`, `tests/password_pepper.rs` (an old hash re-made at sign-in; a server on the same database without the pepper refuses the right password); seen red |
+| Object store credentials | **1.** Add a second identity to `s3-identities.json` (the same `actions`, a new `accessKey` and `secretKey`), **rewriting the file in place** (`cat new > s3-identities.json`), and tell the store to reload it: `docker compose -f deploy/compose.production.yml kill -s SIGHUP s3` (no restart; both identities now work). **2.** Rewrite `s3-access-key` and `s3-secret-key` in place with the new pair; rolling restart of `server` and `server-2`; restart the worker. **3.** Remove the old identity from `s3-identities.json` in place; `kill -s SIGHUP s3` again; the old pair is refused | None: the store reloads without a restart, the servers restart one at a time behind the proxy, seal jobs retry across a worker restart | CI `chaos-compose` case 8, `tools/chaos/chaos_compose.py` `Run.rotation`: two signers reading their envelopes (view and document bytes from the store) through the proxy throughout, 0 failed requests required; the old pair refused (`403`) and the new accepted by the store, an envelope sealed under the new pair alone. Rehearsed locally (2026-11-19, the branch's server binary, the profile's HAProxy image and configuration, SeaweedFS at the profile's digest): 0 of 913 requests failed; seen red: replica `server-2` left on the old pair, 26 document reads failed (`503`); one replica restarted alone, 188 of 520 failed |
+| Second-factor key (`OPENSEAL_MFA_KEY`, `HRD-12`) | Generate 32 random bytes (`openssl rand -base64 32`). With two replicas, in rolling restarts, so no replica meets a seed sealed under a key it lacks: **1.** mount the new key as `OPENSEAL_MFA_PREVIOUS_KEY_FILE` beside the current one, rolling restart; **2.** swap them, the new key as `OPENSEAL_MFA_KEY_FILE` and the old as `OPENSEAL_MFA_PREVIOUS_KEY_FILE`, rolling restart: each seed under the old key is re-sealed under the new one when its user next proves a code; **3.** `casual-sign-server mfa-reseal` as the schema owner (`docker compose … run --rm` with `OPENSEAL_MIGRATE_DATABASE_URL_FILE` and both key files) re-seals the rest and prints `mfa seeds: resealed=… current=… changed=… unopened=…`; it fails while any seed opens under neither key; **4.** once it reports `resealed=0 unopened=0`, remove the previous key, rolling restart. Keep the old key with the backups made before step 3 (§Backups) | None with two replicas (a single server: a restart per step) | `casual-sign-server` `tests/rotation.rs` `second_factor_seeds_under_the_old_key_still_verify_and_end_under_the_new_one` (on use, `mfa-reseal`, then the new key alone verifies both users; a session that owes the factor cannot re-seal it), `an_enrolment_begun_under_the_old_key_is_confirmed_under_the_new_one`, `mfa::tests::a_seed_under_the_previous_key_opens_and_is_resealed_under_the_new_one`; seen red with the re-seal on use removed, the previous key ignored, the re-seal on confirmation removed, the database guard removed and `mfa-reseal` not writing |
+| Staff password pepper (`OPENSEAL_PASSWORD_PEPPER`, `ASVS-29`) | Generate 32 new random bytes as base64 (`openssl rand -base64 32`); mount the current pepper as `OPENSEAL_PASSWORD_PEPPER_PREVIOUS_FILE` and the new one as `OPENSEAL_PASSWORD_PEPPER_FILE` on both replicas; restart them in turn (each waits for the other to be healthy, `HRD-11`). Each hash names its pepper (the PHC `keyid`), so hashes under either verify, and each user's is re-made under the new pepper at their next successful password sign-in (migration 0044). Keep the previous pepper until every active user has signed in; then remove it and restart. A user whose hash is still under the removed pepper cannot sign in with their password until they reset it (`POST /auth/password-reset`). Hashes made before any pepper verify too and are re-made the same way. Never lose the current pepper: no hash under it verifies without it | None with both replicas restarted in turn; sessions survive it | `casual-sign-server` `crypto::tests::a_rotated_pepper_keeps_old_hashes_until_they_are_rehashed`, `tests/password_pepper.rs` (an old hash re-made at sign-in; a server on the same database without the pepper refuses the right password); seen red |
 | Seal key alias (`CON-10`) | Generate the new key in the HSM and obtain its certificate; serve it beside the current one (`OPENSEAL_KEYD_NEXT_ALIAS`, `_NEXT_PKCS11_KEY_LABEL` or `_KEY_ID`, `_NEXT_CHAIN`; in the production profile set `OPENSEAL_SEAL_NEXT_ALIAS` and `OPENSEAL_PKCS11_NEXT_KEY_LABEL`, the chain read from the token), record keyd's manifest, restart keyd; a key custodian proposes the alias with a start (`POST /console/v1/seal/changes`; refused unless keyd serves it with a certificate valid then), a second grants, the first applies; from the start every seal uses it, no restart (a change proposed without a start begins when it is applied; a version stays approved if its approving custodian is later disabled); once no seal job can still use the old alias, make the new key the only one: set `OPENSEAL_SEAL_ALIAS` and `OPENSEAL_PKCS11_KEY_LABEL` to the new key's, put its chain in `seal-chain.pem`, and clear `OPENSEAL_SEAL_NEXT_ALIAS` and `OPENSEAL_PKCS11_NEXT_KEY_LABEL` (outside the profile: keyd's `OPENSEAL_KEYD_ALIAS`, key and chain, and the worker's `OPENSEAL_KEYD_ALIAS`); record **both** manifests, keyd's and the worker's (`OPENSEAL_SEAL_ALIAS` sets the worker's `OPENSEAL_KEYD_ALIAS`, which its manifest holds), then restart keyd and the worker. Skipping the worker leaves it with a manifest that no longer matches, so its next restart is refused (`CS-KEY-0014`), or, with the manifest re-recorded but the worker not restarted, still configured for an alias keyd no longer serves | None for signers; keyd restarts pause sealing for seconds, jobs retry | `casual-sign-worker` `tests/keyd.rs` `the_seal_key_follows_the_approved_alias…` (pyHanko agrees on the rotated seal), `casual-sign-console` `tests/keys.rs` `a_seal_alias_change_needs_two_custodians…` and `a_seal_alias_without_a_start_applies_now_and_outlives_its_approver` (seen red with the approver's present state judged), `casual-sign-keyd` `tests/two_keys.rs`; seen red |
 | keyd seal token key (`KEYD-02`) | Write 32 new random bytes as 64 hex digits (`openssl rand -hex 32`) to both `keyd-seal-token-key` and `migrate-seal-token-key`; run the migrate job (`docker compose -f deploy/compose.production.yml run --rm migrate`), which installs it in the database; restart keyd. Outside the profile: `casual-sign-server migrate` with `OPENSEAL_KEYD_SEAL_TOKEN_KEY_FILE`, and keyd's `OPENSEAL_KEYD_SEAL_TOKEN_KEY_FILE` | Seals between the two steps fail `CS-KEY-0015` and retry 60 s later; signers are not affected | `casual-sign-server` `tests/backup_commands.rs` `migrate_installs_the_keyd_seal_token_key`; `casual-sign-worker` `tests/keyd.rs` `a_database_without_the_token_key_seals_nothing_until_it_is_installed`; seen red |
 
-A single server is restarted for the token key and object store credentials; run two server replicas behind the edge
-proxy for zero-downtime restarts (`HRD-11`).
+The token key, second-factor key and object store credentials need a server restart: the production profile runs
+two server replicas behind `proxy`, so a rolling restart has no outage (`HRD-11`, §Production deployment).
+
+A previous key (`OPENSEAL_MFA_PREVIOUS_KEY_FILE`, likewise `OPENSEAL_JWT_PREVIOUS_KEY_FILE`) is mounted into both
+replicas with an override beside the profile, removed again in the last step; write the file as `mfa-key` is
+written (owner 65532, mode 0400). Checked with `docker compose config`
+and `tools/check-deploy.py --json` over the merged result, 2026-11-19:
+
+    # compose.rotation.yml: docker compose -f deploy/compose.production.yml -f compose.rotation.yml ...
+    services:
+      server:
+        environment: {OPENSEAL_MFA_PREVIOUS_KEY_FILE: /run/secrets/mfa-previous-key}
+        secrets: [mfa-previous-key]
+      server-2:
+        environment: {OPENSEAL_MFA_PREVIOUS_KEY_FILE: /run/secrets/mfa-previous-key}
+        secrets: [mfa-previous-key]
+    secrets:
+      mfa-previous-key: {file: "${OPENSEAL_SECRETS_DIR}/mfa-previous-key"}
+
+`mfa-reseal` runs as the one-shot `migrate` service, the only one holding the schema owner's login, with both keys
+mounted for the run:
+
+    S="$OPENSEAL_SECRETS_DIR"
+    docker compose -f deploy/compose.production.yml run --rm --no-deps \
+      -v "$S/mfa-key:/run/secrets/mfa-key:ro" -v "$S/mfa-previous-key:/run/secrets/mfa-previous-key:ro" \
+      -e OPENSEAL_MFA_KEY_FILE=/run/secrets/mfa-key -e OPENSEAL_MFA_PREVIOUS_KEY_FILE=/run/secrets/mfa-previous-key \
+      migrate mfa-reseal
 
 ## Logs
 
@@ -418,6 +462,8 @@ and `client`:
 | `auth.mfa_enrol` | server, console | A TOTP factor confirmed, or its confirmation refused |
 | `auth.password_reset_request`, `auth.password_reset`, `auth.password_change` | server | Reset asked for (alike for any address), a reset link spent or refused, a password changed or the current one refused |
 | `auth.invite_accept` | server | An invitation link spent or refused |
+| `auth.reauthenticate` | server | A re-authentication before a sensitive action (`ASVS-07`): passed or refused (`factor: password`, `totp` or `recovery_code`; the code of the refusal) |
+| `auth.session_end` | server | Other sessions of a staff user ended by them (`ASVS-06`): `scope: one` or `others`, and `count` |
 | `auth.token` | server | An OAuth client-credentials token issued or refused |
 | `auth.lockout` | server | A recipient locked out by failed authentications, and each later request refused for it (`CS-AUTH-0004`) |
 | `access.unauthenticated`, `access.denied`, `access.rate_limited` | server, console (keyd: denied, rate limited) | Every `401`, `403` and `429`; keyd: an admin operation asked by a signing caller, a signature over the caller's rate |
@@ -534,7 +580,11 @@ replaced, `ASVS-32`), `OPENSEAL_PASSWORD_PEPPER` (optional, 32 random bytes as b
 hashes are keyed with, held outside the database, ASVS 2.4.5, `ASVS-29`; the production profile mounts one,
 `password-pepper`, made by `init-secrets.sh`; a hash made before it is re-made under it at the user's next sign-in;
 keep it with the database backups, since no password hashed under a lost pepper verifies and those users must reset
-their passwords) and `OPENSEAL_PASSWORD_PEPPER_PREVIOUS` (during a rotation, §Rotation), `OPENSEAL_CLAMD_*` (§Malware
+their passwords), `OPENSEAL_PASSWORD_PEPPER_PREVIOUS` (during its rotation, §Rotation),
+`OPENSEAL_MFA_PREVIOUS_KEY` (during its rotation, §Rotation, `HRD-12`),
+`OPENSEAL_OPS_LISTEN` (the ops listener, `CON-05`: `GET /livez` and `GET /readyz`, `204` or `503`, never the public
+port; unset, none), `OPENSEAL_DRAIN_SECONDS` (on `SIGINT`, seconds to keep serving while `/readyz` answers `503`,
+default 0; the production profile sets 5, `HRD-11`), `OPENSEAL_CLAMD_*` (§Malware
 scanning); `migrate` reads
 `OPENSEAL_MIGRATE_DATABASE_URL` and, when set, `OPENSEAL_KEYD_SEAL_TOKEN_KEY` (64 hex digits), which it installs in
 the database after the migrations (`KEYD-02`); the server itself is never given that key. The worker's SMS and voice gateway is `OPENSEAL_SMS_GATEWAY_URL` and

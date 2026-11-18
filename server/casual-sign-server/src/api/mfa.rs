@@ -28,7 +28,7 @@ use crate::mfa::{RECOVERY_CODES, recovery_code, recovery_hash};
 use crate::totp;
 
 /// The session making the call: these routes are for staff sessions only.
-fn session(c: &Call) -> Result<StaffSessionId, ApiError> {
+pub(crate) fn session(c: &Call) -> Result<StaffSessionId, ApiError> {
     match c.p.credential {
         Credential::Session(s) => Ok(s),
         Credential::ApiKey(_) | Credential::AccessToken(_) => Err(ApiError::invalid("/credential")),
@@ -58,11 +58,11 @@ fn secret_json(v: &serde_json::Value) -> Response {
     r
 }
 
-fn now_step(c: &Call) -> u64 {
+pub(crate) fn now_step(c: &Call) -> u64 {
     totp::step_at(c.st.now().unix_timestamp())
 }
 
-fn key(c: &Call) -> Result<std::sync::Arc<crate::mfa::MfaKey>, ApiError> {
+pub(crate) fn key(c: &Call) -> Result<std::sync::Arc<crate::mfa::MfaKey>, ApiError> {
     c.st.mfa_key()
         .cloned()
         .ok_or_else(|| ApiError::not_available("second factor not configured"))
@@ -123,8 +123,8 @@ async fn verify_inner(
                 (true, Some(sealed)) => sealed,
                 _ => return Err(ApiError::second_factor_refused()),
             };
-            let seed = key(c)?.open(own.user_id.0, &sealed)?;
-            let step = totp::matching_step(&seed, code.trim(), now_step(c))
+            let opened = key(c)?.open(own.user_id.0, &sealed)?;
+            let step = totp::matching_step(&opened.seed, code.trim(), now_step(c))
                 .ok_or_else(ApiError::second_factor_refused)?;
             let step = i64::try_from(step).map_err(|_| ApiError::internal("step"))?;
             // The code matched; refused now only for a step already used. A database
@@ -132,6 +132,12 @@ async fn verify_inner(
             if tx.sessions().verify_own_totp(s, step, now).await?.is_none() {
                 *reused = true;
                 return Err(ApiError::second_factor_refused());
+            }
+            // HRD-12: a seed still under the previous key moves under the current one,
+            // now that this session has passed it. Lost to a concurrent change, it is
+            // simply left for the next use or `mfa-reseal`.
+            if let Some(new) = opened.resealed {
+                tx.sessions().reseal_own_totp(s, &sealed, &new, now).await?;
             }
             tx.commit().await?;
             Ok(json(StatusCode::OK, &json!({ "second_factor": "passed" })))
@@ -220,10 +226,22 @@ async fn confirm_inner(c: &Call, body: &[u8]) -> Result<Response, ApiError> {
         (true, _) => return Err(ApiError::not_available("already enrolled")),
         (false, None) => return Err(ApiError::not_available("enrol first")),
     };
-    let seed = key.open(own.user_id.0, &sealed)?;
-    let step = totp::matching_step(&seed, req.code.trim(), now_step(c))
+    let opened = key.open(own.user_id.0, &sealed)?;
+    let step = totp::matching_step(&opened.seed, req.code.trim(), now_step(c))
         .ok_or_else(ApiError::second_factor_refused)?;
     let step = i64::try_from(step).map_err(|_| ApiError::internal("step"))?;
+    // HRD-12: an enrolment begun under the previous key is confirmed under the current
+    // one: re-sealed first, and the confirmation names the re-sealed value.
+    let sealed = match opened.resealed {
+        Some(new) => {
+            tx.sessions()
+                .reseal_own_totp(s, &sealed, &new, now)
+                .await?
+                .ok_or_else(ApiError::second_factor_refused)?;
+            new
+        }
+        None => sealed,
+    };
     let mut codes = Vec::with_capacity(RECOVERY_CODES);
     let mut hashes = Vec::with_capacity(RECOVERY_CODES);
     for _ in 0..RECOVERY_CODES {

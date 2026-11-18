@@ -1,4 +1,4 @@
--- 0042: re-hash a staff password under the current pepper at sign-in (ASVS 2.4.5,
+-- 0044: re-hash a staff password under the current pepper at sign-in (ASVS 2.4.5,
 -- `ASVS-29`, docs/65 §Rotation).
 --
 -- The server keys staff password hashes with a pepper held outside the database. A hash
