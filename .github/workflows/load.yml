@@ -1,0 +1,84 @@
+name: load
+
+# HRD-04 (docs/06 §Hardening release; docs/65 §Load and recovery numbers): load and chaos
+# numbers on the hardened Compose profile. tools/load/load_compose.py brings up the chaos
+# run's stack (deploy/compose.production.yml built from this commit, throwaway secrets,
+# SoftHSM, two workers, tools/chaos/compose.chaos.yml with the TSA gate holding nothing,
+# tools/load/compose.load.yml), drives senders and signers through the API (send ->
+# authenticate -> sign -> seal) for a steady-state window, then kills every worker, stops
+# keyd and kills PostgreSQL under load, and measures envelopes per minute, send, sign and
+# seal latency (seal from the audit trail's own timestamps) and recovery time. It fails
+# if any envelope is sealed twice or never completes, or if evidence, keyd's log or
+# pyHanko disagree.
+#
+# By hand and weekly only, never on push or pull request: it publishes numbers, it is not
+# a gate on main. The runner size is read from the machine and written into the report.
+on:
+  workflow_dispatch:
+    inputs:
+      senders:
+        description: Concurrent senders
+        default: "2"
+      signers:
+        description: Concurrent signers
+        default: "8"
+      in_flight:
+        description: Most agreements open at once
+        default: "16"
+      baseline:
+        description: Steady-state seconds (after a 60 s warm-up)
+        default: "300"
+      cases:
+        description: Chaos cases, comma-separated (worker, keyd, postgres)
+        default: "worker,keyd,postgres"
+  schedule:
+    - cron: "41 3 * * 0"   # Sundays 03:41 UTC
+concurrency:
+  group: load
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    # A standard GitHub-hosted runner (ubuntu-latest: 4 vCPU and 16 GB on public
+    # repositories, 2 vCPU and 7 GB on private ones); the report records what it was.
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      OPENSEAL_LOAD_RUNNER: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The driver's statistics and verdict first.
+      - run: python3 -I -m unittest discover -s tools/load -p 'test_*.py'
+      - run: python3 -I -m unittest discover -s tools/chaos -p 'test_*.py'
+      - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
+      - name: Load and chaos run
+        env:
+          SENDERS: ${{ inputs.senders || '2' }}
+          SIGNERS: ${{ inputs.signers || '8' }}
+          IN_FLIGHT: ${{ inputs.in_flight || '16' }}
+          BASELINE: ${{ inputs.baseline || '300' }}
+          CASES: ${{ inputs.cases || 'worker,keyd,postgres' }}
+        run: >-
+          python3 -I tools/load/load_compose.py run --verify-python /tmp/v/bin/python
+          --senders "$SENDERS" --signers "$SIGNERS" --in-flight "$IN_FLIGHT"
+          --baseline "$BASELINE" --cases "$CASES"
+      - name: The numbers on the run's page
+        if: always()
+        run: |
+          if [ -f target/load-compose/report.md ]; then cat target/load-compose/report.md >> "$GITHUB_STEP_SUMMARY"; fi
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: load-report
+          path: |
+            target/load-compose/report.json
+            target/load-compose/report.md
+            target/load-compose/evidence.txt
+            target/load-compose/oplog.txt
+            target/load-compose/verify-sealed.txt
+            target/load-compose/compose.log
+          if-no-files-found: ignore
+          retention-days: 90

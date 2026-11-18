@@ -1,0 +1,15 @@
+# CI only (HRD-04, docs/65 §Load and recovery numbers): what the load run adds on top of
+# deploy/compose.production.yml and tools/chaos/compose.chaos.yml. Never deploy it.
+# tools/load/load_compose.py layers it last:
+#
+#   docker compose -p openseal-load -f deploy/compose.production.yml \
+#     -f tools/chaos/compose.chaos.yml -f tools/load/compose.load.yml ...
+#
+# The mail sink keeps every message (Mailpit drops all but the newest 500 by default, and
+# a load run sends more invitations than that). Nothing else changes: no development
+# switch, the production services exactly as the chaos run has them.
+
+services:
+  mailpit:
+    environment:
+      MP_MAX_MESSAGES: "0"
