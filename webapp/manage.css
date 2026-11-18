@@ -522,7 +522,7 @@
 
 /* Evidence. */
 .os-evid { display: flex; flex-direction: column; gap: 0.875rem; }
-.os-evid__card { border-radius: 0.625rem; background: #f6faf7; box-shadow: 0 0 0 1px rgba(21, 128, 61, .15); padding: 0.875rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.os-evid__card { border-radius: 0.625rem; background: color-mix(in srgb, var(--os-success) 7%, var(--os-bg)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--os-success) 25%, transparent); padding: 0.875rem; display: flex; flex-direction: column; gap: 0.5rem; }
 .os-evid__card.is-broken { background: var(--os-pii-soft); box-shadow: 0 0 0 1px var(--os-pii-edge); }
 .os-evid__title { display: flex; align-items: center; gap: 0.5rem; color: var(--os-st-done); font-weight: 600; }
 .os-evid__card.is-broken .os-evid__title { color: var(--os-pii); }
