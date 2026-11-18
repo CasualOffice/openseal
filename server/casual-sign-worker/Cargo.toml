@@ -50,7 +50,7 @@ serde_json = "1.0.120"
 # Without the `builder` feature: it pulls `quoted_printable` (0BSD, not in deny.toml), so
 # messages are written by `email::Message`, every header value either checked against a
 # strict grammar or RFC 2047-encoded, the body base64 (no injection path).
-lettre = { version = "0.11.23", default-features = false, features = ["smtp-transport", "tokio1-rustls", "rustls-native-certs", "aws-lc-rs"] }
+lettre = { version = "0.11.24", default-features = false, features = ["smtp-transport", "tokio1-rustls", "rustls-native-certs", "aws-lc-rs"] }
 # Webhook delivery and RFC 3161 time-stamping over HTTPS: the HTTP stack the store and
 # the CLI already use (rustls on aws-lc-rs, platform roots), with an SSRF-checking
 # resolver (`SEC-W01`). Used in place of docs/19's `reqwest`, which is not in the tree.
