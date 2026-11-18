@@ -23,6 +23,8 @@
 //! | `OPENSEAL_ML_BUNDLE_ID` | The model bundle deployed with `casual-sign-modeld` (docs/33 §7); none: document analysis is not installed |
 //! | `OPENSEAL_LOG_PSEUDONYM_KEY` (secret) | 32 bytes as base64: keys the pseudonyms security events give a presented e-mail or client address (ASVS-08); share it with the console so they match; none: a key per process; malformed: the server does not start (`CS-LOG-0001`) |
 //! | `OPENSEAL_MFA_KEY` (secret) | 32 bytes as base64: seals staff TOTP seeds (ASVS-01). Required outside development: administrators owe a second factor by default (ASVS-31), and without the key none could enrol, so the server does not start without it; keep it with the backups, since a seed sealed under a lost key opens only by recovery code |
+//! | `OPENSEAL_PASSWORD_PEPPER` (secret) | Optional, 32 bytes as base64: the pepper staff password hashes are keyed with (ASVS 2.4.5, `ASVS-29`), held outside the database so a copy of it cannot test guesses; a hash from before it is re-made under it at the user's next sign-in. Keep it with the backups: a hash made under a lost pepper never verifies again (that user resets their password). Malformed: the server does not start |
+//! | `OPENSEAL_PASSWORD_PEPPER_PREVIOUS` (secret) | Optional, during a rotation: the pepper the current one replaced; hashes under it verify and are re-made under the current one at sign-in (docs/65 §Rotation) |
 //! | `OPENSEAL_DEV_INSECURE_KEY=1` | Development only: a throwaway token key and second-factor key, plain-HTTP cookies |
 //! | `OPENSEAL_CLAMD_ADDR` | `host:port` of ClamAV's clamd (ASVS-11): every upload is scanned before it is read or stored; none: nothing is scanned (a warning at start) |
 //! | `OPENSEAL_CLAMD_TIMEOUT_SECS` | Most seconds one scan may take, 1 to 600 (default 60) |
@@ -70,7 +72,8 @@ use casual_sign_seclog::Level;
 use casual_sign_secrets::env_secret;
 use casual_sign_server::net::{Cidr, ClientIp};
 use casual_sign_server::{
-    AppState, Blobs, Config, JwtKeys, Scanner, ScannerConfig, SystemClock, app, bootstrap,
+    AppState, Blobs, Config, JwtKeys, Scanner, ScannerConfig, SystemClock, app,
+    bootstrap_with_pepper,
 };
 use casual_sign_store::Store;
 use casual_sign_store::blob::{FsBlobStore, S3BlobStore, S3Config};
@@ -171,6 +174,22 @@ fn mfa_key() -> Result<casual_sign_server::MfaKey, String> {
             casual_sign_server::MfaKey::generate().map_err(|e| e.code().to_owned())
         }
         None => Err("OPENSEAL_MFA_KEY is not set".into()),
+    }
+}
+
+/// The staff password pepper (ASVS 2.4.5, `ASVS-29`): `OPENSEAL_PASSWORD_PEPPER`, 32
+/// bytes as base64, and during a rotation `OPENSEAL_PASSWORD_PEPPER_PREVIOUS`; both
+/// secrets, so each may come from a `_FILE`. Unset: hashes are not peppered.
+fn password_pepper() -> Result<Option<casual_sign_server::PasswordPepper>, String> {
+    let previous = secret("OPENSEAL_PASSWORD_PEPPER_PREVIOUS")?;
+    match secret("OPENSEAL_PASSWORD_PEPPER")? {
+        Some(current) => casual_sign_server::PasswordPepper::new(&current, previous.as_deref())
+            .map(Some)
+            .map_err(|e| format!("OPENSEAL_PASSWORD_PEPPER: {e}")),
+        None if previous.is_some() => {
+            Err("OPENSEAL_PASSWORD_PEPPER_PREVIOUS is set without OPENSEAL_PASSWORD_PEPPER".into())
+        }
+        None => Ok(None),
     }
 }
 
@@ -505,6 +524,11 @@ async fn main() -> ExitCode {
     } else {
         None
     };
+    // The staff password pepper (ASVS 2.4.5, `ASVS-29`): optional; malformed, nothing starts.
+    let pepper = match password_pepper() {
+        Ok(p) => p,
+        Err(e) => return fail(&e),
+    };
     let store = match Store::connect(&url, 16).await {
         Ok(s) => s,
         Err(e) => return fail(e.code()),
@@ -518,7 +542,7 @@ async fn main() -> ExitCode {
             Ok(None) => return fail("OPENSEAL_ADMIN_PASSWORD is not set"),
             Err(e) => return fail(&e),
         };
-        return match bootstrap(&store, name, email, admin, &pw).await {
+        return match bootstrap_with_pepper(&store, pepper, name, email, admin, &pw).await {
             Ok(b) => {
                 println!(
                     "organization {}\naccount {}\nadmin {}",
@@ -632,6 +656,9 @@ async fn main() -> ExitCode {
     }
     if let Some(k) = mfa {
         state.set_mfa_key(k);
+    }
+    if let Some(p) = pepper {
+        state.set_password_pepper(p);
     }
     if let Ok(path) = std::env::var("OPENSEAL_GEOIP_DB") {
         match casual_sign_server::geo::GeoIp::open(std::path::Path::new(&path)) {

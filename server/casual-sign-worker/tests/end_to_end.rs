@@ -379,6 +379,11 @@ async fn api_and_worker_take_two_signers_to_completed_with_a_verified_seal() {
             let r = staff.call("GET", &path, None, &[]).await;
             assert_eq!(r.status, StatusCode::OK, "{path}");
             assert_eq!(r.headers["content-type"], "application/pdf");
+            // ASVS 14.4.2, `ASVS-10`: saved, under a name the server makes.
+            assert_eq!(
+                r.headers["content-disposition"], "attachment; filename=\"document.pdf\"",
+                "{path}"
+            );
             r.body
         }
     };
@@ -633,6 +638,10 @@ async fn one_signer_gets_the_sealed_pdf_and_the_certificate_from_the_completion_
         .await;
     assert_eq!(cert.status, StatusCode::OK, "{:?}", cert.json());
     assert_eq!(cert.headers["content-type"], "application/pdf");
+    assert_eq!(
+        cert.headers["content-disposition"],
+        "attachment; filename=\"document.pdf\""
+    );
     assert_eq!(
         cert.body, certificate,
         "the signer's certificate is the sender's"

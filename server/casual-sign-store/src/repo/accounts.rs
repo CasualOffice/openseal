@@ -1379,6 +1379,33 @@ impl Users<'_> {
         Ok(user.map(UserId))
     }
 
+    /// Replace an enabled local member's password hash (an Argon2id PHC string) with
+    /// `phc`, the same password hashed under the current pepper, while the stored hash is
+    /// still `expected` (the one a sign-in just verified; ASVS 2.4.5, `ASVS-29`, migration
+    /// 0042). The password is unchanged, so no session ends. Returns whether it was
+    /// replaced: `false` when the hash changed meanwhile.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn rehash_password(
+        &mut self,
+        user: UserId,
+        expected: &Personal<String>,
+        phc: &Personal<String>,
+    ) -> Result<bool> {
+        let done = sqlx::query_scalar!(
+            r#"SELECT openseal_rehash_password($1, $2, $3) AS "done!""#,
+            user.0,
+            expected.get(),
+            phc.get()
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(done)
+    }
+
     /// A member's own settings in this account (UXW-37); `None` before they saved any.
     ///
     /// # Errors

@@ -201,6 +201,7 @@ class OidcProvider(unittest.TestCase):
         self.assertEqual(claims["nonce"], q["nonce"])
         self.assertEqual((claims["email"], claims["email_verified"]), ("ana@example.com", True))
         self.assertGreater(claims["exp"], claims["iat"])
+        self.assertLessEqual(claims["auth_time"], claims["iat"])
         self.assertTrue(claims["sub"])
 
     def test_a_code_works_once(self):

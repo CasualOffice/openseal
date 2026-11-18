@@ -219,6 +219,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | User agent recorded in events | 512 bytes (cut at a character boundary) | — |
 | Ceremony token | 128 characters | CS-AUTH-0002 |
 | Staff password | 12–256 characters | CS-API-0001 |
+| Recipient identity provider's `max_age_seconds` (`OPENSEAL_RECIPIENT_IDPS_FILE`, `ASVS-22`); an ID token's `auth_time` | 0–86,400, default 600; no older than `max_age` plus 120 s of skew, and present | the server does not start; `403` (the sign-in fails, counted to the lockout) |
 | Saved signature or initials (`PATCH /users/me`, `UXW-37`) | a PNG or JPEG of 1 byte to 5 MiB (base64 text at most 6,990,508 characters); a name 1–255 characters after trimming | CS-API-0001 |
 | Password-reset link (`POST /auth/password-reset/confirm`, `UXW-38`) | a token of 1–128 characters; valid one hour from sending, once; at most one email a minute per user | CS-AUTH-0002 |
 | Staff session / access token / embedded view link | 8 hours / 1 hour / 5 minutes | CS-AUTH-0002 |

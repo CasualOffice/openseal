@@ -291,7 +291,9 @@ class Provider:
             if len(self._codes) >= MAX_CODES:
                 self._codes.pop(next(iter(self._codes)))
             self._codes[code] = {"nonce": q["nonce"], "challenge": q["code_challenge"],
-                                 "redirect_uri": q["redirect_uri"], "email": email, "expires": now + CODE_SECONDS}
+                                 "redirect_uri": q["redirect_uri"], "email": email, "expires": now + CODE_SECONDS,
+                                 # The sign-in just happened: OpenSeal sends max_age and checks it (ASVS-22).
+                                 "auth_time": int(now)}
         return code
 
     def redeem(self, form: dict) -> tuple[int, dict]:
@@ -314,7 +316,7 @@ class Provider:
         email = grant["email"]
         claims = {"iss": self.issuer, "aud": self.client_id, "iat": now, "exp": now + TOKEN_SECONDS,
                   "sub": "ci-" + hashlib.sha256(email.lower().encode()).hexdigest()[:24],
-                  "nonce": grant["nonce"], "email": email, "email_verified": True}
+                  "auth_time": grant["auth_time"], "nonce": grant["nonce"], "email": email, "email_verified": True}
         return 200, {"access_token": secrets.token_urlsafe(24), "token_type": "Bearer",
                      "expires_in": TOKEN_SECONDS, "id_token": self.signer.jwt(claims)}
 

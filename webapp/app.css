@@ -797,3 +797,20 @@ mark, .os-mark { background: var(--os-ml-mark); color: var(--os-ml-ink); border-
   .os-rise, .os-pop, .os-fade, .os-slide, .os-float, .os-scan, .os-sweep, .os-spin, .os-ink, .os-seal, .os-drop-in, .os-shimmer,
   .os-indet::after, .os-stagger > *, .os-empty, .os-empty .os-illus, .os-sugg, .il-sweep, .il-blue-dash, .os-skel { animation: none !important; }
 }
+
+/* Password strength meter (ASVS-03, pwmeter.js): bars filled by score (one red for very
+   weak, two red for weak, two amber for fair, three and four green for good and strong),
+   then the level and advice as one polite line. The colour
+   repeats what the words say; it is never the only cue. */
+.os-pwmeter { margin-top: 0.5rem; }
+.os-pwmeter[hidden] { display: none; }
+.os-pwmeter__bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.25rem; }
+.os-pwmeter__bar { height: 0.25rem; border-radius: 62.5rem; background: var(--os-border); transition: background 160ms ease; }
+.os-pwmeter[data-score="0"] .os-pwmeter__bar:nth-child(-n+1),
+.os-pwmeter[data-score="1"] .os-pwmeter__bar:nth-child(-n+2) { background: var(--os-danger); }
+.os-pwmeter[data-score="2"] .os-pwmeter__bar:nth-child(-n+2) { background: var(--os-warning); }
+.os-pwmeter[data-score="3"] .os-pwmeter__bar:nth-child(-n+3),
+.os-pwmeter[data-score="4"] .os-pwmeter__bar { background: var(--os-success); }
+.os-pwmeter__text { margin: 0.375rem 0 0; font-size: 0.8125rem; color: var(--os-muted); overflow-wrap: anywhere; }
+.os-pwmeter__level { color: var(--os-text); font-weight: 500; }
+@media (prefers-reduced-motion: reduce) { .os-pwmeter__bar { transition: none; } }

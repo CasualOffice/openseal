@@ -446,7 +446,10 @@ async fn attachments(api: &Api, a: &Tenant, b: &Tenant, sam: &Auth) {
     let got = api.call("GET", &path, &a.auth, None, &[]).await;
     assert_eq!(got.status, StatusCode::OK, "{:?}", got.json());
     assert_eq!(got.headers["content-type"], "image/png");
-    assert_eq!(got.headers["content-disposition"], "attachment");
+    assert_eq!(
+        got.headers["content-disposition"],
+        "attachment; filename=\"image.png\""
+    );
     assert_eq!(&got.body[..], &png()[..]);
     let last = audit_types(api, &a.auth, &id).await.last().unwrap().clone();
     assert_eq!(last["type"], "attachment.downloaded");

@@ -15,6 +15,7 @@ import { button, busy } from "./ui/index.js";
 import { errorMessage } from "./api.js";
 import { MIN_PASSWORD, inviteChecks, inviteError, inviteToken } from "./authmodel.js";
 import { authLayout, cardHead, passwordField, setFieldError, successBlock } from "./authview.js";
+import { strengthMeter } from "./pwmeter.js";
 
 export { inviteToken };
 
@@ -53,7 +54,7 @@ function checklist() {
 }
 
 function form(card, ctx, token) {
-  const pw = passwordField({ id: "inv-pw", label: t("invite.password"), autocomplete: "new-password", describedBy: ["inv-rules"], command: "auth.toggle-password" });
+  const pw = passwordField({ id: "inv-pw", label: t("invite.password"), autocomplete: "new-password", describedBy: ["inv-rules", "inv-strength"], command: "auth.toggle-password" });
   const pw2 = passwordField({ id: "inv-pw2", label: t("invite.password-again"), autocomplete: "new-password", command: "auth.toggle-password-again", revealLabel: t("invite.show-again") });
   const rules = checklist();
   rules.update("", "");
@@ -62,6 +63,10 @@ function form(card, ctx, token) {
   const submit = button(t("invite.submit"), { variant: "primary", size: "lg", type: "submit", command: "auth.set-password" });
   submit.classList.add("os-auth__submit");
   pw.block.insertBefore(rules.list, pw.error);
+  // How strong it looks (ASVS-03): advice only; the rules above are what the form needs.
+  const meter = strengthMeter("inv-strength");
+  pw.block.insertBefore(meter.el, pw.error);
+  pw.input.addEventListener("input", () => meter.update(pw.input.value));
   const f = h("form", { class: "os-auth__form", attrs: { novalidate: true, "aria-labelledby": "inv-title" } }, pw.block, pw2.block, error, submit);
   for (const input of [pw.input, pw2.input]) input.addEventListener("input", () => {
     rules.update(pw.input.value, pw2.input.value);

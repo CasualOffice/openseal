@@ -63,6 +63,179 @@ pub(crate) fn verify_password(secret: &str, phc: &str) -> bool {
     argon().is_ok_and(|a| a.verify_password(secret.as_bytes(), &parsed).is_ok())
 }
 
+/// One pepper: the secret Argon2id is keyed with, and the 8-byte id its hashes carry.
+struct Pepper {
+    /// The configured value as written (its base64 text, trimmed): 256 random bits.
+    secret: casual_sign_secrets::Secret,
+    id: [u8; 8],
+}
+
+impl Pepper {
+    fn new(text: &str) -> Result<Self, PepperError> {
+        let text = text.trim();
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(text)
+            .map_err(|_| PepperError::NotBase64)?;
+        if bytes.len() != 32 {
+            return Err(PepperError::NotThirtyTwoBytes);
+        }
+        let mut id = [0u8; 8];
+        let digest = sha256(&[b"openseal password pepper\0".as_slice(), text.as_bytes()].concat());
+        id.copy_from_slice(digest.get(..8).ok_or(PepperError::NotThirtyTwoBytes)?);
+        Ok(Self {
+            secret: casual_sign_secrets::Secret::new(text.to_owned()),
+            id,
+        })
+    }
+
+    fn argon(&self) -> Option<Argon2<'_>> {
+        let keyid = argon2::KeyId::new(&self.id).ok()?;
+        let params = argon2::ParamsBuilder::new()
+            .m_cost(19 * 1024)
+            .t_cost(2)
+            .p_cost(1)
+            .keyid(keyid)
+            .build()
+            .ok()?;
+        Argon2::new_with_secret(
+            self.secret.expose().as_bytes(),
+            Algorithm::Argon2id,
+            Version::V0x13,
+            params,
+        )
+        .ok()
+    }
+}
+
+/// Why a password pepper was refused at start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PepperError {
+    /// The value is not base64.
+    NotBase64,
+    /// The value is not 32 bytes once decoded.
+    NotThirtyTwoBytes,
+    /// The previous pepper is the current one.
+    SameAsCurrent,
+}
+
+impl core::fmt::Display for PepperError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::NotBase64 => "not base64",
+            Self::NotThirtyTwoBytes => "not 32 bytes",
+            Self::SameAsCurrent => "the previous pepper is the current one",
+        })
+    }
+}
+
+impl std::error::Error for PepperError {}
+
+/// The secret salt ("pepper", ASVS 2.4.5) staff password hashes are keyed with, held
+/// outside the database (`OPENSEAL_PASSWORD_PEPPER`, a secret, so it may come from a
+/// `_FILE`). A copy of the database alone cannot test a guess against a peppered hash.
+///
+/// Each hash names its pepper by an 8-byte id in the PHC string's `keyid` parameter
+/// (SHA-256 of the pepper, cut), so a hash made before any pepper (no `keyid`) still
+/// verifies, and so does one made under the previous pepper during a rotation
+/// (`OPENSEAL_PASSWORD_PEPPER_PREVIOUS`); either is re-hashed under the current pepper at
+/// the user's next successful sign-in (docs/65 §Rotation).
+pub struct PasswordPepper {
+    current: Pepper,
+    previous: Option<Pepper>,
+}
+
+impl core::fmt::Debug for PasswordPepper {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("PasswordPepper(..)")
+    }
+}
+
+impl PasswordPepper {
+    /// The pepper `current` (32 bytes as base64), and during a rotation the one it
+    /// replaced.
+    ///
+    /// # Errors
+    ///
+    /// [`PepperError`] when either is not 32 bytes of base64, or both are the same.
+    pub fn new(current: &str, previous: Option<&str>) -> Result<Self, PepperError> {
+        let current = Pepper::new(current)?;
+        let previous = previous.map(Pepper::new).transpose()?;
+        if previous.as_ref().is_some_and(|p| p.id == current.id) {
+            return Err(PepperError::SameAsCurrent);
+        }
+        Ok(Self { current, previous })
+    }
+
+    fn by_id(&self, id: &[u8]) -> Option<&Pepper> {
+        std::iter::once(&self.current)
+            .chain(self.previous.as_ref())
+            .find(|p| p.id.as_slice() == id)
+    }
+}
+
+/// The Argon2id PHC string of a staff password: keyed with the current pepper, when one
+/// is configured (ASVS 2.4.5), with a fresh random salt.
+pub(crate) fn hash_staff_password(
+    pepper: Option<&PasswordPepper>,
+    secret: &str,
+) -> Result<String, ApiError> {
+    let Some(p) = pepper else {
+        return hash_password(secret);
+    };
+    let salt_bytes = random_bytes::<16>()?;
+    let salt = SaltString::encode_b64(&salt_bytes).map_err(|_| ApiError::internal("salt"))?;
+    p.current
+        .argon()
+        .ok_or_else(|| ApiError::internal("argon2"))?
+        .hash_password(secret.as_bytes(), &salt)
+        .map(|h| h.to_string())
+        .map_err(|_| ApiError::internal("argon2"))
+}
+
+/// The answer of [`verify_staff_password`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StaffPassword {
+    /// The password does not match (or the hash names a pepper this server does not hold).
+    Wrong,
+    /// It matches; `rehash` when the hash is not under the current pepper (made before the
+    /// pepper, or under the previous one), so the caller stores a new one.
+    Right { rehash: bool },
+}
+
+/// Whether `secret` matches a staff password's PHC string. A hash naming a pepper (its
+/// `keyid`) verifies only with that pepper; one with no `keyid` verifies as before any
+/// pepper. Either way one Argon2id computation, so the time does not tell them apart.
+pub(crate) fn verify_staff_password(
+    pepper: Option<&PasswordPepper>,
+    secret: &str,
+    phc: &str,
+) -> StaffPassword {
+    let Ok(parsed) = PasswordHash::new(phc) else {
+        return StaffPassword::Wrong;
+    };
+    let Ok(params) = Params::try_from(&parsed) else {
+        return StaffPassword::Wrong;
+    };
+    let keyid = params.keyid();
+    let ok = if keyid.is_empty() {
+        argon().is_ok_and(|a| a.verify_password(secret.as_bytes(), &parsed).is_ok())
+    } else {
+        // A hash under a pepper this server does not hold never verifies: a copy of the
+        // database without the pepper is no oracle (ASVS 2.4.5).
+        pepper
+            .and_then(|p| p.by_id(keyid))
+            .and_then(Pepper::argon)
+            .is_some_and(|a| a.verify_password(secret.as_bytes(), &parsed).is_ok())
+    };
+    if !ok {
+        return StaffPassword::Wrong;
+    }
+    let current = pepper.map(|p| p.current.id.as_slice());
+    StaffPassword::Right {
+        rehash: current.is_some_and(|id| id != keyid),
+    }
+}
+
 /// A PHC string no password matches (a random secret's, thrown away), verified
 /// against when the login is unknown so that a login takes the same time whether or not
 /// the email exists (SEC-A09).
@@ -330,6 +503,103 @@ mod tests {
         assert_eq!(done.verify(&issued_before, "https://a"), None);
         assert_eq!(done.verify(&issued_after, "https://a"), Some(c));
         assert_eq!(done.jwks()["keys"].as_array().unwrap().len(), 1);
+    }
+
+    fn pepper_text(byte: u8) -> String {
+        base64::engine::general_purpose::STANDARD.encode([byte; 32])
+    }
+
+    #[test]
+    fn a_peppered_hash_does_not_verify_without_its_pepper() {
+        // ASVS 2.4.5, ASVS-29: a copy of the database alone is no oracle.
+        let pepper = PasswordPepper::new(&pepper_text(1), None).unwrap();
+        let phc = hash_staff_password(Some(&pepper), "correct horse battery").unwrap();
+        assert!(phc.contains("keyid="), "{phc}");
+        assert_eq!(
+            verify_staff_password(Some(&pepper), "correct horse battery", &phc),
+            StaffPassword::Right { rehash: false }
+        );
+        assert_eq!(
+            verify_staff_password(Some(&pepper), "correct horse batterY", &phc),
+            StaffPassword::Wrong
+        );
+        assert_eq!(
+            verify_staff_password(None, "correct horse battery", &phc),
+            StaffPassword::Wrong
+        );
+        assert!(!verify_password("correct horse battery", &phc));
+        // Another pepper, even with the id copied in, does not verify either.
+        let other = PasswordPepper::new(&pepper_text(2), None).unwrap();
+        assert_eq!(
+            verify_staff_password(Some(&other), "correct horse battery", &phc),
+            StaffPassword::Wrong
+        );
+        let forged = Pepper {
+            secret: casual_sign_secrets::Secret::new(pepper_text(2)),
+            id: pepper.current.id,
+        };
+        let forged = PasswordPepper {
+            current: forged,
+            previous: None,
+        };
+        assert_eq!(
+            verify_staff_password(Some(&forged), "correct horse battery", &phc),
+            StaffPassword::Wrong
+        );
+    }
+
+    #[test]
+    fn a_hash_from_before_the_pepper_verifies_and_asks_to_be_rehashed() {
+        let old = hash_password("correct horse battery").unwrap();
+        let pepper = PasswordPepper::new(&pepper_text(1), None).unwrap();
+        assert_eq!(
+            verify_staff_password(Some(&pepper), "correct horse battery", &old),
+            StaffPassword::Right { rehash: true }
+        );
+        assert_eq!(
+            verify_staff_password(Some(&pepper), "wrong horse battery", &old),
+            StaffPassword::Wrong
+        );
+        // No pepper configured: as before, nothing to rehash.
+        assert_eq!(
+            verify_staff_password(None, "correct horse battery", &old),
+            StaffPassword::Right { rehash: false }
+        );
+    }
+
+    #[test]
+    fn a_rotated_pepper_keeps_old_hashes_until_they_are_rehashed() {
+        let old = PasswordPepper::new(&pepper_text(1), None).unwrap();
+        let phc = hash_staff_password(Some(&old), "correct horse battery").unwrap();
+        let rotating = PasswordPepper::new(&pepper_text(2), Some(&pepper_text(1))).unwrap();
+        assert_eq!(
+            verify_staff_password(Some(&rotating), "correct horse battery", &phc),
+            StaffPassword::Right { rehash: true }
+        );
+        let fresh = hash_staff_password(Some(&rotating), "correct horse battery").unwrap();
+        let done = PasswordPepper::new(&pepper_text(2), None).unwrap();
+        assert_eq!(
+            verify_staff_password(Some(&done), "correct horse battery", &fresh),
+            StaffPassword::Right { rehash: false }
+        );
+        // Once the previous pepper is dropped, a hash left under it no longer verifies.
+        assert_eq!(
+            verify_staff_password(Some(&done), "correct horse battery", &phc),
+            StaffPassword::Wrong
+        );
+        assert_eq!(
+            PasswordPepper::new(&pepper_text(1), Some(&pepper_text(1))).unwrap_err(),
+            PepperError::SameAsCurrent
+        );
+        assert_eq!(
+            PasswordPepper::new("not base64!", None).unwrap_err(),
+            PepperError::NotBase64
+        );
+        assert_eq!(
+            PasswordPepper::new("AAAA", None).unwrap_err(),
+            PepperError::NotThirtyTwoBytes
+        );
+        assert_eq!(format!("{done:?}"), "PasswordPepper(..)");
     }
 
     #[test]

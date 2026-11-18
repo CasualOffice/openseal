@@ -540,6 +540,11 @@ the rules above, and what does not:
   references to the anchor and the envelope), both insert-only with the audit chain's UPDATE, DELETE and TRUNCATE
   triggers; index `audit_events (account_id, at)` for the day's events; definer `openseal_enqueue_anchor_jobs(day,
   start, end, now)` (a period over a day is `CS-DB-0008`).
+- **Password re-hash under the pepper (built, `ASVS-29`, migration 0042):** definer
+  `openseal_rehash_password(user, expected_hash, new_hash)` (granted to `openseal_app`, which cannot select
+  `users.password_hash`) replaces an enabled local member's hash of the current account with the same password hashed
+  under the server's pepper, only while the stored hash is still the one a sign-in just verified; it ends no session.
+  No table is added.
 - **Seal reconciliation (built, `CON-09`, migration 0038):** tenant table `seal_signatures` (account, envelope,
   digest 32/48/64 bytes, keyd alias, time; key account, envelope, digest; insert-only from the worker, in the
   transaction that stores the sealed bytes); `platform.seal_digests(from, to)` and `platform.seal_digests_of(ids)`,

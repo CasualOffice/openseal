@@ -92,6 +92,8 @@ cat > s3-identities.json <<JSON
 JSON
 openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out jwt-signing-key
 rand_b64 32 > mfa-key
+# ASVS-29: the pepper staff password hashes are keyed with, held outside the database.
+rand_b64 32 > password-pepper
 # KEYD-02: the seal token key, one copy for keyd and one for the migrate job, which
 # installs it in the database (each read by its own container user).
 rand_hex 32 > keyd-seal-token-key
@@ -104,7 +106,7 @@ chmod 0444 internal-ca.pem postgres-tls-chain.pem s3-tls-chain.pem keyd-tls-chai
     worker-client-chain.pem keyd-allow-list keyd-config-manifest worker-config-manifest
 chmod 0400 postgres-password postgres-app-password s3-tls.key s3-identities.json \
     keyd-tls.key worker-client.key database-url migrate-database-url s3-secret-key \
-    jwt-signing-key mfa-key keyd-seal-token-key migrate-seal-token-key
+    jwt-signing-key mfa-key password-pepper keyd-seal-token-key migrate-seal-token-key
 # PostgreSQL insists on 0600 or stricter for its key, owned by its user.
 chmod 0600 postgres-tls.key
 if [ "$(id -u)" = 0 ]; then
@@ -112,7 +114,7 @@ if [ "$(id -u)" = 0 ]; then
     chown "$S3:$S3" s3-tls.key s3-identities.json
     chown "$KEYD:$KEYD" keyd-tls.key keyd-seal-token-key
     chown "$APP:$APP" worker-client.key database-url migrate-database-url s3-secret-key \
-        jwt-signing-key mfa-key migrate-seal-token-key
+        jwt-signing-key mfa-key password-pepper migrate-seal-token-key
 else
     echo "init-secrets: not root; set owners yourself (docs/65 §Production deployment)" >&2
 fi

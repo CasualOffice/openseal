@@ -57,6 +57,7 @@ pub(crate) async fn request_context(
     // The path is kept only to take the ids a security event names (UUIDs, never a
     // ceremony token: `security::after`).
     let path = req.uri().path().to_owned();
+    let api = api_surface(&path);
     let sec = crate::security::scope(&state, &id, ip, &route);
     let (st, m) = (state.clone(), method.clone());
     let mut resp = REQUEST_ID
@@ -107,6 +108,9 @@ pub(crate) async fn request_context(
     if !h.contains_key(header::CACHE_CONTROL) {
         h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     }
+    if api {
+        name_attachment(h);
+    }
     if let Ok(v) = HeaderValue::from_str(&id) {
         h.insert(HeaderName::from_static("x-request-id"), v);
     }
@@ -119,6 +123,72 @@ pub(crate) async fn request_context(
         "request"
     );
     resp
+}
+
+/// Whether `path` is the API (`/api/`, the ceremony's `/s/`, `/.well-known/`), whose
+/// answers are data to save, never a page to render (ASVS 14.4.2); the web app's own
+/// files are not.
+fn api_surface(path: &str) -> bool {
+    ["/api/", "/s/", "/.well-known/"]
+        .iter()
+        .any(|p| path.starts_with(p))
+}
+
+/// The `Content-Disposition` an API answer of media type `media` (lower case, no
+/// parameters) carries when its handler named none: `attachment` with a filename the
+/// server makes, never one from the request or the document (ASVS 12.3.4, 14.4.2,
+/// `ASVS-10`). A browser that opens the URL itself saves the answer instead of rendering
+/// it in the API's origin.
+pub(crate) fn attachment_for(media: &str) -> &'static str {
+    match media {
+        "application/json" | "application/problem+json" | "application/jwk-set+json" => {
+            "attachment; filename=\"api.json\""
+        }
+        "application/pdf" => "attachment; filename=\"document.pdf\"",
+        "text/csv" => "attachment; filename=\"export.csv\"",
+        "image/png" => "attachment; filename=\"image.png\"",
+        "image/jpeg" => "attachment; filename=\"image.jpg\"",
+        "application/zip" => "attachment; filename=\"archive.zip\"",
+        "text/plain" => "attachment; filename=\"api.txt\"",
+        _ => "attachment; filename=\"download.bin\"",
+    }
+}
+
+/// Give an API answer its `Content-Disposition` (ASVS 14.4.2): a handler's own
+/// `attachment` with a filename stands; anything else (none, or `attachment` without a
+/// filename) becomes [`attachment_for`] its media type. An answer with no body type (a
+/// `204`, a `304`) and a page (`text/html`, the signing page served at `/s/{token}`) get
+/// none.
+pub(crate) fn name_attachment(h: &mut axum::http::HeaderMap) {
+    let Some(media) = h
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| {
+            v.split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase()
+        })
+    else {
+        return;
+    };
+    if media.is_empty() || media == "text/html" {
+        return;
+    }
+    let named = h
+        .get(header::CONTENT_DISPOSITION)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| {
+            let v = v.trim_start().to_ascii_lowercase();
+            v.starts_with("attachment") && v.contains("filename=")
+        });
+    if !named {
+        h.insert(
+            header::CONTENT_DISPOSITION,
+            HeaderValue::from_static(attachment_for(&media)),
+        );
+    }
 }
 
 /// The last-resort answer to a handler that panicked (ASVS-26): `500` problem details
@@ -460,4 +530,84 @@ fn route_of_crash(method: &Method, route: &str) -> String {
 #[cfg(not(feature = "crash-points"))]
 fn route_of_crash(_method: &Method, _route: &str) -> String {
     String::new()
+}
+
+#[cfg(test)]
+// Test code: a panic is the failure report (CLAUDE.md).
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use axum::http::HeaderMap;
+
+    use super::*;
+
+    fn named(content_type: Option<&str>, disposition: Option<&str>) -> Option<String> {
+        let mut h = HeaderMap::new();
+        if let Some(t) = content_type {
+            h.insert(header::CONTENT_TYPE, HeaderValue::from_str(t).unwrap());
+        }
+        if let Some(d) = disposition {
+            h.insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(d).unwrap(),
+            );
+        }
+        name_attachment(&mut h);
+        h.get(header::CONTENT_DISPOSITION)
+            .map(|v| v.to_str().unwrap().to_owned())
+    }
+
+    #[test]
+    fn every_api_answer_is_an_attachment_with_a_server_made_filename() {
+        // ASVS 14.4.2, `ASVS-10`.
+        for (media, name) in [
+            ("application/json", "api.json"),
+            ("application/problem+json", "api.json"),
+            ("application/pdf", "document.pdf"),
+            ("text/csv; charset=utf-8", "export.csv"),
+            ("image/png", "image.png"),
+            ("IMAGE/JPEG", "image.jpg"),
+            ("application/octet-stream", "download.bin"),
+        ] {
+            assert_eq!(
+                named(Some(media), None).as_deref(),
+                Some(format!("attachment; filename=\"{name}\"").as_str()),
+                "{media}"
+            );
+        }
+        // A bare `attachment`, or `inline`, gets the server's name.
+        assert_eq!(
+            named(Some("application/pdf"), Some("attachment")).as_deref(),
+            Some("attachment; filename=\"document.pdf\"")
+        );
+        assert_eq!(
+            named(Some("application/pdf"), Some("inline")).as_deref(),
+            Some("attachment; filename=\"document.pdf\"")
+        );
+        // A handler's own named attachment stands.
+        assert_eq!(
+            named(
+                Some("application/json"),
+                Some("attachment; filename=\"anchor-proof.json\"")
+            )
+            .as_deref(),
+            Some("attachment; filename=\"anchor-proof.json\"")
+        );
+        // No body type, or a page: nothing.
+        assert_eq!(named(None, None), None);
+        assert_eq!(named(Some("text/html; charset=utf-8"), None), None);
+    }
+
+    #[test]
+    fn the_api_surface_is_the_api_the_ceremony_and_well_known() {
+        for p in [
+            "/api/v1/envelopes",
+            "/s/tok/document",
+            "/.well-known/jwks.json",
+        ] {
+            assert!(api_surface(p), "{p}");
+        }
+        for p in ["/", "/app.js", "/app.html", "/sign.html", "/apiary"] {
+            assert!(!api_surface(p), "{p}");
+        }
+    }
 }

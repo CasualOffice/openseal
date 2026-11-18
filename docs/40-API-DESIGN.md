@@ -291,7 +291,9 @@ own actions or group scope, or to itself, is `403 CS-ORG-0005`; permission profi
 breached passwords, case ignored (`422 CS-API-0001`, field code `common_password` at `/password`); a password set,
 changed or reset and a second factor added each email the user a notice with no secret (job `send_security_notice`).
 
-**Authentication (§2).** Local login (`POST /auth/login`, Argon2id, an unknown email costs a wrong password's time)
+**Authentication (§2).** Local login (`POST /auth/login`, Argon2id, keyed with the operator's pepper when
+`OPENSEAL_PASSWORD_PEPPER` is set and a hash from before it re-made at the next sign-in, `ASVS-29`; an unknown email
+costs a wrong password's time)
 gives an `HttpOnly`, `Secure`, `SameSite=Lax` session cookie (8 h) and a CSRF token every changing request echoes in
 `X-CSRF-Token`; `POST /auth/logout`; `GET /auth/session`. **Workspace switching (`ORG-04`, docs/23 §2.3):** `GET
 /auth/workspaces` lists, by organization, the workspaces the session's person holds an enabled membership in (read
@@ -320,7 +322,12 @@ recipients, fields and documents, and on `/correct` (`428 CS-API-0008` without, 
 pagination on `GET /envelopes` (stable under inserts). Rate limits per principal, per ceremony token, per client
 address and per login name, with `RateLimit`, `RateLimit-Policy` and `Retry-After`. Every response carries a strict
 CSP (`default-src 'none'; frame-ancestors 'none'`), `nosniff`, `no-referrer`, HSTS, `X-Frame-Options: DENY` and
-`Cache-Control: no-store`. Body limits per route (docs/21 §API).
+`Cache-Control: no-store`. Every answer under `/api/`, `/s/` and `/.well-known/` that has a body carries
+`Content-Disposition: attachment` with a filename the server makes, never one from the request or the document
+(`ASVS-10`, ASVS 12.3.4, 14.4.2): `api.json` for JSON and problem details, `document.pdf`, `export.csv`, `image.png`
+or `image.jpg` for files, a handler's own name where it sets one (`anchor-proof.json`); the signing page served at
+`GET /s/{token}` to a browser (`text/html`) is the one exception. Clients that `fetch` are unaffected; a browser that
+opens an API URL itself saves the answer instead of rendering it. Body limits per route (docs/21 §API).
 
 **The web app (`WEB-04`).** With `OPENSEAL_WEBAPP_DIR` set, the server reads `webapp/` once at start into memory
 (only the web app's file kinds by extension; `e2e/`, `tests/`, Node manifests and symlinks skipped; at most 4,096
@@ -371,11 +378,13 @@ last two to the recipient's E.164 `phone` (required with them, `422` otherwise) 
 (slice 5, VS-05); `POST /s/{token}/otp/verify {code, method?}` passes the open code's method. `CS-API-0014` for a
 method the recipient does not require. Sign-in through an identity provider (`sso`, RAUTH-01): the view lists
 the operator's providers as `sso_providers` while `sso` is pending; `POST /s/{token}/sso {provider}` answers the view
-with `sso_authorization_url` (authorization code with PKCE S256, `state` and `nonce`; the server keeps the nonce and
+with `sso_authorization_url` (authorization code with PKCE S256, `state`, `nonce` and `max_age`, the provider's
+`max_age_seconds`, default 600, `ASVS-22`; the server keeps the nonce and
 verifier, `state` only hashed); the provider sends the browser back to `/s/oidc`, where the page finds its link in the
 tab's session storage and calls `POST /s/{token}/sso/verify {state, code}`. The sign-in closes at first use; the ID
 token must be signed by the provider's JWKS with an asymmetric algorithm, name its issuer and the client, be unexpired
-by the server's clock, carry the nonce and assert a verified email equal to the recipient's. A refusal is `403` with
+by the server's clock, carry the nonce, state an `auth_time` within `max_age` (120 seconds of skew allowed) and
+assert a verified email equal to the recipient's. A refusal is `403` with
 the view, counted to the lockout; an unreachable provider is `502 CS-API-0016`, counted nothing. `POST /s/{token}/adopt` stores the image, then the capture document the seal job reads
 (`{"kind":"image","image":"<hex>"}`), and answers its hash as `adoption_id`; a signature or initials value must name
 a capture this recipient adopted (`422 CS-API-0001` otherwise), so no value can draw another person's capture.

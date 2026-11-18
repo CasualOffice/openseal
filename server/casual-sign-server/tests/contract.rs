@@ -2250,5 +2250,66 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .filter(|k| !called.contains(k))
         .collect();
     assert!(missing.is_empty(), "never exercised: {missing:?}");
+    // ASVS 14.4.2, `ASVS-10`: the harness checked every answer's `Content-Disposition`
+    // as it came; here, that every route answering a file was seen doing so.
+    let problems = downloads_not_answered(&api.answers());
+    if !problems.is_empty() {
+        // Straight to standard error: a panic in this large future may overflow the stack
+        // while unwinding, and the test harness would lose a captured message.
+        let _ = std::io::Write::write_all(
+            &mut std::io::stderr(),
+            format!("ASVS-10: {problems:#?}\n").as_bytes(),
+        );
+        panic!("ASVS-10: {problems:?}");
+    }
     api.db.drop().await;
+}
+
+/// The routes that answer a file only after the worker has sealed the envelope (the
+/// certificate of completion, the combined PDF, the signer's certificate), checked with
+/// their `Content-Disposition` by `casual-sign-worker`'s `tests/end_to_end.rs`; and those
+/// another test of this crate answers through this harness, which checks every answer:
+/// a field's uploaded attachment (`tests/lists.rs`) and the organization log as CSV
+/// (`tests/organizations.rs`).
+const FILES_ANSWERED_ELSEWHERE: &[(&str, &str)] = &[
+    ("GET", "/api/v1/envelopes/{id}/certificate"),
+    ("GET", "/api/v1/envelopes/{id}/documents/combined"),
+    ("GET", "/s/{token}/certificate"),
+    ("GET", "/api/v1/envelopes/{id}/attachments/{sha256}"),
+    ("GET", "/api/v1/organizations/me/audit"),
+];
+
+/// ASVS 14.4.2, `ASVS-10`: each operation `api/openapi.yaml` says answers a file (a
+/// success response of a media type other than JSON; generated from the document, which
+/// the test above holds equal to the route table) that the scenario did not answer with
+/// a file of that type, unless it is one of [`FILES_ANSWERED_ELSEWHERE`]; and any of
+/// those that is not a file route. Every answer passed the harness's own check.
+fn downloads_not_answered(answers: &[common::harness::Answer]) -> Vec<String> {
+    let downloads = common::harness::openapi_downloads();
+    let mut problems = Vec::new();
+    if downloads.len() < 10 {
+        problems.push(format!("too few file routes found: {downloads:?}"));
+    }
+    for ((method, route), media) in &downloads {
+        let elsewhere = FILES_ANSWERED_ELSEWHERE.contains(&(method.as_str(), route.as_str()));
+        let served = answers.iter().any(|a| {
+            &a.method == method
+                && &a.route == route
+                && a.status.is_success()
+                && a.content_type
+                    .as_deref()
+                    .is_some_and(|t| media.contains(t.split(';').next().unwrap_or_default().trim()))
+        });
+        if !served && !elsewhere {
+            problems.push(format!("{method} {route}: never answered a {media:?} file"));
+        }
+    }
+    for (method, route) in FILES_ANSWERED_ELSEWHERE {
+        if !downloads.contains_key(&((*method).to_owned(), (*route).to_owned())) {
+            problems.push(format!(
+                "{method} {route}: not a file route of the document"
+            ));
+        }
+    }
+    problems
 }

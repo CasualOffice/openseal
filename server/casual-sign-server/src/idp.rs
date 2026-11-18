@@ -5,10 +5,14 @@
 //! issuer, its authorization, token and JWKS endpoints, and the client registered there.
 //! A sender requires `sso` of a recipient; the signer picks one of these providers on the
 //! signing page and signs in there (authorization code flow with PKCE S256, `state` and
-//! `nonce`; OpenID Connect Core §3.1). The ID token passes only when it is signed by a key
-//! in the provider's JWKS with an asymmetric algorithm, names the provider's issuer and
-//! the client as audience, has not expired by the server's clock, carries the nonce of the
-//! sign-in it answers, and asserts a verified email equal to the recipient's. The audit
+//! `nonce`; OpenID Connect Core §3.1). The request carries `max_age` (the provider's
+//! `max_age_seconds`, default 600), so the provider makes the signer authenticate again
+//! when their session there is older (ASVS 3.6.1, `ASVS-22`). The ID token passes only
+//! when it is signed by a key in the provider's JWKS with an asymmetric algorithm, names
+//! the provider's issuer and the client as audience, has not expired by the server's
+//! clock, carries the nonce of the sign-in it answers, states an `auth_time` no older than
+//! `max_age` (with the clock skew allowed), and asserts a verified email equal to the
+//! recipient's. The audit
 //! chain then records the issuer and the SHA-256 of the subject, never the subject itself
 //! or the token.
 //!
@@ -102,7 +106,18 @@ struct ProviderIn {
     client_secret: String,
     #[serde(default)]
     redirect_uri: Option<String>,
+    /// The longest time since the signer last authenticated at the provider, in seconds
+    /// (OpenID Connect Core §3.1.2.1 `max_age`); default [`DEFAULT_MAX_AGE`].
+    #[serde(default)]
+    max_age_seconds: Option<u32>,
 }
+
+/// The default `max_age`: ten minutes, so a signer who signed in at the provider earlier
+/// in the day authenticates again for the signature (ASVS 3.6.1).
+pub const DEFAULT_MAX_AGE: u32 = 600;
+
+/// The largest `max_age_seconds` a provider may set: a day.
+const MAX_MAX_AGE: u32 = 86_400;
 
 /// One provider a signer may sign in with.
 pub(crate) struct Provider {
@@ -115,6 +130,7 @@ pub(crate) struct Provider {
     client_id: String,
     client_secret: casual_sign_secrets::Secret,
     redirect_uri: String,
+    max_age: u32,
 }
 
 impl core::fmt::Debug for Provider {
@@ -205,6 +221,10 @@ impl RecipientIdps {
             if p.client_id.is_empty() || p.client_secret.is_empty() {
                 return Err(bad("client_id or client_secret"));
             }
+            let max_age = p.max_age_seconds.unwrap_or(DEFAULT_MAX_AGE);
+            if max_age > MAX_MAX_AGE {
+                return Err(bad("max_age_seconds (more than 86400)"));
+            }
             let redirect_uri = p
                 .redirect_uri
                 .unwrap_or_else(|| format!("{public_url}/s/oidc"));
@@ -228,6 +248,7 @@ impl RecipientIdps {
                 client_id: p.client_id,
                 client_secret: casual_sign_secrets::Secret::new(p.client_secret),
                 redirect_uri,
+                max_age,
             });
         }
         Ok(Self {
@@ -376,8 +397,9 @@ pub(crate) fn challenge(verifier: &str) -> String {
 }
 
 /// Where to send the browser: `p`'s authorization endpoint with the request of
-/// OpenID Connect Core §3.1.2.1.
+/// OpenID Connect Core §3.1.2.1, `max_age` included (ASVS 3.6.1).
 pub(crate) fn authorization_url(p: &Provider, state: &str, nonce: &str, verifier: &str) -> String {
+    let max_age = p.max_age.to_string();
     let sep = if p.authorization_endpoint.contains('?') {
         '&'
     } else {
@@ -393,6 +415,7 @@ pub(crate) fn authorization_url(p: &Provider, state: &str, nonce: &str, verifier
             ("scope", "openid email"),
             ("state", state),
             ("nonce", nonce),
+            ("max_age", &max_age),
             ("code_challenge", &challenge(verifier)),
             ("code_challenge_method", "S256"),
         ])
@@ -408,6 +431,10 @@ struct IdClaims {
     iat: Option<i64>,
     #[serde(default)]
     nonce: Option<String>,
+    /// When the signer last authenticated at the provider, Unix seconds: required, since
+    /// the request sent `max_age` (OpenID Connect Core §2).
+    #[serde(default)]
+    auth_time: Option<i64>,
     #[serde(default)]
     email: Option<String>,
     #[serde(default)]
@@ -466,6 +493,13 @@ pub(crate) fn verify(
         .as_deref()
         .is_some_and(|n| crate::crypto::same(&sha256(n.as_bytes()), &sha256(nonce.as_bytes())));
     if !nonce_ok || claims.iss != p.issuer || claims.sub.is_empty() {
+        return None;
+    }
+    // ASVS 3.6.1: the provider authenticated the signer within `max_age` (and not in the
+    // future); a token without `auth_time` cannot show it did.
+    let auth_time = claims.auth_time?;
+    let oldest = now.saturating_sub(i64::from(p.max_age).saturating_add(SKEW_SECS));
+    if auth_time < oldest || auth_time > now.saturating_add(SKEW_SECS) {
         return None;
     }
     // A verified email equal to the recipient's (some providers send the flag as a
@@ -537,7 +571,20 @@ mod tests {
             u.starts_with("https://idp.example.test/authorize?response_type=code&"),
             "{u}"
         );
-        assert!(u.contains("&state=st&nonce=nn&"), "{u}");
+        assert!(u.contains("&state=st&nonce=nn&max_age=600&"), "{u}");
+        let short = RecipientIdps::from_json(
+            file(r#", "max_age_seconds": 0"#).as_bytes(),
+            "https://s.test",
+        )
+        .unwrap();
+        let u = authorization_url(short.get("corp").unwrap(), "st", "nn", "verifier");
+        assert!(u.contains("&max_age=0&"), "{u}");
+        let e = RecipientIdps::from_json(
+            file(r#", "max_age_seconds": 86401"#).as_bytes(),
+            "https://s.test",
+        )
+        .unwrap_err();
+        assert_eq!(e.member, "max_age_seconds (more than 86400)");
         assert!(
             u.contains("redirect_uri=https%3A%2F%2Fs.test%2Fs%2Foidc"),
             "{u}"

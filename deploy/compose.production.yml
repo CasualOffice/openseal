@@ -191,10 +191,11 @@ services:
       OPENSEAL_DATABASE_URL_FILE: /run/secrets/database-url
       OPENSEAL_JWT_SIGNING_KEY_FILE: /run/secrets/jwt-signing-key
       OPENSEAL_MFA_KEY_FILE: /run/secrets/mfa-key
+      OPENSEAL_PASSWORD_PEPPER_FILE: /run/secrets/password-pepper
       OPENSEAL_PUBLIC_URL: ${OPENSEAL_PUBLIC_URL:?set OPENSEAL_PUBLIC_URL (https)}
       OPENSEAL_TRUSTED_PROXIES: ${OPENSEAL_TRUSTED_PROXIES:?set OPENSEAL_TRUSTED_PROXIES}
       OPENSEAL_SECRET_RELOAD_SECONDS: "30"
-    secrets: [database-url, jwt-signing-key, mfa-key, s3-secret-key, internal-ca.pem]
+    secrets: [database-url, jwt-signing-key, mfa-key, password-pepper, s3-secret-key, internal-ca.pem]
     # The edge proxy (TLS, HSTS) forwards here; bound to the host's loopback address.
     ports: ["127.0.0.1:${OPENSEAL_HTTP_PORT:-8080}:8080"]
     tmpfs: ["/tmp:size=64m,mode=1777"]
@@ -298,6 +299,7 @@ secrets:
   s3-tls.key: {file: "${OPENSEAL_SECRETS_DIR}/s3-tls.key"}
   jwt-signing-key: {file: "${OPENSEAL_SECRETS_DIR}/jwt-signing-key"}
   mfa-key: {file: "${OPENSEAL_SECRETS_DIR}/mfa-key"}
+  password-pepper: {file: "${OPENSEAL_SECRETS_DIR}/password-pepper"}
   keyd-tls-chain.pem: {file: "${OPENSEAL_SECRETS_DIR}/keyd-tls-chain.pem"}
   keyd-tls.key: {file: "${OPENSEAL_SECRETS_DIR}/keyd-tls.key"}
   keyd-allow-list: {file: "${OPENSEAL_SECRETS_DIR}/keyd-allow-list"}

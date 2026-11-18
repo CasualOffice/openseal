@@ -46,10 +46,10 @@ pub mod web;
 pub mod api;
 
 pub use anomaly::{AbnormalActivity, AlertSink, AnomalyConfig, LogAlerts};
-pub use api::admin::{Bootstrapped, bootstrap, bootstrap_workspace};
+pub use api::admin::{Bootstrapped, bootstrap, bootstrap_with_pepper, bootstrap_workspace};
 pub use api::envelopes::issue_invitation_token;
 pub use auth::{Credential, Principal, SCOPES, SecondFactor};
-pub use crypto::JwtKeys;
+pub use crypto::{JwtKeys, PasswordPepper, PepperError};
 pub use error::{ApiError, FieldProblem};
 pub use mfa::MfaKey;
 pub use routes::{Access, Route, app, table};
