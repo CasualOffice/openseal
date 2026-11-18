@@ -3,7 +3,8 @@
 //!
 //! The server counts, per principal and per client address, what an attack looks like
 //! in its security events and requests: requests, `429`s, authentication failures,
-//! refusals (`403`), staff document reads (mass download) and envelope voids. Each
+//! refusals (`403`), staff document reads (mass download), envelope voids, envelope
+//! sends and bulk sends (a hijacked account mailing on the operator's name). Each
 //! count is a sliding window (two fixed buckets, the older weighted by how much of it
 //! still overlaps the window). When a count reaches its threshold the server writes
 //! one `alert.abnormal_activity` security event and raises one operator alert through
@@ -55,6 +56,11 @@ pub(crate) enum Rule {
     DocumentReads,
     /// Envelopes voided.
     Voids,
+    /// Envelopes sent one at a time (`POST /envelopes` with `status: sent`, `POST
+    /// /envelopes/{id}/send`).
+    Sends,
+    /// Bulk sends made (`POST /bulk-sends`, not a check of the list).
+    BulkSends,
 }
 
 impl Rule {
@@ -67,6 +73,8 @@ impl Rule {
             Self::Denied => "access_denied",
             Self::DocumentReads => "document_reads",
             Self::Voids => "voids",
+            Self::Sends => "sends",
+            Self::BulkSends => "bulk_sends",
         }
     }
 }
@@ -91,6 +99,11 @@ pub struct AnomalyConfig {
     pub document_reads: u32,
     /// Envelopes voided per principal (default 25).
     pub voids: u32,
+    /// Envelopes sent one at a time per principal or address (default 300: one a
+    /// second for 5 minutes).
+    pub sends: u32,
+    /// Bulk sends made per principal or address (default 10).
+    pub bulk_sends: u32,
     /// Subjects tracked at once, per rule together (default 50,000).
     pub max_tracked: usize,
     /// Alerts raised per minute across every subject (default 20).
@@ -108,6 +121,8 @@ impl Default for AnomalyConfig {
             denied: 50,
             document_reads: 500,
             voids: 25,
+            sends: 300,
+            bulk_sends: 10,
             max_tracked: 50_000,
             max_alerts_per_minute: 20,
         }
@@ -148,6 +163,8 @@ impl AnomalyConfig {
             ("OPENSEAL_ALERT_DENIED", &mut c.denied),
             ("OPENSEAL_ALERT_DOCUMENT_READS", &mut c.document_reads),
             ("OPENSEAL_ALERT_VOIDS", &mut c.voids),
+            ("OPENSEAL_ALERT_SENDS", &mut c.sends),
+            ("OPENSEAL_ALERT_BULK_SENDS", &mut c.bulk_sends),
             (
                 "OPENSEAL_ALERT_MAX_PER_MINUTE",
                 &mut c.max_alerts_per_minute,
@@ -171,6 +188,8 @@ impl AnomalyConfig {
             Rule::Denied => self.denied,
             Rule::DocumentReads => self.document_reads,
             Rule::Voids => self.voids,
+            Rule::Sends => self.sends,
+            Rule::BulkSends => self.bulk_sends,
         }
     }
 
@@ -190,7 +209,7 @@ impl AnomalyConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AbnormalActivity {
     /// What was counted (`auth_failures`, `rate_limited`, `requests`, `access_denied`,
-    /// `document_reads`, `voids`), or `tracking_full`.
+    /// `document_reads`, `voids`, `sends`, `bulk_sends`), or `tracking_full`.
     pub rule: &'static str,
     /// `CS-LOG-0002` (a threshold reached) or `CS-LOG-0003` (the table full).
     pub code: &'static str,
@@ -652,12 +671,15 @@ mod tests {
         let c = AnomalyConfig::from_vars(|n| match n {
             "OPENSEAL_ALERT_AUTH_FAILURES" => Some("7".into()),
             "OPENSEAL_ALERT_VOIDS" => Some("0".into()),
+            "OPENSEAL_ALERT_SENDS" => Some("40".into()),
+            "OPENSEAL_ALERT_BULK_SENDS" => Some("3".into()),
             "OPENSEAL_ALERT_WINDOW_SECS" => Some(" 60 ".into()),
             _ => None,
         })
         .unwrap();
         assert_eq!(c.auth_failures, 7);
         assert_eq!(c.voids, 0);
+        assert_eq!((c.sends, c.bulk_sends), (40, 3));
         assert_eq!(c.window, Duration::from_secs(60));
         assert_eq!(c.requests, AnomalyConfig::default().requests);
         for (n, v) in [

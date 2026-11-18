@@ -418,7 +418,8 @@ The server counts, per principal and per client address (by id or keyed pseudony
 or a misuse looks like, over a sliding window (`server/casual-sign-server/src/anomaly.rs`). When a count reaches its
 threshold it writes one `alert.abnormal_activity` security event and raises one **operator alert**: by default a
 `WARN` line `"event":"abnormal_activity"` (`rule`, `code`, `count`, `threshold`, `window_s`, `principal`, `client`,
-`suppressed`, `dropped`), the same channel as the worker's `job_dead` and `seal_failed` lines. Route it to the
+`suppressed`, `dropped`), the same channel as the worker's `job_dead` and `seal_failed` lines (`ERROR`, with `code`,
+`account`, `envelope` and `job`; `ASVS-13B`). Route it to the
 operator's pager or chat from the collector, as those. An embedder can pass its own sink
 (`AppState::set_alert_sink`).
 
@@ -430,6 +431,8 @@ operator's pager or chat from the collector, as those. An embedder can pass its 
 | `access_denied` | Answers `403` | principal, address | `OPENSEAL_ALERT_DENIED` | 50 |
 | `document_reads` | Staff reads (`data.document_read`): mass download | principal, address | `OPENSEAL_ALERT_DOCUMENT_READS` | 500 |
 | `voids` | Envelopes voided | principal, address | `OPENSEAL_ALERT_VOIDS` | 25 |
+| `sends` | Envelopes sent one at a time (`POST /envelopes` with `status: sent`, `POST /envelopes/{id}/send`; a draft is not counted) | principal, address | `OPENSEAL_ALERT_SENDS` | 300 |
+| `bulk_sends` | Bulk sends made (`POST /bulk-sends` answered `201`; a check of the list is not counted) | principal, address | `OPENSEAL_ALERT_BULK_SENDS` | 10 |
 
 `OPENSEAL_ALERT_WINDOW_SECS` (default 300, 10 to 86,400) is the window; a threshold of `0` turns its rule off. **One
 alert per burst:** after an alert the subject is quiet for `OPENSEAL_ALERT_COOLDOWN_SECS` (default 900); trips
@@ -453,9 +456,10 @@ same rules at the collector over every instance's lines. For example, over 5 min
 | `kind = data.document_read`, count ≥ 500 | `principal` |
 | `event = abnormal_activity` or `kind = alert.abnormal_activity` | any: page at once |
 
-The access log (`event = request`) carries neither principal nor client, so the `requests` and `voids` rules have no
-collector-side equivalent per subject; across instances, alert on the total rate of `route =
-/api/v1/envelopes/{id}/void` with `status = 200`, and rely on each instance's own `requests` rule.
+The access log (`event = request`) carries neither principal nor client (`ASVS-13C`), so the `requests`, `voids`,
+`sends` and `bulk_sends` rules have no collector-side equivalent per subject; across instances, alert on the total rate
+of `route = /api/v1/envelopes/{id}/void` with `status = 200` (and of `/api/v1/envelopes/{id}/send` with `200`,
+`/api/v1/bulk-sends` with `201`), and rely on each instance's own rules.
 
 ## Configuration
 
