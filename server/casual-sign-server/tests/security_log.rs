@@ -218,6 +218,23 @@ async fn every_server_security_event_is_emitted_without_personal_data() {
         .await;
     assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
 
+    // A re-authentication refused (ASVS-07), and the user's other sessions ended from
+    // this one (ASVS-06): `auth.reauthenticate` and `auth.session_end`.
+    let r = api
+        .call(
+            "POST",
+            "/api/v1/auth/reauthenticate",
+            &s2,
+            Some(json!({"password": WRONG})),
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED, "{:?}", r.json());
+    let r = api
+        .call("POST", "/api/v1/auth/sessions/end-others", &s2, None, &[])
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{:?}", r.json());
+
     // Password change refused (wrong current password) and done; sign out.
     let r = api
         .call(

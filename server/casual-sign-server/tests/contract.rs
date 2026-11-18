@@ -2234,6 +2234,48 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "mfa verify with no factor enrolled",
     )
     .await;
+    // The person's own sessions and re-authentication (ASVS-06, ASVS-07;
+    // `tests/sessions.rs` walks them through).
+    ok(
+        api.call("GET", "/api/v1/auth/sessions", &s, None, &[])
+            .await,
+        StatusCode::OK,
+        "own sessions",
+    )
+    .await;
+    ok(
+        api.call(
+            "POST",
+            "/api/v1/auth/reauthenticate",
+            &s,
+            Some(json!({"password": common::harness::PASSWORD})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "reauthenticate",
+    )
+    .await;
+    ok(
+        api.call(
+            "DELETE",
+            &format!("/api/v1/auth/sessions/{}", uuid::Uuid::now_v7()),
+            &s,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::NOT_FOUND,
+        "end an unknown session",
+    )
+    .await;
+    ok(
+        api.call("POST", "/api/v1/auth/sessions/end-others", &s, None, &[])
+            .await,
+        StatusCode::OK,
+        "end other sessions",
+    )
+    .await;
     ok(
         api.call("POST", "/api/v1/auth/logout", &s, None, &[]).await,
         StatusCode::NO_CONTENT,
