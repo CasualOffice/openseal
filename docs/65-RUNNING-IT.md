@@ -748,3 +748,26 @@ arm64 hosts run them under emulation or build from source.
 
 Rolling: migrations are forward-compatible for one release, so old and new nodes run together during a deploy. Never
 skip a minor version without reading the release notes.
+
+## Demos
+
+Recordings of each slice's flow, made by CI on a green `main` run (docs/06: "demo recorded" is part of every slice's
+end point). They are GitHub Actions artifacts of the private repository: open the run, then Artifacts, or
+`gh run download <run> -n <artifact>`. Artifacts expire after 90 days; a later green run records them again and this
+table moves to it. Videos are never committed.
+
+All four below come from `main` at `ebac68e`, run
+[44023485128](https://github.com/CasualOffice/openseal/actions/runs/44023485128) (2026-11-17, every job green),
+expiring 2027-02-15. Each was downloaded and checked frame by frame (2026-11-18): every video plays and shows the
+flow named.
+
+| Slice | Artifact (id, size) | Recorded by | What it shows (chromium and webkit each) |
+| --- | --- | --- | --- |
+| 1 Send and sign (`S1-02`) | `slice-1-demo` (14303626789, 7.2 MB) | `compose-e2e`, `real-stack.spec.mjs` VS-01 | `vs01-*-1-3-sender-sends-and-downloads.webm` (14–19 s): the editor, "Sent. Recipients are being notified.", the envelope page from Sent to Completed, Download signed PDF and Certificate. `vs01-*-2-signer-signs-on-a-phone.webm` (5 s, iPhone 13 size): the ERSD consent, the document opening, Sign, Adopt and sign, "Signed. Thank you, Cara.". `vs01-*-4-signer-downloads.webm`: the signer's done screen through the completion email's link with Download a copy and Certificate of completion. Also the eight downloaded PDFs (sealed and certificate, sender and signer) |
+| 2 Routing and recipient types (`RTE-04`) | `slice-2-demo` (14303182320, 11.7 MB) | `compose-e2e`, `routing.spec.mjs` | `vs02-*-1-6-sender-sends-and-downloads.webm` (24–35 s): send to an approver, a viewer, an agent and a signer in order; the envelope page as each acts, to Completed and the downloads. `-2-approver-approves`, `-3-viewer-views`, `-4-agent-names-the-signer` (the agent's "Who signs next" form), `-5-named-signer-signs`: each through the link the worker emailed. Also the sealed PDFs and certificates |
+| 5 Recipient authentication and consent (`RAUTH-02`) | `slice-5-demo` (14303611682, 5.0 MB) | `compose-e2e`, `recipient-auth.spec.mjs` | `vs05-*-codes-on-a-phone.webm` (68–70 s, phone size): the email, SMS ("Text me a code", "Code sent") and voice ("Call me with a code") code steps. `vs05-*-identity-provider-sign-in.webm`: "Sign in to continue" through the OpenID Connect stub, the document, the Withdraw consent dialog and "You withdrew your consent" |
+| 7 Verify (`VS-07A`) | `slice-7-demo` (14304121907, 2.0 MB) | `e2e`, `verify-demo.spec.mjs` | `vs07-*-verify.webm` (7–8 s): `verify.html` in the browser, a trusted certificate added, a sealed PDF "Signed and unchanged" with every check passed, then a tampered one "Changed or broken" with the document digest failed. Recorded in the `e2e` job's mock mode (the page shows its "Demo mode" banner); the check itself is the WebAssembly verifier running in the page, as on a real server |
+
+Seen while checking: in the slice-1 and slice-2 sender videos the envelope page's Evidence card says "Audit trail
+links do not match" on a real envelope: the page read only bare hex, and the server writes `sha256:<hex>` (`S1-10`,
+fixed with a test; the evidence itself was never wrong, only its display).

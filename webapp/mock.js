@@ -210,7 +210,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     const when = at || iso();
     const event = { v: 1, envelope_id: env.id, seq, prev, at: when, type, actor, context: location ? { location } : {}, data };
-    const hash = await sha256hex(JSON.stringify(event));
+    // Written as the server writes it (`Hash256`): `sha256:` and the hex (S1-10).
+    const hash = `sha256:${await sha256hex(JSON.stringify(event))}`;
     list.push({ seq, type, at: when, hash, prev, event });
     notify(env, type);
   }

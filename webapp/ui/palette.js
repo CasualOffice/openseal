@@ -83,7 +83,7 @@ export function openPalette({ query = "", debounce = 150 } = {}) {
     attrs: { role: "combobox", "aria-expanded": "true", "aria-controls": listId, "aria-autocomplete": "list", "aria-label": t("palette.input"), placeholder: t("palette.placeholder") },
   });
   const list = h("div", { class: "os-cmdk__list", id: listId, attrs: { role: "listbox", "aria-label": t("palette.results") } });
-  const esc = h("button", { type: "button", class: "os-cmdk__esc", text: "esc", attrs: { tabindex: "-1", "aria-hidden": "true", title: t("action.close") } });
+  const esc = h("button", { type: "button", class: "os-cmdk__esc", text: t("palette.esc"), attrs: { tabindex: "-1", "aria-hidden": "true", title: t("action.close") } });
   const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
   const foot = h("div", { class: "os-cmdk__foot", attrs: { "aria-hidden": "true" } },
     h("span", {}, h("kbd", { text: "↑↓" }), t("palette.move")),

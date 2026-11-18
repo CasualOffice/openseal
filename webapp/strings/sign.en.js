@@ -129,6 +129,7 @@ export const SIGN = {
   "sign.loader.pages-unknown": "Preparing the pages",
   "sign.loader.done": "done",
   "sign.secured": "Secured by OpenSeal",
+  "sign.page-title": "Sign · OpenSeal",
   "sign.more-options": "More options",
   "sign.ask": "{name} asked you to sign",
   "sign.ask.org": "{name} at {org} asked you to sign",

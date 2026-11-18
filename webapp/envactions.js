@@ -95,7 +95,7 @@ export function auditTable(audit, env, senderName) {
       h("td", { class: "os-audit__event", text: eventLabel(a.type) }),
       h("td", { attrs: { "data-label": t("envelope.by") }, text: actorOf(a, env, senderName) }),
       h("td", { attrs: { "data-label": t("audit.when") } }, h("time", { attrs: { datetime: a.at }, text: fmtDate(a.at) })),
-      h("td", { class: "os-col-hash" }, h("code", { attrs: { title: a.hash }, text: `${(a.hash || "").slice(0, 12)}…` }))));
+      h("td", { class: "os-col-hash" }, h("code", { attrs: { title: a.hash }, text: `${(a.hash || "").replace(/^sha256:/, "").slice(0, 12)}…` }))));
   }
   table.append(tb);
   return h("div", { class: "os-table-wrap" }, table);

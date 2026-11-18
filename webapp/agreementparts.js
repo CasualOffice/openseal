@@ -327,7 +327,7 @@ export function evidenceSection(ctx, env, audit, { certificate = true } = {}) {
     wrap.append(h("div", { class: "os-evid__field" },
       h("span", { class: "os-evid__label", text: t("evidence.head") }),
       h("span", { class: "os-evid__hashrow" },
-        h("code", { class: "os-evid__hash", attrs: { "data-testid": "chain-head" }, text: groupHex(audit.chain_head) }),
+        h("code", { class: "os-evid__hash", attrs: { "data-testid": "chain-head" }, text: groupHex(String(audit.chain_head).replace(/^sha256:/, "")) }),
         button(t("envelope.copy-chain"), { icon: "copy", size: "sm", variant: "ghost", iconOnly: true, onClick: () => copyText(audit.chain_head, t("envelope.chain-copied")) }))));
   }
   for (const d of env.documents || []) {
