@@ -258,6 +258,48 @@ impl Privacy<'_> {
         row.ok_or(StoreError::NotFound { entity: "envelope" })
     }
 
+    /// As [`Privacy::legal_hold`], locking the envelope's row for the rest of the
+    /// transaction, so a hold placed concurrently waits for the purge deciding under this
+    /// lock, or the purge sees the hold (the retention job's check).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` for no such envelope here; `CS-DB-0001`.
+    pub async fn legal_hold_for_update(
+        &mut self,
+        envelope: EnvelopeId,
+    ) -> Result<Option<OffsetDateTime>> {
+        let acct = self.tx.acct();
+        let row = sqlx::query_scalar!(
+            "SELECT legal_hold_at FROM envelopes WHERE account_id = $1 AND id = $2 FOR UPDATE",
+            acct,
+            envelope.0
+        )
+        .fetch_optional(self.tx.conn())
+        .await
+        .map_err(db)?;
+        row.ok_or(StoreError::NotFound { entity: "envelope" })
+    }
+
+    /// Record in the admin log that the retention job deleted `count` ended staff
+    /// sessions (`retention.sessions_purged`): sessions have no audit chain, so the
+    /// deletion is evidenced here.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn record_sessions_purged(&mut self, count: u64) -> Result<()> {
+        self.tx
+            .admin_event(
+                AdminChange::new("retention.sessions_purged").change(Change::new(
+                    "sessions",
+                    None,
+                    Some(serde_json::Value::from(count)),
+                )),
+            )
+            .await
+    }
+
     /// Place (`hold`) or release `envelope`'s legal hold at `now`, with its admin event
     /// (`envelope.legal_hold_set` or `envelope.legal_hold_released`). A hold keeps the
     /// envelope from every retention rule until released; it changes nothing of the
