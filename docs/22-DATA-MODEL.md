@@ -604,7 +604,7 @@ the rules above, and what does not:
 engine never sees SQL. The same types serialize to the public JSON in [40](40-API-DESIGN.md) through explicit DTOs, so
 an internal field never leaks into the API by accident.
 
-### As built (`ASVS-16`, `ASVS-18`, migration 0045, ADR-039 Proposed)
+### As built (`ASVS-16`, `ASVS-18`, migration 0045, ADR-039 Accepted)
 
 `users.erased_at` (the identity was pseudonymised by `openseal_erase_user`, a definer that acts only on a member of
 the current account and of no other, because the factor columns change only as the owner); `retention_rules`

@@ -238,7 +238,7 @@ The audit chain is retained at least as long as the envelope's documents. Purgin
 a controller's request) deletes documents and personal fields and keeps a **tombstone**: envelope id, chain head,
 sealed hash, purge time and policy, so the fact that an agreement existed and was purged is itself evidence.
 
-### As built (`ASVS-16`, `ASVS-18`, migration 0045, ADR-039 Proposed)
+### As built (`ASVS-16`, `ASVS-18`, migration 0045, ADR-039 Accepted)
 
 - **Retention rules.** An account sets, per data class, the days a record is kept after its last change (completion,
   for completed envelopes): `draft`, `ended` (declined, voided, expired), `completed`, `sessions` (ended staff
