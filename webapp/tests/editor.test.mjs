@@ -126,7 +126,7 @@ test("suggestions become ghost fields the editor can place, skipping ones on pla
   // A company suggestion is a company field now the editor places that type (UX-05).
   assert.deepEqual([out[0].type, out[0].label, out[0].page, out[0].docKey], ["company", "Company name", 2, "d1"]);
   // A type the editor does not place becomes a text field labelled with its cue.
-  const other = suggestionsFrom([{ document_id: "doc-1", type: "ssn", page: 2, x: "72", y: "300", width: "120", height: "22", cue: "SSN" }], docs, [], () => "k");
+  const other = suggestionsFrom([{ document_id: "doc-1", type: "payment", page: 2, x: "72", y: "300", width: "120", height: "22", cue: "SSN" }], docs, [], () => "k");
   assert.deepEqual([other[0].type, other[0].label], ["text", "SSN"]);
 });
 

@@ -44,7 +44,7 @@ fn id_of(fields: &Value, key: &str) -> String {
     all.iter()
         .find(|f| f["label"] == key)
         .or_else(|| all.iter().find(|f| f["type"] == key))
-        .unwrap_or_else(|| panic!("no field {key}"))["id"]
+        .expect("a field with that label or type")["id"]
         .as_str()
         .unwrap()
         .to_owned()

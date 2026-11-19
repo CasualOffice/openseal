@@ -1343,3 +1343,24 @@ conflict, so this carries behaviour and the units rule, not the old looks.
   only what changed (`PUT /retention`, a sensitive action); a field that is not whole days 1–36500 is said in place;
   Preview shows the dry run per class, ended sessions and what legal holds keep. Tests: `tests/retention.test.mjs`,
   `e2e/privacy.spec.mjs` (chromium, webkit). Legal holds and a purge request are API-only for now (`ASVS-42`).
+
+## As built: every field kind and field logic (slice 4, `VS-04A`–`VS-04C`, 2026-11-19)
+
+- **Editor.** The palette offers every engine kind but payment (slice 13): date, email address, phone, SSN, ZIP,
+  multi-select, formula, stamp, drawing, envelope ID, link, Approve and Decline, after the earlier kinds. The
+  inspector gains a **Date** section (the format a date is typed and shown in) and a **Logic** section: "Show this
+  field when" another field (by data label) is checked, not checked, filled in, or a value; a checkbox group (name,
+  and at least, at most or exactly so many boxes); a formula (expression and decimal places). A link takes its
+  address. Pure rules in `fieldlogic.js`; the engine checks them again at send.
+- **Signing page.** Every kind is filled or shown: dates in their format, the typed kinds checked as the engine
+  checks them (the sender's message replaces the default one), a multi-select's options in a panel, a stamp from an
+  uploaded image and a drawing on a pad (`signature.js` `imageDialog`, each adopted with its own `mark`), the
+  envelope ID, a formula's result, a link (http and https only, opened without an opener), Approve and Decline
+  buttons. The page applies the view's **`rules`** after every answer: a field a condition hides is neither shown nor
+  required, a formula shows the server's result, a linked field shows the value it mirrors. The page never works
+  them out itself.
+- **Mock.** `fieldrules.js` answers `rules` in mock mode only, a stand-in for the engine (JavaScript numbers, not the
+  engine's decimals); the real server runs `casual_sign_fields::evaluate_envelope`.
+- **Tests.** `webapp/tests/slice4.test.mjs`, `slice4-mock.test.mjs`; `webapp/e2e/fields.spec.mjs` (the slice run; axe
+  light and dark on the new controls and the Logic panel). An optional field's blue is now `--os-sign-optional`, the
+  light theme's info blue in both themes since the page is paper: dark mode's blue failed contrast on it.

@@ -47,6 +47,7 @@ import { mlStatus, featureOn, loadSuggestions, acceptSuggestion, dismissSuggesti
 const FIELD_ICON = {
   signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", company: "layers", title: "type", // i18n-ignore: icon names
   text: "text-cursor-input", number: "list-ordered", checkbox: "square-check", radio_group: "circle-dashed", dropdown: "chevron-down", attachment: "paperclip", note: "info", // i18n-ignore: icon names
+  date: "calendar", email_address: "at-sign", zip: "map-pin", multi_select: "list-checks", stamp: "stamp", drawing: "pen-line", hyperlink: "external-link", approve: "circle-check", decline: "circle-x", // i18n-ignore: icon names
 };
 /// The members of a field the editor sets besides its place, owner, `required` and `label`
 /// (UX-05), by their wire names (api.js `FIELD_MEMBERS`); kept on the editor's field as is.
