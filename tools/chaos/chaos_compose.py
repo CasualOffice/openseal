@@ -1022,18 +1022,21 @@ class Run:
         rows: list[dict] = []
         try:
             self.setup()
-            self.scenario("worker paused past its lease, killed mid-seal and after a finish", self.paused_and_killed)
-            self.restore_everything()
-            self.scenario("keyd down while sealing", self.keyd_down)
-            self.restore_everything()
-            self.scenario("PostgreSQL killed mid-ceremony", self.postgres_ceremony)
-            self.restore_everything()
-            self.scenario("PostgreSQL killed mid-seal", self.postgres_seal)
-            self.restore_everything()
-            self.scenario("object store down mid-seal through the last attempt", self.object_store)
-            self.restore_everything()
-            self.scenario("rolling restarts and the object store credential rotation under signer traffic", self.rotation)
-            self.restore_everything()
+            # CI runs the two parts on separate runners (no job over 20-25 minutes); each part
+            # starts from a fresh stack, so neither depends on the other's state.
+            parts = (
+                (("worker paused past its lease, killed mid-seal and after a finish", self.paused_and_killed),
+                 ("keyd down while sealing", self.keyd_down),
+                 ("PostgreSQL killed mid-ceremony", self.postgres_ceremony)),
+                (("PostgreSQL killed mid-seal", self.postgres_seal),
+                 ("object store down mid-seal through the last attempt", self.object_store),
+                 ("rolling restarts and the object store credential rotation under signer traffic", self.rotation)),
+            )
+            for number, part in enumerate(parts, 1):
+                if self.args.part in (0, number):
+                    for name, fn in part:
+                        self.scenario(name, fn)
+                        self.restore_everything()
             rows = self.verdict()
         except (ChaosError, KeyError, IndexError, TypeError, ValueError, OSError, subprocess.TimeoutExpired) as e:
             self.problems.append(f"setup or verdict: {e}")
@@ -1059,6 +1062,7 @@ def main(argv: list[str]) -> int:
     r.add_argument("--no-build", dest="build", action="store_false")
     r.add_argument("--verify-python", default=os.environ.get("OPENSEAL_VERIFY_PYTHON", sys.executable))
     r.add_argument("--tsa-delay", type=float, default=6.0)
+    r.add_argument("--part", type=int, choices=(0, 1, 2), default=0, help="scenario group; 0 runs both")
     g = sub.add_parser("tsa-gate")
     g.add_argument("--listen", required=True)
     g.add_argument("--target", required=True)
