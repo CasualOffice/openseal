@@ -12,7 +12,7 @@ use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
     admin, bulk, envelopes as env, factors, folders, groups, mfa, ml, org, privacy, sessions,
-    switch, templates, webhooks,
+    switch, templates, usetemplates, webhooks,
 };
 use crate::authz::{Action, Level, OrgAction};
 use crate::ceremony;
@@ -622,6 +622,14 @@ pub fn table() -> Vec<Route> {
         r("GET", "/api/v1/contacts", er, JSON, env::contacts),
         r("GET", "/api/v1/envelopes", er, JSON, env::list),
         r("POST", "/api/v1/envelopes", ew, CREATE, env::create),
+        // Use one template or several together (slice 3, FG-097).
+        r(
+            "POST",
+            "/api/v1/envelopes/from-templates",
+            ew,
+            JSON,
+            usetemplates::create,
+        ),
         r("GET", "/api/v1/envelopes/{id}", er, JSON, env::get),
         r("PATCH", "/api/v1/envelopes/{id}", ew, JSON, env::patch),
         r("DELETE", "/api/v1/envelopes/{id}", ew, JSON, env::delete),
@@ -909,6 +917,14 @@ pub fn table() -> Vec<Route> {
             ew,
             JSON,
             folders::file,
+        ),
+        // Template folders (TSH-03): each member's own.
+        r(
+            "POST",
+            "/api/v1/folders/{id}/templates",
+            tr,
+            JSON,
+            folders::file_templates,
         ),
         r(
             "POST",

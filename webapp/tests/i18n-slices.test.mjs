@@ -28,6 +28,8 @@ const SLICE_MODULES = [
   "prepare.js", "prepareview.js", "routing.js", "envelope.js", "envactions.js", "agreementparts.js", "docview.js",
   // signer: the ceremony, its steps, adopting a signature, recipient authentication (sign.js)
   "sign.js", "signfields.js", "signature.js", "zoom.js", "pdfview.js",
+  // templates (slice 3): the list with folders and sharing, using one or several together
+  "templates.js", "templatemodel.js", "templatesync.js",
   // verify
   "verify.js", "verifyview.js", "verifyreport.js", "trail.js",
   // shared components

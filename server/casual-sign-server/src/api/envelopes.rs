@@ -84,7 +84,7 @@ async fn change(
     command(c, tx, &mut cmds, l, cmd, expected).await
 }
 
-fn envelope_response(status: StatusCode, s: &EnvelopeState) -> Response {
+pub(crate) fn envelope_response(status: StatusCode, s: &EnvelopeState) -> Response {
     json_tagged(status, &dto::envelope(s), &dto::etag(s))
 }
 

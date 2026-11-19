@@ -518,15 +518,19 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     searchByMeaning: (q, { signal, limit } = {}) => data(request("GET", "/api/v1/search", { query: { q, mode: "meaning", limit }, signal })),
 
     // ---- Folders (UXW-02: each member's own) ---------------------------------
-    /// The signed-in user's folders, `{items: [{id, name, count}]}`.
-    listFolders: () => data(request("GET", "/api/v1/folders")),
-    createFolder: (name) => data(request("POST", "/api/v1/folders", { body: { name } })),
+    /// The signed-in user's folders, `{items: [{id, name, kind, count}]}`; `kind`
+    /// `templates` lists their template folders (TSH-03).
+    listFolders: (kind) => data(request("GET", "/api/v1/folders", kind && kind !== "envelopes" ? { query: { kind } } : {})),
+    createFolder: (name, kind) => data(request("POST", "/api/v1/folders", { body: kind && kind !== "envelopes" ? { name, kind } : { name } })),
     renameFolder: (f, name) => data(request("PATCH", F(f), { body: { name } })),
     /// Remove a folder; its envelopes go back to no folder.
     deleteFolder: (f) => data(request("DELETE", F(f))),
     /// File envelopes in a folder (`null`: in none).
     moveEnvelopes: (f, envelopeIds) =>
       data(request("POST", f == null ? "/api/v1/folders/none/envelopes" : `${F(f)}/envelopes`, { body: { envelope_ids: envelopeIds } })),
+    /// File templates in a template folder (`null`: in none; TSH-03).
+    moveTemplates: (f, templateIds) =>
+      data(request("POST", f == null ? "/api/v1/folders/none/templates" : `${F(f)}/templates`, { body: { template_ids: templateIds } })),
 
     // ---- Bulk send from a template (UXW-04; bulkmodel.js) ------------------------
     bulk: {
@@ -682,7 +686,13 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// The templates the caller may use (UXW-06); `view`: `all` (default), `owned`,
       /// `shared` (Shared with me) or `favourites`. Each item has `access` (owner, edit or
       /// use), `favourite` and `shared`.
-      list: (view) => data(request("GET", "/api/v1/templates", view && view !== "all" ? { query: { view } } : {})),
+      /// `folder` (TSH-03): one of the caller's template folders, or `none`; each item
+      /// carries the caller's `folder_id`.
+      list: (view, folder) => data(request("GET", "/api/v1/templates", (view && view !== "all") || folder ? { query: { view: view && view !== "all" ? view : null, folder: folder || null } } : {})),
+      /// One envelope from one template or several (slice 3, composite templates):
+      /// `{template_ids, recipients: [{role, name, email} | {name, email, type}],
+      /// subject?, message?, status}`; answers the envelope.
+      use: (body) => data(request("POST", "/api/v1/envelopes/from-templates", { body })),
       /// Whom a template is shared with (UXW-06; its owner's): `{items: [{id, can_edit,
       /// user?: {id, name, email}, group?: {id, name}, account?: true}]}`.
       shares: (tp) => data(request("GET", `${T(tp)}/shares`)),

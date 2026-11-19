@@ -12,6 +12,7 @@
 import { makePdf, countPages } from "./mockpdf.js";
 import { checkText } from "./signfields.js";
 import { checkList } from "./bulkmodel.js";
+import { mergeTemplates, roleKey } from "./templatemodel.js";
 
 /// Fixed demo values; the e2e specs read them from here.
 export const MOCK = {
@@ -994,6 +995,61 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return env;
   }
 
+  // ---- Using templates (as the server's api/usetemplates.rs, slice 3) ---------------------
+  // `POST /envelopes/from-templates`: the templates' documents in order, roles matched by
+  // name across them (templatemodel.js `mergeTemplates`, the server's rule), every role
+  // filled once, people beyond the roles after them; then `createEnvelopeFrom`.
+  async function envelopeFromTemplates(body) {
+    const b = body || {};
+    const bad = (pointer) => fail(422, "CS-API-0001", "Malformed request", [{ pointer, code: "CS-API-0001" }]);
+    for (const k of Object.keys(b)) if (!["template_ids", "recipients", "subject", "message", "status"].includes(k)) bad(`/${k}`);
+    if (b.status != null && !["draft", "sent"].includes(b.status)) bad("/status");
+    const ids = b.template_ids;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 10) bad("/template_ids");
+    const tps = ids.map((x, i) => {
+      if (ids.indexOf(x) !== i) bad(`/template_ids/${i}`);
+      return db.templates.find((tp) => tp.id === x && !tp.deleted_at) || bad(`/template_ids/${i}`);
+    });
+    const { roles, roleOf, conflict } = mergeTemplates(tps);
+    if (conflict >= 0) bad(`/template_ids/${conflict}`);
+    const filled = new Map();
+    const extra = [];
+    (Array.isArray(b.recipients) ? b.recipients : []).forEach((p, i) => {
+      if (p?.role != null) {
+        const key = roleKey(p.role);
+        if (!roles.some((r) => r.key === key) || filled.has(key) || p.type != null) bad(`/recipients/${i}/role`);
+        filled.set(key, p);
+      } else {
+        if (p?.type != null && !["cc", "signer"].includes(p.type)) bad(`/recipients/${i}/type`);
+        extra.push(p);
+      }
+    });
+    if (roles.some((r) => !filled.has(r.key))) bad("/recipients");
+    const last = Math.max(0, ...roles.map((r) => r.routing_order));
+    const refOf = new Map(roles.map((r, i) => [r.key, `role${i}`]));
+    const recipients = [
+      ...roles.map((r, i) => ({ ref: `role${i}`, type: r.type, name: filled.get(r.key).name || "", email: filled.get(r.key).email || "", routing_order: r.routing_order })),
+      ...extra.map((p, i) => ({ ref: `extra${i}`, type: p.type === "signer" ? "signer" : "cc", name: p.name || "", email: p.email || "", routing_order: last + 1 })),
+    ];
+    const documents = [];
+    const fields = [];
+    for (const tp of tps) {
+      const docIndex = new Map(tp.documents.map((d, i) => [d.id, documents.length + i]));
+      documents.push(...tp.documents.map((d) => ({ name: d.name, content_base64: db.blobs[d.id] })));
+      for (const { id: _id, role_id, document_id, ...f } of tp.fields || []) {
+        const key = roleOf.get(role_id);
+        if (key == null || !docIndex.has(document_id)) continue;
+        fields.push({ ...f, recipient: refOf.get(key), document: docIndex.get(document_id) });
+      }
+      tp.last_used_at = iso();
+    }
+    const first = tps[0];
+    return createEnvelopeFrom({
+      subject: b.subject ?? (first.email_subject || first.name), message: b.message ?? (first.email_message || ""),
+      status: b.status || "draft", documents, recipients, fields,
+    });
+  }
+
   // ---- Bulk send from a template (as the server, UXW-04) ---------------------------------
   // The list is checked by bulkmodel.js's `checkList`, the server's rules; each sent row
   // is one `createEnvelopeFrom`, the template's documents, roles and fields with the
@@ -1069,20 +1125,46 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   }
 
   // ---- Folders (as the server, UXW-02: each member's own) --------------------------------
-  function folders(method, id, sub, body) {
-    const named = () => {
+  // Template folders (TSH-03): `kind: "templates"`, holding templates by their own
+  // `folder_id` (the demo member's filing), never envelopes.
+  function folders(method, id, sub, body, query) {
+    const kindOf = (k, at) => {
+      if (k == null) return "envelopes";
+      if (k !== "envelopes" && k !== "templates") fail(422, "CS-API-0001", "Malformed request", [{ pointer: at, code: "CS-API-0001" }]);
+      return k;
+    };
+    const named = (kind) => {
       const name = typeof body?.name === "string" ? body.name.trim() : "";
       if (!name || name.length > 100) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
-      if (db.folders.some((f) => f.id !== id && f.name.toLowerCase() === name.toLowerCase())) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "exists" }]);
+      if (db.folders.some((f) => f.id !== id && (f.kind || "envelopes") === kind && f.name.toLowerCase() === name.toLowerCase())) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "exists" }]);
       return name;
     };
-    const out = (f) => ({ ...f, count: db.envelopes.filter((e) => e.folder_id === f.id && !e.deleted_at).length });
+    const out = (f) => (f.kind === "templates"
+      ? { ...f, count: db.templates.filter((tp) => tp.folder_id === f.id && !tp.deleted_at).length }
+      : { ...f, kind: "envelopes", count: db.envelopes.filter((e) => e.folder_id === f.id && !e.deleted_at).length });
     if (!id) {
-      if (method === "GET") return json(200, { items: db.folders.map(out) });
-      if (method === "POST") { const f = { id: uid(), name: named() }; db.folders.push(f); return json(201, out(f)); }
+      if (method === "GET") {
+        const kind = kindOf(query?.get("kind") ?? null, "/query/kind");
+        return json(200, { items: db.folders.filter((f) => (f.kind || "envelopes") === kind).map(out) });
+      }
+      if (method === "POST") {
+        const kind = kindOf(body?.kind ?? null, "/kind");
+        const f = { id: uid(), name: named(kind), ...(kind === "templates" ? { kind } : {}) };
+        db.folders.push(f);
+        return json(201, out(f));
+      }
+    }
+    if (sub === "templates" && method === "POST") {
+      const target = id === "none" ? null : db.folders.find((f) => f.id === id && f.kind === "templates");
+      if (target === undefined) fail(404, "CS-API-0002", "Not found");
+      const ids = body?.template_ids;
+      if (!Array.isArray(ids) || !ids.length || ids.length > 200) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/template_ids", code: "CS-API-0001" }]);
+      const tps = ids.map((x) => db.templates.find((tp) => tp.id === x && !tp.deleted_at) || fail(404, "CS-API-0002", "Not found"));
+      for (const tp of tps) { if (target) tp.folder_id = target.id; else delete tp.folder_id; }
+      return json(200, { moved: new Set(ids).size });
     }
     if (sub === "envelopes" && method === "POST") {
-      const target = id === "none" ? null : db.folders.find((f) => f.id === id);
+      const target = id === "none" ? null : db.folders.find((f) => f.id === id && f.kind !== "templates");
       if (target === undefined) fail(404, "CS-API-0002", "Not found");
       const ids = body?.envelope_ids;
       if (!Array.isArray(ids) || !ids.length || ids.length > 200) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/envelope_ids", code: "CS-API-0001" }]);
@@ -1092,9 +1174,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     const f = db.folders.find((x) => x.id === id);
     if (!f) fail(404, "CS-API-0002", "Not found");
-    if (method === "PATCH") { f.name = named(); return json(200, out(f)); }
+    if (method === "PATCH") { if (body && "kind" in body) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/kind", code: "CS-API-0001" }]); f.name = named(f.kind || "envelopes"); return json(200, out(f)); }
     if (method === "DELETE") {
       for (const e of db.envelopes) if (e.folder_id === f.id) delete e.folder_id;
+      for (const tp of db.templates) if (tp.folder_id === f.id) delete tp.folder_id;
       db.folders = db.folders.filter((x) => x !== f);
       return json(204, null);
     }
@@ -1799,11 +1882,16 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
     if (res === "webhooks") return webhooks(method, id, sub, subId, subSub, body);
-    if (res === "folders") return folders(method, id, sub, body);
+    if (res === "folders") return folders(method, id, sub, body, query);
     if (res === "bulk-sends") return bulkSends(method, id, sub, body);
     if (res === "groups") return groups(method, id, sub, body);
     if (res === "permission-profiles") return profiles(method, id, body);
     if (res !== "envelopes") fail(404, "CS-API-0002", "Not found");
+    // Slice 3: one envelope from one template or several, as the server makes it.
+    if (id === "from-templates" && !sub) {
+      if (method !== "POST") fail(405, "CS-API-0012", "Method not allowed");
+      return withEtag(await envelopeFromTemplates(body), 201);
+    }
 
     if (!id) {
       if (method === "GET") return listEnvelopes(query);
@@ -2087,7 +2175,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   // (roles, documents, fields); fields are bound to `role_id` (or `role`, also an id);
   // every change bumps the version, and the changes that name one object need If-Match.
   function publicTemplate(tp, whole = true) {
-    const { documents, fields, created_at: _c, last_used_at: _l, shares: _s, favourite, edit_share: _e, ...rest } = tp;
+    const { documents, fields, created_at: _c, last_used_at: _l, shares: _s, favourite, edit_share: _e, folder_id: _f, ...rest } = tp;
     const access = tp.owner_user_id === "user-demo" ? "owner" : (tp.edit_share ? "edit" : "use");
     return whole ? { ...rest, documents, fields, access, favourite: !!favourite } : rest;
   }
@@ -2148,9 +2236,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (!["all", "owned", "shared", "favourites"].includes(view)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/query/view", code: "CS-API-0001" }]);
         const me = "user-demo";
         const inView = (tp) => deleted || view === "all" || (view === "owned" && tp.owner_user_id === me) || (view === "shared" && tp.owner_user_id !== me) || (view === "favourites" && !!tp.favourite);
-        const items = db.templates.filter((tp) => !!tp.deleted_at === deleted && inView(tp))
+        // TSH-03: `folder` narrows to one of the member's template folders, or `none`.
+        const folder = query?.get("folder") ?? null;
+        const inFolder = (tp) => deleted || folder == null || (folder === "none" ? !tp.folder_id : tp.folder_id === folder);
+        const items = db.templates.filter((tp) => !!tp.deleted_at === deleted && inView(tp) && inFolder(tp))
           .sort((a, b) => (deleted ? b.deleted_at.localeCompare(a.deleted_at) : b.created_at.localeCompare(a.created_at)))
-          .map((tp) => ({ ...publicTemplate(tp, false), roles: tp.roles, last_used_at: tp.last_used_at || null, access: tp.owner_user_id === me ? "owner" : (tp.edit_share ? "edit" : "use"), favourite: !!tp.favourite, shared: (tp.shares || []).length > 0 }));
+          .map((tp) => ({ ...publicTemplate(tp, false), roles: tp.roles, last_used_at: tp.last_used_at || null, access: tp.owner_user_id === me ? "owner" : (tp.edit_share ? "edit" : "use"), favourite: !!tp.favourite, shared: (tp.shares || []).length > 0, ...(deleted ? {} : { folder_id: tp.folder_id || null }) }));
         return json(200, { items });
       }
       if (method === "POST") return tplWhole(newTemplate(body), 201);

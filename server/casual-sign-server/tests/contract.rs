@@ -1994,6 +1994,9 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     // Bulk send from a template (UXW-04): every operation.
     common::bulk::bulk_send(&api, k).await;
 
+    // Slice 3 (VS-03): an envelope from two templates; a template folder.
+    common::slice3::every_operation(&api, k).await;
+
     // The Inbox (UXW-01): an envelope waiting for the administrator, signed in.
     ok(
         api.call(
