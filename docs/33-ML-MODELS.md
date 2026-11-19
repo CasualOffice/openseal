@@ -426,10 +426,10 @@ hash not in the workspace (skipped rather than matched unchecked).
 engine). Reason: libphonenumber's per-region metadata
 is the only sound way to tell a phone number from an order number, and no Rust alternative carries it. It is pure (its
 metadata is compiled in by its build script; nothing is read at run time), builds for wasm32-unknown-unknown, and is
-handed only short ASCII candidates, never document text. Its tree adds `postcard`, `heapless` 0.7, `quick-xml`,
-`strum`, `regex-cache`, `nom` and smaller crates, all MIT or Apache-2.0; `heapless` 0.7 depends on `atomic-polyfill`
-(RUSTSEC-2023-0089, unmaintained) for targets we do not build, ignored in `.cargo/audit.toml` under owner
-instruction 32 and removed under `DEP-05`. `email_address` and `iban_validate` are not used: the email domain check
+handed only short ASCII candidates, never document text. Its tree adds `postcard`, `quick-xml`,
+`strum`, `regex-cache`, `nom` and smaller crates, all MIT or Apache-2.0. Since 2026-11-20 phonenumber is vendored
+(`third_party/phonenumber`, `DEP-08`) taking postcard without its default features, so `heapless` 0.7 and
+`atomic-polyfill` are no longer in the build and no audit ignore is needed for them. `email_address` and `iban_validate` are not used: the email domain check
 and the IBAN table and mod-97 are our own, short and tested. `sha2` =0.11.1 (RustCrypto, MIT OR Apache-2.0, ADR-006)
 computes Base58Check's double SHA-256 for Bitcoin addresses (`ML-08C`); it was already in the engine through
 `casual-sign-pdf` and `casual-sign-crypto`, same version, no default features, so it adds nothing to the tree.

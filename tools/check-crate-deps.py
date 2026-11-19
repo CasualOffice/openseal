@@ -50,7 +50,9 @@ def manifests_outside_crates(root):
         if ".claude" in manifest.relative_to(root).parts:
             continue
         rel = manifest.relative_to(root)
-        if rel.parts[0] in {"crates", "target"} or "target" in rel.parts:
+        # third_party/ holds vendored upstream crates that stand in for the crates.io crate of
+        # the same name (docs/19 §Vendored crates, DEP-08); they are not server code.
+        if rel.parts[0] in {"crates", "target", "third_party"} or "target" in rel.parts:
             continue
         match = re.search(r'(?m)^\[package\][^\[]*?^name\s*=\s*"([^"]+)"', manifest.read_text(encoding="utf8"))
         if match:

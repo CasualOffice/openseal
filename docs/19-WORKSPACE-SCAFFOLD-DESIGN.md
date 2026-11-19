@@ -108,6 +108,7 @@ we add is marked as ours. The patch is dropped as soon as a release carries the 
 | --- | --- | --- | --- | --- | --- |
 | `oar-ocr` | 0.10.2, `greatv/oar-ocr` `16ee059` | Apache-2.0 | Manifest: `zip` 8.6 → 9.0.5; `image`, `imageproc` without defaults; examples and their dev-dependencies removed. Tests added for the `.npz` loader | zip advisories RUSTSEC-2026-0367, -0368, -0369, -0429, -0545..-0548; unused codecs, `rav1e`, `ttf-parser` | `DEP-06`, `DEP-07`, `LEG-08` |
 | `oar-ocr-core` | 0.10.2, same commit | Apache-2.0 (LICENSE added from the same commit; the package ships none) | Manifest: `image`, `imageproc` without defaults | Unused codecs, `rav1e`, `ttf-parser` | `DEP-07`, `LEG-08` |
+| `phonenumber` | 0.3.10+9.0.33, `whisperfish/rust-phonenumber` | Apache-2.0 | Manifest: `postcard` without default features | heapless 0.7 (RUSTSEC-2026-0578, -0580, -0582) and atomic-polyfill (RUSTSEC-2023-0089) leave the build; no release fixes it | `DEP-08` |
 
 ## Licence policy
 
