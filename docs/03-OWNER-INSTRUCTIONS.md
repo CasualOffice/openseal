@@ -76,6 +76,7 @@ by saying so.
 | 65 | 2026-11-19 | Chose, from options: accept ADR-040 as built: staff passkeys as a second factor with the WebAuthn rules checked by the server and all cryptography from aws-lc-rs; administrator reset of lost factors after step-up, with the identity check recorded. Recorded as ADR-040 Accepted in docs/08 and wherever it is cited | ADR-040, `CON-13`, `ASVS-32`, docs/08 |
 | 66 | 2026-11-19 | "Close on green main." Slice 3 (Templates) closes once `main`'s CI run on `af038fd` is green (run 44432837346); template folders are each member's own; template locking is `TSH-04`, outside slice 3. | `VS-03`, [74](74-SLICE-3-EVIDENCE.md) |
 | 67 | 2026-11-20 | "VS-04G: optional signature fields, free-form signing, field presets, 3,000 fields per envelope and field colour are not part of slice 4; they stay as their own rows, picked up in plan order." | `VS-04G`, `FLD-OPT-01`, `FLD-FREE-01`, `FLD-PRESET-01`, `FLD-3K-01`, `FLD-COLOUR-01`, [75](75-SLICE-4-EVIDENCE.md) |
+| 68 | 2026-11-20 | "Slice 4 (Every field) closes once main's CI run on 6bd9646 is green (owner sign-off 2026-11-20)." | `VS-04`, [75](75-SLICE-4-EVIDENCE.md) |
 
 ## Inherited working rules
 
