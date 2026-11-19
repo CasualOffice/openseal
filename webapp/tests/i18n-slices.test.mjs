@@ -30,6 +30,8 @@ const SLICE_MODULES = [
   "sign.js", "signfields.js", "signature.js", "zoom.js", "pdfview.js",
   // templates (slice 3): the list with folders and sharing, using one or several together
   "templates.js", "templatemodel.js", "templatesync.js",
+  // every field (slice 4): the editor's field logic and kinds, the mock's rules
+  "fieldlogic.js", "geometry.js", "fieldrules.js",
   // verify
   "verify.js", "verifyview.js", "verifyreport.js", "trail.js",
   // shared components

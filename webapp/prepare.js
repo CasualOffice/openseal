@@ -32,6 +32,7 @@ import { FIELD_TYPES, TYPED, CHOICE, DEFAULT_SIZE, clampRect, nudge, resize, pla
 import { errorMessage, RECIPIENT_TYPES } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate, FIELD_SETTINGS, blankSetting, settingsOf } from "./templatesync.js";
+import { conditionFrom, groupFrom, formulaFrom, labelsFor, DATE_FORMATS } from "./fieldlogic.js";
 import { suggestionsFrom } from "./detect.js";
 import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from "./guides.js";
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
@@ -1579,6 +1580,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     behaviour.push(textIn("fp-tooltip", "prepare.tooltip", f.tooltip, (v) => setM("tooltip", v.trim()), { max: 1000 }));
     props.append(h("div", { class: "os-props__group" }, ...behaviour));
     const general = [];
+    if (f.type === "hyperlink") {
+      // VS-04A: the address the signer may open (http or https; the page opens no other).
+      general.push(textIn("fp-url", "prepare.url", f.value?.text, (v) => { setM("value", v.trim() ? { text: v.trim() } : null); setM("read_only", !!v.trim()); }, { help: "prepare.url-help", max: 2000, type: "url" }));
+    }
     if (f.type === "note") {
       // A note is the sender's text, shown to the recipient as written.
       general.push(textIn("fp-note", "prepare.note-text", f.value?.text, (v) => setM("value", v.trim() ? { text: v.trim() } : null), { max: 2000, area: true }));
@@ -1640,6 +1645,52 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (kindNow === "regex") body.push(textIn("fp-pattern", "prepare.pattern", opts.pattern, (x) => apply("pattern", x), { help: "prepare.pattern-help", max: 1000 }));
       if (kindNow) body.push(textIn("fp-vmsg", "prepare.validate-message", opts.message, (x) => apply("message", x.trim()), { max: 500 }));
       props.append(section("validation", ...body));
+    }
+    // VS-04A: the format a date is typed and shown in (the engine's `DateFormat`).
+    if (f.type === "date" || f.type === "date_signed") {
+      const setD = (v) => { const next = { ...(f.format || {}) }; if (v) next.date_format = v; else delete next.date_format; setM("format", Object.keys(next).length ? next : null); };
+      props.append(section("date", selectField(t("prepare.date-format"), [["", t("prepare.fmt-default")], ...DATE_FORMATS.map(([k, s]) => [k, s])], { id: "fp-date-format", value: f.format?.date_format || "", size: "sm", onChange: setD }).el));
+    }
+    // VS-04C: Logic, DocuSign's conditional fields, checkbox groups and formulas. A
+    // condition and a formula name other fields by their data label.
+    {
+      const labels = labelsFor(S.fields, f.key);
+      const logic = [];
+      const c = f.conditional || {};
+      const when = c.when && typeof c.when === "object" ? "value" : c.when || "checked";
+      let condParent = c.parent_label || "";
+      let condWhen = when;
+      let condValue = c.when?.value || "";
+      const applyC = () => setM("conditional", conditionFrom(condParent, condWhen, condValue));
+      logic.push(selectField(t("prepare.show-when"), [["", t("prepare.show-always")], ...labels.map((l) => [l, l])], { id: "fp-cond-parent", value: condParent, size: "sm", attrs: { "data-testid": "cond-parent" }, onChange: (v) => { condParent = v; applyC(); renderProps(); } }).el);
+      if (condParent) {
+        logic.push(selectField(t("prepare.show-is"), [["checked", t("prepare.when-checked")], ["unchecked", t("prepare.when-unchecked")], ["any", t("prepare.when-any")], ["value", t("prepare.when-value")]], { id: "fp-cond-when", value: condWhen, size: "sm", attrs: { "data-testid": "cond-when" }, onChange: (v) => { condWhen = v; applyC(); renderProps(); } }).el);
+        if (condWhen === "value") logic.push(textIn("fp-cond-value", "prepare.when-value-is", condValue, (v) => { condValue = v; applyC(); }, { max: 4000 }));
+      }
+      if (f.type === "checkbox") {
+        const g = f.group || {};
+        const r = g.rule || {};
+        let gid = g.id || "";
+        let gRule = r.rule || "select_at_least";
+        let gN = String(r.min ?? r.max ?? r.count ?? 1);
+        const applyG = () => setM("group", groupFrom(gid, gRule, gN));
+        logic.push(textIn("fp-group", "prepare.group", gid, (v) => { gid = v.trim(); applyG(); renderProps(); }, { help: "prepare.group-help", max: 64 }));
+        if (gid) {
+          logic.push(h("div", { class: "os-geo" },
+            selectField(t("prepare.group-rule"), [["select_at_least", t("prepare.group-at-least")], ["select_at_most", t("prepare.group-at-most")], ["select_exactly", t("prepare.group-exactly")]], { id: "fp-group-rule", value: gRule, size: "sm", onChange: (v) => { gRule = v; applyG(); } }).el,
+            textIn("fp-group-n", "prepare.group-n", gN, (v) => { gN = v; applyG(); }, { type: "number" })));
+        }
+      }
+      if (f.type === "formula") {
+        const fm = f.formula || {};
+        let expr = fm.expression || "";
+        let prec = String(fm.precision ?? 2);
+        const applyF = () => setM("formula", formulaFrom(expr, prec));
+        logic.push(textIn("fp-formula", "prepare.formula", expr, (v) => { expr = v; applyF(); }, { help: "prepare.formula-help", max: 2000, area: true }));
+        logic.push(textIn("fp-precision", "prepare.precision", prec, (v) => { prec = v; applyF(); }, { type: "number" }));
+        if (!f.label) logic.push(h("p", { class: "os-muted os-small", text: t("prepare.formula-label") }));
+      }
+      props.append(section("logic", ...logic));
     }
     // Position (canvas: X and Y in points), with the size, open by default (UX-05's
     // Advanced): typed coordinates are clamped to the page.

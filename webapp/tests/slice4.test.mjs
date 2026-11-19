@@ -123,6 +123,32 @@ test("the mock's rules: a condition hides, a formula computes, a label links, a 
   assert.deepEqual(rulesFor(fields, r).computed.t, { error: "DivisionByZero" });
 });
 
+test("the editor's logic: a condition, a checkbox group and a formula as the engine takes them", async () => {
+  const { conditionFrom, groupFrom, formulaFrom, labelsFor } = await import("../fieldlogic.js");
+  assert.equal(conditionFrom("", "checked"), null);
+  assert.deepEqual(conditionFrom(" agree ", "checked"), { parent_label: "agree", when: "checked" });
+  assert.deepEqual(conditionFrom("plan", "value", "Pro"), { parent_label: "plan", when: { value: "Pro" } });
+  assert.equal(conditionFrom("plan", "value", ""), null);
+  assert.deepEqual(conditionFrom("x", "bogus"), { parent_label: "x", when: "checked" });
+  assert.equal(groupFrom("", "select_at_least", 1), null);
+  assert.deepEqual(groupFrom("opts", "select_at_least", "2"), { id: "opts", rule: { rule: "select_at_least", min: 2 } });
+  assert.deepEqual(groupFrom("opts", "select_at_most", "1"), { id: "opts", rule: { rule: "select_at_most", max: 1 } });
+  assert.deepEqual(groupFrom("opts", "select_exactly", "x"), { id: "opts", rule: { rule: "select_exactly", count: 1 } });
+  assert.equal(formulaFrom("  ", 2), null);
+  assert.deepEqual(formulaFrom("qty * price", "2"), { expression: "qty * price", precision: 2 });
+  assert.deepEqual(formulaFrom("a", "99"), { expression: "a", precision: 2 });
+  assert.deepEqual(labelsFor([{ key: "a", label: "qty" }, { key: "b", label: "price" }, { key: "c", label: "qty" }, { key: "d" }], "b"), ["qty"]);
+});
+
+test("the editor places every kind, keeps the logic members and gives a multi-select options", async () => {
+  const { takesInput, CHOICE, TYPED } = await import("../geometry.js");
+  const { FIELD_SETTINGS } = await import("../templatesync.js");
+  for (const ty of ["date", "email_address", "phone", "ssn", "zip", "multi_select", "stamp", "drawing"]) assert.equal(takesInput(ty), true, ty);
+  assert.ok(CHOICE.has("multi_select"));
+  for (const ty of ["date", "ssn", "zip"]) assert.ok(TYPED.has(ty), ty);
+  for (const k of ["conditional", "group", "formula"]) assert.ok(FIELD_SETTINGS.includes(k), k);
+});
+
 test("every new signing string is in the strings table", () => {
   for (const k of ["sign.check.ssn", "sign.check.date", "sign.check.pattern", "sign.check.custom", "sign.guide.stamp", "sign.guide.draw",
     "sign.stamp.title", "sign.stamp.choose", "sign.stamp.here", "sign.draw.title", "sign.draw.here", "sign.draw.clear", "sign.adopt.use",
