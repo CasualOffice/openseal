@@ -678,7 +678,9 @@ a.card:hover { transform: translateY(-2px); color: var(--os-text); box-shadow: 0
 .api-nav ul.api-nav__ops { margin: 0.25rem 0 0.5rem 0.625rem; padding-left: 0.5rem; box-shadow: inset 1px 0 0 var(--os-border); }
 .api-nav__ops a { font-size: 0.8125rem; min-height: 1.875rem; padding-block: 0.25rem; }
 .api-nav__ops a.is-active { color: var(--os-text); background: color-mix(in srgb, var(--os-text) 6%, transparent); }
-.api-nav__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.api-nav__ops li, .api-nav__ops a { min-width: 0; }
+.api-nav__ops a { max-width: 100%; }
+.api-nav__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
 .verb { background: color-mix(in srgb, currentColor 9%, transparent); }
 .verb--sm { min-width: 3.375rem; padding: 0.125rem 0.25rem; font-size: max(0.625rem, 11px); flex: none; }
 .docs-nav-toggle .api-nav { padding: 0 0.5rem 0.75rem; }

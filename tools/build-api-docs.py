@@ -662,7 +662,7 @@ def nav_tree(groups: dict[str, list[Op]], current: str) -> str:
         # The current resource lists its operations; the others link to their page (the
         # site search finds any operation), which keeps every page small.
         here = slug == current
-        links = "".join(f'<li><a href="#{anchor(o.id)}" data-op="{anchor(o.id)}"><span class="verb verb-{o.method} verb--sm">{o.method.upper()}</span>'
+        links = "".join(f'<li><a href="#{anchor(o.id)}" data-op="{anchor(o.id)}" title="{esc(o.title)}"><span class="verb verb-{o.method} verb--sm">{o.method.upper()}</span>'
                         f'<span class="api-nav__name">{esc(o.title)}</span></a></li>' for o in ops) if here else ""
         sections.setdefault(section, []).append(
             f'<li><a class="api-nav__grp" href="api-{slug}.html"{CUR if here else ""}><span>{esc(title)}</span>'
