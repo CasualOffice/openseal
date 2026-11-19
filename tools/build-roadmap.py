@@ -6,13 +6,20 @@
     python3 -I tools/build-roadmap.py --check   # fail if it is stale
 
 What it reads:
-  docs/06  each phase's "Closes when" boxes and its "closed" sign-off; the Release 1
-           scope ("In:" and "Work order:"); the slice table (outcomes); release gates.
+  docs/06  each phase's "Closes when" boxes and its "closed" sign-off; the hardening
+           release's boxes; the Release 1 scope ("In:" and "Work order:"); the releases
+           in "Where things stand" (`| vX.Y.Z | **State** ...`); the paused groups of
+           §Freeze; the slice table (outcomes); release gates.
   docs/14  Phase 2 stages (T-2*), the web app rows (WEB-*), the slices (VS-*), the
-           milestones (MS-*: which slices come next and which later), release gates.
+           milestones (MS-*: which are reached, which slices come next and which later),
+           release gates, and the status of every row named on the page.
 
-No dates are printed: docs/06 sets none ("No calendar dates"). Standard library only;
-fails non-zero, naming what it could not find.
+Every status and count on the page comes from those two files: nothing here says "in
+progress" or "paused" on its own, so the page cannot go stale while they are true. A
+row `Paused` (docs/05) is shown paused, never in progress.
+
+No calendar dates are printed: docs/06 sets none. Standard library only; fails non-zero,
+naming what it could not find.
 """
 
 from __future__ import annotations
@@ -49,10 +56,9 @@ SLICE_THEME = {
     21: "apps", 22: "api", 23: "apps", 24: "api", 25: "api", 26: "signing", 27: "templates", 28: "templates",
     29: "signing", 30: "apps", 31: "enterprise", 32: "apps", 33: "apps", 34: "apps", 35: "apps",
 }
-NEXT_MILESTONES = {"MS-3", "MS-4", "MS-5"}  # first signature, team beta, 1.0 GA
-LATER_MILESTONES = {"MS-6", "MS-7", "MS-8"}
-# Work after v0.0.1 shown under "Coming next" (owner instruction 36), with its status
-# read from docs/14. The labels are short public names for each row.
+NEXT_COUNT = 3  # the first three milestones not yet reached are "Next"; the rest "Later"
+# Work beside the slices shown on the page (owner instruction 36), with its status read
+# from docs/14. The labels are short public names for each row; nothing here is a status.
 NOW_ROWS = [
     ("UX-01", "Enterprise UI and layout pass: all seven packages, UX-02 to UX-08"),
     ("UXW-34", "Signer page names the sender and serves the electronic-records disclosure"),
@@ -176,9 +182,82 @@ def milestone_slices(rows_: dict[str, list[str]], ids: set[str]) -> set[int]:
 # ---- Render ---------------------------------------------------------------------------------
 
 def pill(kind: str, label: str) -> str:
-    ic = {"done": "circle-check", "progress": "loader-circle", "next": "circle-dot", "later": "circle-dashed", "blocked": "circle-alert"}[kind]
+    ic = {"done": "circle-check", "progress": "loader-circle", "next": "circle-dot", "later": "circle-dashed",
+          "blocked": "circle-alert", "paused": "circle-pause"}[kind]
     k = "next" if kind == "blocked" else kind
     return f'<span class="pill pill-{k}">{sitelib.icon(ic, 14)}{esc(label)}</span>'
+
+
+# A tracker status (docs/05) as the page shows it: (pill kind, list icon, icon class).
+STATUS_LOOK = {
+    "Done": ("done", "circle-check", "ok"),
+    "In progress": ("progress", "circle-dot", "wip"),
+    "Blocked": ("blocked", "circle-alert", "todo"),
+    "Paused": ("paused", "circle-pause", "paused"),
+    "Open": ("next", "circle-dashed", "todo"),
+}
+
+
+def status_icon(st: str) -> str:
+    if st not in STATUS_LOOK:
+        fail(f"docs/14 status {st!r} is not one of {sorted(STATUS_LOOK)}")
+    _k, ic, cls = STATUS_LOOK[st]
+    return sitelib.icon(ic, 16, cls)
+
+
+def group_state(statuses: list[str]) -> tuple[str, str]:
+    """One pill for a group of rows: done when all are; in progress when any is; paused
+    when every unfinished row is paused; otherwise blocked or open."""
+    left = [s for s in statuses if s != "Done"]
+    if not left:
+        return "done", "Done"
+    for st in ("In progress", "Blocked"):
+        if st in left:
+            return STATUS_LOOK[st][0], st
+    if all(s == "Paused" for s in left):
+        return "paused", "Paused"
+    return "next", "Open"
+
+
+def counts(statuses: list[str]) -> str:
+    """"3 of 13 done, 2 in progress, 8 paused": every status present, in docs/05's order."""
+    parts = [f"{statuses.count('Done')} of {len(statuses)} done"]
+    for st in ("In progress", "Blocked", "Paused", "Open"):
+        n = statuses.count(st)
+        if n:
+            parts.append(f"{n} {st.lower()}")
+    return ", ".join(parts)
+
+
+def section_boxes(secs: dict[str, str], prefix: str) -> tuple[str, int, int]:
+    key = next((k for k in secs if k.startswith(prefix)), None)
+    if not key:
+        fail(f"docs/06 has no section starting {prefix!r}")
+    body = secs[key]
+    done = len(re.findall(r"^\s*- \[x\]", body, flags=re.M))
+    todo = len(re.findall(r"^\s*- \[ \]", body, flags=re.M))
+    title = key.split("—", 1)[1].strip() if "—" in key else key
+    title = re.sub(r"\s*\(.*\)$", "", title)
+    return title, done, done + todo
+
+
+def releases(secs: dict[str, str]) -> list[tuple[str, str, str]]:
+    """(version, state, note) for each `| [Release 1 / ]vX.Y.Z | **State** ... | note |`
+    row of docs/06 "Where things stand", in the order written."""
+    stand = next((v for k, v in secs.items() if k.startswith("Where things stand")), "")
+    out = []
+    for line in stand.splitlines():
+        m = re.match(r"^\| (?:Release 1 / )?(v\d+\.\d+\.\d+) \| \*\*(\w+)\*\*", line)
+        if m:
+            out.append((m.group(1), m.group(2), plain(cells(line)[2])))
+    return out
+
+
+def paused_groups(secs: dict[str, str]) -> str:
+    """docs/06 §Freeze's sentence naming the paused groups, as plain text ("" if none)."""
+    body = next((v for k, v in secs.items() if k.startswith("Freeze")), "")
+    m = re.search(r"\*\*Paused\*\*\s*(.+?\.)(?:\s|$)", body.replace("\n", " "))
+    return plain("Paused " + m.group(1)) if m else ""
 
 
 def render() -> str:
@@ -197,6 +276,16 @@ def render() -> str:
     web.sort(key=lambda x: int(x[0].split("-")[1]))
     if not web:
         fail("docs/14 has no WEB-* rows")
+
+    ms = [(r, c) for r, c in t.items() if re.fullmatch(r"MS-\d+", r)]
+    ms.sort(key=lambda x: int(x[0][3:]))
+    if not ms:
+        fail("docs/14 has no MS-* rows")
+
+    def tl_item(kind: str, ic: str, title: str, pill_html: str, inner: str) -> str:
+        cls = {"done": ' class="tl-done"', "progress": ' class="tl-progress"'}.get(kind, "")
+        return (f'<li{cls}><span class="tl-dot">{sitelib.icon(ic, 20)}</span>\n'
+                f'<div class="tl-body"><div class="tl-title"><h3>{esc(title)}</h3>{pill_html}</div>\n{inner}</div></li>')
 
     tl = []
     for ph in phases[:3]:
@@ -219,46 +308,98 @@ def render() -> str:
 <ul class="tl-items">{stage_items}</ul>
 {f'<p>Left to close the phase:</p><ul class="tl-items">{left}</ul>' if left else ""}</div></li>""")
 
-    web_done = [(r, c) for r, c in web if c[2] == "Done"]
-    web_open = [(r, c) for r, c in web if c[2] != "Done"]
-    web_items = "".join(
-        f'<li>{sitelib.icon("circle-check" if c[2] == "Done" else "circle-dot", 16, "ok" if c[2] == "Done" else "wip")}<span><b>{esc(r)}</b> {esc(first_sentence(c[1], 120, ";."))}</span></li>'
-        for r, c in web_done + web_open)
-    tl.append(f"""<li class="tl-progress"><span class="tl-dot">{sitelib.icon("monitor", 20)}</span>
-<div class="tl-body"><div class="tl-title"><h3>Web app for senders and signers</h3>{pill("progress", "In progress")}</div>
-<p>{len(web_done)} of {len(web)} web app rows done; the rest were found while building it.</p>
-<ul class="tl-items">{web_items}</ul></div></li>""")
-    if r1["version"]:
-        tl.append(f"""<li class="tl-done"><span class="tl-dot">{sitelib.icon("rocket", 20)}</span>
-<div class="tl-body"><div class="tl-title"><h3>Release 1</h3>{pill("done", r1["version"] + " published")}</div>
-<p>The common send-and-sign case, end to end on one machine, published as the {esc(r1["version"])} pre-release for evaluation, not yet for production agreements. <a href="{sitelib.REPO}/releases/tag/{esc(r1["version"])}">Release notes</a>.</p></div></li>""")
-    else:
-        tl.append(f"""<li><span class="tl-dot">{sitelib.icon("rocket", 20)}</span>
-<div class="tl-body"><div class="tl-title"><h3>Release 1</h3>{pill("next", "Next")}</div>
-<p>{esc(r1["order"])}</p></div></li>""")
+    # The hardening release (owner instruction 48), from its boxes in docs/06.
+    h_title, h_done, h_all = section_boxes(secs, "Hardening release")
+    h_kind = "done" if h_done == h_all else "progress"
+    tl.append(tl_item(h_kind, "check" if h_kind == "done" else "shield-check", f"Hardening release: {h_title}",
+                      pill(h_kind, "Done" if h_kind == "done" else "In progress"),
+                      f"<p>{h_done} of {h_all} exit items met.</p>"))
 
-    # Work running now beside the slices, each with its tracker row's status.
-    now_items = []
-    for rid, label in NOW_ROWS:
+    # Milestones, from the MS-* rows: reached is Done.
+    ms_items = "".join(
+        f'<li>{status_icon(c[2])}<span><b>M{r[3:]}</b> {esc(plain(c[1]))} '
+        f'({"reached" if c[2] == "Done" else "not reached"})</span></li>' for r, c in ms)
+    reached = [r for r, c in ms if c[2] == "Done"]
+    if len(reached) > 1:
+        ms_label = f"M{reached[0][3:]} to M{reached[-1][3:]} reached"
+    else:
+        ms_label = f"M{reached[0][3:]} reached" if reached else "None reached yet"
+    ms_kind = "done" if reached else "next"
+    tl.append(tl_item(ms_kind, "milestone", "Milestones", pill(ms_kind, ms_label),
+                      f'<ul class="tl-items">{ms_items}</ul>'))
+
+    web_sts = [c[2] for _r, c in web]
+    w_kind, w_label = group_state(web_sts)
+    order = {"Done": 0, "In progress": 1, "Blocked": 2, "Open": 3, "Paused": 4}
+    web_items = "".join(
+        f'<li>{status_icon(c[2])}<span><b>{esc(r)}</b> {esc(first_sentence(c[1], 120, ";."))}</span></li>'
+        for r, c in sorted(web, key=lambda x: order[x[1][2]]))
+    tl.append(tl_item(w_kind, "monitor", "Web app for senders and signers", pill(w_kind, w_label),
+                      f'<p>Web app rows: {esc(counts(web_sts))}.</p>\n<ul class="tl-items">{web_items}</ul>'))
+
+    if r1["version"]:
+        tl.append(tl_item("done", "rocket", "Release 1", pill("done", r1["version"] + " published"),
+                          f'<p>The common send-and-sign case, end to end on one machine, published as the '
+                          f'{esc(r1["version"])} pre-release for evaluation, not yet for production agreements. '
+                          f'<a href="{sitelib.REPO}/releases/tag/{esc(r1["version"])}">Release notes</a>.</p>'))
+    else:
+        tl.append(tl_item("next", "rocket", "Release 1", pill("next", "Next"), f'<p>{esc(r1["order"])}</p>'))
+    for version, state, note in releases(secs):
+        if version == r1["version"]:
+            continue
+        kind = "done" if state == "Published" else "next"
+        link = (f' <a href="{sitelib.REPO}/releases/tag/{esc(version)}">Release notes</a>.'
+                if state == "Published" else "")
+        tl.append(tl_item(kind, "rocket", f"Release {version}", pill(kind, state),
+                          f"<p>{esc(first_sentence(note, 260, '.'))}{link}</p>"))
+
+    # Work beside the slices, each with its tracker row's status; paused rows in their own
+    # entry, so paused work never sits under an "In progress" pill.
+    for rid, _label in NOW_ROWS:
         if rid not in t:
             fail(f"docs/14 has no row {rid}")
-        st = t[rid][2]
-        ok = st == "Done"
-        now_items.append(f'<li>{sitelib.icon("circle-check" if ok else "circle-dot", 16, "ok" if ok else "wip")}'
-                         f'<span><b>{esc(rid)}</b> {esc(label)} ({esc(st.lower())})</span></li>')
-    tl.append(f"""<li class="tl-progress"><span class="tl-dot">{sitelib.icon("loader-circle", 20)}</span>
-<div class="tl-body"><div class="tl-title"><h3>Coming next</h3>{pill("progress", "In progress")}</div>
-<p>Since v0.0.1: the redesigned web app and organizations above workspaces are merged. In progress: workspace switching and an admin console, and assistive features from pretrained models. Model features are off by default and are suggestions only: nothing a model says enters the sealed PDF or the audit trail.</p>
-<ul class="tl-items">{"".join(now_items)}</ul></div></li>""")
+
+    def now_list(sel: list[tuple[str, str]]) -> str:
+        return "".join(f'<li>{status_icon(t[r][2])}<span><b>{esc(r)}</b> {esc(label)} ({esc(t[r][2].lower())})</span></li>'
+                       for r, label in sel)
+
+    def model_note(sel: list[tuple[str, str]]) -> str:
+        if not any(r.startswith("ML-") for r, _l in sel):
+            return ""
+        return (" Model features are off by default and are suggestions only: nothing a model says enters the "
+                "sealed PDF or the audit trail.")
+
+    active = [(r, label) for r, label in NOW_ROWS if t[r][2] != "Paused"]
+    paused = [(r, label) for r, label in NOW_ROWS if t[r][2] == "Paused"]
+    if active:
+        a_sts = [t[r][2] for r, _l in active]
+        a_kind, a_label = group_state(a_sts)
+        tl.append(tl_item(a_kind, "layers", "Beside the slices", pill(a_kind, a_label),
+                          f'<p>{esc(counts(a_sts))}.{model_note(active)}</p>\n'
+                          f'<ul class="tl-items">{now_list(active)}</ul>'))
+    if paused:
+        frozen = paused_groups(secs)
+        tl.append(tl_item("paused", "circle-pause", "Paused, not removed", pill("paused", "Paused"),
+                          f'<p>{esc(frozen)}{model_note(paused)}</p>\n<ul class="tl-items">{now_list(paused)}</ul>'))
 
     scope = "".join(f'<li>{sitelib.icon("check", 16)}<span>{esc(x)}</span></li>' for x in r1["items"])
 
-    # Next and Later, by theme.
-    nxt = milestone_slices(t, NEXT_MILESTONES)
-    later = milestone_slices(t, LATER_MILESTONES)
+    # Next and Later, by theme: the first milestones not reached are Next, the rest Later;
+    # a slice already done is shown under Milestones, not here.
+    open_ms = [r for r, c in ms if c[2] != "Done"]
+    next_ms, later_ms = open_ms[:NEXT_COUNT], open_ms[NEXT_COUNT:]
+    done_slices = {n for n in outcomes if t.get(f"VS-{n:02d}", ["", "", ""])[2] == "Done"}
+    nxt = milestone_slices(t, set(next_ms)) - done_slices
+    later = milestone_slices(t, set(later_ms)) - done_slices
     for n in outcomes:
-        if n not in nxt and n not in later:
+        if n not in nxt and n not in later and n not in done_slices:
             later.add(n)
+
+    def toward(ids: list[str]) -> str:
+        names = [f"M{r[3:]} {plain(t[r][1])}" for r in ids]
+        if not names:
+            return ""
+        return "Toward " + (", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else names[0]) + "."
 
     def lane(title: str, kind: str, nums: set[int], blurb: str) -> str:
         groups = []
@@ -271,7 +412,7 @@ def render() -> str:
                 name, outcome = outcomes[n]
                 vs = f"VS-{n:02d}"
                 st = t.get(vs, ["", "", "Open"])[2]
-                badge = pill("blocked", "Blocked") if st == "Blocked" else (pill("progress", "In progress") if st == "In progress" else "")
+                badge = "" if st == "Open" else pill(STATUS_LOOK[st][0], st)
                 tickets.append(f'<li class="ticket"><div class="ticket-top"><b>{esc(name)}</b><span class="id">{vs}</span></div>'
                                f'<p>{esc(first_sentence(outcome, 150))}</p>{badge}</li>')
             groups.append(f'<section class="theme-group" aria-label="{esc(label)}"><h3>{sitelib.icon(ic, 16)}{esc(label)}</h3>'
@@ -281,7 +422,7 @@ def render() -> str:
 
     gates = [(r, c) for r, c in t.items() if r in {"PV-01", "SEC-REV-01", "SEC-ASVS-01", "A11Y-01", "UXR-01", "LEG-01", "LEG-02"}]
     gate_items = "".join(
-        f'<li>{sitelib.icon("circle-check" if c[2] == "Done" else "circle-dashed", 16, "ok" if c[2] == "Done" else "todo")}<span><b>{esc(r)}</b> {esc(plain(c[1]))}</span></li>'
+        f'<li>{status_icon(c[2])}<span><b>{esc(r)}</b> {esc(plain(c[1]))} ({esc(c[2].lower())})</span></li>'
         for r, c in gates)
 
     body = f"""<section class="page-head"><div class="wrap">
@@ -306,8 +447,8 @@ def render() -> str:
 <section class="section-tight" aria-labelledby="board-h"><div class="wrap">
   <div class="sec-head"><h2 id="board-h">After Release 1</h2><p>Work continues as vertical slices: thin features cut through every layer, then deepened. Grouped by theme; each card is a slice in the tracker.</p></div>
   <div class="board">
-    {lane("Next", "next", nxt, "Toward first signature, team beta and 1.0 general availability.")}
-    {lane("Later", "later", later, "Regulated industries, the ecosystem, and the agreement platform.")}
+    {lane("Next", "next", nxt, toward(next_ms))}
+    {lane("Later", "later", later, toward(later_ms))}
   </div>
 </div></section>
 

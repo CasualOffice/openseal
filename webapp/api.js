@@ -312,6 +312,25 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// password?, current_password?}` (a new password needs the current one, `401
     /// CS-AUTH-0007` when wrong, and ends the user's other sessions).
     patchMe: (body) => data(request("PATCH", "/api/v1/users/me", { body })),
+    /// The person's own data in this workspace as one JSON document (ASVS-16):
+    /// `{format: "openseal.personal-data-export", v, exported_at, workspace, user, …}`.
+    /// At most three a minute (`429`).
+    exportMe: () => data(request("GET", "/api/v1/users/me/export")),
+    /// Erase one's own identity in this workspace (ASVS-16; needs a recent
+    /// re-authentication). `409 CS-API-0018` for the last administrator or an
+    /// organization administrator; `403 CS-API-0015` for a member of another workspace.
+    eraseMe: () => data(request("DELETE", "/api/v1/users/me")),
+    /// An administrator erases a member's identity (ASVS-16; recent re-authentication).
+    eraseUser: (id) => data(request("POST", `/api/v1/users/${encodeURIComponent(id)}/erase`)),
+    /// The account's retention rules (ASVS-18): `{keep_days: {draft, ended, completed,
+    /// sessions}, max_keep_days}`, each days or null (kept for ever).
+    retention: () => data(request("GET", "/api/v1/retention")),
+    /// Set or remove rules: `{draft?: days|null, …}` (recent re-authentication).
+    setRetention: (keepDays) => data(request("PUT", "/api/v1/retention", { body: { keep_days: keepDays } })),
+    /// The retention job's dry run: `{at, counts, sessions, held, envelopes}`.
+    retentionPreview: () => data(request("GET", "/api/v1/retention/preview")),
+    /// Place or release an envelope's legal hold (ASVS-18).
+    setLegalHold: (id, hold) => data(request(hold ? "PUT" : "DELETE", `/api/v1/envelopes/${encodeURIComponent(id)}/legal-hold`)),
     /// Ask for a password-reset email (UX-04, UXW-38); no session. `202 {}` whether or
     /// not the address has an account.
     requestPasswordReset: (email) => data(request("POST", "/api/v1/auth/password-reset", { body: { email } })),

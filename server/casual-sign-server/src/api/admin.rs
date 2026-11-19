@@ -1878,7 +1878,7 @@ fn mark_type(raw: &[u8], pointer: &str) -> Result<(), ApiError> {
     }
 }
 
-async fn me_json(c: &Call, tx: &mut TenantTx) -> Result<Value, ApiError> {
+pub(crate) async fn me_json(c: &Call, tx: &mut TenantTx) -> Result<Value, ApiError> {
     let m = tx
         .users()
         .get(c.p.user)

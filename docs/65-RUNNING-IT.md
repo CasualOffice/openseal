@@ -17,8 +17,10 @@ docker compose logs -f server worker         # what it is doing
 docker compose down -v                       # stop, and discard every volume (data, keys, mail)
 ```
 
-**Released images instead of building:** `OPENSEAL_IMAGE_PREFIX=ghcr.io/casualoffice/openseal OPENSEAL_VERSION=0.0.1 docker compose up -d --wait`
-pulls the published v0.0.1 images (`docker compose pull` first) rather than building from source.
+**Released images instead of building:** `OPENSEAL_IMAGE_PREFIX=ghcr.io/casualoffice/openseal OPENSEAL_VERSION=0.1.0 docker compose up -d --wait`
+pulls that release's published images (`docker compose pull` first) rather than building from source. v0.1.0 is the
+first release built by the signed release workflow below (prepared 2026-11-19, published when its tag runs); v0.0.1's
+images (`OPENSEAL_VERSION=0.0.1`) are the earlier, unsigned pre-release.
 
 `bootstrap` prints the account and administrator ids; run it once (a second run with the same email is refused).
 Ports bind to `127.0.0.1` only: `OPENSEAL_HTTP_PORT` (default 8080) and `OPENSEAL_MAIL_PORT` (default 8025) move them.
@@ -561,6 +563,18 @@ The access log (`event = request`) carries neither principal nor client (`ASVS-1
 of `route = /api/v1/envelopes/{id}/void` with `status = 200` (and of `/api/v1/envelopes/{id}/send` with `200`,
 `/api/v1/bulk-sends` with `201`), and rely on each instance's own rules.
 
+## Retention and erasure (`ASVS-16`, `ASVS-18`)
+
+Nothing is purged until an account administrator sets a retention rule (Admin › Retention, or `PUT /api/v1/retention`).
+A worker with `OPENSEAL_RETENTION=daily` (the default; `off` to stop queuing) queues one `retention_sweep` job per
+account with a rule each UTC day; any worker runs it. Its log line `retention_swept` carries counts per class, the
+sessions deleted and the envelopes skipped (held, or changed meanwhile), never names. A purge deletes database records,
+not blob bytes: until the orphan sweep exists (`HRD-09`) the bytes of purged envelopes stay in the object store,
+unreachable through the API; size the store accordingly. `verify-evidence` and the backup keep working across purges
+(they read only what records name). A member's erasure (`DELETE /api/v1/users/me`, or an administrator's
+`POST /api/v1/users/{id}/erase`) is immediate and cannot be undone; a person in several workspaces is removed by each
+other workspace's administrators first. Operators publish their own privacy notice saying what is kept (docs/09 §5).
+
 ## Configuration
 
 All configuration through environment variables; every secret also accepted as `NAME_FILE` (the sisters'
@@ -787,7 +801,8 @@ count into your audit records before then; the artifact holds no backup, no key 
 **Status:** the workflow below is written and linted (`actionlint` with `shellcheck`), its pinning tool is unit-tested,
 and the pinned profile was rendered and passed `tools/check-deploy.py` on a workstation (2026-11-17). It has not yet
 run on a tag: v0.0.1 was built by its first version (images with BuildKit's SBOM and provenance only, no cosign
-signature, no release assets). The first tag after this change is its first real run.
+signature, no release assets). The first tag after this change is its first real run: v0.1.0, prepared 2026-11-19
+(owner instruction 61; `REL-04`).
 
 **What a release is.** `.github/workflows/release.yml` runs on a `v*` tag pushed by the owner, never on an ordinary
 push. For each of `server`, `worker` and `keyd` it builds `deploy/Dockerfile`'s target for `linux/amd64` (base images

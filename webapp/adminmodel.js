@@ -15,7 +15,7 @@ export const NAV = Object.freeze([
   { id: "signing", ready: false, waits: ["signing", "seal"], live: ["ersd"] },
   { id: "branding", ready: true },
   { id: "intelligence", ready: true, ml: true },
-  { id: "retention", ready: false, waits: ["retention"] },
+  { id: "retention", ready: true },
   { id: "integrations", ready: true, tabs: ["api", "webhooks"] },
   { id: "audit", ready: true },
 ]);

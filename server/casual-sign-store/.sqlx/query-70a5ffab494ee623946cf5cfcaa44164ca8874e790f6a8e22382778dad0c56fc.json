@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM recipient_otp_codes AS o USING recipients AS r WHERE o.account_id = $1 AND r.account_id = o.account_id AND r.id = o.recipient_id AND r.envelope_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "70a5ffab494ee623946cf5cfcaa44164ca8874e790f6a8e22382778dad0c56fc"
+}

@@ -17,8 +17,10 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
   the named file or test. Re-assessed 2026-11-17 against `main` at `900d0b6` (PR #16 merged, CI run 44018844840 green) for every requirement
   whose evidence changed since (staff MFA default, the security event log, anomaly alerting, the restore drill, keyd
   seal tokens); work still on an open pull request is named as such and never counted as Met. Re-assessed 2026-11-19 for 2.1.8,
-  2.4.5, 3.6.1, 12.3.4 and 14.4.2, and for 2.3.2, 2.5.5 to 2.5.7 and 2.9.1 to 2.9.3 (`CON-13`, `ASVS-32`) in the change that builds them (`ASVS-03`, `ASVS-10`, `ASVS-22`, `ASVS-29`), counted
-  Met as of its merge; their docs/14 rows stay In progress until CI is green on `main`. A test is cited only where it exists; where the threat model records a control seen red, its
+  2.4.5, 3.6.1, 12.3.4 and 14.4.2 in the change that builds them (`ASVS-03`, `ASVS-10`, `ASVS-22`, `ASVS-29`), counted
+  Met as of its merge; their docs/14 rows stay In progress until CI is green on `main`. Re-assessed 2026-11-19 for 8.3.2
+  (Met) and 8.3.8 (Partly) in the change that builds them (`ASVS-16`, `ASVS-18`), and for 2.3.2, 2.5.5 to 2.5.7 and
+  2.9.1 to 2.9.3 in the change that builds them (`CON-13`, `ASVS-32`), on the same terms. A test is cited only where it exists; where the threat model records a control seen red, its
   `SEC-*` id is cited. Nothing was penetration-tested and no scanner was run for this document.
 - **Paths.** `-server/src/x.rs` means `server/casual-sign-server/src/x.rs`; likewise `-worker`, `-store`, `-keyd`,
   `-console`, `-modeld`, `-secrets`, `-host` under `server/`. Engine crates are under `crates/`.
@@ -30,15 +32,16 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 225 | 113 | 101 | 11 |
-| Partly | 29 | 7 | 17 | 5 |
-| Not met | 3 | 1 | 1 | 1 |
+| Met | 226 | 114 | 101 | 11 |
+| Partly | 30 | 7 | 18 | 5 |
+| Not met | 1 | 0 | 0 | 1 |
 | N/A | 21 | 7 | 12 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
-The largest gaps: personal-data controls (self-service export and
-erasure, retention purge: `ASVS-16`, `ASVS-18`), unsigned release images (`ASVS-15`), and log shipping shown only as
+The largest gaps: personal-data controls (built 2026-11-19 on a worktree
+branch: export, erasure and retention, `ASVS-16`, `ASVS-18`; left: purged blobs' bytes until `HRD-09`, the operator
+privacy-notice template), unsigned release images (`ASVS-15`), and log shipping shown only as
 configuration (`ASVS-08A`). Built and green on CI on `main` since the first assessment: the security event log
 (`ASVS-08`), anomaly alerting (`ASVS-13`; envelope and bulk sends counted since `ASVS-13A`), the backup and restore drill
 (`ASVS-14`, job `backup-drill`) and the administrators' TOTP default (`ASVS-31`); merged since: staff session idle and
@@ -72,9 +75,9 @@ Each is a docs/14 row in §ASVS findings. `SEC-ASVS-01` closes when these are cl
 | ASVS-13 (Done) | P1 | ASVS 8.1.4, 11.1.7, 11.1.8; `VS-20` | Closed 2026-11-14; envelope and bulk sends left as `ASVS-13A`. Was: Detect and alert on abnormal activity: request and 429 rates per principal and address, authentication failure bursts, mass downloads, bulk voids; thresholds configurable; alerts to the operator's channel |
 | ASVS-14 (Done) | P1 | ASVS 8.1.5, 8.1.6; `SEC-D02` | Closed 2026-11-14 on CI's `backup-drill`. Was: Backups encrypted with separate keys, with a documented and tested restore drill that verifies the audit chain, admin logs and keyd's operation log after restore |
 | ASVS-15 | P1 | ASVS 1.14.2, 10.3.2, 14.1.1, 14.2.5; `SEC-C02` | Sign release images with cosign and document verification at deploy; an SBOM for the source tree and vendored web files beside the image SBOMs |
-| ASVS-16 | P1 | ASVS 8.3.2, 8.3.3; `VS-15` | Self-service export and erasure requests for staff users and signers (evidence kept as retention requires, personal data otherwise removed), and an operator privacy-notice template |
+| ASVS-16 | P1 | ASVS 8.3.2, 8.3.3; `VS-15` | Built 2026-11-19 (in progress until a green run on `main`): staff export and erasure, a signer's erasure through the controller's purge request. Left: the operator privacy-notice template (8.3.3); `ASVS-41`, `ASVS-43`. Was: Self-service export and erasure requests for staff users and signers (evidence kept as retention requires, personal data otherwise removed), and an operator privacy-notice template |
 | ASVS-17 | P2 | ASVS 1.8.2, 6.1.1, 6.1.2, 8.3.7 | Decide by ADR between application-level encryption of personal data at rest and operator storage encryption, and record what the operator must enable |
-| ASVS-18 | P1 | ASVS 8.3.8; `SEC-D03`, `VS-15` | Retention classification and purge of personal data per account policy, derived data included |
+| ASVS-18 | P1 | ASVS 8.3.8; `SEC-D03`, `VS-15` | Built 2026-11-19 (in progress): rules, holds, the daily purge and its dry run. Left: the bytes of purged envelopes' blobs (`HRD-09`). Was: Retention classification and purge of personal data per account policy, derived data included |
 | ASVS-19 | P1 | ASVS 1.2.2, 1.6.2, 1.9.1, 1.9.2, 1.14.1, 1.14.4, 1.14.5, 2.10.1, 9.1.1, 9.1.3, 9.2.2, 14.1.3 | Built by `HRD-06` (2026-11-14): `deploy/compose.production.yml` with per-service secrets, TLS to PostgreSQL and the object store, every service hardened, checked by `tools/check-deploy.py`, and the `http` public URL refused. Left: the whole stack started on it (`HRD-01`), static database and object-store passwords (2.10.1), TLS at the edge is the operator's (9.1.1, 9.1.3). Was: Production deployment template: per-service secrets (seal key and PIN only in keyd), TLS to PostgreSQL (`sslmode=verify-full`) and the object store, the same container hardening as modeld for every service, a documented TLS edge, and a start-up refusal of an `http` public URL outside development |
 | ASVS-20 | P2 | ASVS 3.1.1, 8.3.1, 13.1.3 | Record the accepted risk of the bearer token in the signing link path (`/s/{token}`, bound to the first browser, no-referrer, route template in logs) in docs/07 `SEC-A01` and an ADR |
 | ASVS-21 | P2 | ASVS 2.2.4, 2.7.1 (L3 ceremony) | Phishing-resistant signer authentication option (a passkey for returning signers) as an alternative to SMS codes |
@@ -235,7 +238,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2.3.1 | 1 | All | System-generated initial secrets random and short-lived | Met | Invitation and reset links: 256 random bits, SHA-256 stored, 7 days, single use (docs/40 §2 table, `-worker/tests/user_invite.rs`) | — |
-| 2.3.2 | 2 | All | Enrolment of user-provided authenticators (FIDO/U2F) | Met | Staff register WebAuthn passkeys (FIDO2; attestation `none`), up to 10, as the first factor or beside one only from a session that passed it and re-authenticated (`POST /auth/mfa/passkeys/options`, `/auth/mfa/passkeys`; `-server/src/webauthn.rs`, `api/factors.rs`, migration 0045, ADR-039 Proposed). `-server/tests/passkeys.rs` (software authenticator: enrol, sign-in step, step-up, replay, clone counter, origin, RP id, cross-workspace, no bypass of an owed factor) and `webapp/e2e/passkeys.spec.mjs` (Chromium's virtual authenticator against the server), seen red | CON-13 |
+| 2.3.2 | 2 | All | Enrolment of user-provided authenticators (FIDO/U2F) | Met | Staff register WebAuthn passkeys (FIDO2; attestation `none`), up to 10, as the first factor or beside one only from a session that passed it and re-authenticated (`POST /auth/mfa/passkeys/options`, `/auth/mfa/passkeys`; `-server/src/webauthn.rs`, `api/factors.rs`, migration 0046, ADR-040 Accepted 2026-11-19 (owner instruction 65)). `-server/tests/passkeys.rs` (software authenticator: enrol, sign-in step, step-up, replay, clone counter, origin, RP id, cross-workspace, no bypass of an owed factor) and `webapp/e2e/passkeys.spec.mjs` (Chromium's virtual authenticator against the server), seen red | CON-13 |
 | 2.3.3 | 2 | All | Renewal instructions for time-bound authenticators | N/A | No time-bound authenticators issued to users (API keys expire but are replaced by an administrator) | — |
 
 **V2.4 Credential Storage**
@@ -295,7 +298,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2.9.1 | 2 | All | Cryptographic authenticator keys stored securely | Met | Staff passkeys (`CON-13`): the private key never leaves the authenticator; the server keeps only the public key (SPKI) in `staff_passkeys`, written only by definer functions keyed by the owner's session (migration 0045) | — |
+| 2.9.1 | 2 | All | Cryptographic authenticator keys stored securely | Met | Staff passkeys (`CON-13`): the private key never leaves the authenticator; the server keeps only the public key (SPKI) in `staff_passkeys`, written only by definer functions keyed by the owner's session (migration 0046) | — |
 | 2.9.2 | 2 | All | Challenge nonce 64+ bits | Met | WebAuthn challenges are 256 random bits from `aws-lc-rs`, one per session and purpose, five minutes, spent on use (`api/factors.rs`); OIDC `nonce` is 256 random bits (`idp.rs`) | — |
 | 2.9.3 | 2 | All | Approved algorithms for cryptographic authenticators | Met | ES256, EdDSA (Ed25519) and RS256 (2048 to 8192 bits) only, verified by `aws-lc-rs` (ADR-006; `-server/src/webauthn.rs`) | — |
 
@@ -548,13 +551,13 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 8.3.1 | 1 | All | Sensitive data in body or headers, not query string | Met | Passwords, codes and tokens in JSON bodies or headers; the signing link token is in the path by design (3.1.1) | ASVS-20 |
-| 8.3.2 | 1 | All | Users can export or remove their data | Not met | No self-service export or erasure (VS-15 enterprise data controls) | ASVS-16 |
+| 8.3.2 | 1 | All | Users can export or remove their data | Met | Built 2026-11-19 (`ASVS-16`, counted Met as of its merge; the row stays In progress until CI is green on `main`): a member exports their own data in the workspace (`GET /users/me/export`, rate-limited, logged) and erases their account (`DELETE /users/me`); an administrator erases a member (`POST /users/{id}/erase`); evidence is not altered (`-server/tests/privacy.rs`, `-worker/tests/retention.rs`, seen red). Signers, who hold no account, ask the controller, who purges (`POST /envelopes/{id}/purge`); their self-service export is `ASVS-41`; a person in several workspaces is removed by each before erasing (`ASVS-43`) | ASVS-16 |
 | 8.3.3 | 1 | All | Clear language about personal data use | Partly | ERSD disclosure and consent for signers (`/s/{token}/disclosure`, docs/09); no privacy notice template for operators | ASVS-16 |
 | 8.3.4 | 1 | All | Sensitive data identified with a handling policy | Met | docs/07 data classification; docs/22 marks personal fields (`Personal<T>` wrapper in the store) | — |
 | 8.3.5 | 2 | All | Access to sensitive data audited | Met | Signer document views recorded (`/s/{token}/documents/{doc}/viewed`); staff reads of a document, combined PDF, certificate, attachment, form data, audit trail, a document's analysis (an envelope's or a template's), the analysis suggestions (values read from the text), the envelope's fields or one field, or the envelope itself (which embeds every field's value) are `data.document_read` events with the user and the ids (`-server/src/security.rs` `classify`; `-server/tests/security_log.rs`, including `reads_of_analysis_suggestions_and_fields_are_document_reads`, which requests each of these routes). A change to an envelope or a field, whose answer also carries the field values, is not yet logged as a read (`ASVS-08C`) | ASVS-08C |
 | 8.3.6 | 2 | All | Sensitive data in memory overwritten | Partly | Secrets read through `Secret` wiped on drop (`casual-sign-secrets`); request passwords and codes are plain `String`s | ASVS-25 |
 | 8.3.7 | 2 | All | Encryption of required data with approved algorithms | Partly | As 6.1.1 | ASVS-17 |
-| 8.3.8 | 2 | All | Retention classification and deletion | Not met | Retention policies not built (`SEC-D03`, VS-15) | ASVS-18 |
+| 8.3.8 | 2 | All | Retention classification and deletion | Partly | Built 2026-11-19 (`ASVS-18`): retention rules per data class, legal holds, a daily job that purges expired envelopes through the engine (`envelope.purged`, tombstone, every relational record with personal data deleted) and ended sessions, a dry run (`-worker/tests/retention.rs`, seen red). Not yet: the blob bytes of purged envelopes stay in the store until the orphan sweep (`HRD-09`) | ASVS-18 |
 
 ### V9 Communication
 

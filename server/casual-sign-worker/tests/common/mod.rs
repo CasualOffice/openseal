@@ -497,6 +497,8 @@ pub struct Env {
     pub tsa_directory: Mutex<Option<Arc<casual_sign_worker::tsa::TsaDirectory>>>,
     /// Whether the worker queues anchors of chain heads (FG-158; off by default).
     pub anchoring: AtomicBool,
+    /// Whether the worker queues the daily retention jobs (ASVS-18; off by default).
+    pub retention: AtomicBool,
     /// Where anchors are published (none by default).
     pub anchor_sink: Mutex<Option<Arc<dyn casual_sign_worker::anchor::AnchorSink>>>,
     /// When set, seals fetch OCSP and CRLs from this source (B-LT and B-LTA, `VS-07`)
@@ -582,6 +584,7 @@ impl Env {
             messenger: Mutex::new(None),
             tsa_directory: Mutex::new(None),
             anchoring: AtomicBool::new(false),
+            retention: AtomicBool::new(false),
             anchor_sink: Mutex::new(None),
             revocation: Mutex::new(None),
             next: AtomicU64::new(0),
@@ -658,6 +661,7 @@ impl Env {
             mail_from: "no-reply@example.test".into(),
             mail_domain: "example.test".into(),
             anchoring: self.anchoring.load(Ordering::SeqCst),
+            retention: self.retention.load(Ordering::SeqCst),
             ..WorkerConfig::default()
         };
         let mailer =

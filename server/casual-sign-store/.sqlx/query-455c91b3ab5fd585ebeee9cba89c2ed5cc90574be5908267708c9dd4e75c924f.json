@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM field_values WHERE account_id = $1 AND envelope_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "455c91b3ab5fd585ebeee9cba89c2ed5cc90574be5908267708c9dd4e75c924f"
+}

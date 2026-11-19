@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-audit"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-crypto",
  "casual-sign-model",
@@ -440,7 +440,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-certificate"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-fields",
@@ -453,7 +453,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-cli"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "casual-sign-crypto",
@@ -474,7 +474,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-console"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-crypto"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "cms",
@@ -521,7 +521,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-fields"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-model",
  "casual-sign-pdf",
@@ -533,7 +533,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-flatten"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-fields",
  "casual-sign-model",
@@ -548,7 +548,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-host"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-model",
@@ -563,7 +563,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-keyd"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "casual-sign-crypto",
@@ -584,7 +584,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-keyd-client"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-secrets",
  "rustls",
@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-model"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "rust_decimal",
  "serde",
@@ -602,7 +602,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-modeld"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "casual-sign-seclog",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-pdf"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aes",
  "cbc",
@@ -642,7 +642,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-pii"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "phonenumber",
  "proptest",
@@ -652,7 +652,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-platform-store"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-policy",
@@ -665,7 +665,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-policy"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-model",
@@ -677,7 +677,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-sdk"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "casual-sign-audit",
@@ -701,7 +701,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-seal"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "casual-sign-crypto",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-seclog"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aws-lc-rs",
  "base64 0.22.1",
@@ -735,7 +735,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-secrets"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "sha2 0.11.1",
  "zeroize",
@@ -743,7 +743,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-server"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -783,7 +783,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-store"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-model",
@@ -806,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-verify"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-crypto",
  "casual-sign-pdf",
@@ -822,7 +822,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-wasm"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-fields",
@@ -838,7 +838,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-worker"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "argon2",
  "aws-lc-rs",
@@ -885,7 +885,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-workflow"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-audit",
  "casual-sign-fields",

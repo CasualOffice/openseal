@@ -27,6 +27,7 @@
 //! | `OPENSEAL_SEAL_NAME`, `OPENSEAL_SEAL_REASON` | The seal's `/Name` and `/Reason` |
 //! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: the worker does not start (`CS-LOG-0001`) |
 //! | `OPENSEAL_ANCHORING` | `daily` (default) or `off`: queue each closed UTC day's anchor of chain heads (docs/32 §5, `FG-158`); the anchor is time-stamped by the TSAs above |
+//! | `OPENSEAL_RETENTION` | `daily` (default) or `off`: queue each account's retention job once a UTC day (`ASVS-18`); it applies the account's retention rules, and does nothing where none is set |
 //! | `OPENSEAL_ANCHOR_LOG` | Optional: a file each anchor is appended to as one JSON line (`openseal.anchor`), for the operator to publish; unset, anchors are stored and time-stamped only |
 //! | `OPENSEAL_SMS_GATEWAY_URL`, `OPENSEAL_SMS_GATEWAY_SECRET` (or `_FILE`) | Optional: the HTTPS gateway that sends SMS and voice one-time codes, and its bearer secret (`messenger::HttpGateway`); unset, such codes fail `CS-WRK-0013` |
 //!
@@ -168,6 +169,17 @@ fn configure() -> Result<(WorkerConfig, SmtpConfig, SealServices, SsrfPolicy, St
         Some(_) => {
             return Err(WorkerError::Config {
                 setting: "OPENSEAL_ANCHORING",
+            });
+        }
+    };
+    // Retention rules (ASVS-18): queue each account's daily retention job unless turned
+    // off. A job does nothing for an account without rules.
+    config.retention = match var("OPENSEAL_RETENTION").as_deref() {
+        None | Some("daily") => true,
+        Some("off") => false,
+        Some(_) => {
+            return Err(WorkerError::Config {
+                setting: "OPENSEAL_RETENTION",
             });
         }
     };

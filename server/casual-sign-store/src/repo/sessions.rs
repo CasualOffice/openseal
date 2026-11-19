@@ -92,7 +92,7 @@ pub struct OwnSession {
     pub organization_policy: serde_json::Value,
 }
 
-/// A live session's own user's second factors (ASVS-01, CON-13, migration 0045).
+/// A live session's own user's second factors (ASVS-01, CON-13, migration 0046).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OwnFactors {
     /// The user.
@@ -115,7 +115,7 @@ impl OwnFactors {
     }
 }
 
-/// One of a person's passkeys (CON-13, migration 0045).
+/// One of a person's passkeys (CON-13, migration 0046).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Passkey {
     /// Its id.

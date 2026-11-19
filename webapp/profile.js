@@ -8,7 +8,7 @@
 
 import { h, clear, initials, fmtDate } from "./dom.js";
 import { t } from "./i18n.js";
-import { openPanel, openDialog, confirmDialog, field, checkbox, button, toast, toastError } from "./ui/index.js";
+import { openPanel, openDialog, field, checkbox, button, toast, toastError, confirmDialog, closePanel } from "./ui/index.js";
 import { errorMessage } from "./api.js";
 import { sessionRows } from "./authmodel.js";
 import { strengthMeter } from "./pwmeter.js";
@@ -108,7 +108,8 @@ export async function openProfile(ctx, { focus = null, onSaved = null } = {}) {
           h("h3", { id: "profile-h-pw", class: "os-profile__h", text: t("profile.password") }),
           current.el, next.el),
         factorsSection(ctx),
-        sessionsSection(ctx));
+        sessionsSection(ctx),
+        dataSection(ctx));
       if (focus === "notifications") queueMicrotask(() => { checks.completed.input.focus(); notif.scrollIntoView?.({ block: "nearest" }); });
     },
     actions: [
@@ -332,6 +333,48 @@ export function factorsSection(ctx) {
 
   load();
   return section;
+}
+
+/// The person's own data (ASVS-16): download what this workspace holds about them as a
+/// JSON file (`GET /users/me/export`), or delete their account (`DELETE /users/me`; the
+/// step-up prompt asks for the password when needed). Evidence stays: the text says so.
+export function dataSection(ctx) {
+  const download = button(t("privacy.export"), {
+    variant: "secondary", size: "sm", attrs: { "data-testid": "privacy-export" },
+    onClick: async () => {
+      let doc;
+      try { doc = await ctx.api.exportMe(); } catch (err) { if (!ctx.failed?.(err)) toastError(err); return; }
+      const blob = new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = h("a", { href: url, attrs: { download: "openseal-personal-data.json" } });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast(t("privacy.exported"), "success");
+    },
+  });
+  const erase = button(t("privacy.erase"), {
+    variant: "danger", size: "sm", attrs: { "data-testid": "privacy-erase" },
+    onClick: async () => {
+      const ok = await confirmDialog(t("privacy.erase-title"), t("privacy.erase-text"), { confirm: t("privacy.erase-confirm"), danger: true });
+      if (!ok) return;
+      try {
+        await ctx.api.eraseMe();
+      } catch (err) {
+        if (!(ctx.failed?.(err) || err?.code === "CS-AUTH-0013")) toastError(err);
+        return;
+      }
+      closePanel();
+      ctx.session = null;
+      toast(t("privacy.erased"), "success");
+      ctx.navigate("#/signin");
+    },
+  });
+  return h("section", { class: "os-profile__section", attrs: { "aria-labelledby": "profile-h-data", "data-testid": "profile-data" } },
+    h("h3", { id: "profile-h-data", class: "os-profile__h", text: t("privacy.title") }),
+    h("p", { class: "os-muted os-small", text: t("privacy.text") }),
+    h("div", { class: "os-actions" }, download, erase));
 }
 
 /// Add a stylesheet of this app once (the adopt panel's styles live in sign.css).

@@ -1,5 +1,5 @@
--- 0045: staff passkeys (WebAuthn) as a second factor, and the administrator's reset of a
--- member's lost factors (CON-13, ASVS-32; ASVS 2.3.2, 2.5.7; docs/40 §2, ADR-039).
+-- 0046: staff passkeys (WebAuthn) as a second factor, and the administrator's reset of a
+-- member's lost factors (CON-13, ASVS-32; ASVS 2.3.2, 2.5.7; docs/40 §2, ADR-040, accepted 2026-11-19).
 --
 -- A passkey, like the TOTP authenticator (0032), is the person's factor: once they have
 -- one, every session of theirs owes a factor, in every workspace they belong to. A row

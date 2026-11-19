@@ -4,7 +4,12 @@ Evidence for the owner to close the slices M3 needs ([06](06-ROADMAP-AND-DELIVER
 and 7; tracker rows `VS-01`, `VS-02`, `VS-05`, `VS-07`). Only the owner closes a slice, and exit criteria are never bent
 ([05](05-PHASES-AND-TASKS.md)). This page proposes; it closes nothing.
 
-**Summary (2026-11-18):** slice 1, 4 of 5 gate items met; slice 2, 5 of 6; slice 5, 5 of 6; slice 7, 7 of 9. What is
+**Closed (2026-11-19).** Slices 1, 2, 5 and 7 are closed under owner instruction 59 ("complete M3") on `main` run [44419251440](https://github.com/CasualOffice/openseal/actions/runs/44419251440) at `584634d` (the PR #30 merge), green on every job: `I18N-01` passed in `e2e` (`npm test`), `S1-10` in `e2e` and `compose-e2e`, the anchoring proofs served and shown (`VS-07B`) in `e2e` and `server-db`. Every gate item below is Met, the owner's readings of instruction 58 applied. M3 is reached. The owner chose to mark M3 without waiting for this run (instruction 64), on run 44417918865
+(`c301082`, branch `next-pr`, green on every job), whose tree is identical to `584634d` (an empty diff); run
+44419251440 on `main` then finished green on every job (`e2e` 552 passed, 76 skipped; `compose-e2e` 177 passed, 387
+skipped), and it is the run cited.
+
+**Summary (2026-11-18, before the closing run):** slice 1, 4 of 5 gate items met; slice 2, 5 of 6; slice 5, 5 of 6; slice 7, 7 of 9. What is
 left in every slice is the i18n half of the accessibility item: the check that shows every string of the slice's
 screens is in `webapp/strings/` is built (`I18N-01`, below) and counts when `e2e` on `main` is green with it. Slice 7
 also waits for a green `main` run with the anchoring proofs served and shown (`VS-07B`, merged in PR #20; its run
@@ -59,11 +64,11 @@ trail linked" on the real stack. The evidence itself was never wrong; only its d
 | Outcome in a browser on the Compose stack, CI green: `real-stack.spec.mjs` "send and sign … (VS-01)" … runs in `compose-e2e` | Met | `compose-e2e` of run 44023485128: `real-stack.spec.mjs:179` "slice 1 (VS-01) › send and sign: one signer on a phone; both get the sealed PDF and the certificate (VS-01)" passed on chromium (14.4 s) and webkit (18.9 s). Also run 43860204277 and those listed in docs/06 |
 | [96] rows updated (`FG-006`, `FG-055`, `FG-057`, `FG-072`, `FG-150`) | Met | docs/96: `FG-006`, `FG-055`, `FG-057`, `FG-072`, `FG-150` `Works`. `FG-124` (accessibility audit) is `A11Y-01`, a release gate, not a slice-1 item |
 | Demo recorded (`S1-02`): … ticked when a green run's recording is linked from [65] | Met | Artifact `slice-1-demo` (14303626789, 7.2 MB, expires 2027-02-15) of green run 44023485128, linked from docs/65 §Demos; watched 2026-11-18: the editor, Sent, the signer on a phone (consent, Sign, adopt, "Signed. Thank you, Cara."), the envelope to Completed, both parties' downloads. The video shows the `S1-10` evidence-card defect, fixed on this branch |
-| Accessibility (WCAG 2.2 AA) and i18n extraction: axe scans the editor (`a11y.spec.mjs`), every ceremony step (`a11y-sign.spec.mjs`) and the done screen with the certificate (`ceremony.spec.mjs` …), and every string is in `webapp/strings/`; ticked when `e2e` is green on GitHub with them | Not met (axe met; i18n waits for CI) | Axe: `e2e` of run 44023485128 passed `a11y.spec.mjs:50` (prepare, light and dark) and `:26` (envelope detail), `a11y-sign.spec.mjs:7` (every ceremony step, light and dark) on chromium, webkit and mobile, and `ceremony.spec.mjs:9` on chromium, webkit, mobile and reduced-motion. i18n: `I18N-01` built, seen red; met when `e2e` on `main` is green with it. S |
+| Accessibility (WCAG 2.2 AA) and i18n extraction: axe scans the editor (`a11y.spec.mjs`), every ceremony step (`a11y-sign.spec.mjs`) and the done screen with the certificate (`ceremony.spec.mjs` …), and every string is in `webapp/strings/`; ticked when `e2e` is green on GitHub with them | Met | Axe: `e2e` of run 44023485128 passed `a11y.spec.mjs:50` (prepare, light and dark) and `:26` (envelope detail), `a11y-sign.spec.mjs:7` (every ceremony step, light and dark) on chromium, webkit and mobile, and `ceremony.spec.mjs:9` on chromium, webkit, mobile and reduced-motion. i18n: `I18N-01` (`webapp/tests/i18n-slices.test.mjs`, owner instruction 58) passed in `e2e` of run 44419251440, green on every job |
 
 Recommendation: ready to close once `e2e` and `compose-e2e` on `main` are green with `I18N-01` and `S1-10`.
 
-Owner decision: close / not yet, because …
+Owner decision: Closed 2026-11-19 under owner instruction 59 (run 44419251440).
 
 ## Slice 2 — Routing and recipient types (`VS-02`)
 
@@ -76,12 +81,12 @@ Outcome (docs/06): "Sequential, parallel, mixed; cc, viewer, approver, agent; de
 | CI green including a browser run | Met | Run 44023485128 green. `compose-e2e`: `routing.spec.mjs:92` "slice 2 (VS-02): an approver, a viewer and an agent act in order through their links, the named signer signs; the sealed PDF and …" passed on chromium and webkit against the real server and Mailpit; `real-stack.spec.mjs:283` in-person signer passed. `e2e` (mock): `recipient-types.spec.mjs` passed |
 | docs/96 rows updated | Met | Slice-2 rows: `FG-021`..`FG-024`, `FG-031`, `FG-035`, `FG-090`, `FG-094`, `FG-115`, `FG-116`, `FG-134`, `FG-135` `Works`; `FG-095` (expiration) and `FG-092` Partial; `FG-005`, `FG-038`, `FG-041` Designed; `FG-103` not started. The rows state the truth; M4, not M3, asks for `Works` |
 | demo recorded | Met | Artifact `slice-2-demo` (14303182320, 11.7 MB, expires 2027-02-15) of green run 44023485128, linked from docs/65 §Demos; watched 2026-11-18: the sender's send and envelope page through Completed and the downloads; the approver approving, the viewer viewing, the agent naming the signer, the named signer signing, each through their emailed link (`RTE-04`) |
-| Accessibility (WCAG 2.2 AA) and i18n string extraction | Not met (axe met; i18n waits for CI) | Axe: `a11y-sign.spec.mjs:65` "the approver's, viewer's and agent's steps are accessible" (light, dark) passed in `e2e` of run 44023485128 on chromium, webkit and mobile. i18n: `I18N-01`, as slice 1. S |
+| Accessibility (WCAG 2.2 AA) and i18n string extraction | Met | Axe: `a11y-sign.spec.mjs:65` "the approver's, viewer's and agent's steps are accessible" (light, dark) passed in `e2e` of run 44023485128 on chromium, webkit and mobile. i18n: `I18N-01` passed in `e2e` of run 44419251440, as slice 1 |
 
 Recommendation: ready to close once `e2e` on `main` is green with `I18N-01`. The owner may also weigh `FG-095` and
 `FG-092` being Partial; the gate asks only that docs/96 is true.
 
-Owner decision: close / not yet, because …
+Owner decision: Closed 2026-11-19 under owner instruction 59 (run 44419251440).
 
 ## Slice 5 — Recipient authentication and consent (`VS-05`)
 
@@ -94,12 +99,12 @@ Outcome (docs/06): "Access code, email OTP, SMS OTP, phone call, OIDC; versioned
 | CI green including a browser run | Met | `compose-e2e` of run 44023485128 (and 44018844840): `recipient-auth.spec.mjs:187` "an access code, codes by email, text message and phone call, then consent and its withdrawal" and `:203` "sign-in through an identity provider comes back to the signing page" passed on chromium and webkit against the real server, with the SMS and OpenID Connect stubs of `tools/e2e/compose.e2e.yml` |
 | docs/96 rows updated | Met | `FG-111`, `FG-117`, `FG-118`, `FG-119`, `FG-217` `Works`; `FG-177` (ERSD editing) Partial, real-stack e2e left; `FG-039`, `FG-040` (SMS and WhatsApp delivery) not started (`MSG-02`) |
 | demo recorded | Met | Artifact `slice-5-demo` (14303611682, 5.0 MB, expires 2027-02-15) of green run 44023485128, linked from docs/65 §Demos; watched 2026-11-18: the email, SMS and voice code steps on a phone; sign-in through the identity provider; the withdraw dialog and "You withdrew your consent" |
-| Accessibility (WCAG 2.2 AA) and i18n string extraction | Not met (axe met; i18n waits for CI) | Axe: `recipient-auth.spec.mjs:228` "the code entry, sign-in and withdraw steps are accessible" (light, dark) passed in `e2e` of run 44023485128 on chromium, webkit and mobile (axe with WCAG 2.2 AA tags at phone width on the access-code step, each sent-code step before and after asking and with a wrong code, the sign-in step, the withdraw dialog and the withdrawn screen). i18n: `I18N-01`, as slice 1; the authentication steps are in `sign.js` |
+| Accessibility (WCAG 2.2 AA) and i18n string extraction | Met | Axe: `recipient-auth.spec.mjs:228` "the code entry, sign-in and withdraw steps are accessible" (light, dark) passed in `e2e` of run 44023485128 on chromium, webkit and mobile (axe with WCAG 2.2 AA tags at phone width on the access-code step, each sent-code step before and after asking and with a wrong code, the sign-in step, the withdraw dialog and the withdrawn screen). i18n: `I18N-01` passed in `e2e` of run 44419251440, as slice 1; the authentication steps are in `sign.js` |
 | (tracker, not a docs/06 item) ADR-033 accepted | Met | Accepted by the owner, instruction 54 (2026-11-17); docs/08 records it; `RAUTH-01` Done on `server-db` of run 44001061169 |
 
 Recommendation: ready to close once `e2e` on `main` is green with `I18N-01`.
 
-Owner decision: close / not yet, because …
+Owner decision: Closed 2026-11-19 under owner instruction 59 (run 44419251440).
 
 ## Slice 7 — Verify (`VS-07`)
 
@@ -110,20 +115,22 @@ parts below.
 | --- | --- | --- |
 | `verify.html` offline in WASM | Met | `e2e` of run 44023485128 built the verifier ("The verifier is there" step) and passed, not skipped, `web02.spec.mjs:236` (a sealed PDF verifies against its trust root), `:257` (tampered), `:266` (the attached audit trail), `:279` (not a PDF) and `signin-dashboard.spec.mjs:171`, `:189` on chromium and webkit. `compose-e2e` serves it from the image |
 | CLI | Met | `crates/casual-sign-cli/tests/cli.rs` `seal_b_t_over_http_tsa_then_verify_and_detect_tamper`, `seal_b_b_then_verify_indeterminate_without_revocation`, `audit_verify_detects_an_edit` `... ok` in `test (windows-latest)` and `test (macos-latest)` of run 43860204277 |
-| B-LT default option | Met as an account default; owner to confirm the reading | `casual-sign-worker/tests/end_to_end.rs` `an_account_defaulting_to_b_lt_gets_long_term_seals_verified_by_pyhanko ... ok` in `server-db` of run 44023485128: an account's `default_seal_profile` (Admin → Organization, `PATCH /accounts/me`) makes new envelopes seal at B-LT, our verifier and pyHanko (`ltv=0:ok`, hard-fail revocation) accept them. Not built: a per-envelope seal-level control in the editor (the API takes `seal_profile`), a Compose run at B-LT. `FG-154` Partial |
-| public anchoring | Not met (waits for a green run) | Worker, store and CLI met on run 44023485128: `server-db` passed `a_day_is_anchored_once_and_its_leaves_are_append_only`, `a_closed_day_is_anchored_and_each_envelope_proves_its_head`, the two crash-restart tests; CLI `anchor verify`. Served and shown (`VS-07B`, PR #20, `main` at `f794c21`): run 44077906918 passed `verify-anchor.spec.mjs:50`, `:63`, `:75`, `:87`, `:97`, `:105` on chromium and webkit and the server's `tests/anchor_proof.rs` in `server-db`, but the run failed on `dependency-policy` (four zip advisories, fixed by PR #21). Met when a `main` run with PR #20 is green on every job (44155229736 or later). Not built: the proof in the signer's downloads (`VS-07D`) |
+| B-LT default option | Met (owner instruction 58: the account default closes it; the editor control is `VS-07E`) | `casual-sign-worker/tests/end_to_end.rs` `an_account_defaulting_to_b_lt_gets_long_term_seals_verified_by_pyhanko ... ok` in `server-db` of run 44023485128: an account's `default_seal_profile` (Admin → Organization, `PATCH /accounts/me`) makes new envelopes seal at B-LT, our verifier and pyHanko (`ltv=0:ok`, hard-fail revocation) accept them. Not built: a per-envelope seal-level control in the editor (the API takes `seal_profile`), a Compose run at B-LT. `FG-154` Partial |
+| public anchoring | Met (owner instruction 58: served and shown closes it; `VS-07D` follows after M3) | Worker, store and CLI met on run 44023485128: `server-db` passed `a_day_is_anchored_once_and_its_leaves_are_append_only`, `a_closed_day_is_anchored_and_each_envelope_proves_its_head`, the two crash-restart tests; CLI `anchor verify`. Served and shown (`VS-07B`, PR #20, `main` at `f794c21`): run 44077906918 passed `verify-anchor.spec.mjs:50`, `:63`, `:75`, `:87`, `:97`, `:105` on chromium and webkit and the server's `tests/anchor_proof.rs` in `server-db`, but the run failed on `dependency-policy` (four zip advisories, fixed by PR #21). Run 44419251440, with PR #20 and its dependency fix, is green on every job. Not built: the proof in the signer's downloads (`VS-07D`, after M3) |
 | merged | Met | All of the above is on `main` |
 | CI green including a browser run | Met | Run 44023485128 green, with the WASM verifier specs run, not skipped, in `e2e` (first item) |
 | docs/96 rows updated | Met | `FG-157` `Works`, `FG-154` Partial, `FG-158` `Works`: each states what is built |
 | demo recorded | Met | Artifact `slice-7-demo` (14304121907, 2.0 MB, expires 2027-02-15) of green run 44023485128 (`verify-demo.spec.mjs:24` passed on chromium and webkit), linked from docs/65 §Demos; watched 2026-11-18: a trusted certificate added, a sealed PDF "Signed and unchanged", a tampered one "Changed or broken" with the failed check marked (`VS-07A`) |
-| Accessibility (WCAG 2.2 AA) and i18n string extraction | Not met (axe met; i18n waits for CI) | Axe: `a11y.spec.mjs:83` "verify: start, valid, tampered and refused" (light, dark) passed in `e2e` of run 44023485128 on chromium and webkit; `verify-anchor.spec.mjs` scans each anchor state (run 44077906918). i18n: `I18N-01`, as slice 1 (`verify.html`'s title and the trail's "Event" fallback moved). S |
+| Accessibility (WCAG 2.2 AA) and i18n string extraction | Met | Axe: `a11y.spec.mjs:83` "verify: start, valid, tampered and refused" (light, dark) passed in `e2e` of run 44023485128 on chromium and webkit; `verify-anchor.spec.mjs` scans each anchor state (run 44077906918). i18n: `I18N-01` passed in `e2e` of run 44419251440, as slice 1 (`verify.html`'s title and the trail's "Event" fallback moved) |
 
 Recommendation: ready to close once a `main` run is green on every job with PR #20 and `I18N-01`, if the owner reads
 "B-LT default option" as the account default that is built.
 
-Owner decision: close / not yet, because …
+Owner decision: Closed 2026-11-19 under owner instruction 59 (run 44419251440).
 
 **Decisions only the owner can make** (each is a reading of the gate, so this page cannot make it):
+
+Decided by the owner on 2026-11-18 (instruction 58: 1 and 2 as the built reading, 3 yes) and 2026-11-19 (instruction 59: 4, close on a green `main` run).
 
 1. Slice 7, "B-LT default option": does an account-level default (built, tested to pyHanko) meet it, or must the send
    editor also offer B-LT per envelope (and a Compose run at B-LT) before the slice closes?
@@ -133,14 +140,14 @@ Owner decision: close / not yet, because …
    string of the slice's screens is in `webapp/strings/`?
 4. Each slice: close, having watched its demo (docs/65 §Demos).
 
-## Not met, by size
+## What was left on 2026-11-18, by size
 
 | Slice | Item | Size |
 | --- | --- | --- |
-| 1, 2, 5, 7 | i18n extraction shown: `I18N-01` on a green `main` `e2e` | S |
-| 1 | `S1-10` on a green `main` (`e2e`, `compose-e2e`) | S |
-| 7 | Public anchoring: a green `main` run with PR #20 (`VS-07B`) | S |
-| 7 | B-LT per-envelope editor control and a Compose run at B-LT, if the owner reads the gate so | M |
-| 7 | The anchor proof in the signer's downloads (`VS-07D`), if the owner reads the gate so | L |
+| 1, 2, 5, 7 | i18n extraction shown: `I18N-01` on a green `main` `e2e` | Met, run 44419251440 |
+| 1 | `S1-10` on a green `main` (`e2e`, `compose-e2e`) | Met, run 44419251440 |
+| 7 | Public anchoring: a green `main` run with PR #20 (`VS-07B`) | Met, run 44419251440 |
+| 7 | B-LT per-envelope editor control and a Compose run at B-LT | Not part of the gate (instruction 58); after M3 as `VS-07E`, M |
+| 7 | The anchor proof in the signer's downloads (`VS-07D`) | Not part of the gate (instruction 58); after M3, L |
 
 Nothing here states that any signature is legally valid or that the product is compliant or certified (docs/09).

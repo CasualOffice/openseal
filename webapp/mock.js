@@ -1643,6 +1643,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "permission-profiles" && (method === "POST" || method === "PATCH")) return true;
     if (res === "auth" && id === "sessions" && (method === "DELETE" || (method === "POST" && sub === "end-others"))) return true;
     if (res === "users" && id && sub === "second-factor") return true;
+    if (res === "users" && id === "me" && !sub && method === "DELETE") return true;
+    if (res === "retention" && !id && method === "PUT") return true;
     return false;
   }
 
@@ -1790,6 +1792,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "account" && id === "settings" && sub === "ml") return mlSettings(method, body);
     if (res === "search" && !id && method === "GET") return mlSearch(query);
     if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body, query);
+    if (res === "users" && id === "me" && sub === "export" && method === "GET") return exportMe();
+    if (res === "users" && id === "me" && !sub && method === "DELETE") return eraseMe();
+    if (res === "retention") return retention(method, id, body);
     if (res === "users" && id === "me" && !sub) return me(method, body);
     if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
@@ -2324,6 +2329,59 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   /// statuses these follow): name, email (only an administrator changes it), notification
   /// choices, a saved signature and initials, and a password change that needs the
   /// current password.
+  /// `GET /users/me/export` (ASVS-16), as the server: the demo user's own data in this
+  /// workspace, three a minute.
+  function exportMe() {
+    const u = db.users.find((x) => x.id === "user-demo");
+    if (!u) fail(404, "CS-API-0002", "Not found");
+    const minute = Math.floor(now().getTime() / 60_000);
+    db.exports = db.exports?.minute === minute ? db.exports : { minute, n: 0 };
+    db.exports.n += 1;
+    if (db.exports.n > 3) fail(429, "CS-API-0003", "Too many requests");
+    const p = db.profiles?.[u.id] || { notifications: { completed: true, declined: true, viewed: false }, signature: null, initials: null };
+    return json(200, {
+      format: "openseal.personal-data-export", v: 1, exported_at: iso(),
+      workspace: { id: "acct-demo", name: account().name },
+      user: { id: u.id, name: u.name, email: u.email, ...p },
+      login_kind: "local", profile: null, sessions: [], api_clients: [],
+      envelopes: db.envelopes.filter((e) => !e.sender_user_id || e.sender_user_id === u.id).map((e) => ({ id: e.id, status: e.status, subject: e.subject })),
+      templates: [], kept: "Audit events and the admin log are kept unchanged.",
+    });
+  }
+
+  /// `DELETE /users/me` (ASVS-16), as the server: the demo user owns the organization,
+  /// so the mock answers as the server does for them.
+  function eraseMe() {
+    fail(409, "CS-API-0018", "Not erasable now", [], "organization administrator");
+  }
+
+  /// `GET/PUT /retention`, `GET /retention/preview` (ASVS-18), as the server.
+  async function retention(method, id, body) {
+    const CLASSES = ["draft", "ended", "completed", "sessions"];
+    const rules = (db.retention ||= { draft: null, ended: null, completed: null, sessions: null });
+    const out = () => json(200, { keep_days: { ...rules }, max_keep_days: 36500 });
+    if (id === "preview" && method === "GET") {
+      const ended = db.envelopes.filter((e) => ["declined", "voided", "expired"].includes(e.status));
+      return json(200, { at: iso(), counts: { draft: 0, ended: rules.ended ? ended.length : 0, completed: 0 }, sessions: 0, held: 0, envelopes: [] });
+    }
+    if (id) fail(404, "CS-API-0002", "Not found");
+    if (method === "GET") return out();
+    if (method !== "PUT") fail(405, "CS-API-0012", "Method not allowed");
+    const k = body?.keep_days;
+    if (!k || typeof k !== "object") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/keep_days", code: "CS-API-0001" }]);
+    for (const [c, d] of Object.entries(k)) {
+      if (!CLASSES.includes(c) || (d !== null && !(Number.isInteger(d) && d >= 1 && d <= 36500))) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/keep_days/${c}`, code: "CS-API-0001" }]);
+    }
+    for (const [c, d] of Object.entries(k)) {
+      if (rules[c] !== d) {
+        await adminEvent("retention.rule_set", { changes: [{ key: c, old: rules[c], new: d }] });
+        rules[c] = d;
+      }
+    }
+    save();
+    return out();
+  }
+
   function me(method, body) {
     const u = db.users.find((x) => x.id === "user-demo");
     if (!u) fail(404, "CS-API-0002", "Not found");

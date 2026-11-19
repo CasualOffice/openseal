@@ -193,7 +193,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "casual-sign-audit"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-crypto",
  "casual-sign-model",
@@ -203,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-crypto"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "cms",
  "der",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-fields"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-model",
  "casual-sign-pdf",
@@ -230,7 +230,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-model"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "rust_decimal",
  "serde",
@@ -238,7 +238,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-pdf"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "aes",
  "cbc",
@@ -268,15 +268,16 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-pii"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "phonenumber",
  "regex",
+ "sha2",
 ]
 
 [[package]]
 name = "casual-sign-seal"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-crypto",
  "casual-sign-pdf",
@@ -289,7 +290,7 @@ dependencies = [
 
 [[package]]
 name = "casual-sign-verify"
-version = "0.0.1"
+version = "0.1.0"
 dependencies = [
  "casual-sign-crypto",
  "casual-sign-pdf",

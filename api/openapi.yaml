@@ -2390,6 +2390,41 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Object'}
         default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: eraseMe
+      summary: "Erase one's own identity in this workspace (ASVS-16)"
+      description: >-
+        After a recent re-authentication (`403 CS-AUTH-0013` otherwise), from a session of
+        the person (`422` with another credential): name and email replaced by a marker,
+        login binding, password and second factor removed, sessions here ended, saved
+        signature, notices, invitations and password resets deleted, owned API clients
+        revoked; recorded as the admin event `member.erased`. Audit events, admin logs,
+        tombstones and sealed documents are never altered (docs/32). `403 CS-API-0015`
+        for a member of another workspace too; `409 CS-API-0018` for the workspace's last
+        administrator or an organization administrator.
+      x-permission: ""
+      responses:
+        '204': {description: Erased}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users/me/export:
+    get:
+      operationId: exportMe
+      summary: "Export one's own data in this workspace (ASVS-16)"
+      description: >-
+        One JSON document `{format: "openseal.personal-data-export", v: 1, exported_at,
+        workspace, user, login_kind, profile, sessions, api_clients, envelopes, templates,
+        kept}`. Each envelope the caller sent lists the routes serving its documents,
+        certificate and audit trail, each authorized and logged per object. Nothing of
+        another workspace or member. At most 3 a minute per user (`429`); logged as a
+        `data.document_read` security event.
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/users:
     get:
       operationId: listUsers
@@ -2421,6 +2456,143 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/User'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users/{id}/erase:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string, format: uuid}
+    post:
+      operationId: eraseUser
+      summary: "Erase a member's identity (ASVS-16)"
+      description: >-
+        As `DELETE /users/me`, by an administrator after a recent re-authentication:
+        never their own (`422`), never a member above them (`403 CS-ORG-0005`), never a
+        member of another workspace too (`403 CS-API-0015`), never the last administrator
+        or an organization administrator (`409 CS-API-0018`).
+      x-permission: "users.remove"
+      x-level: workspace
+      responses:
+        '204': {description: Erased}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/retention:
+    get:
+      operationId: getRetention
+      summary: "The account's retention rules (ASVS-18)"
+      description: >-
+        `{keep_days: {draft, ended, completed, sessions}, max_keep_days}`: days a record of
+        each class is kept after its last change (completion, for completed envelopes),
+        or `null` to keep it for ever (the default).
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      operationId: setRetention
+      summary: "Set or remove retention rules (ASVS-18)"
+      description: >-
+        `{keep_days: {class: days | null}}`, days 1 to 36500; classes left out are
+        unchanged. After a recent re-authentication. Each change is the admin event
+        `retention.rule_set`. The daily retention job then purges what a rule expires,
+        never an envelope under legal hold or in flight.
+      x-permission: "retention.manage"
+      x-level: workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/retention/preview:
+    get:
+      operationId: previewRetention
+      summary: "Dry run of the retention job (ASVS-18)"
+      description: >-
+        What the job would delete now, changing nothing: `{at, counts {draft, ended,
+        completed}, sessions, held, envelopes [{id, class, since}]}` (at most 100 listed,
+        oldest first; `held` counts expired envelopes a legal hold keeps).
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/legal-hold:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string, format: uuid}
+    put:
+      operationId: setLegalHold
+      summary: "Place an envelope under legal hold (ASVS-18)"
+      description: >-
+        No retention rule or purge request removes it until released. Admin event
+        `envelope.legal_hold_set`. Answers `{envelope_id, legal_hold, since}`.
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: releaseLegalHold
+      summary: "Release an envelope's legal hold (ASVS-18)"
+      description: Admin event `envelope.legal_hold_released`. Answers as `PUT`.
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/purge:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string, format: uuid}
+    post:
+      operationId: purgeEnvelope
+      summary: "Purge an envelope now, at the controller's request (ASVS-16, ASVS-18)"
+      description: >-
+        For an envelope that completed, ended or was never sent, after a recent
+        re-authentication: appends `envelope.purged` with the policy `request` and queues
+        the purge of its documents and personal data; its audit chain and a tombstone
+        stay (docs/32 §7). `409 CS-API-0019` under legal hold; `409 CS-WF-0001` in flight
+        or already purged. How a signer's erasure request is carried out by the account
+        that holds their envelope.
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '202':
+          description: Purged; the records follow by job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/users/{id}:
     parameters:

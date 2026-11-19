@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE api_clients SET revoked_at = COALESCE(revoked_at, $3) WHERE account_id = $1 AND owner_user_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb99f58df6c6f0131a532650d6afbec14d31d1d6029c9d37131f7ce5171fe95c"
+}

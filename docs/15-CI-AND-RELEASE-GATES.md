@@ -1,13 +1,13 @@
 # 15 — CI and release gates
 
-**Status: built and running on GitHub since 2026-11-10** (first run all green at `fd5e8f3`). `ci.yml` jobs: `checks` (fmt, clippy, rustdoc, wasm32, repository gates, hostile and corpus manifest checks), `commit-messages`, `test` (Linux, macOS, Windows), `msrv`, `dependency-policy`, `validators` (pyHanko and EU DSS self-test; the `HRD-02` interop run and its packet). The table below is the target; rows not in that list are planned. `tools/ci-local.sh` mirrors `ci.yml` for use before pushing. Adapted from OpenPresent's docs/15. CI on GitHub is
+**Status: built and running on GitHub since 2026-11-10** (first run all green at `fd5e8f3`). `ci.yml` jobs: `checks` (every job kept under 20–25 minutes by splitting: `test` by crate group, `server-db` in three groups, `chaos-compose` in two scenario groups, `e2e` in four shards, `compose-e2e` in two; fmt, clippy, rustdoc, wasm32, repository gates, hostile and corpus manifest checks), `commit-messages`, `test` (Linux, macOS, Windows), `msrv`, `dependency-policy`, `validators` (pyHanko and EU DSS self-test; the `HRD-02` interop run and its packet). The table below is the target; rows not in that list are planned. `tools/ci-local.sh` mirrors `ci.yml` for use before pushing. Adapted from OpenPresent's docs/15. CI on GitHub is
 
 ## Jobs on every push to `main` and every pull request
 
 | Job | What | Platforms |
 | --- | --- | --- |
 | `fmt-clippy` | `cargo fmt --check`; `cargo clippy -D warnings` | Linux |
-| `test` | `cargo test --workspace --locked` | Linux, macOS, Windows |
+| `test` | `cargo test --workspace --locked`, split into engine and server crates (2026-11-19: no job over 20–25 minutes) | Engine: Linux, macOS, Windows (the `openseal` verifier ships for all three). Server: Linux only (it ships as Linux containers) |
 | `wasm-parity` | `tools/wasm-parity.sh`: WASM vs native byte-identical JSON over the corpus (cached), signed and hostile fixtures (`WASM-01`); the wasm32 check is in `checks` | Linux |
 | `keyd-softhsm` | SoftHSM installed; seals through PKCS#11 and through keyd over mTLS, each accepted by pyHanko (`T-2E`) | Linux |
 | `store-db` | Postgres 17 service and SeaweedFS: offline query cache matches the migrations; tenant isolation with RLS on and off, append-only audit, migrations, blob stores (`T-2B`) | Linux |

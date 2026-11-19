@@ -1,4 +1,4 @@
-//! The WebAuthn relying party for staff passkeys (CON-13, ADR-039; W3C Web
+//! The WebAuthn relying party for staff passkeys (CON-13, ADR-040, accepted 2026-11-19; W3C Web
 //! Authentication Level 2 §7.1 and §7.2).
 //!
 //! What this module checks is the protocol: the client data (type, challenge, origin),

@@ -221,6 +221,10 @@ pub struct WorkerConfig {
     /// Queue each closed day's anchor jobs (`FG-158`, docs/32 §5). Any worker runs an
     /// anchor job it claims; this decides whether this one also queues them.
     pub anchoring: bool,
+    /// Queue each day's retention job (`ASVS-18`): every account with a retention rule
+    /// gets one a day. Any worker runs a retention job it claims; this decides whether
+    /// this one also queues them.
+    pub retention: bool,
 }
 
 impl Default for WorkerConfig {
@@ -239,6 +243,7 @@ impl Default for WorkerConfig {
             token_ttl: Duration::from_secs(30 * 86_400),
             policy: Policy::default(),
             anchoring: false,
+            retention: false,
         }
     }
 }
@@ -261,6 +266,8 @@ pub struct Worker<B: BlobStore> {
     anchor_sink: Option<Arc<dyn crate::anchor::AnchorSink>>,
     /// The latest day this process queued anchor jobs for.
     anchors_queued: std::sync::Mutex<Option<time::Date>>,
+    /// The latest day this process queued retention jobs for.
+    retention_queued: std::sync::Mutex<Option<time::Date>>,
 }
 
 impl<B: BlobStore> core::fmt::Debug for Worker<B> {
@@ -367,6 +374,7 @@ impl<B: BlobStore + 'static> Worker<B> {
             messenger: None,
             anchor_sink: None,
             anchors_queued: std::sync::Mutex::new(None),
+            retention_queued: std::sync::Mutex::new(None),
         }
     }
 
@@ -429,6 +437,9 @@ impl<B: BlobStore + 'static> Worker<B> {
     pub async fn run_once(&self) -> Result<Vec<(String, JobOutcome)>> {
         if self.config.anchoring {
             self.queue_anchors().await;
+        }
+        if self.config.retention {
+            self.queue_retention().await;
         }
         let lease = jobs::random_uuid();
         let claimed = self
@@ -602,6 +613,9 @@ impl<B: BlobStore + 'static> Worker<B> {
         }
         if job.kind == casual_sign_host::jobs::ANCHOR_CHAIN_HEADS {
             return self.anchor_heads(job, lease).await;
+        }
+        if job.kind == casual_sign_host::jobs::RETENTION_SWEEP {
+            return self.retention_sweep(job, lease).await;
         }
         if job.kind == casual_sign_host::ml::ANALYZE_DOCUMENT
             || job.kind == casual_sign_host::ml::FINGERPRINT_TEMPLATE
@@ -1886,17 +1900,136 @@ impl<B: BlobStore + 'static> Worker<B> {
         self.finish(ctx, None).await
     }
 
+    /// The purge an `envelope.purged` decision queued (a retention rule, an
+    /// administrator's request, a deleted draft): in one transaction, its tombstone
+    /// (docs/32 §7), its derived analysis (`SEC-I07`) and every relational record holding
+    /// its personal data or document content (`Privacy::purge_records`). The audit chain
+    /// stays whole. Blob bytes stay for the orphan sweep (`HRD-09`), which keeps any blob
+    /// a retained record still names.
     async fn purge(&self, ctx: &Ctx<'_>) -> Result<()> {
         let now = self.now();
+        let policy = match &ctx.payload.effect.kind {
+            EffectKind::PurgeData { policy } => policy.as_str().to_owned(),
+            _ => "draft_deleted".to_owned(),
+        };
         let mut tx = self.tx(ctx).await?;
         for r in tx.recipients().list(ctx.envelope).await? {
             tx.recipients().revoke_tokens(r.recipient.id, now).await?;
         }
         // Analysis is derived document content and goes with the envelope (`SEC-I07`).
         tx.ml().forget_envelope(ctx.envelope).await?;
-        // Blobs are write-once with no delete (docs/22 §9); their removal is the
-        // retention job's (slice 15, WRK-PURGE row).
+        tx.privacy().tombstone(ctx.envelope, &policy, now).await?;
+        tx.privacy().purge_records(ctx.envelope).await?;
         self.complete_in(tx, ctx).await
+    }
+
+    /// Queue today's retention jobs once per process and day (`ASVS-18`). A failure is
+    /// logged and tried again next round.
+    async fn queue_retention(&self) {
+        let now = self.now();
+        let today = now.date();
+        let done = self.retention_queued.lock().map(|g| *g).unwrap_or(None);
+        if done == Some(today) {
+            return;
+        }
+        match self
+            .store
+            .entry_points()
+            .enqueue_retention_jobs(today, now)
+            .await
+        {
+            Ok(_) => {
+                if let Ok(mut g) = self.retention_queued.lock() {
+                    *g = Some(today);
+                }
+            }
+            Err(e) => crate::log(
+                "WARN",
+                "retention_queue_failed",
+                &[("code", e.code().to_owned())],
+            ),
+        }
+    }
+
+    /// Apply an account's retention rules (`ASVS-18`, docs/32 §7): purge every envelope
+    /// a rule has expired, each in a transaction of its own that first locks the
+    /// envelope's row and skips it under legal hold (a hold placed meanwhile wins),
+    /// through the engine's `Purge` (which appends `envelope.purged` naming the rule and
+    /// queues the purge of its records); then delete the ended staff sessions the
+    /// `sessions` rule has expired, with an admin event saying how many. A run again
+    /// purges nothing twice: purged envelopes are no longer candidates, and each command
+    /// id derives from the job and the envelope. Logs counts and ids only.
+    async fn retention_sweep(&self, job: &ClaimedJob, lease: Uuid) -> Result<()> {
+        const BATCH: i64 = 200;
+        const ROUNDS: usize = 50;
+        let account = job.account_id;
+        let mut purged: std::collections::BTreeMap<&'static str, u64> =
+            std::collections::BTreeMap::new();
+        let mut skipped = 0u64;
+        for _ in 0..ROUNDS {
+            let now = self.now();
+            let mut tx = self.store.for_account(account).begin().await?;
+            let found = tx.privacy().expired(now, BATCH).await?;
+            tx.commit().await?;
+            let mut progressed = false;
+            for c in &found {
+                let mut tx = self.store.for_account(account).begin().await?;
+                if tx
+                    .privacy()
+                    .legal_hold_for_update(c.envelope)
+                    .await?
+                    .is_some()
+                {
+                    skipped = skipped.saturating_add(1);
+                    continue;
+                }
+                let command_id = id_of(
+                    jobs::derived_uuid(&[job.id.0.as_bytes(), c.envelope.0.as_bytes()]),
+                    "command",
+                )?;
+                let policy = casual_sign_model::Text::new(c.class.policy()).map_err(|_| {
+                    WorkerError::BadJob {
+                        kind: job.kind.clone(),
+                    }
+                })?;
+                let cmd = Command::Purge { policy };
+                let ctx = system_context(command_id, ts(now)?, self.config.policy.clone());
+                match apply_in(&mut tx, c.envelope, &cmd, &ctx).await {
+                    Ok(_) => {
+                        tx.commit().await?;
+                        progressed = true;
+                        let n = purged.entry(c.class.as_str()).or_insert(0);
+                        *n = n.saturating_add(1);
+                    }
+                    // Its state changed since it was listed (a draft sent meanwhile):
+                    // the next run decides again.
+                    Err(WorkerError::Workflow { .. }) => {
+                        skipped = skipped.saturating_add(1);
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            if !progressed || i64::try_from(found.len()).unwrap_or(i64::MAX) < BATCH {
+                break;
+            }
+        }
+        let now = self.now();
+        let mut tx = self.store.for_account(account).begin().await?;
+        let sessions = tx.privacy().purge_sessions(now).await?;
+        if sessions > 0 {
+            tx.privacy().record_sessions_purged(sessions).await?;
+        }
+        let mut fields = vec![
+            ("job", job.id.0.to_string()),
+            ("account", account.0.to_string()),
+            ("sessions", sessions.to_string()),
+            ("skipped", skipped.to_string()),
+        ];
+        for (class, n) in &purged {
+            fields.push((class, n.to_string()));
+        }
+        crate::log("INFO", "retention_swept", &fields);
+        self.close_job(tx, job, lease).await
     }
 
     // ------------------------------------------------------------------ webhooks

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE envelopes SET certificate_sha256 = NULL, void_reason = NULL WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "70441c05ff7d70042f090d3e295531d4357bfc9e3cbda42ac8409e346f1a5abd"
+}

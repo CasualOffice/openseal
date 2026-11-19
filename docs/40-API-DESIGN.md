@@ -481,7 +481,7 @@ text and an `otpauth:` link; a QR code is `ASVS-33`.
 
 ## As built (`CON-13`, `ASVS-32`, staff passkeys and lost factors)
 
-**Passkeys (ADR-039, Proposed; ASVS 2.3.2).** A staff user may register WebAuthn passkeys (at most 10) as a second
+**Passkeys (ADR-040, Accepted 2026-11-19 (owner instruction 65); ASVS 2.3.2).** A staff user may register WebAuthn passkeys (at most 10) as a second
 factor beside, or instead of, the TOTP authenticator. The server is the relying party: the RP id is the host of
 `OPENSEAL_PUBLIC_URL` (or `OPENSEAL_WEBAUTHN_RP_ID`, the host or a parent domain of it), the one origin accepted is the
 public URL's; a public URL whose host is an IP address has no passkeys (`409 CS-API-0014`). Attestation is `none`;
@@ -649,6 +649,18 @@ refused outside the plan and to non-administrators; identical bytes uploaded by 
 | `GET`/`PATCH /organizations/me` | `ORG-08`: `policy` is the organization policy, `{key: {value, locked}}` (docs/23 §3 As built). `PATCH {name?, policy?}` replaces the whole document (`422 CS-API-0001` at `/policy/<key>` for an unknown key or bad value); loosening, unlocking or removing a security key by an admin who is not an owner is `403 CS-ORG-0013`; each change appends `organization.policy_changed` |
 | `GET`/`PATCH /accounts/me` | `ORG-08`: `GET` adds `organization_policy.settings`, per governed setting (`mfa_policy`, `first_reminder_days`, `workflow_policy.date_format`, `branding`) `{key, value, locked, from_organization}`. `PATCH` refuses a governed setting changed to a locked or looser value with `422 CS-ORG-0002`, naming the setting and key; an unchanged one is not checked. The organization's `login.mfa_required` applies on every staff request when stricter than `mfa_policy` |
 | `POST /envelopes/{id}/transfer {to_user, to_workspace?}` | `ORG-09`: `envelopes.transfer` (an API key or OAuth token also needs `envelopes:send` granted, else `403 CS-AUTH-0006`); passes ownership to an enabled member of this workspace in any status but purged, recording `envelope.transferred`; `to_workspace` other than this one, or a `to_user` not an enabled member here, is `422 CS-ORG-0009`; another workspace's envelope `404`; the same owner `409 CS-WF-0001`. Answers the envelope |
+
+## As built (`ASVS-16`, `ASVS-18`: personal data and retention)
+
+| Endpoint | As built |
+| --- | --- |
+| `GET /users/me/export` | Any member, own data in the session's workspace only: `{format: "openseal.personal-data-export", v: 1, exported_at, workspace, user, login_kind, profile, sessions, api_clients, envelopes, templates, kept}`; each sent envelope lists the routes of its documents, certificate and trail (each authorized and logged per object). At most 3 a minute per user (`429 CS-API-0003`); a `data.document_read` security event |
+| `DELETE /users/me` | The person, from a session (`422` with a key), after a recent re-authentication (`403 CS-AUTH-0013`): pseudonymise their identity here (ADR-039 Accepted), `204`. `403 CS-API-0015` for a member of another workspace too; `409 CS-API-0018` for the last administrator or an organization administrator |
+| `POST /users/{id}/erase` | `users.remove`, recent re-authentication: as above for another member; oneself `422`, a member above the caller `403 CS-ORG-0005`, outside a group-scoped caller's groups or another workspace `404` |
+| `GET`/`PUT /retention` | `retention.manage`: `{keep_days: {draft, ended, completed, sessions}, max_keep_days}`, days or `null` (kept for ever, the default). `PUT {keep_days: {class: days|null}}` (recent re-authentication) sets the named classes, each an admin event `retention.rule_set`; an unknown class or days outside 1–36500 `422` |
+| `GET /retention/preview` | `retention.manage`: the job's dry run, `{at, counts {draft, ended, completed}, sessions, held, envelopes [{id, class, since}]}` (at most 100 listed); changes nothing |
+| `PUT`/`DELETE /envelopes/{id}/legal-hold` | `retention.manage`: place or release a hold (admin events `envelope.legal_hold_set`, `…_released`); `{envelope_id, legal_hold, since}`; another workspace's envelope `404` |
+| `POST /envelopes/{id}/purge` | `retention.manage`, recent re-authentication: purge an ended, completed or unsent envelope now (`envelope.purged`, policy `request`), `202`; `409 CS-API-0019` under hold, `409 CS-WF-0001` in flight or purged |
 
 ## Web client and mock contract (`UX-03`)
 

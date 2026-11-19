@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM document_versions AS v USING documents AS d WHERE v.account_id = $1 AND d.account_id = v.account_id AND d.id = v.document_id AND d.envelope_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "85bc8ad213271546f6d5c46c938148699e69d92e30f0aebc720f8137aedd0b00"
+}
