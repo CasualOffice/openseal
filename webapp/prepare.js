@@ -37,7 +37,7 @@ import { suggestionsFrom } from "./detect.js";
 import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from "./guides.js";
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
-import { sendSummary } from "./people.js";
+import { sendSummary, FIELD_TAKERS } from "./people.js";
 import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary, recipientPatch, matchSentRecipients, matchSentFields } from "./preparemodel.js";
 import { stepControl, recipientRow, libraryItem, toolButton, armHint, ghostBar, templateBanner, appliedChip, loadingPage, checksList, piiCard, assignList, markOcr, sparkle, spinner, kindGlyph } from "./prepareview.js";
 import { mlStatus, featureOn, loadSuggestions, acceptSuggestion, dismissSuggestion, suggestions as mlSuggestions, percent, isUnavailable } from "./ml.js";
@@ -69,6 +69,10 @@ const newKey = (p) => `${p}${++keySeq}`;
 
 export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) {
   const TPL = !!opts.template;
+  // Correct mode (VS-06, UXW-19): a sent envelope opened with `?correct=1` is edited
+  // here, documents and fields included; each save is the server's Correct (docs/24 §6),
+  // nothing saves itself, and the last step saves the correction instead of sending.
+  const CORRECT = !TPL && _params?.get?.("correct") === "1";
   const TPL_ID = TPL && opts.templateId ? decodeURIComponent(opts.templateId) : null;
   const S = {
     tplId: TPL_ID,
@@ -83,6 +87,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     expiresDays: null,
     sendAt: "", // WF-02: "Send at" as a datetime-local value; empty sends now
     scheduled: false, // WF-02: the saved draft has a schedule
+    correcting: false, // VS-06: a sent envelope opened in Correct mode
     serverOptions: "",
     ordered: true, // "Set signing order"; each recipient's step is `r.order` (WEB-09)
     docs: [],
@@ -396,14 +401,16 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const recipient = (rk) => S.recipients.find((r) => r.key === rk);
   /// Who fills fields (UX-05): a signer, and an in-person signer whom staff host. An
   /// approver, a viewer and a copy take none.
-  const takesFields = (r) => r?.type === "signer" || r?.type === "in_person_signer";
+  const takesFields = (r) => FIELD_TAKERS.has(r?.type);
   const signers = () => S.recipients.filter(takesFields);
   /// The types a recipient may be given (UX-05): the engine's ready ones (api.js
   /// RECIPIENT_TYPES_READY), and an in-person signer only where staff can host one
   /// (NOT_ON_SERVER.hostInPerson); an agent, who names later recipients in their turn
-  /// (VS-02); a type already set stays offered.
+  /// (VS-02); an editor, who names later recipients and then signs, and an
+  /// intermediary, who updates later recipients and signs nothing (VS-06, docs/24 §3);
+  /// a type already set stays offered.
   const recipientTypes = (current) => {
-    const out = ["signer", ...(ctx.api.available?.("hostInPerson") ? ["in_person_signer"] : []), "approver", "viewer", "agent", "cc"];
+    const out = ["signer", ...(ctx.api.available?.("hostInPerson") ? ["in_person_signer"] : []), "approver", "viewer", "agent", "editor", "intermediary", "cc"];
     return out.includes(current) || !current ? out : [...out, current];
   };
   const displayName = (r, i) => r?.name?.trim() || t(TPL ? "template.role-n" : "prepare.recipient-n", { n: i + 1 });
@@ -876,7 +883,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
           h("strong", { class: "os-doccard__name", text: d.name }),
           h("span", { class: "os-muted os-small", text: (d.pages.length === 1 ? t("prepare.page-one") : t("prepare.pages-long", { n: d.pages.length })) })),
         h("div", { class: "os-doccard__actions" }, up, down,
-          d.id && !TPL ? null : button(t("prepare.remove-doc", { name: d.name }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeDoc(d) }))));
+          button(t("prepare.remove-doc", { name: d.name }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeDoc(d) }))));
     });
     const add = h("li", {}, h("button", { type: "button", class: "os-doccard os-doccard--add", on: { click: () => fileInput.click() } },
       icon("plus", { size: 24 }), h("span", { text: t("prepare.add-pdf") })));
@@ -1864,7 +1871,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.scheduled = !!env.send_at;
     S.serverOptions = JSON.stringify(sendOptions());
     subject.value = S.subject;
-    title.textContent = S.subject.trim() || t("prepare.title");
+    title.textContent = S.correcting ? t("prepare.correct-title", { subject: S.subject.trim() || t("envelope.untitled") }) : S.subject.trim() || t("prepare.title");
     const prevDocs = new Map(S.docs.filter((d) => d.id).map((d) => [d.id, d]));
     const docs = [];
     for (const d of env.documents || []) {
@@ -2033,7 +2040,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let autosaveTimer = null;
   const AUTOSAVE_MS = 4000;
   function scheduleAutosave() {
-    if (TPL) return;
+    if (TPL || S.correcting) return;
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(autosave, AUTOSAVE_MS);
   }
@@ -2102,6 +2109,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         const created = await ctx.api.addDocument(S.id, d.name, d.bytes);
         d.id = created.id;
       }
+      // A saved document removed here goes, with its fields (VS-06).
+      const before = (await ctx.api.getEnvelope(S.id)).envelope;
+      const keepDocs = new Set(S.docs.map((d) => d.id));
+      for (const d of before.documents || []) if (!keepDocs.has(d.id)) await ctx.api.deleteDocument(S.id, d.id, await etagNow());
       const { envelope: server } = await ctx.api.getEnvelope(S.id);
       const keepFields = new Set(S.fields.filter((f) => f.id).map((f) => f.id));
       for (const f of server.fields || []) if (!keepFields.has(f.id)) await ctx.api.deleteField(S.id, f.id, await etagNow());
@@ -2192,6 +2203,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   async function send() {
     const list = problems();
     if (list.length) { await showProblems(list, t("send.problems-title")); return; }
+    if (S.correcting) { await finishCorrecting(); return; }
     // Who gets it now, who in turn, who reviews and who only gets a copy (R-02; UX-05:
     // with signing steps only the first step is emailed at once).
     const subj = S.subject.trim() || t("envelope.untitled");
@@ -2214,6 +2226,23 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         await ctx.api.sendEnvelope(S.id);
         S.dirty = false;
         await celebrate();
+        ctx.navigate(`#/envelopes/${encodeURIComponent(S.id)}`);
+      } catch (err) {
+        if (!ctx.failed(err)) showSaveError(err);
+      }
+    });
+  }
+
+  /// Save a correction (VS-06): every change made here goes to the server as the
+  /// envelope's Correct; recipients whose fields or documents changed sign again, and
+  /// the trail records `envelope.corrected` with what changed (docs/24 §6).
+  async function finishCorrecting() {
+    if (!(await confirmDialog(t("prepare.correct-confirm-title"), t("prepare.correct-confirm"), { confirm: t("prepare.correct-save") }))) return;
+    await busy(sendBtn, async () => {
+      try {
+        await save();
+        S.dirty = false;
+        toast(t("envelope.corrected"), "success");
         ctx.navigate(`#/envelopes/${encodeURIComponent(S.id)}`);
       } catch (err) {
         if (!ctx.failed(err)) showSaveError(err);
@@ -2605,8 +2634,14 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   if (S.id) {
     try {
       const { envelope } = await ctx.api.getEnvelope(S.id);
-      if (envelope.status !== "draft") { ctx.navigate(`#/envelopes/${encodeURIComponent(S.id)}`); return () => {}; }
+      S.correcting = CORRECT && ["sent", "delivered"].includes(envelope.status);
+      if (envelope.status !== "draft" && !S.correcting) { ctx.navigate(`#/envelopes/${encodeURIComponent(S.id)}`); return () => {}; }
       await loadFromServer(envelope);
+      if (S.correcting) {
+        sendBtn.querySelector("span")?.replaceChildren(t("prepare.correct-save"));
+        sendBtn.dataset.testid = "correct-finish";
+        view.querySelector(".os-prepare")?.classList.add("is-correcting");
+      }
       renderAll();
     } catch (err) {
       if (!ctx.failed(err)) toastError(err);

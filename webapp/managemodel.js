@@ -25,7 +25,7 @@ export function envelopeActions(status, { cert = false, transfer = false, fields
   const own = [...(fields ? ["fields"] : []), ...(transfer ? ["transfer"] : [])];
   const tail = own.length ? [own] : [];
   if (status === "draft") return { primary: "edit", secondary: null, more: [["copy", "template"], ...tail, ["delete"]] };
-  if (ACTIVE.has(status)) return { primary: "correct", secondary: "resend", more: [["download-current", "copy", "template", "history"], ...tail, ["void"]] };
+  if (ACTIVE.has(status)) return { primary: "correct", secondary: "resend", more: [["correct-docs", "download-current", "copy", "template", "history"], ...tail, ["void"]] };
   if (status === "completed") return { primary: "download", secondary: "certificate", more: [["copy", "template", "history"], ...tail] };
   if (ENDED.has(status)) return { primary: "copy-resend", secondary: "download-ended", more: [[...(cert ? ["certificate"] : []), "template", "history"], ...tail, ["delete"]] };
   return { primary: null, secondary: null, more: [["copy", "template"], ...tail] };

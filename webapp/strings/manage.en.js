@@ -305,6 +305,7 @@ export const MANAGE = {
   "envelope.sender": "Sender",
   "envelope.correct": "Correct",
   "envelope.correct-title": "Correct envelope",
+  "envelope.correct-docs": "Correct documents and fields",
   "envelope.cf-title": "Custom fields",
   "envelope.cf-edit": "Edit custom fields",
   "envelope.cf-lede": "Your own labels for this agreement, such as a deal or case number. Search for them from Agreements. Recipients never see them, and they are not part of the signed record.",

@@ -7,8 +7,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createMockFetch, MOCK } from "../mock.js";
-import { createClient } from "../api.js";
+import { createClient, RECIPIENT_TYPES_READY } from "../api.js";
+import { sendSummary, FIELD_TAKERS } from "../people.js";
 import { inView, viewCounts, envelopeActions, VIEWS } from "../managemodel.js";
+import { makePdf } from "../mockpdf.js";
 
 async function client() {
   const c = createClient({ fetch: createMockFetch() });
@@ -66,6 +68,24 @@ test("an envelope is transferred to another member and the trail records it", as
   await assert.rejects(c.transferEnvelope(e.id, again, "nobody"), (x) => x.code === "CS-ORG-0009");
 });
 
+test("a sent envelope's documents and fields are corrected, each recorded as envelope.corrected", async () => {
+  const c = await client();
+  const env = (await c.listEnvelopes({ status: "sent", limit: 200 })).items.find((x) => x.subject.startsWith("Offer letter"));
+  const { envelope } = await c.getEnvelope(env.id);
+  const signer = envelope.recipients.find((r) => r.type === "signer");
+  const doc = await c.addDocument(env.id, "Annex.pdf", makePdf([{ title: "Annex", lines: ["Clause 9"] }]));
+  await c.addFields(env.id, [{ recipient: signer.id, document: doc.id, type: "initials", page: 1, x: 72, y: 100, width: 60, height: 30, required: true }]);
+  const { envelope: after, etag } = await c.getEnvelope(env.id);
+  assert.equal(after.status, "sent");
+  assert.ok(after.documents.some((d) => d.id === doc.id));
+  assert.ok(after.fields.some((f) => f.document_id === doc.id && f.type === "initials"));
+  await c.deleteDocument(env.id, doc.id, etag);
+  const { envelope: last } = await c.getEnvelope(env.id);
+  assert.ok(!last.documents.some((d) => d.id === doc.id));
+  const types = (await c.audit(env.id)).items.map((i) => i.type);
+  assert.ok(types.filter((x) => x === "envelope.corrected").length >= 3, types.join());
+});
+
 test("the Authentication failed view keeps only marked rows in progress, and counts them", () => {
   assert.ok(VIEWS.some((v) => v.id === "authfailed" && v.nav));
   const rows = [
@@ -82,6 +102,16 @@ test("the envelope page offers custom fields and, to a member who may, transfer"
   assert.ok(!flat(envelopeActions("sent")).includes("transfer"));
   assert.ok(flat(envelopeActions("sent", { transfer: true, fields: true })).includes("transfer"));
   assert.ok(flat(envelopeActions("completed", { fields: true })).includes("fields"));
+  assert.ok(flat(envelopeActions("sent")).includes("correct-docs"));
+  assert.ok(!flat(envelopeActions("completed")).includes("correct-docs"));
   // Destructive items stay last.
   assert.deepEqual(envelopeActions("sent", { transfer: true, fields: true }).more.at(-1), ["void"]);
+});
+
+test("an editor signs and names who signs next; an intermediary updates them; both are offered", () => {
+  assert.ok(RECIPIENT_TYPES_READY.includes("editor") && RECIPIENT_TYPES_READY.includes("intermediary"));
+  assert.ok(FIELD_TAKERS.has("editor") && !FIELD_TAKERS.has("intermediary"));
+  const lines = sendSummary([{ name: "Eda", type: "editor", order: 1 }, { name: "Ian", type: "intermediary", order: 2 }, { name: "Bea", type: "signer", order: 3 }], "Lease");
+  assert.deepEqual(lines.find(([k]) => k === "send.confirm-agents"), ["send.confirm-agents", { names: "Eda, Ian" }]);
+  assert.equal(lines.find(([k]) => k === "send.confirm-copies"), undefined, "neither is a copy");
 });

@@ -151,9 +151,9 @@ export const COMMON = {
   "rtype.agent": "Names who signs next",
   "rtype.approver": "Approver",
   "rtype.cc": "Receives a copy",
-  "rtype.editor": "Editor",
+  "rtype.editor": "Names who signs next, then signs",
   "rtype.in_person_signer": "In-person signer",
-  "rtype.intermediary": "Intermediary",
+  "rtype.intermediary": "Updates who signs next",
   "rtype.signer": "Needs to sign",
   "rtype.viewer": "Viewer",
 

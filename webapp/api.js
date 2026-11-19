@@ -63,7 +63,7 @@ export const RECIPIENT_TYPES = Object.freeze(["signer", "in_person_signer", "app
 /// `agent` naming later recipients by `POST /s/{token}/recipients` then finishing, VS-02),
 /// or none (`cc`); the others are the engine's, their ceremony a later slice (editor and
 /// intermediary, slice 6; witness 16, seal 18, notary 31).
-export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "agent", "cc"]);
+export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "agent", "editor", "intermediary", "cc"]);
 
 /// Every field type the API takes: the engine's `FieldType` (docs/22 §6), in wire spelling.
 export const FIELD_TYPES = Object.freeze([
@@ -460,6 +460,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     documentContent: async (id, doc, version = "normalized") =>
       (await request("GET", `${E(id)}/documents/${encodeURIComponent(doc)}/content`, { raw: true, query: { version } })).blob,
     addDocument: (id, name, bytes) => data(request("POST", `${E(id)}/documents`, { body: { name, content_base64: toBase64(bytes) } })),
+    /// Remove a document and its fields: a draft's edit, or a sent envelope's correction
+    /// (who finished on it acts again, docs/24 §6).
+    deleteDocument: (id, doc, etag) => data(request("DELETE", `${E(id)}/documents/${encodeURIComponent(doc)}`, { ifMatch: etag })),
     addRecipients: (id, items) => data(request("POST", `${E(id)}/recipients`, { body: { items } })),
     patchRecipient: (id, r, etag, body) => data(request("PATCH", `${E(id)}/recipients/${encodeURIComponent(r)}`, { body, ifMatch: etag })),
     deleteRecipient: (id, r, etag) => data(request("DELETE", `${E(id)}/recipients/${encodeURIComponent(r)}`, { ifMatch: etag })),

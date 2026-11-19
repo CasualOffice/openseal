@@ -76,6 +76,7 @@ export function mount(view, ctx, [rawId]) {
       edit: { label: t("envelope.edit"), icon: "file-pen-line", panel: true, run: () => ctx.navigate(`#/prepare/${encodeURIComponent(e.id)}`) },
       correct: { label: t("envelope.correct"), icon: "pencil", testId: "envelope-correct", panel: true, run: guard(async () => { if (await correctPanel(ctx, id)) load(); }) },
       resend: { label: t("envelope.resend"), icon: "rotate-cw", run: () => resend() },
+      "correct-docs": { label: t("envelope.correct-docs"), icon: "file-pen-line", testId: "envelope-correct-docs", panel: true, run: () => ctx.navigate(`#/prepare/${encodeURIComponent(e.id)}?correct=1`) },
       "download-current": { label: t("envelope.download-current"), icon: "download", title: t("envelope.download-current-help"), run: guard(() => downloadCurrent(ctx, id, env)) },
       "download-ended": { label: t("envelope.download-ended"), icon: "download", title: t("envelope.download-ended-help"), run: guard(() => downloadCurrent(ctx, id, env)) },
       download: { label: t("envelope.download"), icon: "download", run: guard(() => downloadSealed(ctx, id, env)) },

@@ -2100,11 +2100,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     if (sub === "documents") {
       if (!subId && method === "POST") {
-        draftOnly(env);
+        // A draft's edit, or a sent envelope's correction (docs/24 §6, VS-06).
+        const correcting = editable(env);
         checkSizes(env.documents.reduce((n, x) => n + (x.bytes || 0), 0), [body?.content_base64 || ""]);
         const d = addDocument(env, body?.name, unb64(body?.content_base64 || ""));
         await documentAdded(env, d);
-        await edited(env, [`documents.${d.id}`]);
+        await (correcting ? corrected : edited)(env, [`documents.${d.id}`]);
         return json(201, d);
       }
       if (!subId && method === "GET") return json(200, { items: env.documents });
@@ -2151,10 +2152,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return pdf(unb64(db.blobs[d.id]));
       }
       if (!subSub && method === "DELETE") {
-        checkIfMatch(env, headers); draftOnly(env);
+        checkIfMatch(env, headers);
+        const correcting = editable(env);
+        // As the engine (docs/24 §6): who finished on a removed document acts again.
+        if (correcting) for (const f of env.fields.filter((x) => x.document_id === d.id)) fieldOwnerOk(env, f.recipient_id);
         env.documents = env.documents.filter((x) => x !== d);
         env.fields = env.fields.filter((f) => f.document_id !== d.id);
-        await edited(env, [`documents.${d.id}`]);
+        await (correcting ? corrected : edited)(env, [`documents.${d.id}`]);
         return json(204, null);
       }
     }
