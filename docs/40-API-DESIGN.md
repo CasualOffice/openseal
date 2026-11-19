@@ -665,6 +665,29 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
 | `POST /groups`, `GET`/`PATCH`/`DELETE /groups/{id}`, `PUT /groups/{id}/members`, `GET`/`POST /permission-profiles`, `GET`/`PATCH`/`DELETE /permission-profiles/{id}` | Admin groups and custom permission profiles (`UXW-07`, migration 0033), scope `admin:users`. A group is `{id, name, members, user_ids}` (the list has counts only); a name is used once per account (`422` `exists` at `/name`); `PUT …/members {user_ids}` makes the members exactly those, each a member of the account (`422` at `/user_ids/{i}`), a repeated id once; deleting a group takes its template shares with it, and removing a member from the account takes them out of its groups. A profile is `{id, name, kind, builtin, permissions, members}`; `permissions` are what it grants in docs/40 §2 order plus `view_all_envelopes` (a built-in one's from its kind). A custom profile names only those (`422` at `/permissions/{i}`); built-in ones are `409 CS-WF-0001` to change or delete, and so is a profile a member holds to delete. A member's profile is read on every request, so a change applies from their next one; giving sending to more members is checked against the plan's seats (`CS-PLAN-0003`). Nobody gives more than they hold: making, changing or deleting a profile, assigning one (`POST /users`, `PATCH /users/{id}`) and changing, re-inviting (`POST /users/{id}/invite`, `PRF-01`) or removing another member are `403 CS-AUTH-0006` when the profile goes beyond the caller's own scopes or `view_all_envelopes`, and the administrator profile is an administrator's with every scope to give. Each change is an admin event (`group.created`, `group.renamed`, `group.deleted`, `group.member_added`, `group.member_removed`, `profile.created`, `profile.changed`, `profile.deleted`). Another account's group or profile is `404` whatever the body. `tests/admin_groups.rs` (RLS on and off), contract and isolation scenarios; seen red 2026-11-13 with `may_grant` always allowing, with the membership cascade removed and with the member guard removed |
 | `GET /envelopes/{id}/certificate` (declined, voided, expired) | `UXW-30`: when an envelope is declined, voided or expires, the server queues `seal_ended_certificate`; the worker renders the envelope certificate (docs/32 §6), which says how the envelope ended and never claims completion, seals it on its own with the platform key, stores it, reads it back and verifies it, and records it as the envelope's certificate; the chain is not extended. The endpoint then serves it, recorded as `certificate.downloaded`; before it exists `409 CS-API-0009`, and the read queues the job again (idempotent per envelope, so a repeated `GET` adds no second job; the only write a `GET` makes, under the read scope). Worker `tests/flow.rs`; server `tests/inbox_folders.rs` |
 
+## As built (`VS-06`: manage and correct)
+
+- **Quick views on the server.** `GET /envelopes?auth_failed=true`: envelopes `sent` or `delivered` in which a
+  recipient is locked out after failed authentication, or failed it and has not passed since (read from the engine
+  state's `auth_locked` and `auth_failures`; a resend clears both, docs/24 §3). `?expires_before=` (RFC 3339): those
+  expiring before it, the Expiring soon view; one that never expires is outside it.
+- **Envelope custom fields** (FG-139, docs/22 `custom_fields`): `GET /envelopes/{id}/custom-fields` and
+  `PUT /envelopes/{id}/custom-fields {items: [{name, value}]}` (replaced whole; at most 100, a name 1 to 100
+  characters, a value at most 1,000, no control characters, a repeated name `422` with the member code `exists`; a
+  purged envelope `409 CS-API-0009`; another account's id `404` before the body is read). Sender metadata only: never
+  shown to a recipient, never in the audit chain, the sealed PDF or the certificate. Searched with
+  `GET /envelopes?custom_field=<exact name>&custom_value=<contains, any case>` (`custom_value` without
+  `custom_field` is `422`).
+- **Correcting documents and fields.** The draft endpoints (`POST /documents`, `DELETE /documents/{doc}`, the field
+  endpoints) run the engine's `Correct` on a sent envelope, as `PATCH` already did; the web app's editor opens a sent
+  envelope with `?correct=1` and saves through them (no autosave).
+- **Reports** (`UXW-25`): `GET /reports/{envelopes|recipients|usage}?from&to&sender&format=json|csv&limit`
+  (`reports.read`, administrators by default) over envelopes created in `[from, to)`, Deleted left out, newest
+  first, at most 10,000 rows (`truncated`, or `x-truncated: true` on CSV). CSV is RFC 4180 with CRLF; a cell starting
+  with `=`, `+`, `-`, `@`, tab or carriage return starts with `'`.
+- Tests: `-server` `tests/manage_views.rs`, `tests/correct_documents.rs`, `tests/editor_intermediary.rs`,
+  `tests/reports.rs`; the contract test calls every new operation.
+
 ## As built (`WEB-19`, document analysis; docs/33 §6, §7 As built)
 
 Advisory only: nothing here changes an envelope's state, its audit chain, a document or the evidence. Every feature is

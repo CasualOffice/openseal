@@ -97,7 +97,7 @@ const ROUTES = [
   [/^#\/agreements(?:\?.*)?$/, () => import("./dashboard.js"), { nav: "agreements" }],
   [/^#\/envelopes\/([^/?]+)$/, () => import("./envelope.js"), { nav: "agreements" }],
   // The editor is a full-height frame with its own toolbar (WEB-06): no app bar.
-  [/^#\/prepare(?:\/([^/?]+))?$/, () => import("./prepare.js"), { nav: "send", wide: true, chrome: false, frame: true }],
+  [/^#\/prepare(?:\/([^/?]+))?(?:\?.*)?$/, () => import("./prepare.js"), { nav: "send", wide: true, chrome: false, frame: true }],
   [/^#\/templates$/, () => import("./templates.js"), { nav: "templates" }],
   [/^#\/templates\/new$/, async () => {
     const prepare = await import("./prepare.js");

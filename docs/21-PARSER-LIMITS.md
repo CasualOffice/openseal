@@ -156,7 +156,8 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Field detection work | 20,000 words and 2,000 lines or boxes per page, 50,000,000 word-to-line comparisons per document (built, `WEB-06`); crossing one sets `truncated` | — |
 | `/Annots` entries read per page to find the page of a widget without `/P` (AcroForm conversion) | 10,000 (built, `PDF-WID-01`); later entries are not indexed and their widgets are reported `NoPage`, not an error | — |
 | Subject / message | 255 / 10,000 characters | CS-API-0001 |
-| Custom fields per envelope | 100 | CS-API-0001 |
+| Custom fields per envelope | 100 (a name 1–100 characters, a value at most 1,000; `VS-06`) | CS-API-0001 |
+| Rows in one report (`GET /reports/{kind}`, `VS-06`) | 10,000; more is `truncated`, never an error | — |
 | Field id | 1–64 bytes of `[A-Za-z0-9_-]` | CS-FLD-0005 |
 | Data label | 255 bytes, NFC-normalized | CS-FLD-0002 |
 | Field rectangle | 0–14,400 points per coordinate; page 1–5,000 | CS-FLD-0004 |

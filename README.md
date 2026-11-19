@@ -81,7 +81,7 @@ GHCR, each signed keyless with Sigstore, with build provenance and an SBOM, and 
 end on one machine with Docker Compose and is **not for production agreements**. **Phases D, 0, 1 and 2 are closed**
 and milestones M0 to M3 are reached (**M3, "first signature"**, 2026-11-19). **Slices closed: 1 (send and sign), 2
 (routing), 3 (templates), 4 (every field), 5 (authentication and consent) and 7 (verify)**, 6 of 35. Slice 8 (API and
-webhooks) is built and in review. Work follows one binding plan, one slice at a time
+webhooks) is merged and awaits a green `main`; slice 6 (manage and correct) is being built. Work follows one binding plan, one slice at a time
 ([docs/06](docs/06-ROADMAP-AND-DELIVERY.md) §Execution plan). ML, the platform console, and plans and metering stay
 paused (`Paused` in the tracker). Each item's exact state is in [docs/14](docs/14-EXECUTION-TRACKER.md); slice
 evidence is in [docs/73](docs/73-M3-SLICE-EVIDENCE.md), [74](docs/74-SLICE-3-EVIDENCE.md) and
@@ -119,8 +119,9 @@ ASVS 4.0.3 self-assessment ([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md)) finds 1 
 self-assessment, not an audit or a certification. Nothing here states that a signature is legally valid or that
 OpenSeal is compliant or certified ([docs/09](docs/09-LEGAL-AND-COMPLIANCE.md)).
 
-**Next**, in the plan's order: slice 8 (API and webhooks: OAuth 2.1, JWT grant, signed webhooks, sandbox workspaces,
-TypeScript and Python SDKs), then 6 (manage and correct) and 9 (embedding) for M4, team beta; then organization admin
+**Next**, in the plan's order: slice 6 (manage and correct: quick views, search, correct, transfer, reports, Office
+conversion), then 9 (embedding) for M4, team beta; then remote signing providers, PKI validation and accessibility
+checks; then organization admin
 and SSO, bulk send, brand and language, data controls and operations for M5.
 
 | Phase | Exit gate | State |

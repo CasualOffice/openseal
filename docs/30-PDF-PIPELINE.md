@@ -107,7 +107,7 @@ packet (19 with an `rdf:RDF` root) seal at B-LT with pyHanko passing; without `N
 | Existing AcroForm fields | Offered to the sender to **convert to OpenSeal fields** (name, type, rect, options mapped) or flatten as they are |
 | External streams, remote fonts | Removed. Reported |
 | Broken xref, damaged objects | Rebuilt; unreadable objects dropped and reported |
-| Non-PDF upload | `Converter` seam: `.docx`, `.xlsx`, `.pptx` through the sister engines' PDF export when deployed, otherwise LibreOffice in a sandboxed container with no network; images (PNG, JPEG) wrapped as one page each |
+| Non-PDF upload | `Converter` seam: `.docx`, `.xlsx`, `.pptx` through the sister engines' PDF export when deployed, otherwise LibreOffice in a sandboxed container with no network; images (PNG, JPEG) wrapped as one page each. **Not built:** the concrete design is ADR-042 (Proposed, `VS-06C`), waiting for the owner; until then an upload that is not a PDF is refused by admission |
 
 The normalized file is written fresh (not incrementally), linearization dropped, objects repacked into object streams,
 deterministic object order. Its SHA-256 is the document hash every later event cites.

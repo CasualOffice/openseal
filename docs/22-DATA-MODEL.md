@@ -248,7 +248,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | Document, DocumentVersion | `documents`, `document_versions` | `TenantTx::documents` |
 | Recipient, AuthRequirement, invitation tokens, SignatureAdoption | `recipients`, `recipient_auth_requirements`, `recipient_tokens`, `signature_adoptions` | `TenantTx::recipients` (recipients, tokens) |
 | Field and its value | `fields`, `field_values` | `TenantTx::fields` |
-| RoutingRule, CustomField, Comment | `routing_rules`, `envelope_custom_fields`, `comments` | schema only |
+| RoutingRule, CustomField, Comment | `routing_rules`, `envelope_custom_fields`, `comments` | custom fields served (`VS-06`: read, replaced whole, searched; not in the chain); the others schema only |
 | AuditEvent, purge tombstone | `audit_events`, `envelope_tombstones` | `TenantTx::audit` (append, read, verify) |
 | Anchor of chain heads, its leaves (`FG-158`) | `chain_anchors`, `chain_anchor_leaves` | `TenantTx::anchors` (the day's heads, insert, by period, an envelope's leaves); queued through `EntryPoints::enqueue_anchor_jobs` |
 | BulkSend, BulkSendRow | `bulk_sends`, `bulk_send_rows` | `TenantTx::bulk_sends` (`UXW-04`): a batch with its rows (`input` holds the row's recipients and problems, personal data); a row is claimed `FOR UPDATE SKIP LOCKED`, marked sent with its envelope (which then names the batch in `envelopes.bulk_send_id`) or failed with a code; `settle` completes a batch once no row is pending; cancel leaves pending rows unsent. No migration was needed |
