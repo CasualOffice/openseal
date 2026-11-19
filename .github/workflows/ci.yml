@@ -214,9 +214,14 @@ jobs:
   # VS-07: the WebAssembly verifier is built first (as pages.yml builds it), so the
   # Verify specs run the real verifier instead of skipping; the build is cached on the
   # sources it is made from, and the job fails if it is missing.
+  # Split into four shards (owner, 2026-11-19: no job over 40-45 minutes); one runner took 40+.
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Restore the WebAssembly verifier
@@ -236,25 +241,26 @@ jobs:
         run: |
           test -s webapp/vendor/openseal-wasm/casual_sign_wasm_bg.wasm
           test -s webapp/vendor/openseal-wasm/casual_sign_wasm.js
-      - working-directory: webapp
+      - if: matrix.shard == 1
+        working-directory: webapp
         run: npm test
       - working-directory: webapp/e2e
         run: npm ci && npx playwright install --with-deps chromium webkit
       - working-directory: webapp/e2e
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shard }}/4
       # The slice 7 demo (VS-07): the Verify page checking a sealed and a tampered PDF,
-      # recorded by verify-demo.spec.mjs in Chromium and WebKit.
-      - if: success()
+      # recorded by verify-demo.spec.mjs in Chromium and WebKit, in whichever shard ran it.
+      - if: success() && hashFiles('target/e2e-demo/vs07-*') != ''
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: slice-7-demo
+          name: slice-7-demo-${{ matrix.shard }}
           path: target/e2e-demo/vs07-*
           if-no-files-found: error
           retention-days: 90
       - if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: e2e-results
+          name: e2e-results-${{ matrix.shard }}
           path: target/e2e-results
           retention-days: 7
 
