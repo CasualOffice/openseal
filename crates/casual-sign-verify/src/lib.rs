@@ -44,9 +44,9 @@ use core::time::Duration;
 pub use casual_sign_crypto::CryptoError;
 pub use casual_sign_pdf::Limits;
 pub use report::{
-    Check, Checks, Disallowed, DocumentError, Indication, ModificationClass, Reason,
-    RevisionChanges, SignatureKind, SignatureReport, SubIndication, TimeSource, TimestampInfo,
-    VerificationReport,
+    Check, Checks, Disallowed, DocumentError, Indication, MAX_SIGNER_SUBJECT, ModificationClass,
+    Reason, RevisionChanges, SignatureKind, SignatureReport, SubIndication, TimeSource,
+    TimestampInfo, VerificationReport,
 };
 pub use timestamp::{MAX_TSA_NAME, TimestampVerdict, verify_timestamp};
 

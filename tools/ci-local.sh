@@ -19,6 +19,10 @@ step "checks: fixtures";   python3 -I fixtures/tools/generate.py --check
                            python3 -I fixtures/corpus/fetch.py --check
 step "checks: deployment"; python3 -I tools/check-deploy.py --self-test
                            python3 -I tools/check-deploy.py
+# The SDKs (VS-08E): generated tables current, each client's offline tests.
+step "checks: sdks";       python3 tools/build-sdks.py --check
+                           node --test sdk/typescript/test/client.test.mjs
+                           python3 -I -m unittest discover -s sdk/python/tests -t sdk/python
 step "commit messages";    python3 tools/check-commits.py --range "$(git rev-list --max-parents=0 HEAD | tail -1)..HEAD"
 step "test";               cargo fetch --locked
                            cargo test --workspace --all-features --locked --no-fail-fast -q

@@ -121,7 +121,7 @@ async fn commit(tx: OrgTx) -> Result<(), ApiError> {
 }
 
 fn workspace_json(w: &Workspace) -> Value {
-    json!({ "id": w.id.to_string(), "name": w.name, "status": w.status.as_str() })
+    json!({ "id": w.id.to_string(), "name": w.name, "status": w.status.as_str(), "sandbox": w.sandbox })
 }
 
 fn admin_json(a: &OrganizationAdmin) -> Value {
@@ -230,16 +230,25 @@ pub(crate) async fn workspaces(c: Call) -> Result<Response, ApiError> {
 #[serde(deny_unknown_fields)]
 struct WorkspaceIn {
     name: String,
+    /// A sandbox workspace (ADR-041, `VS-08D`): fixed at creation, never changed.
+    #[serde(default)]
+    sandbox: bool,
 }
 
-/// `POST /organizations/me/workspaces {name}` (`org.workspaces.create`): a workspace
-/// with its built-in profiles and no member; the creator joins it with `…/join`.
+/// `POST /organizations/me/workspaces {name, sandbox?}` (`org.workspaces.create`): a
+/// workspace with its built-in profiles and no member; the creator joins it with
+/// `…/join`. `sandbox: true` makes a sandbox workspace for good (ADR-041).
 pub(crate) async fn create_workspace(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let (mut tx, _) = begin(&c, OrgAction::WorkspacesCreate).await?;
     let req: WorkspaceIn = parse(&body)?;
     let name = name_of(&req.name)?;
     let id = AccountId(Uuid::now_v7());
-    tx.create_workspace(id, &name, &new_profiles()).await?;
+    if req.sandbox {
+        tx.create_sandbox_workspace(id, &name, &new_profiles())
+            .await?;
+    } else {
+        tx.create_workspace(id, &name, &new_profiles()).await?;
+    }
     let w = tx
         .workspace_row(id)
         .await?

@@ -73,6 +73,16 @@ fn first(bytes: &[u8]) -> casual_sign_verify::SignatureReport {
     check(bytes).signatures.into_iter().next().unwrap()
 }
 
+/// ADR-041 (`VS-08D`): the report names the signer certificate's subject once the
+/// signature value verified against it, so a reader (the Verify page) can say a sandbox
+/// seal is not for agreements.
+#[test]
+fn the_report_names_the_signer_once_the_signature_verified() {
+    let good = first(&read("b-lt.pdf"));
+    let signer = good.signer.as_deref().unwrap();
+    assert!(signer.contains("CN=T-1H Signer"), "{signer}");
+}
+
 fn sub(s: &casual_sign_verify::SignatureReport) -> Option<SubIndication> {
     s.indication.reason().map(|r| r.sub)
 }

@@ -24,5 +24,16 @@ if [ -n "${OPENSEAL_KEYD_IMPORT_KEY:-}" ] \
         --label "$OPENSEAL_KEYD_PKCS11_KEY_LABEL" --id 01 --pin "$pin" >/dev/null
     echo "keyd: SoftHSM token $OPENSEAL_KEYD_PKCS11_TOKEN created (development)" >&2
 fi
-unset OPENSEAL_KEYD_IMPORT_KEY OPENSEAL_KEYD_SO_PIN_FILE
+# The sandbox key (ADR-041; development: the generated sandbox seal key), imported once
+# under its own label beside the platform key, also into a token made before it existed.
+if [ -n "${OPENSEAL_KEYD_IMPORT_SANDBOX_KEY:-}" ] && [ -n "${OPENSEAL_KEYD_SANDBOX_PKCS11_KEY_LABEL:-}" ]; then
+    pin="$(cat "$OPENSEAL_KEYD_PKCS11_PIN_FILE")"
+    if [ ! -f /var/lib/keyd/.sandbox-imported ]; then
+        softhsm2-util --import "$OPENSEAL_KEYD_IMPORT_SANDBOX_KEY" --token "$OPENSEAL_KEYD_PKCS11_TOKEN" \
+            --label "$OPENSEAL_KEYD_SANDBOX_PKCS11_KEY_LABEL" --id 02 --pin "$pin" >/dev/null
+        touch /var/lib/keyd/.sandbox-imported
+        echo "keyd: sandbox key imported (development)" >&2
+    fi
+fi
+unset OPENSEAL_KEYD_IMPORT_KEY OPENSEAL_KEYD_IMPORT_SANDBOX_KEY OPENSEAL_KEYD_SO_PIN_FILE
 exec /usr/local/bin/casual-sign-keyd

@@ -216,7 +216,7 @@ def footer(root: str) -> str:
     {col("Trust", [("Security and evidence", "docs/security.html"), ("Verifying a document", "docs/verifying.html"), ("Security policy", "security.html"), ("Architecture", "docs/architecture.html")])}
     {col("Project", [("GitHub", REPO), ("Contributing", "docs/contributing.html"), ("Brand and attribution", "brand.html")])}
   </div>
-  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p><p>Pre-release software: v0.0.1 is for evaluation, not yet for production agreements.</p></div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p><p>Pre-release software: v0.1.0 is for evaluation, not yet for production agreements.</p></div>
 </footer>"""
 
 

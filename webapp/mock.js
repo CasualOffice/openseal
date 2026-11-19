@@ -14,6 +14,7 @@ import { checkText } from "./signfields.js";
 import { rulesFor, finishProblems } from "./fieldrules.js";
 import { checkList } from "./bulkmodel.js";
 import { mergeTemplates, roleKey } from "./templatemodel.js";
+import { redirectUriOk, publicKeyProblem } from "./adminmodel.js";
 
 /// Fixed demo values; the e2e specs read them from here.
 export const MOCK = {
@@ -268,7 +269,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!WEBHOOK_EVENTS.includes(topic)) return;
     for (const w of db.webhooks || []) {
       if (!w.active || !w.event_types.includes(topic) || (w.envelope_id && w.envelope_id !== env.id)) continue;
-      (db.deliveries[w.id] ||= []).unshift({ id: uid(), event_id: uid(), event_type: topic, status: "delivered", attempts: 1, last_status_code: 200 });
+      // A receiver at `…/fail-first` answers its first delivery 500 (the slice 8 spec's
+      // stand-in for the real stack's receiver, told to fail), so it can be delivered again.
+      const fails = /\/fail-first(?:$|[/?])/.test(w.url) && !(db.deliveries[w.id] || []).length;
+      (db.deliveries[w.id] ||= []).unshift({ id: uid(), event_id: uid(), event_type: topic, status: fails ? "failed" : "delivered", attempts: 1, last_status_code: fails ? 500 : 200 });
     }
   }
 
@@ -496,6 +500,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
       ...(rec.auth.includes("sso") && !rec.auth_passed.includes("sso") ? { sso_providers: [MOCK.ssoProvider] } : {}),
       sender: { name: sender?.name || "", email: sender?.email || "", organisation: acct.settings?.branding?.name || acct.name },
+      // ADR-041: an envelope sent from a sandbox workspace.
+      sandbox: env.sandbox === true,
       // VS-02, as the server: an agent, intermediary or editor sees the later
       // recipients not yet reached, which `POST /s/{token}/recipients` may name.
       ...(shown && NAMES_LATER.has(rec.type) ? { later_recipients: laterOf(env, rec) } : {}),
@@ -989,6 +995,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const b = body || {};
     checkSizes(0, (b.documents || []).map((d) => d.content_base64 || ""));
     const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
+    if (inSandbox()) env.sandbox = true;
     if (b.reminders) env.reminders = b.reminders;
     if (Number.isInteger(b.expires_in_days)) env.expires_at = iso(b.expires_in_days * 24 * 60);
     // As the server (VS-07): the envelope's own seal profile, else the account's default.
@@ -1416,7 +1423,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     };
     return db.org;
   }
-  const workspaceRow = (w) => ({ id: w.id, name: w.id === "acct-demo" ? account().name || "Demo workspace" : w.name, status: w.status });
+  const workspaceRow = (w) => ({ id: w.id, name: w.id === "acct-demo" ? account().name || "Demo workspace" : w.name, status: w.status, sandbox: w.sandbox === true });
   const adminRow = (a) => ({ user_id: a.user_id, role: a.role, permission_set_id: a.permission_set_id, workspace_scope: a.workspace_scope, created_at: a.created_at });
 
   async function orgEvent(action, target = {}, changes = [], actor = { kind: "user", id: "user-demo" }) {
@@ -1463,8 +1470,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if (method === "GET") return json(200, { items: o.workspaces.map(workspaceRow) });
         if (method !== "POST") fail(405, "CS-API-0012", "Method not allowed");
         need("workspaces");
-        only("name");
-        const w = { id: uid(), name: nameOf(), status: "active", member: false };
+        only("name", "sandbox");
+        if (body.sandbox != null && typeof body.sandbox !== "boolean") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/sandbox", code: "CS-API-0001" }]);
+        // ADR-041: a sandbox workspace, for good.
+        const w = { id: uid(), name: nameOf(), status: "active", member: false, sandbox: body.sandbox === true };
         o.workspaces.push(w);
         await orgEvent("workspace.created", { workspace: w.id });
         return done(201, workspaceRow(w));
@@ -1727,6 +1736,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return now().getTime() < until ? new Date(until).toISOString() : null;
   }
 
+  /// Whether the session's workspace is a sandbox (ADR-041), as the server says it.
+  function inSandbox() {
+    const here = db.session?.account || "acct-demo";
+    return organization().workspaces.some((w) => w.id === here && w.sandbox === true);
+  }
+
   /// The calls the server asks a recent re-authentication for (docs/40 §2, ASVS-07).
   function sensitive(method, res, id, sub, body) {
     if (res === "api-clients" && !id && method === "POST") return true;
@@ -1813,7 +1828,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // server's isolation is tested in server/casual-sign-server/tests/workspaces.rs.
     // The organization's workspaces (ORG-06) are its list; the ones the demo user is a
     // member of (`member`) are the switcher's.
-    const spaces = organization().workspaces.filter((w) => w.member).map(workspaceRow);
+    // As the server's `GET /auth/workspaces`: no sandbox member (the org listing has it).
+    const spaces = organization().workspaces.filter((w) => w.member).map(workspaceRow).map(({ sandbox: _s, ...w }) => w);
     const here = db.session.account || "acct-demo";
     if (res === "auth" && id === "workspaces" && method === "GET") {
       return json(200, {
@@ -1829,7 +1845,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, { account_id: body.account_id, user_id: "user-demo", csrf_token: db.session.csrf, expires_at: iso(60 * 12) });
     }
     if (res === "auth" && id === "session" && method === "GET") {
-      return json(200, { account_id: here, user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true, second_factor: secondFactor(), factors: factorsOf(), reauthenticated_until: recentUntil() });
+      return json(200, { account_id: here, user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true, second_factor: secondFactor(), factors: factorsOf(), reauthenticated_until: recentUntil(), sandbox: inSandbox() });
     }
     if (res === "auth" && id === "logout" && method === "POST") { db.session = null; return json(204, null); }
     // The staff second factor (ASVS-01), as the server: a TOTP code is six digits (the
@@ -1896,6 +1912,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "users" && id === "me" && !sub) return me(method, body);
     if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
+    if (res === "oauth") return oauth(method, id, sub, body, query);
     if (res === "webhooks") return webhooks(method, id, sub, subId, subSub, body);
     if (res === "folders") return folders(method, id, sub, body, query);
     if (res === "bulk-sends") return bulkSends(method, id, sub, body);
@@ -2729,13 +2746,21 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "GET") return json(200, { items: db.apiClients });
       if (method === "POST") {
         if (!body || typeof body.name !== "string" || !body.name.trim()) fail(400, "CS-API-0001", "Name required", [{ pointer: "/name", code: "required" }]);
-        if (!["api_key", "oauth_app"].includes(body.kind)) fail(400, "CS-API-0001", "Unknown kind", [{ pointer: "/kind", code: "enum" }]);
+        if (!["api_key", "oauth_app", "jwt_integration"].includes(body.kind)) fail(400, "CS-API-0001", "Unknown kind", [{ pointer: "/kind", code: "enum" }]);
         if (!Array.isArray(body.scopes) || !body.scopes.length) fail(400, "CS-API-0001", "Scopes required", [{ pointer: "/scopes", code: "required" }]);
+        // VS-08A, VS-08B: as the server checks redirect URIs and a JWT integration's key.
+        const redirects = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
+        if (redirects.length > 10 || (body.kind === "api_key" && redirects.length)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/redirect_uris", code: "CS-API-0001" }]);
+        const bad = redirects.findIndex((u) => !redirectUriOk(u));
+        if (bad >= 0) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/redirect_uris/${bad}`, code: "CS-API-0001" }]);
+        const jwt = body.kind === "jwt_integration";
+        if (jwt ? publicKeyProblem(body.public_key) : body.public_key != null) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/public_key", code: "CS-API-0001" }]);
         const days = Number.isInteger(body.expires_in_days) ? body.expires_in_days : null;
         const secret = uid().replace(/-/g, "");
-        const c = { id: uid(), kind: body.kind, name: body.name.trim(), owner_user_id: body.owner_user_id || null, key_prefix: body.kind === "api_key" ? `osk_${secret.slice(0, 8)}` : null, scopes: body.scopes, expires_at: days ? iso(days * 24 * 60) : null, revoked: false };
+        const keyPrefix = inSandbox() ? "osk_test_" : "osk_";
+        const c = { id: uid(), kind: body.kind, name: body.name.trim(), owner_user_id: body.owner_user_id || "user-demo", key_prefix: body.kind === "api_key" ? `${keyPrefix}${secret.slice(0, 8)}` : null, scopes: body.scopes, expires_at: days ? iso(days * 24 * 60) : null, revoked: false, redirect_uris: body.kind === "api_key" ? [] : redirects, has_public_key: jwt };
         db.apiClients.push(c);
-        const shown = body.kind === "api_key" ? { key: `${c.key_prefix}_${secret}` } : { client_id: `osc_${c.id.slice(0, 8)}`, client_secret: secret };
+        const shown = body.kind === "api_key" ? { key: `${c.key_prefix}_${secret}` } : jwt ? { client_id: c.id } : { client_id: c.id, client_secret: `oss_${secret}` };
         return json(201, { ...c, ...shown });
       }
     }
@@ -2744,6 +2769,53 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (method === "GET") return json(200, c);
     if (method === "DELETE") { c.revoked = true; return json(204, null); }
     fail(405, "CS-API-0012", "Method not allowed");
+  }
+
+  /// OAuth consent (VS-08A, server api/oauth.rs): the checked request, the member's
+  /// answer with a code in the redirect, and their consents. Codes are not exchanged
+  /// here (the token endpoint is the server's); the redirect carries one so the screen
+  /// can be followed to its end.
+  function oauth(method, id, sub, body, query) {
+    const SCOPES = ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "bulk:send", "webhooks:manage", "admin:users", "admin:account", "audit:read"];
+    db.consents ||= [];
+    const bad = (pointer) => fail(422, "CS-API-0001", "Malformed request", [{ pointer, code: "CS-API-0001" }]);
+    const check = (q) => {
+      const c = db.apiClients.find((x) => x.id === q.client_id);
+      if (!c || c.revoked || !["oauth_app", "jwt_integration"].includes(c.kind)) bad("/client_id");
+      if (!(c.redirect_uris || []).includes(q.redirect_uri)) bad("/redirect_uri");
+      if (q.response_type !== "code") bad("/response_type");
+      if (q.code_challenge_method !== "S256" || !/^[A-Za-z0-9_-]{43,128}$/.test(q.code_challenge || "")) bad("/code_challenge");
+      const scopes = [...new Set(String(q.scope || "").split(" ").filter(Boolean))];
+      if (!scopes.length || scopes.some((s) => !c.scopes.includes(s) || !SCOPES.includes(s))) bad("/scope");
+      return { c, scopes };
+    };
+    if (id === "authorize" && sub === "request" && method === "GET") {
+      const q = Object.fromEntries(query.entries());
+      const { c, scopes } = check(q);
+      return json(200, { client: { id: c.id, name: c.name, kind: c.kind }, scopes, redirect_uri: q.redirect_uri });
+    }
+    if (id === "authorize" && !sub && method === "POST") {
+      const { c, scopes } = check(body || {});
+      const back = new URL(body.redirect_uri);
+      if (body.decision === "deny") back.searchParams.set("error", "access_denied");
+      else if (body.decision === "allow") {
+        const live = db.consents.find((k) => k.client.id === c.id && !k.revoked);
+        if (live) live.scopes = [...new Set([...live.scopes, ...scopes])];
+        else db.consents.unshift({ id: uid(), client: { id: c.id, name: c.name }, scopes, granted_at: iso() });
+        back.searchParams.set("code", uid().replace(/-/g, ""));
+      } else bad("/decision");
+      if (body.state) back.searchParams.set("state", body.state);
+      back.searchParams.set("iss", "https://openseal.mock");
+      return json(200, { redirect_to: back.toString() });
+    }
+    if (id === "consents" && !sub && method === "GET") return json(200, { items: db.consents.filter((k) => !k.revoked).map(({ revoked: _r, ...k }) => k) });
+    if (id === "consents" && sub && method === "DELETE") {
+      const k = db.consents.find((x) => x.id === sub && !x.revoked);
+      if (!k) fail(404, "CS-API-0002", "Not found");
+      k.revoked = true;
+      return json(204, null);
+    }
+    fail(404, "CS-API-0002", "Not found");
   }
 
   async function ceremony(method, parts, body, query = null) {

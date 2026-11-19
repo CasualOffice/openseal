@@ -875,6 +875,17 @@ the repository, so the repository's workflows keep write access). Until then pul
 attestation verify` on the images need a GitHub login with read access. The images are built for `linux/amd64` only:
 arm64 hosts run them under emulation or build from source.
 
+## Sandbox workspaces (ADR-041, `VS-08D`)
+
+An organization administrator makes a sandbox workspace in Organization settings → Workspaces ("Sandbox workspace",
+fixed at creation). Its envelopes are sealed with the sandbox key only: the Compose stack generates one
+(`dev-pki`: `sandbox-seal.key`, `sandbox-seal-chain.pem`), imports it into keyd's token under the label `sandbox` and
+sets `OPENSEAL_KEYD_SANDBOX_ALIAS=sandbox` on keyd and the worker. In production, generate the sandbox key in the HSM
+with a certificate whose subject says "not for agreements", then set keyd's `OPENSEAL_KEYD_SANDBOX_ALIAS`,
+`OPENSEAL_KEYD_SANDBOX_PKCS11_KEY_LABEL` (or `_KEY_ID`) and `OPENSEAL_KEYD_SANDBOX_CHAIN`, and the worker's
+`OPENSEAL_KEYD_SANDBOX_ALIAS`, and record both manifests. Without them, sandbox envelopes wait unsealed
+(`CS-WRK-0020`) and the operator is alerted; nothing is ever sealed for a sandbox with the platform key.
+
 ## Upgrades
 
 Rolling: migrations are forward-compatible for one release, so old and new nodes run together during a deploy. Never

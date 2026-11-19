@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openseal"
+version = "0.1.0b0"
+description = "OpenSeal API client: one method per operation of the OpenSeal API, OAuth helpers and webhook verification. Standard library only."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.9"
+classifiers = ["Development Status :: 4 - Beta", "Programming Language :: Python :: 3"]
+
+[tool.setuptools]
+packages = ["openseal"]

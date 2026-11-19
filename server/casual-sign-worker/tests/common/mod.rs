@@ -392,6 +392,13 @@ pub struct CountingKey {
     count: Arc<AtomicUsize>,
 }
 
+impl CountingKey {
+    /// `inner`, counting its signatures in `count`.
+    pub fn new(inner: pki::TestProvider, count: Arc<AtomicUsize>) -> Self {
+        Self { inner, count }
+    }
+}
+
 impl KeyProvider for CountingKey {
     fn algorithm(&self) -> casual_sign_sdk::SignatureAlgorithm {
         self.inner.algorithm()
@@ -484,6 +491,8 @@ pub struct Env {
     pub untrusted: AtomicBool,
     /// A key to seal with instead of the seal tests' in-process one (keyd's).
     pub key: Mutex<Option<SealKey>>,
+    /// The sandbox key the worker is given (ADR-041; none by default).
+    pub sandbox_key: Mutex<Option<SealKey>>,
     /// More trust anchors (DER) for sealing and verification.
     pub anchors: Mutex<Vec<Vec<u8>>>,
     /// Whether the webhook SSRF policy allow-lists loopback (where the receiver is).
@@ -519,14 +528,35 @@ impl Env {
     /// A world whose account and sender have these ids, so that two worlds given the
     /// same commands seal the same bytes (`ML-32`).
     pub async fn with_ids(test: &str, account: AccountId, sender: UserId) -> Option<Self> {
+        Self::build(test, account, sender, false).await
+    }
+
+    /// A world whose account is a sandbox workspace (ADR-041, `VS-08D`).
+    pub async fn sandbox(test: &str) -> Option<Self> {
+        Self::build(
+            test,
+            AccountId(Uuid::now_v7()),
+            UserId(Uuid::now_v7()),
+            true,
+        )
+        .await
+    }
+
+    async fn build(test: &str, account: AccountId, sender: UserId, sandbox: bool) -> Option<Self> {
         let db = fresh(test, Rls::On).await?;
         // A workspace of an organization of its own, made by the owner role as the
         // console will; a test's further workspaces use `bootstrap_workspace`.
         let org = db.organization("Acme Test").await;
         let mut tx = db.store.for_organization(org).begin().await.unwrap();
-        tx.create_workspace(account, "Acme Test", &db::builtin_profiles())
-            .await
-            .unwrap();
+        if sandbox {
+            tx.create_sandbox_workspace(account, "Acme Test", &db::builtin_profiles())
+                .await
+                .unwrap();
+        } else {
+            tx.create_workspace(account, "Acme Test", &db::builtin_profiles())
+                .await
+                .unwrap();
+        }
         tx.commit().await.unwrap();
         let mut tx = db.store.for_account(account).begin().await.unwrap();
         let profile = PermissionProfileId(Uuid::now_v7());
@@ -578,6 +608,7 @@ impl Env {
             captures: Mutex::new(BTreeMap::new()),
             untrusted: AtomicBool::new(false),
             key: Mutex::new(None),
+            sandbox_key: Mutex::new(None),
             anchors: Mutex::new(Vec::new()),
             allow_loopback: AtomicBool::new(true),
             inference: Mutex::new(None),
@@ -628,6 +659,7 @@ impl Env {
             engine: self.engine.clone(),
             fonts: FontSet::bundled(),
             key,
+            sandbox_key: self.sandbox_key.lock().unwrap().clone(),
             timestamps: Arc::new(move || {
                 Box::new(pki::TestTsa::new(Duration::from_millis(
                     u64::try_from(clock.ms()).unwrap() + 1000,

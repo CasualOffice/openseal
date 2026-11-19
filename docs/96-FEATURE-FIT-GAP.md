@@ -201,16 +201,16 @@ instructions 8 and 9).
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
 | FG-190 | REST API with OpenAPI document | DS, SN | Build | 8 | Works |
-| FG-191 | OAuth authorization code with PKCE | DS, SN | Build | 8 | Designed |
-| FG-192 | JWT bearer grant (service integrations) | DS | Build | 8 | Designed |
+| FG-191 | OAuth authorization code with PKCE | DS, SN | Build | 8 | Partial: built on the slice 8 branch (`VS-08A`): consent screen, codes with S256, rotating refresh tokens, consents withdrawn from the profile; `tests/oauth.rs`, `api-webhooks.spec.mjs` in mock mode. `Works` once `server-db` and `compose-e2e` are green on `main` with it |
+| FG-192 | JWT bearer grant (service integrations) | DS | Build | 8 | Partial: built on the slice 8 branch (`VS-08B`): JWT integrations with a public key, the member's consent once, ES256 and RS256 assertions; `tests/oauth.rs`. `Works` once `server-db` is green on `main` with it |
 | FG-193 | API keys | — | Build | Phase 2 | Works |
 | FG-194 | Webhooks: account and per-envelope, HMAC, rotation | DS, SN | Build | 8 | Works |
-| FG-195 | Webhook delivery log and redeliver | DS, SN | Build | 8 | Partial: Admin lists subscriptions and their latest deliveries (`UX-08`); the server edits, pauses and resumes a subscription, sends a test event and redelivers through the worker (`UXW-31` to `UXW-33`), and the Admin screen edits, pauses, resumes, tests and redelivers (`UXW-10`, mock-mode e2e `webapp/e2e/admin-screens.spec.mjs`). Not checked on the Compose stack yet |
+| FG-195 | Webhook delivery log and redeliver | DS, SN | Build | 8 | Partial: Admin lists subscriptions and their latest deliveries (`UX-08`); the server edits, pauses and resumes a subscription, sends a test event and redelivers through the worker (`UXW-31` to `UXW-33`), and the Admin screen edits, pauses, resumes, tests and redelivers (`UXW-10`, mock-mode e2e `webapp/e2e/admin-screens.spec.mjs`). On the Compose stack: `api-webhooks.spec.mjs` (`VS-08C`) sends through a key to the CI receiver, which checks each signature, and delivers a failed one again; `Works` once `compose-e2e` is green on `main` with it |
 | FG-196 | Embedded signing view | DS, SN | Build | 9 | Designed |
 | FG-197 | Embedded sending / prepare view | DS, SN | Build | 9 | Designed |
 | FG-198 | Embedded correct and template edit views | DS, SN | Build | 9 | Designed |
-| FG-199 | SDKs (TS, Python, then Java, C#, Go, PHP, Ruby) | DS | Build | 8 | Designed |
-| FG-200 | Sandbox / demo environment | DS, SN | Build | 8 | — |
+| FG-199 | SDKs (TS, Python, then Java, C#, Go, PHP, Ruby) | DS | Build | 8 | Partial: TypeScript and Python built (`VS-08E`, `sdk/`), generated from the contract, tested offline; not published: owner instruction 70, "Not now" (`VS-08J`). Java, C#, Go, PHP, Ruby: `VS-08H` |
+| FG-200 | Sandbox / demo environment | DS, SN | Build | 8 | Partial: built on the slice 8 branch (`VS-08D`, ADR-041): sandbox workspaces sealed with a separate sandbox key, marked everywhere, not metered, `osk_test_` keys; server, worker, keyd, verify and web tests, `api-webhooks.spec.mjs` in mock mode. `Works` once `compose-e2e` is green on `main` with it |
 | FG-201 | Rate limit headers | DS | Build | Phase 2 | Works |
 | FG-202 | DocuSign-compatible API | — | Build, subject to counsel (`DEC-10`) | 25 | — |
 | FG-203 | MCP agent access | — (sisters) | Build | 22 | — |

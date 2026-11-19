@@ -40,6 +40,13 @@ jobs:
       # The production Compose profile's hardening rules, each proven able to fail (HRD-06).
       - run: python3 -I tools/check-deploy.py --self-test
       - run: python3 -I tools/check-deploy.py
+      # The SDKs (VS-08E, docs/40 §7): the generated operation tables match
+      # api/openapi.yaml, and each client passes its offline tests against the recorded
+      # contract (sdk/contract/recorded.json).
+      - run: python3 -m venv "$RUNNER_TEMP/sdk" && "$RUNNER_TEMP/sdk/bin/pip" install --quiet pyyaml==6.0.2
+      - run: '"$RUNNER_TEMP/sdk/bin/python" tools/build-sdks.py --check'
+      - run: node --test sdk/typescript/test/client.test.mjs
+      - run: python3 -I -m unittest discover -s sdk/python/tests -t sdk/python
 
   # Conventional Commits over what this push or pull request adds (CLAUDE.md, Git).
   commit-messages:
@@ -394,6 +401,16 @@ jobs:
         with:
           name: slice-4-demo-${{ matrix.shard }}
           path: target/e2e-demo/vs04-*
+          if-no-files-found: error
+          retention-days: 90
+      # The slice 8 demo (VS-08C): api-webhooks.spec.mjs's run recorded (an API key made,
+      # an envelope sent with it, signed deliveries at the CI receiver, a failed one
+      # delivered again, an app allowed through the consent screen).
+      - if: success() && hashFiles('target/e2e-demo/vs08-*') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: slice-8-demo-${{ matrix.shard }}
+          path: target/e2e-demo/vs08-*
           if-no-files-found: error
           retention-days: 90
       - if: failure()

@@ -18,6 +18,8 @@
 <body class="os-sign">
   <a class="os-skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
   <div id="mock-banner" class="os-mock-banner" role="note" hidden><span data-i18n="mock.banner">Demo mode</span></div>
+  <!-- ADR-041: an envelope from a sandbox workspace says it is not an agreement. -->
+  <div id="sandbox-banner" class="os-sandbox-banner" role="note" data-testid="sandbox-banner" hidden><span data-i18n="sandbox.sign-banner">Sandbox: this is a test envelope. Nothing you sign here is an agreement.</span></div>
   <!-- The signer's header (WEB-18, the approved canvas Signer.dc.html): the sender's
        organisation mark, the title, who asked, a neutral "Secured by OpenSeal" chip,
        Decline and More. On phones (SignerPhone.dc.html) a two-segment progress bar

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, kind, name, owner_user_id, key_prefix, scopes, expires_at, revoked_at FROM api_clients WHERE account_id = $1 ORDER BY created_at DESC, id DESC",
+  "query": "SELECT id, kind, name, owner_user_id, key_prefix, scopes, expires_at, revoked_at, redirect_uris, public_key_pem FROM api_clients WHERE account_id = $1 ORDER BY created_at DESC, id DESC",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,28 @@
             "name": "revoked_at"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "redirect_uris",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "api_clients",
+            "name": "redirect_uris"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "public_key_pem",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "api_clients",
+            "name": "public_key_pem"
+          }
+        }
       }
     ],
     "parameters": {
@@ -105,8 +127,10 @@
       true,
       false,
       true,
+      true,
+      false,
       true
     ]
   },
-  "hash": "d0813ecbfa62d1f931394c1f7a1c2de1b54661c2f9a627ec607cc5e7a485f902"
+  "hash": "f60bab7a77269cc64b69219d480e99b4f056df0d5be93dd0ada0092c58868438"
 }

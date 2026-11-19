@@ -298,6 +298,7 @@ pub fn certificate_input<'a>(
         chain,
         generated: t(30_000),
         ending: None,
+        sandbox: false,
     }
 }
 

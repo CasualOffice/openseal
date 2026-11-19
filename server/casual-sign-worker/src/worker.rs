@@ -44,7 +44,7 @@ use crate::capture;
 use crate::email::{self, Fill, Mailer, Message, Sent, Template};
 use crate::error::{Result, WorkerError};
 use crate::jobs;
-use crate::seal::{self, SealInput, SealServices};
+use crate::seal::{self, SANDBOX_REASON, SealInput, SealServices};
 use crate::webhook;
 
 /// The worker's clock (supplied, so tests can move time).
@@ -912,7 +912,8 @@ impl<B: BlobStore + 'static> Worker<B> {
             .get(inv.user_id)
             .await?
             .ok_or(WorkerError::SealInput { what: "user" })?;
-        let account_name = tx.account().get().await?.name;
+        let row = tx.account().get().await?;
+        let (account_name, sandbox) = (row.name, row.sandbox);
         let mut raw = [0u8; 32];
         aws_lc_rs::rand::fill(&mut raw).map_err(|_| WorkerError::Config { setting: "rng" })?;
         let token = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw);
@@ -945,6 +946,7 @@ impl<B: BlobStore + 'static> Worker<B> {
                 link: Some(&link),
                 product: &self.config.product,
                 abuse: &self.config.abuse,
+                sandbox,
             },
         );
         let msg = Message {
@@ -1042,6 +1044,7 @@ impl<B: BlobStore + 'static> Worker<B> {
                 link: Some(&link),
                 product: &self.config.product,
                 abuse: &self.config.abuse,
+                sandbox: false,
             },
         );
         let msg = Message {
@@ -1108,6 +1111,7 @@ impl<B: BlobStore + 'static> Worker<B> {
                 link: None,
                 product: &self.config.product,
                 abuse: &self.config.abuse,
+                sandbox: false,
             },
         );
         let msg = Message {
@@ -1329,6 +1333,7 @@ impl<B: BlobStore + 'static> Worker<B> {
             return self.close_job(tx, job, lease).await;
         }
         let mailer = self.mailer.as_ref().ok_or(WorkerError::NoChannel)?;
+        let sandbox = self.sandbox_of(job.account_id).await?;
         let (subject, body) = email::render(
             Template::EmailOtp,
             &Fill {
@@ -1338,6 +1343,7 @@ impl<B: BlobStore + 'static> Worker<B> {
                 link: Some(&code),
                 product: &self.config.product,
                 abuse: &self.config.abuse,
+                sandbox,
             },
         );
         let msg = Message {
@@ -1719,6 +1725,12 @@ impl<B: BlobStore + 'static> Worker<B> {
         format!("<{}.{}@{}>", job.0.simple(), who, self.config.mail_domain)
     }
 
+    /// Whether `account` is a sandbox workspace (ADR-041): its emails say so.
+    async fn sandbox_of(&self, account: AccountId) -> Result<bool> {
+        let mut tx = self.store.for_account(account).begin().await?;
+        Ok(tx.account().get().await?.sandbox)
+    }
+
     /// Send one templated email to one person, unless this job already did; returns
     /// whether it bounced.
     #[allow(clippy::too_many_arguments)]
@@ -1735,6 +1747,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         link: Option<&str>,
     ) -> Result<Sent> {
         let mailer = self.mailer.as_ref().ok_or(WorkerError::NoChannel)?;
+        let sandbox = self.sandbox_of(ctx.account).await?;
         let message = if matches!(template, Template::Invitation | Template::CopyInvitation) {
             state.message.get().as_str()
         } else {
@@ -1749,6 +1762,7 @@ impl<B: BlobStore + 'static> Worker<B> {
                 link,
                 product: &self.config.product,
                 abuse: &self.config.abuse,
+                sandbox,
             },
         );
         let msg = Message {
@@ -2250,7 +2264,16 @@ impl<B: BlobStore + 'static> Worker<B> {
             i128::from(now.unix_millis()).saturating_mul(1_000_000),
         )
         .map_err(|_| WorkerError::StateUnreadable)?;
-        services.key = self.seal_key_at(at).await?;
+        if input.sandbox {
+            // ADR-041: a sandbox envelope is sealed with the sandbox key only; without
+            // one it waits (retried), and is never sealed with the platform key.
+            services.key = self.seal.sandbox_key.clone().ok_or(WorkerError::Pipeline {
+                code: "CS-WRK-0020",
+            })?;
+            services.reason = Some(SANDBOX_REASON.to_owned());
+        } else {
+            services.key = self.seal_key_at(at).await?;
+        }
         input.keyd_token = self.seal_token(ctx.account, ctx.envelope).await?;
         let (outs, input) = tokio::task::spawn_blocking(move || {
             let r = seal::seal_all(&services, &input);
@@ -2386,6 +2409,7 @@ impl<B: BlobStore + 'static> Worker<B> {
             state,
             chain,
             account_name: account.name,
+            sandbox: account.sandbox,
             sender: casual_sign_sdk::evidence::Party {
                 name: sender.name.get().clone(),
                 email: sender.email.get().clone(),
@@ -2544,7 +2568,14 @@ impl<B: BlobStore + 'static> Worker<B> {
         let profile = input.state.seal_profile;
         self.refresh_tsas().await;
         input.keyd_token = self.seal_token(job.account_id, envelope).await?;
-        let services = self.seal.clone();
+        let mut services = self.seal.clone();
+        if input.sandbox {
+            // ADR-041: a sandbox envelope's certificate too is sealed with the sandbox key only.
+            services.key = self.seal.sandbox_key.clone().ok_or(WorkerError::Pipeline {
+                code: "CS-WRK-0020",
+            })?;
+            services.reason = Some(SANDBOX_REASON.to_owned());
+        }
         let (bytes, signatures) =
             tokio::task::spawn_blocking(move || seal::seal_ended(&services, &input))
                 .await

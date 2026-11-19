@@ -614,7 +614,8 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       rename: (name) => data(request("PATCH", "/api/v1/organizations/me", { body: { name } })),
       /// `{items: [{id, name, status}]}`.
       workspaces: () => data(request("GET", "/api/v1/organizations/me/workspaces")),
-      createWorkspace: (name) => data(request("POST", "/api/v1/organizations/me/workspaces", { body: { name } })),
+      /// `sandbox`: a sandbox workspace, for good (ADR-041, `VS-08D`).
+      createWorkspace: (name, { sandbox = false } = {}) => data(request("POST", "/api/v1/organizations/me/workspaces", { body: sandbox ? { name, sandbox: true } : { name } })),
       archiveWorkspace: (id) => data(request("POST", `/api/v1/organizations/me/workspaces/${encodeURIComponent(id)}/archive`)),
       /// Become a member of that workspace with `profile` (`admin`, `sender`, `viewer`);
       /// owners and admins only; written to both admin logs.
@@ -650,9 +651,23 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     },
     apiClients: {
       list: () => data(request("GET", "/api/v1/api-clients")),
-      /// `{name, kind: "api_key" | "oauth_app", scopes, owner_user_id?, expires_in_days?}`.
+      /// `{name, kind: "api_key" | "oauth_app" | "jwt_integration", scopes, owner_user_id?,
+      /// expires_in_days?, redirect_uris?, public_key?}`: an OAuth app or a JWT
+      /// integration names where consent sends the member back; a JWT integration also
+      /// its public key PEM (VS-08A, VS-08B).
       create: (body) => data(request("POST", "/api/v1/api-clients", { body })),
       revoke: (c) => data(request("DELETE", `/api/v1/api-clients/${encodeURIComponent(c)}`)),
+    },
+
+    /// OAuth 2.1 consent (VS-08A, docs/40 §2): the consent screen reads the checked
+    /// authorization request (`params`: the query `GET /oauth/authorize` handed over) and
+    /// answers it; a member lists and withdraws the apps acting as them.
+    oauth: {
+      request: (params) => data(request("GET", `/api/v1/oauth/authorize/request?${new URLSearchParams(params)}`)),
+      /// `decision`: `allow` or `deny`; answers `{redirect_to}`, where the browser goes next.
+      answer: (params, decision) => data(request("POST", "/api/v1/oauth/authorize", { body: { ...params, decision } })),
+      consents: () => data(request("GET", "/api/v1/oauth/consents")),
+      revoke: (id) => data(request("DELETE", `/api/v1/oauth/consents/${encodeURIComponent(id)}`)),
     },
 
     /// The account's groups, `{items: [{id, name, members}]}`, to share a template with

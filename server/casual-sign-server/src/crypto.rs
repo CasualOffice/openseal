@@ -243,7 +243,7 @@ pub(crate) fn dummy_phc() -> Result<String, ApiError> {
     hash_password(&random_secret()?)
 }
 
-/// The claims of an OAuth 2.1 client-credentials access token (docs/40 §2).
+/// The claims of an OAuth 2.1 access token (docs/40 §2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Claims {
     /// The issuer: this server's configured URL.
@@ -262,6 +262,14 @@ pub(crate) struct Claims {
     pub exp: i64,
     /// Token id.
     pub jti: String,
+    /// The member a token acts for, when a member consented (authorization code or JWT
+    /// bearer grant, VS-08A, VS-08B); absent for the client-credentials grant, which
+    /// acts as the client's owner.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usr: Option<String>,
+    /// The consent the token was issued under; revoking it ends the token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grt: Option<String>,
 }
 
 /// The audience every access token carries.
@@ -437,6 +445,8 @@ mod tests {
             iat: 0,
             exp: 10,
             jti: "j".into(),
+            usr: None,
+            grt: None,
         };
         let t = k.sign(&c).unwrap();
         assert_eq!(k.verify(&t, "https://a"), Some(c.clone()));
@@ -473,6 +483,8 @@ mod tests {
             iat: 0,
             exp: 10,
             jti: "j".into(),
+            usr: None,
+            grt: None,
         };
         let old = JwtKeys::from_pkcs8(&old_der).unwrap();
         let issued_before = old.sign(&c).unwrap();

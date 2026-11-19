@@ -1,5 +1,6 @@
 //! Who is calling `/api/v1` (docs/40 §2): a staff session cookie with its CSRF token,
-//! a personal API key, or an OAuth 2.1 client-credentials access token. Every request
+//! a personal API key, or an OAuth 2.1 access token (client credentials, or acting for
+//! a consenting member through the authorization code or JWT bearer grant). Every request
 //! is authenticated afresh, deny by default: a revoked key, a revoked client, an
 //! expired token, a removed member or a disabled user is refused on its next request.
 //!
@@ -68,6 +69,9 @@ pub fn ran_out(start: OffsetDateTime, secs: u64, now: OffsetDateTime) -> bool {
 
 /// API keys start with this, for secret scanning (SEC-A10).
 pub(crate) const API_KEY_PREFIX: &str = "osk_";
+/// A sandbox workspace's API keys start with this (ADR-041); it begins with
+/// [`API_KEY_PREFIX`], so they authenticate the same way.
+pub(crate) const SANDBOX_KEY_PREFIX: &str = "osk_test_";
 
 /// How the caller proved who they are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,9 +211,11 @@ impl Principal {
     /// A stable name for idempotency records and rate limits.
     #[must_use]
     pub fn key(&self) -> String {
-        match self.client() {
-            Some(c) => format!("client:{c}"),
-            None => format!("user:{}", self.user),
+        match self.credential {
+            Credential::ApiKey(c) => format!("client:{c}"),
+            // One OAuth client may act for several members (VS-08A): each its own.
+            Credential::AccessToken(c) => format!("client:{c}:user:{}", self.user),
+            Credential::Session(_) => format!("user:{}", self.user),
         }
     }
 
@@ -501,20 +507,52 @@ pub(crate) async fn authenticate(
             .await?
             .ok_or_else(ApiError::expired)?;
         let lapsed = c.expires_at.is_some_and(|e| e <= now);
-        if c.revoked_at.is_some() || lapsed || c.kind != ApiClientKind::OauthApp {
+        if c.revoked_at.is_some() || lapsed {
             return Err(ApiError::expired());
         }
-        let owner = c.owner_user_id.ok_or_else(ApiError::expired)?;
-        let granted: Vec<String> = claims
+        let mut granted: Vec<String> = claims
             .scope
             .split(' ')
             .filter(|s| c.scopes.iter().any(|g| g == s))
             .map(str::to_owned)
             .collect();
+        // A token acting for a consenting member (VS-08A, VS-08B): the consent must still
+        // be live, the member's, and this client's; it narrows the scopes once more.
+        let user = match (&claims.usr, &claims.grt) {
+            (Some(usr), Some(grt)) => {
+                if !matches!(
+                    c.kind,
+                    ApiClientKind::OauthApp | ApiClientKind::JwtIntegration
+                ) {
+                    return Err(ApiError::expired());
+                }
+                let usr = UserId(Uuid::parse_str(usr).map_err(|_| ApiError::unauthenticated())?);
+                let grt = casual_sign_store::OAuthConsentId(
+                    Uuid::parse_str(grt).map_err(|_| ApiError::unauthenticated())?,
+                );
+                let consent = tx
+                    .oauth()
+                    .consent(grt)
+                    .await?
+                    .ok_or_else(ApiError::expired)?;
+                if consent.revoked_at.is_some()
+                    || consent.user_id != usr
+                    || consent.client_id != client
+                {
+                    return Err(ApiError::expired());
+                }
+                granted.retain(|s| consent.scopes.contains(s));
+                usr
+            }
+            (None, None) if c.kind == ApiClientKind::OauthApp => {
+                c.owner_user_id.ok_or_else(ApiError::expired)?
+            }
+            _ => return Err(ApiError::expired()),
+        };
         return as_member(
             &mut tx,
             account,
-            owner,
+            user,
             Credential::AccessToken(client),
             Some(&granted),
         )

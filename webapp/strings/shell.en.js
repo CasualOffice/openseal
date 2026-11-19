@@ -340,6 +340,7 @@ export const SHELL = {
   "verify.state.unsigned-text": "This PDF has no digital signature.",
   "verify.state.error": "Could not be checked",
   "verify.state.error-text": "The verifier could not read this file ({code}).",
+  "verify.sandbox": "This is a sandbox seal: its certificate says it is not for agreements. The document was signed in a sandbox workspace, for testing, and is not an agreement.",
   "verify.needs-trust": "Add the issuer's certificate under Trusted certificates and check again.",
   "verify.signatures": "Signatures ({n})",
   "verify.sig-n": "Signature {n}: {kind}",

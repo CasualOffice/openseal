@@ -60,6 +60,11 @@ pub struct ApiClient {
     pub expires_at: Option<OffsetDateTime>,
     /// Revoked, when set.
     pub revoked_at: Option<OffsetDateTime>,
+    /// Where the authorization code may be sent (an OAuth app or a JWT integration's
+    /// consent, VS-08A).
+    pub redirect_uris: Vec<String>,
+    /// A JWT integration's public key, PEM (RFC 7523, VS-08B).
+    pub public_key_pem: Option<String>,
 }
 
 /// API clients of this account. Reached through `TenantTx::api_clients`.
@@ -103,8 +108,8 @@ impl ApiClients<'_> {
     pub async fn get(&mut self, id: ApiClientId) -> Result<Option<ApiClient>> {
         let acct = self.tx.acct();
         let row = sqlx::query!(
-            "SELECT id, kind, name, owner_user_id, key_prefix, scopes, expires_at, revoked_at \
-             FROM api_clients WHERE account_id = $1 AND id = $2",
+            "SELECT id, kind, name, owner_user_id, key_prefix, scopes, expires_at, revoked_at, \
+             redirect_uris, public_key_pem FROM api_clients WHERE account_id = $1 AND id = $2",
             acct,
             id.0
         )
@@ -121,6 +126,8 @@ impl ApiClients<'_> {
                 scopes: r.scopes,
                 expires_at: r.expires_at,
                 revoked_at: r.revoked_at,
+                redirect_uris: r.redirect_uris,
+                public_key_pem: r.public_key_pem,
             })
         })
         .transpose()
@@ -148,6 +155,33 @@ impl ApiClients<'_> {
 }
 
 impl ApiClients<'_> {
+    /// Set where a client's authorization codes may go and, for a JWT integration, the
+    /// public key its assertions verify with (VS-08A, VS-08B).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when this account has no such client.
+    pub async fn set_oauth(
+        &mut self,
+        id: ApiClientId,
+        redirect_uris: &[String],
+        public_key_pem: Option<&str>,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE api_clients SET redirect_uris = $3, public_key_pem = $4 \
+             WHERE account_id = $1 AND id = $2",
+            acct,
+            id.0,
+            redirect_uris,
+            public_key_pem
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        affected(done.rows_affected(), "api client")
+    }
+
     /// Every client of this account, newest first.
     ///
     /// # Errors
@@ -156,8 +190,8 @@ impl ApiClients<'_> {
     pub async fn list(&mut self) -> Result<Vec<ApiClient>> {
         let acct = self.tx.acct();
         let rows = sqlx::query!(
-            "SELECT id, kind, name, owner_user_id, key_prefix, scopes, expires_at, revoked_at \
-             FROM api_clients WHERE account_id = $1 ORDER BY created_at DESC, id DESC",
+            "SELECT id, kind, name, owner_user_id, key_prefix, scopes, expires_at, revoked_at, \
+             redirect_uris, public_key_pem FROM api_clients WHERE account_id = $1 ORDER BY created_at DESC, id DESC",
             acct
         )
         .fetch_all(self.tx.conn())
@@ -174,6 +208,8 @@ impl ApiClients<'_> {
                     scopes: r.scopes,
                     expires_at: r.expires_at,
                     revoked_at: r.revoked_at,
+                    redirect_uris: r.redirect_uris,
+                    public_key_pem: r.public_key_pem,
                 })
             })
             .collect()

@@ -19,6 +19,8 @@
 //! | `OPENSEAL_KEYD_ADDR`, `OPENSEAL_KEYD_SERVER_NAME`, `OPENSEAL_KEYD_CA` | keyd's address, its certificate's name, and the CA it chains to (PEM path) |
 //! | `OPENSEAL_KEYD_CLIENT_CERT`, `OPENSEAL_KEYD_CLIENT_KEY` | This worker's client certificate chain and key (PEM paths); a keyd that cannot be reached at start (`CS-KEY-0011`) is reached by the first seal (`HRD-01`); one that refuses (a TLS refusal `CS-KEY-0013`: wrong CA, name or client certificate; or an answer such as `CS-KEY-0001`, `CS-KEY-0002`) stops the worker at start |
 //! | `OPENSEAL_KEYD_ALIAS` | The platform key's alias (default `platform`) |
+//! | `OPENSEAL_KEYD_SANDBOX_ALIAS` | Optional: the sandbox key's alias in keyd (ADR-041, `VS-08D`); sandbox workspaces' envelopes are sealed with it only, and wait unsealed (`CS-WRK-0020`) while it is unset |
+//! | `OPENSEAL_WORKER_DEV_SANDBOX_KEY`, `OPENSEAL_WORKER_DEV_SANDBOX_CHAIN` | Instead of keyd's sandbox alias: a PEM key and its chain, development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
 //! | `OPENSEAL_MODELD_ADDR`, `OPENSEAL_MODELD_SERVER_NAME`, `OPENSEAL_MODELD_CA` | Optional: the model service's address, its certificate's name and CA (PEM path); unset, document-analysis jobs end as `unavailable` (docs/33 §1) |
 //! | `OPENSEAL_MODELD_CLIENT_CERT`, `OPENSEAL_MODELD_CLIENT_KEY` | This worker's client certificate chain and key for the model service (PEM paths) |
 //! | `OPENSEAL_WORKER_DEV_KEY`, `OPENSEAL_WORKER_DEV_CHAIN` | Instead of keyd: a PEM key and its chain, development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
@@ -125,6 +127,46 @@ fn seal_key() -> Result<SealKey, WorkerError> {
         Err(e) => return Err(WorkerError::Pipeline { code: e.code() }),
     }
     Ok(SealKey::Keyd(key))
+}
+
+/// The sandbox key (ADR-041, `VS-08D`), when one is configured: keyd's alias
+/// `OPENSEAL_KEYD_SANDBOX_ALIAS` (over the same mTLS as the platform key), or in
+/// development `OPENSEAL_WORKER_DEV_SANDBOX_KEY` with `_CHAIN`. None: sandbox envelopes
+/// wait unsealed (`CS-WRK-0020`); they are never sealed with the platform key.
+fn sandbox_key() -> Result<Option<SealKey>, WorkerError> {
+    if let Some(path) = var("OPENSEAL_WORKER_DEV_SANDBOX_KEY") {
+        let consent =
+            DevKeyConsent::from_env().map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+        let pem = std::fs::read(path).map_err(|_| WorkerError::Config {
+            setting: "OPENSEAL_WORKER_DEV_SANDBOX_KEY",
+        })?;
+        let chain = certificates(&read("OPENSEAL_WORKER_DEV_SANDBOX_CHAIN")?)
+            .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+        let key = Arc::new(
+            FileKey::load(consent, &pem, chain, None)
+                .map_err(|e| WorkerError::Pipeline { code: e.code() })?,
+        );
+        return Ok(Some(SealKey::Local {
+            provider: Arc::new(move || Box::new(Shared(Arc::clone(&key) as Arc<_>))),
+            development: true,
+        }));
+    }
+    let Some(alias) = var("OPENSEAL_KEYD_SANDBOX_ALIAS") else {
+        return Ok(None);
+    };
+    let ca = read("OPENSEAL_KEYD_CA")?;
+    let cert = read("OPENSEAL_KEYD_CLIENT_CERT")?;
+    let key = read("OPENSEAL_KEYD_CLIENT_KEY")?;
+    let tls = client_tls(&ca, Some((&cert, &key)))
+        .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+    let endpoint = Endpoint {
+        addr: need("OPENSEAL_KEYD_ADDR")?,
+        server_name: need("OPENSEAL_KEYD_SERVER_NAME")?,
+        tls,
+        timeout: Duration::from_secs(30),
+    };
+    // Reached on first use, as the platform key is when keyd is down at start (HRD-01).
+    Ok(Some(SealKey::Keyd(KeydKey::new(endpoint, &alias))))
 }
 
 /// The model service's client, when `OPENSEAL_MODELD_ADDR` is set (docs/33 §1): the
@@ -246,6 +288,7 @@ fn configure() -> Result<(WorkerConfig, SmtpConfig, SealServices, SsrfPolicy, St
         engine: Engine::new(Limits::default(), fonts.clone()),
         fonts,
         key: seal_key()?,
+        sandbox_key: sandbox_key()?,
         timestamps: tsa_directory.factory(),
         tsa_directory: Some(tsa_directory),
         revocation: tsa::http_revocation(),
@@ -433,6 +476,7 @@ const CONFIG_FILES: &[&str] = &[
     "OPENSEAL_WEBHOOK_EXTRA_ROOTS",
     "OPENSEAL_S3_CA",
     "OPENSEAL_WORKER_DEV_CHAIN",
+    "OPENSEAL_WORKER_DEV_SANDBOX_CHAIN",
 ];
 
 /// Security settings hashed as values: where the worker sends keys, documents, codes and
@@ -445,6 +489,8 @@ const CONFIG_VALUES: &[&str] = &[
     "OPENSEAL_KEYD_ADDR",
     "OPENSEAL_KEYD_SERVER_NAME",
     "OPENSEAL_KEYD_ALIAS",
+    "OPENSEAL_KEYD_SANDBOX_ALIAS",
+    "OPENSEAL_WORKER_DEV_SANDBOX_KEY",
     "OPENSEAL_MODELD_ADDR",
     "OPENSEAL_MODELD_SERVER_NAME",
     "OPENSEAL_WEBHOOK_ALLOW",

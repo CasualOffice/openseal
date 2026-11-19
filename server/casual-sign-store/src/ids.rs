@@ -68,6 +68,8 @@ id_type!(
     WebhookDeliveryId,
     /// An API client or key.
     ApiClientId,
+    /// A member's consent that an API client acts as them (VS-08A).
+    OAuthConsentId,
     /// A signing link (PowerForm).
     SigningLinkId,
     /// A user invitation (WEB-06).

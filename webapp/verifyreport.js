@@ -40,6 +40,7 @@ export function summarize(text) {
     signatures,
     changes,
     needsTrust: signatures.some((s) => s.sub === "NO_CERTIFICATE_CHAIN_FOUND"),
+    sandbox: signatures.some((s) => s.sandbox),
   };
 }
 
@@ -47,6 +48,13 @@ function className(c) {
   if (typeof c === "string") return c;
   if (c && typeof c === "object" && typeof c.disallowed === "string") return `disallowed:${c.disallowed}`;
   return "unknown";
+}
+
+/// Whether a signer's subject names a sandbox seal (ADR-041, `VS-08D`): the sandbox
+/// key's certificate says "not for agreements" in its subject. Only an informational
+/// mark: it never makes a verdict better.
+export function isSandboxSigner(subject) {
+  return typeof subject === "string" && /not for agreements/i.test(subject);
 }
 
 function signature(s, i) {
@@ -65,6 +73,10 @@ function signature(s, i) {
     sub: ind.sub_indication || null,
     code: ind.code || null,
     subFilter: typeof s?.sub_filter === "string" ? s.sub_filter : "",
+    /// The signer certificate's subject, once the signature verified against it.
+    signer: typeof s?.signer === "string" ? s.signer : null,
+    /// A sandbox seal (ADR-041): its certificate says it is not for agreements.
+    sandbox: isSandboxSigner(s?.signer),
     /// The time the signature is proven to exist: a timestamp's, or none.
     time: secs(s?.timestamp),
     timeSource: s?.time_source || "validation_time",

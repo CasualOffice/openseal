@@ -126,8 +126,9 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // `retention_rules` (ASVS-18), a tenant table, replacing `retention_policies`, which
     // nothing ever read or wrote; 0046 `staff_passkeys` (CON-13), a tenant table (the
     // workspace a passkey was registered in; the person's factor everywhere, through
-    // definer functions only); 0047 `folder_templates` (TSH-03), a tenant table.
-    assert_eq!(tables.len(), 68, "{tables:?}");
+    // definer functions only); 0047 `folder_templates` (TSH-03), a tenant table; 0048
+    // `oauth_consents`, `oauth_codes` and `oauth_refresh_tokens` (VS-08A), tenant tables.
+    assert_eq!(tables.len(), 71, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
         "org_admin_events",

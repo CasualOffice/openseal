@@ -54,6 +54,8 @@ The outcome is the slice-3 row: "Roles, save as template, use template, composit
 Recommendation: ready to close once a `main` run with this branch is green on every job and `slice-3-demo` has been
 watched.
 
+2026-11-20: `main` run 44605190804 on `6bd9646` finished red in `e2e (2)` and `e2e (6)`, the same stale test (`prepare-layout.spec.mjs:185`, the palette's field-kind count 16 → 29, chromium and webkit), fixed in PR #36; every other job green. Not closed on it: the main session closes it on the first green `main` run after #36 merges (instruction 66).
+
 Owner decision (2026-11-19, instruction 66): **close on green `main`**: slice 3 closes once `main`'s CI run on `af038fd` (run 44432837346) is green. Decisions 1 and 3 below are answered: template folders are each member's own; template locking (`TSH-04`) is outside slice 3. Status: run 44432837346 finished **red**: job `e2e (3)`, two webkit tests in `prepare-layout.spec.mjs` (`:127` "a clicked field type places its field where the page is clicked…", `:386` "review: a signer without fields is a warning…"); every other job green. The slice-3 rows stay In progress until a `main` run is green.
 
 **Decisions only the owner can make:**
@@ -75,3 +77,6 @@ Owner decision (2026-11-19, instruction 66): **close on green `main`**: slice 3 
 | `VS-03C` | Document group templates (`FG-099`) | L |
 
 Nothing here states that any signature is legally valid or that the product is compliant or certified (docs/09).
+
+
+**Closed 2026-11-20** under owner instruction 66, on `main` run 44610734814 (commit f667422), green on every job.

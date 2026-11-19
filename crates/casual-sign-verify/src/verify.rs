@@ -563,6 +563,7 @@ fn verify_one(
         time_source: TimeSource::ValidationTime,
         timestamp: None,
         modifications_after: Vec::new(),
+        signer: None,
     };
     let finish = |mut report: SignatureReport, v: &Verdict, checks: Checks| {
         report.indication = v.indication();
@@ -770,6 +771,16 @@ fn cms_signature(
         }
     };
 
+    report.signer = Some(
+        signer
+            .tbs_certificate()
+            .subject()
+            .to_string()
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(crate::report::MAX_SIGNER_SUBJECT)
+            .collect(),
+    );
     let mut pool: Vec<Cert> = cms.certificates().filter_map(Cert::from_parsed).collect();
     pool.extend(ctx.pool.iter().cloned());
     let validation_time = ctx.options.validation_time;

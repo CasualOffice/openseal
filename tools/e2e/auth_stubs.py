@@ -26,6 +26,16 @@ mentions them.
   nonce, `GET /jwks` publishes the key. The key is drawn at start and signed with by
   OpenSSL (`openssl dgst -sign`), as deploy/devtools's TSA does; nothing here is
   cryptography of its own.
+- `hooks` (slice 8, VS-08C): a webhook receiver for the worker's deliveries, over HTTPS
+  with a certificate the development root issues at start (`--tls-name`, the name the
+  webhook URL uses). Each delivery is recorded with whether its Standard Webhooks
+  signature verifies under `OPENSEAL_E2E_WEBHOOK_SECRET` (the secret the worker signs
+  with), and answered with the status last set. Read back over plain HTTP on `--read`:
+  `GET /deliveries?type=…&envelope=…` answers `{"deliveries": [...]}`, newest first;
+  `POST /answer?status=500` makes later deliveries fail, so the spec can redeliver one.
+
+    python3 -I tools/e2e/auth_stubs.py hooks --issue-from /secrets --tls-name hooks.e2e.test \\
+        --listen 0.0.0.0:8443 --read 0.0.0.0:8027
 
 Standard library only (and the `openssl` command for keys and signatures). Exits
 non-zero and names the problem when it cannot start.
@@ -395,6 +405,121 @@ def oidc_server(listen: tuple[str, int], provider: Provider) -> ThreadingHTTPSer
 # ---------------------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------------------
+# Webhook receiver (slice 8, VS-08C)
+
+
+def webhook_key(secret: str) -> bytes:
+    """A Standard Webhooks secret (`whsec_` and base64) as its key bytes."""
+    if not secret.startswith("whsec_"):
+        raise ValueError("not a whsec_ secret")
+    key = base64.b64decode(secret[len("whsec_"):], validate=True)
+    if len(key) < 16:
+        raise ValueError("a webhook secret holds at least 16 bytes")
+    return key
+
+
+def webhook_verified(key: bytes, msg_id: str, timestamp: str, body: bytes, signature: str) -> bool:
+    """Whether one of `signature`'s space-separated `v1,<base64>` entries is the
+    HMAC-SHA256 of `id.timestamp.body` under `key` (the Standard Webhooks scheme the
+    worker signs with, docs/40 §4)."""
+    signed = msg_id.encode() + b"." + timestamp.encode() + b"." + body
+    want = base64.b64encode(hmac.new(key, signed, hashlib.sha256).digest())
+    for entry in signature.split(" "):
+        version, _, sig = entry.partition(",")
+        if version == "v1" and hmac.compare_digest(sig.encode(), want):
+            return True
+    return False
+
+
+class Hooks:
+    """What the receiver was sent, newest last, and the status it answers with."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._items: collections.deque[dict] = collections.deque(maxlen=MAX_MESSAGES)
+        self.status = 200
+
+    def add(self, item: dict) -> None:
+        with self._lock:
+            self._items.append(item)
+
+    def find(self, kind: str | None, envelope: str | None) -> list[dict]:
+        with self._lock:
+            items = list(self._items)
+        return [d for d in reversed(items)
+                if (kind is None or d["type"] == kind) and (envelope is None or d["envelope_id"] == envelope)]
+
+
+def receiver_handler(hooks: Hooks, key: bytes) -> type[BaseHTTPRequestHandler]:
+    """The HTTPS side: the worker's deliveries, checked and recorded, answered with the
+    status the reader last set."""
+
+    class Receiver(_Handler):
+        def do_POST(self) -> None:  # noqa: N802
+            raw = self.body(65536)
+            if raw is None:
+                return
+            h = self.headers
+            msg_id, ts, sig = h.get("webhook-id", ""), h.get("webhook-timestamp", ""), h.get("webhook-signature", "")
+            try:
+                event = json.loads(raw)
+                kind = str(event.get("type", ""))
+                data = event.get("data") or {}
+                envelope = data.get("envelope_id") if isinstance(data, dict) else None
+            except (ValueError, AttributeError):
+                kind, envelope = "", None
+            hooks.add({"id": msg_id, "timestamp": ts, "type": kind, "envelope_id": envelope,
+                       "verified": bool(msg_id and ts and webhook_verified(key, msg_id, ts, raw, sig)),
+                       "answered": hooks.status, "received": time.time()})
+            self.answer(hooks.status, {"received": True})
+
+    return Receiver
+
+
+def hooks_reader_handler(hooks: Hooks) -> type[BaseHTTPRequestHandler]:
+    """The plain-HTTP side the browser spec reads: GET /deliveries[?type=…&envelope=…],
+    POST /answer?status=… (the status later deliveries get), GET /healthz."""
+
+    class Reader(_Handler):
+        def do_GET(self) -> None:  # noqa: N802
+            url = urlsplit(self.path)
+            q = parse_qs(url.query)
+            if url.path == "/healthz":
+                self.answer(200, {"ok": True})
+            elif url.path == "/deliveries":
+                self.answer(200, {"deliveries": hooks.find(q.get("type", [None])[0], q.get("envelope", [None])[0])})
+            else:
+                self.answer(404, {"error": "not found"})
+
+        def do_POST(self) -> None:  # noqa: N802
+            url = urlsplit(self.path)
+            status = parse_qs(url.query).get("status", [""])[0]
+            if url.path != "/answer" or not status.isdigit() or not 200 <= int(status) <= 599:
+                self.answer(400, {"error": "POST /answer?status=200..599"})
+                return
+            hooks.status = int(status)
+            self.answer(200, {"status": hooks.status})
+
+    return Reader
+
+
+def hooks_servers(listen: tuple[str, int], read: tuple[str, int], chain: Path, key_file: Path,
+                  secret: str) -> tuple[ThreadingHTTPServer, ThreadingHTTPServer]:
+    """The receiver (TLS on `listen`) and its reader (plain HTTP on `read`), not started."""
+    hooks = Hooks()
+    receiver = ThreadingHTTPServer(listen, receiver_handler(hooks, webhook_key(secret)))
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.minimum_version = ssl.TLSVersion.TLSv1_2
+    tls.load_cert_chain(str(chain), str(key_file))
+    receiver.socket = tls.wrap_socket(receiver.socket, server_side=True)
+    reader = ThreadingHTTPServer(read, hooks_reader_handler(hooks))
+    return receiver, reader
+
+
+# ---------------------------------------------------------------------------------------
+
+
 def address(s: str) -> tuple[str, int]:
     host, _, port = s.rpartition(":")
     try:
@@ -424,6 +549,11 @@ def main(argv: list[str] | None = None) -> None:
     o.add_argument("--providers", type=Path, required=True)
     o.add_argument("--redirect-uri", required=True,
                    help="the server's redirect URI when the file names none: {OPENSEAL_PUBLIC_URL}/s/oidc")
+    w = sub.add_parser("hooks", help="a webhook receiver (slice 8)")
+    w.add_argument("--listen", type=address, default=("0.0.0.0", 8443))
+    w.add_argument("--read", type=address, default=("0.0.0.0", 8027))
+    w.add_argument("--issue-from", type=Path, required=True, help="directory holding ca.pem and ca.key")
+    w.add_argument("--tls-name", default="hooks.e2e.test")
     args = ap.parse_args(argv)
 
     work = Path(tempfile.mkdtemp(prefix="auth-stubs-"))
@@ -435,6 +565,14 @@ def main(argv: list[str] | None = None) -> None:
                 fail("OPENSEAL_E2E_SMS_SECRET is not set")
             chain, key = issue_tls(args.issue_from, args.tls_name, work)
             servers = sms_servers(args.listen, args.read, chain, key, secret)
+        elif args.stub == "hooks":
+            secret = os.environ.get("OPENSEAL_E2E_WEBHOOK_SECRET", "")
+            try:
+                webhook_key(secret)
+            except ValueError as e:
+                fail(f"OPENSEAL_E2E_WEBHOOK_SECRET: {e}")
+            chain, key = issue_tls(args.issue_from, args.tls_name, work)
+            servers = hooks_servers(args.listen, args.read, chain, key, secret)
         else:
             servers = (oidc_server(args.listen, Provider(args.providers, args.redirect_uri, Signer(work))),)
     except (OSError, RuntimeError) as e:

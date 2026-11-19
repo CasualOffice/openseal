@@ -54,7 +54,16 @@ async function afterPassword(ctx, screens) {
   ctx.session = await ctx.api.session();
   const owed = owedFactor(ctx.session);
   if (owed) { ctx.session = null; screens[owed](); return; }
-  ctx.navigate("#/home");
+  ctx.navigate(resumeAfterSignIn() || "#/home");
+}
+
+/// Where sign-in was interrupted, when it was an app's consent request (VS-08A,
+/// `#/authorize?…`, kept by app.js): read once, then forgotten. Only that screen is
+/// resumed, so the stored value can never send anyone elsewhere.
+function resumeAfterSignIn() {
+  let next = null;
+  try { next = sessionStorage.getItem("openseal.next"); sessionStorage.removeItem("openseal.next"); } catch { next = null; }
+  return typeof next === "string" && next.startsWith("#/authorize?") ? next : null;
 }
 
 // ---- Sign in ---------------------------------------------------------------------------

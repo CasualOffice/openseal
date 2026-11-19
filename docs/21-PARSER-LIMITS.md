@@ -233,6 +233,19 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | API client expiry | 1–3,650 days | CS-API-0001 |
 | Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
 
+### OAuth (`VS-08A`, `VS-08B`; server `api/oauth.rs`)
+
+| Limit | Default | Code | Test |
+| --- | --- | --- | --- |
+| Redirect URIs per client | 10, each at most 2,048 bytes, `https://` or loopback `http://`, no fragment or credentials | CS-API-0001 (`/redirect_uris/{i}`) | `api/oauth.rs` unit test; `tests/oauth.rs` |
+| Public key PEM of a JWT integration | 8 KiB; EC P-256 or RSA SubjectPublicKeyInfo only; a private key refused | CS-API-0001 (`/public_key`) | `tests/oauth.rs` |
+| `state` carried back to the client | 512 printable ASCII bytes | CS-API-0001 (`/state`) | — |
+| PKCE challenge and verifier | 43 to 128 characters (base64url; the verifier RFC 7636's unreserved set); S256 only | CS-API-0001 (`/code_challenge`); CS-AUTH-0014 | `tests/oauth.rs` (a wrong verifier burns the code) |
+| Scopes per consent | 32 (the database refuses more) | CS-API-0001 (`/scope`) | — |
+| Authorization code | 10 minutes, one use | CS-AUTH-0014 | `tests/oauth.rs` |
+| Refresh token | 30 days unused, one use, rotated | CS-AUTH-0014 | `tests/oauth.rs` (replay revokes the family) |
+| JWT bearer assertion | `exp` in the future and at most 3,600 s after `iat`; `iat` at most 60 s ahead | CS-AUTH-0014 | `tests/oauth.rs` |
+
 ## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, `CON-06`, `CON-07`, `CON-08`, `CON-09`, built)
 
 | Limit | Default | Code |

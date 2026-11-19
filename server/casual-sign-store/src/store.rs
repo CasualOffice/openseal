@@ -594,6 +594,28 @@ impl EntryPoints<'_> {
         Ok(row.map(|r| (AccountId(r.account_id), ApiClientId(r.api_client_id))))
     }
 
+    /// The workspace a live JWT integration (RFC 7523) belongs to, by its id: the
+    /// assertion's issuer, read before any tenant is known (VS-08B).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn resolve_jwt_client(
+        &self,
+        client: ApiClientId,
+        now: OffsetDateTime,
+    ) -> Result<Option<AccountId>> {
+        let row = sqlx::query!(
+            r#"SELECT account_id AS "account_id!" FROM openseal_resolve_jwt_client($1, $2)"#,
+            client.0,
+            now
+        )
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| AccountId(r.account_id)))
+    }
+
     /// The live session a staff cookie's hash names, while its user is enabled and
     /// still a member (docs/40 §2).
     ///

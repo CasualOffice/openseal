@@ -105,6 +105,61 @@ export function parseSecretRefs(text) {
   return { refs };
 }
 
+/// Whether `uri` may be an OAuth redirect URI, as the server checks it (VS-08A,
+/// `api/oauth.rs` `redirect_uri_ok`): `https://` with a host and no credentials, or
+/// `http://` to localhost, 127.0.0.1 or [::1] for a native app; never a fragment.
+export function redirectUriOk(uri) {
+  const u = String(uri || "");
+  if (!u || u.length > 2048 || u.includes("#") || /[\s\u0000-\u001f\u007f]/.test(u)) return false;
+  const authority = (rest) => {
+    const a = rest.split(/[/?]/)[0];
+    return a.includes("@") ? "" : a;
+  };
+  if (u.startsWith("https://")) {
+    const host = authority(u.slice(8));
+    return host !== "" && !host.startsWith(":");
+  }
+  if (u.startsWith("http://")) {
+    const host = authority(u.slice(7));
+    const name = host.startsWith("[") ? `${host.split("]")[0]}]` : host.split(":")[0];
+    return ["localhost", "127.0.0.1", "[::1]"].includes(name);
+  }
+  return false;
+}
+
+/// The redirect URIs typed for an OAuth app or JWT integration, one per line: `{uris}`,
+/// or `{error: "many" | "bad", index}` (at most ten; the first refused one's index).
+export function parseRedirectUris(text) {
+  const uris = [...new Set(String(text || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean))];
+  if (uris.length > 10) return { error: "many", index: 10 };
+  const index = uris.findIndex((u) => !redirectUriOk(u));
+  if (index >= 0) return { error: "bad", index };
+  return { uris };
+}
+
+/// Whether `text` looks like a public key PEM a JWT integration may register; the
+/// server parses it (`422` at `/public_key` otherwise). A private key is refused here
+/// first, so it never leaves the browser.
+export function publicKeyProblem(text) {
+  const t = String(text || "").trim();
+  if (!t) return "missing";
+  if (/PRIVATE KEY/.test(t)) return "private";
+  if (!t.startsWith("-----BEGIN PUBLIC KEY-----") || !t.includes("-----END PUBLIC KEY-----")) return "bad";
+  return null;
+}
+
+/// The authorization request a consent screen was handed (`#/authorize?…`): the members
+/// the server reads, nothing else; `null` without a client.
+export function authorizeParams(params) {
+  const get = (k) => (typeof params?.get === "function" ? params.get(k) : params?.[k]);
+  const out = {};
+  for (const k of ["response_type", "client_id", "redirect_uri", "scope", "state", "code_challenge", "code_challenge_method"]) {
+    const v = get(k);
+    if (typeof v === "string" && v !== "") out[k] = v;
+  }
+  return out.client_id ? out : null;
+}
+
 /// Where a key's expiry stands at `now` (ms): `none` (never expires), `expired`,
 /// `soon` (within `warnDays`), or `ok`; `days` whole days left (rounded up).
 export function expiryState(expiresAt, now = Date.now(), warnDays = 30) {

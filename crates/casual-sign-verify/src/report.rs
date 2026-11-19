@@ -302,7 +302,16 @@ pub struct SignatureReport {
     pub timestamp: Option<TimestampInfo>,
     /// Every revision after the signed one, classified.
     pub modifications_after: Vec<RevisionChanges>,
+    /// The signer certificate's subject (RFC 4514, at most [`MAX_SIGNER_SUBJECT`]
+    /// characters, control characters removed), once the signature value verified
+    /// against it: what a reader is told signed. It is the certificate's claim, as
+    /// trusted as the chain check says. A sandbox seal's subject says it is not for
+    /// agreements (ADR-041).
+    pub signer: Option<String>,
 }
+
+/// The most characters of a signer's subject a report carries.
+pub const MAX_SIGNER_SUBJECT: usize = 512;
 
 /// A failure to read the document at all.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

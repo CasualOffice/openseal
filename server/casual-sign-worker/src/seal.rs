@@ -236,6 +236,9 @@ impl SealKeyInUse {
     }
 }
 
+/// The `/Reason` of every sandbox seal (ADR-041): what the signature itself says.
+pub const SANDBOX_REASON: &str = "Sandbox: not for agreements";
+
 /// Everything sealing needs besides the envelope.
 #[derive(Clone)]
 pub struct SealServices {
@@ -243,6 +246,10 @@ pub struct SealServices {
     pub engine: Engine,
     /// The platform key.
     pub key: SealKey,
+    /// The sandbox key (ADR-041, `VS-08D`): seals a sandbox workspace's envelopes, its
+    /// certificate saying they are not for agreements. `None`: a sandbox envelope is
+    /// never sealed (`CS-WRK-0020`), and never with the platform key.
+    pub sandbox_key: Option<SealKey>,
     /// RFC 3161 time-stamping (B-T and above).
     pub timestamps: TsaFactory,
     /// When `timestamps` reads the database's TSAs (`CON-07`): refreshed by the worker
@@ -285,6 +292,9 @@ pub struct SealInput {
     pub chain: Chain,
     /// The account's name.
     pub account_name: String,
+    /// The account is a sandbox workspace (ADR-041): sealed with the sandbox key, its
+    /// certificate saying it is not for agreements.
+    pub sandbox: bool,
     /// The sender's name and email (personal data).
     pub sender: Party,
     /// Each document's delivered bytes, in the state's order.
@@ -625,6 +635,7 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
         chain: &input.chain,
         generated: input.now,
         ending: None,
+        sandbox: input.sandbox,
     }
 }
 
