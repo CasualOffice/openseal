@@ -778,6 +778,15 @@ async fn main() -> ExitCode {
         Ok(d) => d,
         Err(e) => return fail(&e),
     };
+    // HRD-11: listen for SIGINT before anything answers ready. `ctrl_c()` registers only
+    // when first polled, so a SIGINT just after `/readyz` turned 204 took the default
+    // action and stopped the process without draining (CI run 44626093635).
+    #[cfg(unix)]
+    let Ok(mut interrupt) =
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+    else {
+        return fail("cannot listen for SIGINT");
+    };
     // The ops listener (CON-05): `/livez` and `/readyz` on a port of their own, never the
     // public one; it answers until the process exits, so through the drain too.
     if let Ok(ops) = std::env::var("OPENSEAL_OPS_LISTEN") {
@@ -792,6 +801,9 @@ async fn main() -> ExitCode {
     let service = app(state.clone()).into_make_service_with_connect_info::<std::net::SocketAddr>();
     if axum::serve(listener, service)
         .with_graceful_shutdown(async move {
+            #[cfg(unix)]
+            interrupt.recv().await;
+            #[cfg(not(unix))]
             let _ = tokio::signal::ctrl_c().await;
             // HRD-11: first stop being ready, keep serving while the proxy's health check
             // notices, then stop taking connections and finish the requests in hand.
