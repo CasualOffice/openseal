@@ -27,7 +27,8 @@ use casual_sign_store::repo::templates::{
     TemplateRole, TemplateShare, TemplateView,
 };
 use casual_sign_store::{
-    TemplateDocumentId, TemplateFieldId, TemplateId, TemplateRoleId, TemplateShareId, TenantTx,
+    FolderId, TemplateDocumentId, TemplateFieldId, TemplateId, TemplateRoleId, TemplateShareId,
+    TenantTx,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -221,14 +222,18 @@ pub(crate) struct ListQuery {
     deleted: Option<String>,
     /// `all` (default), `owned`, `shared` (Shared with me) or `favourites` (UXW-06).
     view: Option<String>,
+    /// One of the caller's template folders (another member's matches nothing), or
+    /// `none`: in none of the caller's folders (TSH-03).
+    folder: Option<String>,
 }
 
-fn listed_json(l: &ListedTemplate) -> Value {
+fn listed_json(l: &ListedTemplate, folder: Option<FolderId>) -> Value {
     let mut v = template_json(&l.template, &[], None, None);
     if let Some(o) = v.as_object_mut() {
         o.insert("access".into(), json!(l.access.as_str()));
         o.insert("favourite".into(), json!(l.favourite));
         o.insert("shared".into(), json!(l.shared));
+        o.insert("folder_id".into(), json!(folder.map(|f| f.to_string())));
     }
     v
 }
@@ -259,11 +264,25 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
             .map(|t| template_json(t, &[], None, None))
             .collect()
     } else {
+        // Where the caller filed each template (TSH-03): their own view of the list.
+        let filings: BTreeMap<TemplateId, FolderId> = tx
+            .folders()
+            .template_filings(c.p.user)
+            .await?
+            .into_iter()
+            .collect();
+        let wanted = |f: Option<FolderId>| match q.folder.as_deref() {
+            None => true,
+            Some("none") => f.is_none(),
+            Some(id) => f.is_some_and(|f| f.to_string() == id),
+        };
         tx.templates()
             .list_for(c.p.user, c.p.admin, view)
             .await?
             .iter()
-            .map(listed_json)
+            .map(|l| (l, filings.get(&l.template.id).copied()))
+            .filter(|(_, f)| wanted(*f))
+            .map(|(l, f)| listed_json(l, f))
             .collect()
     };
     Ok(json(StatusCode::OK, &json!({ "items": items })))

@@ -22,6 +22,7 @@ use casual_sign_store::repo::api_clients::{ApiClientKind, NewApiClient};
 use casual_sign_store::repo::documents::Document;
 use casual_sign_store::repo::envelopes::{EnvelopeStatus, Transition};
 use casual_sign_store::repo::fields::FieldValue;
+use casual_sign_store::repo::folders::FolderKind;
 use casual_sign_store::repo::ml::{
     Fingerprint, NewRun, NewSuggestion, RunEnd, RunKind, RunStatus, SuggestionFilter,
     SuggestionKind, SuggestionState,
@@ -615,7 +616,7 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
     {
         let mut ta = db.store.for_account(a.account).begin().await.unwrap();
         ta.folders()
-            .create(a.user, folder, "Signed NDAs")
+            .create(a.user, folder, "Signed NDAs", FolderKind::Envelopes)
             .await
             .unwrap();
         let filed = ta
@@ -627,10 +628,34 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
         ta.commit().await.unwrap();
     }
     let mut tx = t.begin().await.unwrap();
-    assert!(tx.folders().list(a.user).await.unwrap().is_empty());
-    assert!(tx.folders().get(a.user, folder).await.unwrap().is_none());
-    assert!(tx.folders().get(b.user, folder).await.unwrap().is_none());
-    assert_eq!(tx.folders().count(a.user).await.unwrap(), 0);
+    assert!(
+        tx.folders()
+            .list(a.user, FolderKind::Envelopes)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        tx.folders()
+            .get(a.user, folder, FolderKind::Envelopes)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        tx.folders()
+            .get(b.user, folder, FolderKind::Envelopes)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        tx.folders()
+            .count(a.user, FolderKind::Envelopes)
+            .await
+            .unwrap(),
+        0
+    );
     tx.commit().await.unwrap();
     w!("folders.rename (A's folder)", |tx| tx
         .folders()
@@ -646,16 +671,24 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
         .await);
     w!("folders.create (for A's user)", |tx| tx
         .folders()
-        .create(a.user, FolderId(id()), "x")
+        .create(a.user, FolderId(id()), "x", FolderKind::Envelopes)
         .await);
     w!("folders.file (A's folder)", |tx| tx
         .folders()
         .file(b.user, Some(folder), &[(FolderEntryId(id()), b.envelope)])
         .await);
     w!("folders.file (A's envelope)", |tx| {
-        let r = tx.folders().create(b.user, FolderId(id()), "Mine").await;
+        let r = tx
+            .folders()
+            .create(b.user, FolderId(id()), "Mine", FolderKind::Envelopes)
+            .await;
         assert!(r.is_ok());
-        let mine = tx.folders().list(b.user).await.unwrap()[0].id;
+        let mine = tx
+            .folders()
+            .list(b.user, FolderKind::Envelopes)
+            .await
+            .unwrap()[0]
+            .id;
         tx.folders()
             .file(b.user, Some(mine), &[(FolderEntryId(id()), a.envelope)])
             .await
@@ -671,11 +704,86 @@ async fn every_repository_method_refuses_another_accounts_ids(rls: Rls) {
         assert_eq!(n, 0);
         tx.commit().await.unwrap();
         let mut ta = db.store.for_account(a.account).begin().await.unwrap();
-        let mine = ta.folders().list(a.user).await.unwrap();
+        let mine = ta
+            .folders()
+            .list(a.user, FolderKind::Envelopes)
+            .await
+            .unwrap();
         assert_eq!(
             (mine.len(), mine[0].name.0.as_str(), mine[0].count),
             (1, "Signed NDAs", 1)
         );
+        ta.commit().await.unwrap();
+    }
+
+    // Template folders (TSH-03): A's template folder, with A's template filed in it.
+    let tfolder = FolderId(id());
+    {
+        let mut ta = db.store.for_account(a.account).begin().await.unwrap();
+        ta.folders()
+            .create(a.user, tfolder, "Sales", FolderKind::Templates)
+            .await
+            .unwrap();
+        let filed = ta
+            .folders()
+            .file_templates(a.user, Some(tfolder), &[(FolderEntryId(id()), a.template)])
+            .await
+            .unwrap();
+        assert_eq!(filed, 1);
+        ta.commit().await.unwrap();
+        // The database refuses A's template in A's envelope folder: the kinds differ.
+        let mut ta = db.store.for_account(a.account).begin().await.unwrap();
+        let wrong = ta
+            .folders()
+            .file_templates(a.user, Some(folder), &[(FolderEntryId(id()), a.template)])
+            .await;
+        assert!(wrong.is_err(), "a template filed in an envelope folder");
+        ta.rollback().await.unwrap();
+    }
+    let mut tx = t.begin().await.unwrap();
+    assert!(
+        tx.folders()
+            .list(a.user, FolderKind::Templates)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        tx.folders()
+            .template_filings(a.user)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    tx.commit().await.unwrap();
+    w!("folders.file_templates (A's folder)", |tx| tx
+        .folders()
+        .file_templates(b.user, Some(tfolder), &[(FolderEntryId(id()), b.template)])
+        .await);
+    w!("folders.file_templates (A's template)", |tx| {
+        let r = tx
+            .folders()
+            .create(b.user, FolderId(id()), "Mine", FolderKind::Templates)
+            .await;
+        assert!(r.is_ok());
+        let mine = tx
+            .folders()
+            .list(b.user, FolderKind::Templates)
+            .await
+            .unwrap()[0]
+            .id;
+        tx.folders()
+            .file_templates(b.user, Some(mine), &[(FolderEntryId(id()), a.template)])
+            .await
+    });
+    {
+        let mut ta = db.store.for_account(a.account).begin().await.unwrap();
+        let mine = ta
+            .folders()
+            .list(a.user, FolderKind::Templates)
+            .await
+            .unwrap();
+        assert_eq!((mine.len(), mine[0].count), (1, 1));
         ta.commit().await.unwrap();
     }
 

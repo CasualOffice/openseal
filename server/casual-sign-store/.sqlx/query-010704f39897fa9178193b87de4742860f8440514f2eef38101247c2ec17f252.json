@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO folder_templates (id, account_id, user_id, template_id, folder_id) SELECT x.id, $1, $2, x.template_id, $3 FROM unnest($4::uuid[], $5::uuid[]) AS x (id, template_id) ON CONFLICT (account_id, user_id, template_id) DO UPDATE SET folder_id = EXCLUDED.folder_id, filed_at = now()",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Uuid",
+        "UuidArray",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "010704f39897fa9178193b87de4742860f8440514f2eef38101247c2ec17f252"
+}

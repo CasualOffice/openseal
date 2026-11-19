@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM folder_templates WHERE account_id = $1 AND user_id = $2 AND template_id = ANY($3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d4049cbce7e5409d255157bc27ce364331cde5102e6d147585ea1b2f6d721433"
+}

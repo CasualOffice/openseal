@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(*) AS \"n!\" FROM folders WHERE account_id = $1 AND owner_user_id = $2 AND kind = 'envelopes'",
+  "query": "SELECT count(*) AS \"n!\" FROM folders WHERE account_id = $1 AND owner_user_id = $2 AND kind = $3",
   "describe": {
     "columns": [
       {
@@ -13,12 +13,13 @@
     "parameters": {
       "Left": [
         "Uuid",
-        "Uuid"
+        "Uuid",
+        "Text"
       ]
     },
     "nullable": [
       null
     ]
   },
-  "hash": "3e7c67724abc309372e87b762111d081172ad94319190d38bf822d4960f46f1a"
+  "hash": "fcccd50f4123d18195d086d6787a02d56c69546a539d40103af53f3ec7694d52"
 }

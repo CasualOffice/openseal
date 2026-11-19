@@ -18,6 +18,7 @@ pub(crate) mod org;
 pub(crate) mod sessions;
 pub(crate) mod switch;
 pub(crate) mod templates;
+pub(crate) mod usetemplates;
 pub(crate) mod webhooks;
 
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};

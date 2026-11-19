@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT f.id, f.name, (SELECT count(*) FROM folder_templates AS ft JOIN templates AS t ON t.account_id = ft.account_id AND t.id = ft.template_id WHERE ft.account_id = f.account_id AND ft.folder_id = f.id AND ft.user_id = f.owner_user_id AND t.deleted_at IS NULL) AS \"count!\" FROM folders AS f WHERE f.account_id = $1 AND f.owner_user_id = $2 AND f.kind = 'templates' ORDER BY lower(f.name), f.id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "folders",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "folders",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "7cc8fab1021c83a05929b5e57b4daf72230bdf2fcb7352eb55b7a41a30bdcbdd"
+}
