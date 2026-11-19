@@ -62,7 +62,10 @@ export default defineConfig({
   testDir: ".",
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  workers: 1,
+  // Several at once in mock mode, where every test has its own browser context and mock
+  // store; one at a time against a real stack, where specs share one account (owner,
+  // 2026-11-19: CI jobs under 20-25 minutes). OPENSEAL_E2E_WORKERS overrides.
+  workers: Number(process.env.OPENSEAL_E2E_WORKERS) || (process.env.OPENSEAL_E2E_BASE_URL ? 1 : 2),
   retries: 0,
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],
