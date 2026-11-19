@@ -416,7 +416,13 @@ owner means nobody can file into another member's folder, and removing the folde
 removes the filing. Filing is a member's view of their lists, not a change of the agreement: no audit event, no
 `updated_at`. 0004's `envelopes.folder_id` (one folder for every member) stays unused. `TenantTx::folders` lists a
 member's folders with the count of filed envelopes not deleted, creates, renames, deletes and files (`file`, all in one
-statement). `recipient_tokens.purpose` may also be `account`, a link a signed-in member obtained for the recipient
+statement). **Template folders (`TSH-03`, migration `0045_template_folders.sql`):** the same `folders` rows of kind
+`templates` (names unique per member and kind), `UNIQUE (account_id, id, owner_user_id, kind)`, and a tenant table
+`folder_templates` (`id`, `user_id`, `template_id`, `folder_id`, `folder_kind` fixed to `templates`, `filed_at`), one
+folder per member and template; its reference `(account_id, folder_id, user_id, folder_kind)` refuses another member's
+folder and an envelope folder, and removing the folder, the membership or the template removes the filing; no version
+bump. `TenantTx::folders` takes a `FolderKind` and adds `file_templates` and `template_filings`.
+`recipient_tokens.purpose` may also be `account`, a link a signed-in member obtained for the recipient
 they are (the Inbox's `sign-link`), and `host_user_id` is set exactly for `in_person` and `account`. A partial index
 `recipients_account_live_email` serves the Inbox. `Envelopes::search` also filters by a recipient's name or email, by
 which date a range bounds (`updated_at`, `created_at`, `sent_at`, `completed_at`), by the member's folder (or none),

@@ -4,7 +4,7 @@
 //! template is kept with everything, listed by `GET /templates?deleted=true`, brought
 //! back by `POST …/restore`, and removed for good by deleting it again. Every change raises the template's version
 //! (`ETag: "v<n>"`), checked against `If-Match` (required on `PATCH` and `DELETE`,
-//! honoured when given on `POST`). Creating an envelope from a template is slice 3.
+//! honoured when given on `POST`). Envelopes are made from templates by `usetemplates.rs`.
 //!
 //! Sharing (UXW-06): a template is its owner's alone until shared with members, groups
 //! or the whole account; every call checks on the server what the caller may do with it

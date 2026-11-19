@@ -331,6 +331,15 @@ jobs:
             target/e2e-sealed/*vs02-*
           if-no-files-found: error
           retention-days: 90
+      # The slice 3 demo (VS-03): templates.spec.mjs's run recorded (the sender's template
+      # folder, using two templates together, save as template; each signer signing).
+      - if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: slice-3-demo
+          path: target/e2e-demo/vs03-*
+          if-no-files-found: error
+          retention-days: 90
       - if: failure()
         run: mkdir -p target && docker compose logs --no-color > target/compose.log 2>&1
       - if: failure()

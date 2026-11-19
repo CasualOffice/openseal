@@ -169,3 +169,60 @@ export function hasShare(entries, next) {
 export function isEmail(s) {
   return EMAIL.test(String(s || "").trim());
 }
+
+// ---- Composite templates and template folders (slice 3, VS-03) ----------------------
+
+/// The key two templates' roles are matched by: the name, trimmed, any case.
+export const roleKey = (name) => String(name || "").trim().toLowerCase();
+
+/// The roles of one envelope made from several templates (composite templates, as
+/// the server's `POST /envelopes/from-templates` makes it, after DocuSign's): a role
+/// named in two templates (any case) is one recipient, with the type and routing order
+/// of the first template naming it.
+///
+/// Answers `{roles, roleOf, conflict}`: `roles` sorted by routing order (then first
+/// seen), each `{key, name, type, routing_order}`; `roleOf` maps every template role id
+/// to its envelope role's `key`; `conflict` is the index of the first template that
+/// names a role with another type (the server refuses it), or -1.
+export function mergeTemplates(templates) {
+  const byKey = new Map();
+  const roleOf = new Map();
+  let conflict = -1;
+  let seq = 0;
+  (templates || []).forEach((tp, ti) => {
+    for (const r of Array.isArray(tp?.roles) ? tp.roles : []) {
+      const key = roleKey(r?.name);
+      if (!key) continue;
+      const type = typeof r?.type === "string" ? r.type : "signer";
+      const had = byKey.get(key);
+      if (had) {
+        if (had.type !== type && conflict < 0) conflict = ti;
+      } else {
+        const order = Number.isInteger(r?.routing_order) && r.routing_order > 0 ? r.routing_order : 1;
+        byKey.set(key, { key, name: String(r.name).trim(), type, routing_order: order, seq: seq++ });
+      }
+      if (typeof r?.id === "string") roleOf.set(r.id, key);
+    }
+  });
+  const roles = [...byKey.values()]
+    .sort((a, b) => a.routing_order - b.routing_order || a.seq - b.seq)
+    .map(({ seq: _s, ...r }) => r);
+  return { roles, roleOf, conflict };
+}
+
+/// The `POST /envelopes/from-templates` body: the templates in order, each role filled
+/// from `people` (`{[roleKey]: {name, email}}`), people beyond the roles after them
+/// (`extra`: `[{name, email, type: "cc" | "signer"}]`), the email, and `status`.
+export function fromTemplatesBody(templateIds, roles, people, { extra = [], subject, message, status = "draft" } = {}) {
+  const body = {
+    template_ids: [...templateIds],
+    recipients: [
+      ...roles.map((r) => ({ role: r.name, name: String(people?.[r.key]?.name || "").trim(), email: String(people?.[r.key]?.email || "").trim() })),
+      ...(extra || []).map((p) => ({ name: String(p?.name || "").trim(), email: String(p?.email || "").trim(), type: p?.type === "signer" ? "signer" : "cc" })),
+    ],
+    status,
+  };
+  if (subject != null) body.subject = String(subject).trim().slice(0, 255);
+  if (message != null) body.message = String(message).slice(0, 10000);
+  return body;
+}

@@ -11,18 +11,22 @@
 // panel: members by email, groups, or everyone in the workspace, each "can edit" or
 // not. The row menu offers what the caller's `access` allows; the server decides.
 //
-// Using a template is one `POST /api/v1/envelopes` (templatemodel.js): the template's
-// documents, its roles filled with people, and its fields bound to the roles' ids. A
-// template without documents becomes a draft with its recipients, opened in the editor
-// to add the PDF and fields. Every call is api.js's (WEB-10).
+// Folders (TSH-03): each member's own template folders; a folder filter beside the
+// search, New folder, and Move to folder in each row's menu.
+//
+// Using a template, or several together (composite templates, slice 3), is one
+// `POST /api/v1/envelopes/from-templates`: the server makes the envelope from the
+// templates' stored documents, their roles filled with people (matched by name across
+// templates) and their fields bound to them. A template without documents becomes a
+// draft with its recipients, opened in the editor to add the PDF and fields. Every call
+// is api.js's (WEB-10).
 
 import { h, clear, fmtDate } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { toBase64 } from "./api.js";
 import { register, unregisterPrefix } from "./commands.js";
 import { button, busy, emptyState, skeletonRows, errorState, openPanel, confirmDialog, toast, toastError, pdfPreview, menuButton, selectField, tabs, iconButton, checkbox, field, pill } from "./ui/index.js";
-import { rolesOf, peopleProblems, extraProblems, envelopeFromTemplate, canDo, shareItems, hasShare, isEmail } from "./templatemodel.js";
+import { peopleProblems, extraProblems, canDo, shareItems, hasShare, isEmail, mergeTemplates, fromTemplatesBody } from "./templatemodel.js";
 
 /// The list's views (UXW-06): `id` is the `view` the server takes.
 const VIEWS = ["all", "owned", "shared", "favourites"];
@@ -50,8 +54,23 @@ export function mount(view, ctx) {
     button(t("templates.new"), { icon: "plus", variant: "primary", command: "template.new", onClick: () => ctx.navigate("#/templates/new") }));
   const search = h("input", { id: "tpl-search", type: "search", class: "os-input os-input--sm", autocomplete: "off", placeholder: t("templates.search") });
   search.addEventListener("input", () => render());
+  // Template folders (TSH-03, after DocuSign's): each member's own; a folder filter
+  // beside the search, New folder, and Move to folder in each row's menu.
+  let folders = [];
+  let folder = "";
+  const folderPick = h("select", { id: "tpl-folder", class: "os-input os-input--sm", attrs: { "data-testid": "tpl-folder" } });
+  folderPick.addEventListener("change", () => { folder = folderPick.value; load(); });
+  const drawFolders = () => {
+    clear(folderPick);
+    folderPick.append(h("option", { value: "", text: t("templates.folder.all") }), h("option", { value: "none", text: t("templates.folder.none") }),
+      ...folders.map((f) => h("option", { value: f.id, text: t("templates.folder.option", { name: f.name, n: f.count }) })));
+    folderPick.value = folders.some((f) => f.id === folder) || folder === "none" ? folder : "";
+  };
+  drawFolders();
+  const newFolder = button(t("templates.folder.new"), { icon: "plus", size: "sm", command: "templatefolder.new", attrs: { "data-testid": "tpl-new-folder" }, onClick: () => makeFolder() });
   const tools = h("div", { class: "os-filters" }, h("div", { class: "os-fieldrow os-filters__search" },
-    h("label", { class: "os-sr-only", attrs: { for: "tpl-search" }, text: t("templates.search") }), search));
+    h("label", { class: "os-sr-only", attrs: { for: "tpl-search" }, text: t("templates.search") }), search),
+  h("div", { class: "os-fieldrow" }, h("label", { class: "os-sr-only", attrs: { for: "tpl-folder" }, text: t("templates.folder.label") }), folderPick), newFolder);
   const list = h("div", { class: "os-list os-surface-card", attrs: { "aria-live": "polite" } });
   let shown = "all";
   let quiet = true; // the tabs' first render is not a choice
@@ -70,7 +89,7 @@ export function mount(view, ctx) {
     list.setAttribute("aria-busy", "true");
     list.append(skeletonRows(3));
     try {
-      const page = await ctx.api.templates.list(shown);
+      const page = await ctx.api.templates.list(shown, folder || undefined);
       items = page.items || [];
       list.removeAttribute("aria-busy");
       render();
@@ -94,9 +113,19 @@ export function mount(view, ctx) {
     return b;
   };
 
+  async function loadFolders() {
+    try { folders = (await ctx.api.listFolders("templates")).items || []; } catch { folders = []; }
+    drawFolders();
+  }
+  const folderName = (id) => folders.find((f) => f.id === id)?.name;
+
   function render() {
     clear(list);
-    tools.hidden = !items.length;
+    tools.hidden = !items.length && !folder;
+    if (!items.length && folder) {
+      list.append(emptyState({ illus: "templates", title: t("templates.folder.empty"), text: "", testId: "empty-template-folder" }));
+      return;
+    }
     if (!items.length && shown !== "all") {
       list.append(emptyState({ illus: "templates", title: t(`templates.empty-view.${shown}`), text: "", testId: `empty-templates-${shown}` }));
       return;
@@ -125,7 +154,8 @@ export function mount(view, ctx) {
         h("td", {}, h("div", { class: "os-col-subject os-tplrow" }, docThumb(),
           h("span", { class: "os-tplrow__text" },
             h("a", { href, class: "os-row-link os-tplrow__name", text: name }),
-            h("span", { class: "os-row__sub os-muted os-tplrow__sub", text: tp.email_subject || t("home.template-no-subject") })))),
+            h("span", { class: "os-row__sub os-muted os-tplrow__sub", text: tp.email_subject || t("home.template-no-subject") }),
+            folderName(tp.folder_id) ? h("span", { attrs: { "data-testid": "tpl-in-folder" } }, pill(folderName(tp.folder_id), { ic: "inbox" })) : null))),
         h("td", { class: "os-col-date", attrs: { "data-label": t("templates.col.owner") } }, owner(tp), tp.shared && canDo(tp, "owner") ? pill(t("templates.shared"), { ic: "users" }) : null),
         h("td", { class: "os-col-date os-muted", attrs: { "data-label": t("templates.col.used") } }, tp.last_used_at ? h("time", { attrs: { datetime: tp.last_used_at }, text: fmtDate(tp.last_used_at) }) : t("templates.never-used")),
         h("td", { class: "os-col-actions" },
@@ -141,6 +171,7 @@ export function mount(view, ctx) {
                 { label: t("templates.bulk.menu"), icon: "send", run: () => ctx.navigate(`#/templates/${encodeURIComponent(tp.id)}/bulk`) },
                 canDo(tp, "edit") ? { label: t("templates.edit"), icon: "pencil", run: () => edit(tp) } : null,
                 canDo(tp, "owner") ? { label: t("templates.share"), icon: "users", run: () => share(tp) } : null,
+                { label: t("templates.folder.move"), icon: "move", run: () => move(tp) },
                 { label: t("templates.duplicate"), icon: "copy", run: () => duplicate(tp) },
                 canDo(tp, "owner") ? { label: t("templates.delete"), icon: "trash-2", danger: true, run: () => remove(tp) } : null,
               ].filter(Boolean),
@@ -279,6 +310,62 @@ export function mount(view, ctx) {
     toast(t("templates.saved-details"), "success");
     load();
   }
+  /// New folder (TSH-03): a name in a side panel; `exists` from the server is shown.
+  async function makeFolder() {
+    let f;
+    const done = await openPanel({
+      id: "template-folder-new",
+      title: t("templates.folder.new-title"),
+      build(body) {
+        f = field(t("templates.folder.name"), { id: "tpl-folder-name", maxLength: 100, attrs: { "data-testid": "tpl-folder-name", autofocus: true } });
+        body.append(f.el);
+      },
+      actions: [
+        { label: t("action.cancel"), value: null },
+        {
+          label: t("templates.folder.create"), variant: "primary", attrs: { "data-testid": "tpl-folder-create" },
+          onClick: async () => {
+            const name = f.input.value.trim();
+            if (!name) { f.setError(t("form.required")); f.input.focus(); return undefined; }
+            try {
+              return await ctx.api.createFolder(name, "templates");
+            } catch (err) {
+              if (err?.errors?.some((x) => x.code === "exists")) { f.setError(t("templates.folder.exists")); f.input.focus(); return undefined; }
+              throw err;
+            }
+          },
+        },
+      ],
+    });
+    if (!done) return;
+    toast(t("templates.folder.created", { name: done.name }), "success");
+    await loadFolders();
+  }
+
+  /// Move to folder (TSH-03): the member's template folders, or none.
+  async function move(tp) {
+    if (!folders.length) await loadFolders();
+    const name = tp.name || t("templates.untitled");
+    let pick;
+    const done = await openPanel({
+      id: "template-move",
+      title: t("templates.folder.move-title", { name }),
+      build(body) {
+        pick = selectField(t("templates.folder.label"), [["", t("templates.folder.no-folder")], ...folders.map((f) => [f.id, f.name])], { id: "tpl-move-to", value: tp.folder_id || "", attrs: { "data-testid": "tpl-move-to" } });
+        body.append(pick.el);
+        if (!folders.length) body.append(h("p", { class: "os-muted os-small", text: t("templates.folder.none-yet") }));
+      },
+      actions: [
+        { label: t("action.cancel"), value: null },
+        { label: t("templates.folder.move-do"), variant: "primary", attrs: { "data-testid": "tpl-move-save" }, onClick: async () => { await ctx.api.moveTemplates(pick.select.value || null, [tp.id]); return pick.select.value || "none"; } },
+      ],
+    });
+    if (!done) return;
+    toast(done === "none" ? t("templates.folder.moved-out") : t("templates.folder.moved", { name: folderName(done) || "" }), "success");
+    await loadFolders();
+    load();
+  }
+
   async function duplicate(tp) {
     try { await ctx.api.templates.duplicate(tp.id); toast(t("templates.duplicated"), "success"); load(); } catch (err) { if (!ctx.failed(err)) toastError(err); }
   }
@@ -294,22 +381,42 @@ export function mount(view, ctx) {
   }
 
   register("template.new", { label: t("templates.new"), run: () => ctx.navigate("#/templates/new") });
+  register("templatefolder.new", { label: t("templates.folder.new"), run: () => makeFolder() });
   load();
   loadPeople();
-  return () => unregisterPrefix("template.");
+  loadFolders();
+  return () => { unregisterPrefix("template."); unregisterPrefix("templatefolder."); };
 }
 
-/// `#/templates/{id}`: use a template. The document on the left, the people, the email
+/// `#/templates/{id}`: use a template, or several together (composite templates, slice
+/// 3, after DocuSign's). The documents on the left; the templates, the people, the email
 /// and Send in a sticky panel on the right (T-03); stacked on phones, the form first.
+/// "Add a template" puts another template's documents and roles in the same envelope: a
+/// role named in two templates (any case) is one person, the server's rule
+/// (templatemodel.js `mergeTemplates`). Send, and Edit before sending, are one
+/// `POST /envelopes/from-templates`: the server makes the envelope from the templates'
+/// stored documents.
 export function mountUse(view, ctx, [rawId]) {
   const id = decodeURIComponent(rawId);
   const body = h("div", { class: "os-detail", attrs: { "aria-busy": "true" } }, skeletonRows(4));
   view.append(body);
+  /// The whole templates, in the envelope's order; the first is the one opened.
+  const chosen = [];
+  /// The templates the caller may use, offered by Add a template.
+  let usable = [];
+  /// What was typed, kept when a template is added or removed: people by role key,
+  /// people beyond the roles, the subject and message once edited.
+  const people = {};
+  const extra = [];
+  let typed = { subject: null, message: null };
+  let focusAfter = "#use-name-0";
 
   async function load() {
     try {
-      const { template } = await ctx.api.templates.get(id);
-      render(template);
+      const [{ template }, list] = await Promise.all([ctx.api.templates.get(id), ctx.api.templates.list().catch(() => ({ items: [] }))]);
+      chosen.push(template);
+      usable = list.items || [];
+      render();
     } catch (err) {
       if (ctx.failed(err)) return;
       errorState(body, err, load);
@@ -318,22 +425,66 @@ export function mountUse(view, ctx, [rawId]) {
     }
   }
 
-  function render(tp) {
+  async function addTemplate(tid) {
+    try {
+      const { template } = await ctx.api.templates.get(tid);
+      if (mergeTemplates([...chosen, template]).conflict >= 0) {
+        toast(t("use.role-conflict", { name: template.name || t("templates.untitled") }), "error");
+        return;
+      }
+      chosen.push(template);
+      focusAfter = "[data-testid=use-add-template]";
+      render();
+      toast(t("use.template-added", { name: template.name || t("templates.untitled") }), "success");
+    } catch (err) { if (!ctx.failed(err)) toastError(err); }
+  }
+
+  function render() {
     clear(body);
-    const roles = rolesOf(tp);
-    const docs = Array.isArray(tp.documents) ? tp.documents : [];
-    const fields = Array.isArray(tp.fields) ? tp.fields : [];
-    const people = {};
+    const lead = chosen[0];
+    const { roles, roleOf } = mergeTemplates(chosen);
+    const items = chosen.flatMap((tp) => (Array.isArray(tp.documents) ? tp.documents : []).map((d) => ({ tp, d })));
+    const fields = chosen.flatMap((tp) => (Array.isArray(tp.fields) ? tp.fields : []).map((f) => ({ tp, f })));
+    for (const r of roles) people[r.key] ||= { name: "", email: "" };
     const back = h("a", { href: "#/templates", class: "os-back" }, icon("chevron-left", { size: 16 }), h("span", { text: t("templates.title") }));
-    const title = h("h1", { class: "os-page-title", text: t("use.title", { name: tp.name || t("templates.untitled") }) });
+    const title = h("h1", { class: "os-page-title", text: t("use.title", { name: lead.name || t("templates.untitled") }) });
 
     const form = h("form", { class: "os-use os-usepanel", attrs: { novalidate: true, "aria-labelledby": "use-h" } });
-    const subject = h("input", { id: "use-subject", class: "os-input", maxLength: 255, value: tp.email_subject || tp.name || "" });
-    const message = h("textarea", { id: "use-message", class: "os-input os-textarea", rows: 3, maxLength: 10000, value: tp.email_message || "", placeholder: t("prepare.message-placeholder") });
+    const subject = h("input", { id: "use-subject", class: "os-input", maxLength: 255, value: typed.subject ?? (lead.email_subject || lead.name || "") });
+    const message = h("textarea", { id: "use-message", class: "os-input os-textarea", rows: 3, maxLength: 10000, value: typed.message ?? (lead.email_message || ""), placeholder: t("prepare.message-placeholder") });
+    subject.addEventListener("input", () => { typed.subject = subject.value; });
+    message.addEventListener("input", () => { typed.message = message.value; });
+
+    // The templates in this envelope (composite templates): the first is the one opened;
+    // the others can be taken out again.
+    const tplList = h("ol", { class: "os-use__roles", attrs: { "aria-label": t("use.templates"), "data-testid": "use-templates" } });
+    chosen.forEach((tp, i) => {
+      const name = tp.name || t("templates.untitled");
+      const n = Array.isArray(tp.documents) ? tp.documents.length : 0;
+      tplList.append(h("li", { class: "os-use__role", attrs: { "data-testid": "use-template" } },
+        h("div", { class: "os-use__role-head" },
+          h("span", { class: "os-order", text: String(i + 1) }),
+          h("strong", { text: name }),
+          h("span", { class: "os-muted os-small", text: t("use.template-docs", { n }) }),
+          h("span", { class: "os-spacer" }),
+          i > 0 ? button(t("use.remove-template", { name }), { icon: "x", size: "sm", variant: "ghost", iconOnly: true, attrs: { "data-testid": "use-remove-template" }, onClick: () => { chosen.splice(i, 1); focusAfter = "[data-testid=use-add-template]"; render(); } }) : null)));
+    });
+    const others = usable.filter((x) => !chosen.some((c) => c.id === x.id));
+    const tplCard = h("section", { class: "os-usepanel__sec", attrs: { "aria-labelledby": "use-tpls-h" } },
+      h("h3", { id: "use-tpls-h", class: "os-card__title", text: t("use.templates") }),
+      h("p", { class: "os-muted os-small", text: t("use.templates-help") }), tplList);
+    if (others.length) {
+      const pick = selectField(t("use.add-template"), [["", t("use.add-template-choose")], ...others.map((x) => [x.id, x.name || t("templates.untitled")])], {
+        id: "use-add-template",
+        attrs: { "data-testid": "use-add-template" },
+        onChange: (v) => { if (v) addTemplate(v); },
+      });
+      tplCard.append(pick.el);
+    }
 
     const rolesCard = h("section", { class: "os-usepanel__sec", attrs: { "aria-labelledby": "use-roles-h" } },
       h("h3", { id: "use-roles-h", class: "os-card__title", text: t("use.people") }),
-      h("p", { class: "os-muted os-small", text: t("use.people-help") }));
+      h("p", { class: "os-muted os-small", text: t(chosen.length > 1 ? "use.people-help-n" : "use.people-help") }));
     if (!roles.length) {
       rolesCard.append(emptyState({ illus: "recipients", title: t("empty.use-roles.title"), text: t("empty.use-roles.text"), testId: "empty-use-roles" }));
     }
@@ -350,10 +501,10 @@ export function mountUse(view, ctx, [rawId]) {
       clearTimeout(lookup);
       if (!q.trim()) return;
       lookup = setTimeout(async () => {
-        let items = [];
-        try { items = (await ctx.api.contacts(q.trim(), 8))?.items || []; } catch { return; }
+        let found = [];
+        try { found = (await ctx.api.contacts(q.trim(), 8))?.items || []; } catch { return; }
         clear(emailList); clear(nameList);
-        for (const c of items) {
+        for (const c of found) {
           if (!c?.email) continue;
           byEmail.set(c.email.toLowerCase(), c.name || "");
           if (c.name) byName.set(c.name.toLowerCase(), c.email);
@@ -363,31 +514,30 @@ export function mountUse(view, ctx, [rawId]) {
       }, 200);
     };
     /// A name and an email input pair that suggest contacts and complete each other.
-    const personInputs = (nid, eid, describe, onChange, testIds = ["use-name", "use-email"]) => {
-      const name = h("input", { id: nid, class: "os-input", autocomplete: "off", maxLength: 255, attrs: { list: "use-contacts-name", "aria-describedby": describe, "data-testid": testIds[0] } });
-      const email = h("input", { id: eid, class: "os-input", type: "email", autocomplete: "off", attrs: { list: "use-contacts-email", "aria-describedby": describe, "data-testid": testIds[1] } });
+    const personInputs = (nid, eid, describe, p, testIds = ["use-name", "use-email"]) => {
+      const name = h("input", { id: nid, class: "os-input", autocomplete: "off", maxLength: 255, value: p.name || "", attrs: { list: "use-contacts-name", "aria-describedby": describe, "data-testid": testIds[0] } });
+      const email = h("input", { id: eid, class: "os-input", type: "email", autocomplete: "off", value: p.email || "", attrs: { list: "use-contacts-email", "aria-describedby": describe, "data-testid": testIds[1] } });
       name.addEventListener("input", () => {
         suggest(name.value);
         const e = byName.get(name.value.trim().toLowerCase());
         if (e && !email.value) email.value = e;
-        onChange(name.value, email.value);
+        p.name = name.value; p.email = email.value;
       });
       email.addEventListener("input", () => {
         suggest(email.value);
         const n = byEmail.get(email.value.trim().toLowerCase());
         if (n && !name.value) name.value = n;
-        onChange(name.value, email.value);
+        p.name = name.value; p.email = email.value;
       });
       return [name, email];
     };
     roles.forEach((r, i) => {
-      people[r.name] = { name: "", email: "" };
       const nid = `use-name-${i}`;
       const eid = `use-email-${i}`;
       const hid = `use-role-${i}-h`;
       const err = h("p", { id: `use-err-${i}`, class: "os-field-error", attrs: { "aria-live": "polite" } });
-      errors.set(r.name, err);
-      const [name, email] = personInputs(nid, eid, `${hid} use-err-${i}`, (n, e) => { people[r.name] = { name: n, email: e }; });
+      errors.set(r.key, err);
+      const [name, email] = personInputs(nid, eid, `${hid} use-err-${i}`, people[r.key]);
       list.append(h("li", { class: `os-use__role os-r${(i % 6) + 1}` },
         h("div", { class: "os-use__role-head" },
           h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }),
@@ -403,19 +553,16 @@ export function mountUse(view, ctx, [rawId]) {
 
     // People beyond the roles (UX-08): a copy, or another signer whose fields are placed
     // in the editor.
-    const extra = [];
     const extraList = h("ol", { class: "os-use__roles os-use__extra", attrs: { "aria-label": t("use.extra") } });
     const addExtra = button(t("use.add-recipient"), { icon: "user-plus", size: "sm", command: "usetemplate.add-recipient", onClick: () => addPerson() });
     rolesCard.append(extraList, h("div", { class: "os-use__add" }, addExtra));
     let extraSeq = 0;
-    function addPerson() {
+    function drawPerson(p, focus) {
       const k = extraSeq++;
-      const p = { name: "", email: "", type: "cc" };
-      extra.push(p);
       const hid = `use-x-${k}-h`;
       const err = h("p", { id: `use-x-err-${k}`, class: "os-field-error", attrs: { "aria-live": "polite" } });
-      const [name, email] = personInputs(`use-x-name-${k}`, `use-x-email-${k}`, `${hid} use-x-err-${k}`, (n, e) => { p.name = n; p.email = e; }, ["extra-name", "extra-email"]);
-      const type = selectField(t("use.recipient-type"), [["cc", t("rtype.cc")], ["signer", t("rtype.signer")]], { id: `use-x-type-${k}`, value: "cc", attrs: { "data-testid": "extra-type", "aria-describedby": hid }, onChange: (v) => { p.type = v; } });
+      const [name, email] = personInputs(`use-x-name-${k}`, `use-x-email-${k}`, `${hid} use-x-err-${k}`, p, ["extra-name", "extra-email"]);
+      const type = selectField(t("use.recipient-type"), [["cc", t("rtype.cc")], ["signer", t("rtype.signer")]], { id: `use-x-type-${k}`, value: p.type, attrs: { "data-testid": "extra-type", "aria-describedby": hid }, onChange: (v) => { p.type = v; } });
       const item = h("li", { class: "os-use__role os-use__role--extra", attrs: { "data-extra": String(k) } },
         h("div", { class: "os-use__role-head" },
           h("strong", { id: hid, text: t("use.extra-n", { n: extra.indexOf(p) + 1 }) }),
@@ -430,11 +577,16 @@ export function mountUse(view, ctx, [rawId]) {
           h("div", {}, h("label", { class: "os-label", attrs: { for: `use-x-name-${k}` }, text: t("prepare.name") }), name),
           h("div", {}, h("label", { class: "os-label", attrs: { for: `use-x-email-${k}` }, text: t("prepare.email") }), email)),
         err);
-      item.err = err;
       p.item = item;
       extraList.append(item);
-      name.focus();
+      if (focus) name.focus();
     }
+    function addPerson() {
+      const p = { name: "", email: "", type: "cc" };
+      extra.push(p);
+      drawPerson(p, true);
+    }
+    for (const p of extra) drawPerson(p, false);
     register("usetemplate.add-recipient", { label: t("use.add-recipient"), run: () => addPerson() });
 
     const messageCard = h("section", { class: "os-usepanel__sec", attrs: { "aria-labelledby": "use-msg-h" } },
@@ -443,30 +595,32 @@ export function mountUse(view, ctx, [rawId]) {
       h("label", { class: "os-label", attrs: { for: "use-message" }, text: t("prepare.message") }), message);
 
     const send = button(t("prepare.send"), { icon: "send", variant: "primary", type: "submit", attrs: { "data-testid": "use-send" } });
-    const edit = button(t(docs.length ? "use.edit-first" : "use.continue"), { icon: "file-pen-line", variant: docs.length ? "secondary" : "primary", attrs: { "data-testid": "use-edit" } });
-    const actions = h("div", { class: "os-actions os-usepanel__foot" }, docs.length ? send : null, edit);
+    const edit = button(t(items.length ? "use.edit-first" : "use.continue"), { icon: "file-pen-line", variant: items.length ? "secondary" : "primary", attrs: { "data-testid": "use-edit" } });
+    const actions = h("div", { class: "os-actions os-usepanel__foot" }, items.length ? send : null, edit);
 
     form.append(h("h2", { id: "use-h", class: "os-usepanel__title", text: t("use.panel") }),
-      h("div", { class: "os-usepanel__body" }, rolesCard, messageCard), actions);
+      h("div", { class: "os-usepanel__body" }, tplCard, rolesCard, messageCard), actions);
 
     const docsCard = h("section", { class: "os-usedoc", attrs: { "aria-labelledby": "use-docs-h" } },
       h("h2", { id: "use-docs-h", class: "os-sr-only", text: t("use.document") }));
-    if (docs.length) {
+    if (items.length) {
       // The field count and a key to the role colours above the pages (UX-08), and each
       // role's fields outlined on them in its colour.
-      const colourOf = new Map(roles.map((r, i) => [r.id, (i % 6) + 1]));
-      const nameOf = new Map(roles.map((r) => [r.id, r.name]));
+      const colourOf = new Map(roles.map((r, i) => [r.key, (i % 6) + 1]));
+      const nameOf = new Map(roles.map((r) => [r.key, r.name]));
+      const keyOf = (f) => roleOf.get(f.role_id);
       docsCard.append(h("div", { class: "os-usedoc__bar" },
         h("p", { class: "os-muted os-small", attrs: { "data-testid": "use-fields-n" }, text: t("use.fields-n", { n: fields.length }) }),
         h("ul", { class: "os-usedoc__key", attrs: { "aria-label": t("use.key") } },
-          ...roles.filter((r) => fields.some((f) => f.role_id === r.id)).map((r) => h("li", { class: `os-r${colourOf.get(r.id)}` },
+          ...roles.filter((r) => fields.some(({ f }) => keyOf(f) === r.key)).map((r) => h("li", { class: `os-r${colourOf.get(r.key)}` },
             h("span", { class: "os-rcpt__dot", attrs: { "aria-hidden": "true" } }), h("span", { text: r.name }))))));
-      for (const d of docs) {
+      for (const { tp, d } of items) {
         const decorate = (page, n, scale) => {
-          for (const f of fields) {
+          for (const { tp: ft, f } of fields) {
             const p = f.placement;
-            if (f.document_id !== d.id || !p || p.page !== n || !colourOf.has(f.role_id)) continue;
-            const box = h("span", { class: `os-use__field os-r${colourOf.get(f.role_id)}`, attrs: { "aria-hidden": "true", title: nameOf.get(f.role_id) } });
+            const key = keyOf(f);
+            if (ft !== tp || f.document_id !== d.id || !p || p.page !== n || !colourOf.has(key)) continue;
+            const box = h("span", { class: `os-use__field os-r${colourOf.get(key)}`, attrs: { "aria-hidden": "true", title: nameOf.get(key) } });
             Object.assign(box.style, { left: `${p.x * scale}px`, top: `${p.y * scale}px`, width: `${p.width * scale}px`, height: `${p.height * scale}px` }); // px-ok: PDF points × scale
             page.append(box);
           }
@@ -483,18 +637,19 @@ export function mountUse(view, ctx, [rawId]) {
     function check() {
       for (const e of errors.values()) e.textContent = "";
       for (const inp of form.querySelectorAll("[aria-invalid]")) inp.removeAttribute("aria-invalid");
-      const probs = peopleProblems(roles, people);
+      const probs = peopleProblems(roles.map((r) => ({ name: r.key })), people);
       for (const p of probs) {
-        const i = roles.findIndex((r) => r.name === p.role);
+        const i = roles.findIndex((r) => r.key === p.role);
         const err = errors.get(p.role);
         err.textContent = [err.textContent, t(p.problem === "name" ? "use.need-name" : "use.need-email")].filter(Boolean).join(" ");
         form.querySelector(`#use-${p.problem}-${i}`)?.setAttribute("aria-invalid", "true");
       }
-      for (const p of extra) p.item.err.textContent = "";
+      for (const p of extra) p.item.lastChild.textContent = "";
       const xprobs = extraProblems(extra);
       for (const x of xprobs) {
         const p = extra[x.index];
-        p.item.err.textContent = [p.item.err.textContent, t(x.problem === "name" ? "use.need-name" : "use.need-email")].filter(Boolean).join(" ");
+        const err = p.item.lastChild;
+        err.textContent = [err.textContent, t(x.problem === "name" ? "use.need-name" : "use.need-email")].filter(Boolean).join(" ");
         p.item.querySelector(`[data-testid="extra-${x.problem}"]`)?.setAttribute("aria-invalid", "true");
       }
       if (!probs.length && xprobs.length) {
@@ -503,30 +658,21 @@ export function mountUse(view, ctx, [rawId]) {
       }
       if (probs.length) {
         const first = probs[0];
-        form.querySelector(`#use-${first.problem}-${roles.findIndex((r) => r.name === first.role)}`)?.focus();
+        form.querySelector(`#use-${first.problem}-${roles.findIndex((r) => r.key === first.role)}`)?.focus();
         return false;
       }
       return true;
     }
 
-    async function create(status) {
-      const withDocs = [];
-      for (const d of docs) {
-        const blob = await ctx.api.templates.documentContent(tp.id, d.id);
-        withDocs.push({ id: d.id, name: d.name, base64: toBase64(new Uint8Array(await blob.arrayBuffer())) });
-      }
-      const { body: req, dropped } = envelopeFromTemplate(tp, people, { docs: withDocs, fields, subject: subject.value, message: message.value, status, extra });
-      if (dropped) toast(t("use.dropped", { n: dropped }), "info");
-      return ctx.api.createEnvelope(req);
-    }
+    const create = (status) => ctx.api.templates.use(fromTemplatesBody(chosen.map((c) => c.id), roles, people, { extra, subject: subject.value, message: message.value, status }));
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      if (!docs.length || !check()) return;
+      if (!items.length || !check()) return;
       // An added signer has no fields yet: they are placed in the editor first.
       if (extra.some((p) => p.type === "signer")) { toast(t("use.extra-signer"), "info"); edit.focus(); return; }
       const signers = roles.filter((r) => r.type === "signer").length;
-      if (!(await confirmDialog(t("send.confirm-title"), t("send.confirm-text", { n: signers, subject: subject.value.trim() || tp.name }), { confirm: t("prepare.send") }))) return;
+      if (!(await confirmDialog(t("send.confirm-title"), t("send.confirm-text", { n: signers, subject: subject.value.trim() || lead.name }), { confirm: t("prepare.send") }))) return;
       await busy(send, async () => {
         try {
           const env = await create("sent");
@@ -544,7 +690,7 @@ export function mountUse(view, ctx, [rawId]) {
         } catch (err) { if (!ctx.failed(err)) toastError(err); }
       });
     });
-    form.querySelector("#use-name-0")?.focus();
+    form.querySelector(focusAfter)?.focus();
   }
 
   load();

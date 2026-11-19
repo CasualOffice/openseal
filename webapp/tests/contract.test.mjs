@@ -432,7 +432,7 @@ test("ahead of the server, folders file envelopes and the list filters by folder
   await assert.rejects(c.createFolder("clients"), (e) => e.code === "CS-API-0001");
   const all = (await c.listEnvelopes({ limit: 200 })).items;
   await c.moveEnvelopes(f.id, [all[0].id, all[1].id]);
-  assert.deepEqual((await c.listFolders()).items, [{ id: f.id, name: "Clients", count: 2 }]);
+  assert.deepEqual((await c.listFolders()).items, [{ id: f.id, name: "Clients", kind: "envelopes", count: 2 }]);
   assert.deepEqual((await c.listEnvelopes({ folder: f.id })).items.map((e) => e.id).sort(), [all[0].id, all[1].id].sort());
   await c.moveEnvelopes(null, [all[0].id]);
   assert.equal((await c.renameFolder(f.id, "Key clients")).count, 1);
