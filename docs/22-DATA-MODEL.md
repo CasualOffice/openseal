@@ -252,7 +252,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | SigningLink | `signing_links` | resolution only |
 | WebhookSubscription, WebhookDelivery | `webhook_subscriptions`, `webhook_deliveries` | `TenantTx::webhooks` |
 | ApiClient | `api_clients` | `TenantTx::api_clients` |
-| RetentionPolicy | `retention_policies` | schema only |
+| RetentionPolicy | `retention_rules` (migration 0045; replaced the unused `retention_policies`) | `TenantTx::privacy` (rules, legal holds, the retention job's candidates, tombstones, the record purge, member erasure; `ASVS-16`, `ASVS-18`) |
 | Jobs (ADR-012) | `jobs` | `TenantTx::jobs`; claim through `EntryPoints` |
 
 **Tenancy as built.** Every table but `accounts` and `users` has `account_id uuid NOT NULL`, `UNIQUE (account_id, id)`
@@ -416,7 +416,7 @@ owner means nobody can file into another member's folder, and removing the folde
 removes the filing. Filing is a member's view of their lists, not a change of the agreement: no audit event, no
 `updated_at`. 0004's `envelopes.folder_id` (one folder for every member) stays unused. `TenantTx::folders` lists a
 member's folders with the count of filed envelopes not deleted, creates, renames, deletes and files (`file`, all in one
-statement). **Template folders (`TSH-03`, migration `0045_template_folders.sql`):** the same `folders` rows of kind
+statement). **Template folders (`TSH-03`, migration `0047_template_folders.sql`):** the same `folders` rows of kind
 `templates` (names unique per member and kind), `UNIQUE (account_id, id, owner_user_id, kind)`, and a tenant table
 `folder_templates` (`id`, `user_id`, `template_id`, `folder_id`, `folder_kind` fixed to `templates`, `filed_at`), one
 folder per member and template; its reference `(account_id, folder_id, user_id, folder_kind)` refuses another member's
@@ -501,6 +501,22 @@ by the user's own live session) replaces a sealed seed only when it is still the
 confirmed factor only once that session has passed it (`Sessions::reseal_own_totp`); `openseal_reseal_totp_seed`
 (schema owner only, `Store::reseal_totp_seed` beside `Store::totp_seeds`) does the same per user for
 `casual-sign-server mfa-reseal`.
+
+Migration 0046 (`CON-13`, `ASVS-32`, ADR-040, Accepted 2026-11-19 (owner instruction 65)) adds staff passkeys and the lost-factor reset. **`staff_passkeys`**
+(`account_id`, `id`, `user_id`, `credential_id` unique, `public_key` SubjectPublicKeyInfo DER, `algorithm` -7/-8/-257,
+`sign_count`, `name`, `transports`, `backup_eligible`, `created_at`, `last_used_at`) is a tenant table: `account_id`
+is the workspace the passkey was registered in, under RLS with its policy and an index leading with it, and the
+application role may read its own account's rows and write none. A passkey is still the person's factor in every
+workspace, as the TOTP columns are: it is read and changed only through definer functions keyed by the caller's live
+session (`openseal_own_factors`, `openseal_own_passkeys`, `openseal_add_own_passkey`, `openseal_use_own_passkey`
+with the counter check, `openseal_rename_own_passkey`, `openseal_remove_own_passkey`, `openseal_remove_own_totp`,
+`openseal_replace_own_recovery_codes`), and adding a factor beside an existing one needs a session that passed it
+(`openseal_mfa_session_user_passed`; `openseal_begin_own_totp` and `openseal_confirm_own_totp` now ask the same).
+`users.factor_reset_at` (guarded by `users_factor_guard`) marks an administrator's reset
+(`openseal_reset_member_factors`: a member of the current account alone, as `SEC-ID-01`); the resolver then answers
+`mfa_policy` `everyone` for that user, and enrolling any factor clears it. The resolver counts a passkey as enrolled;
+`openseal_use_own_recovery_code` recovers either factor. `staff_sessions` gains `webauthn_challenge`,
+`webauthn_purpose` and `webauthn_challenge_expires_at` (one outstanding ceremony, spent by `Sessions::take_webauthn_challenge`).
 
 ### Designed (ADR-028): tenancy with organizations
 
@@ -609,3 +625,13 @@ the rules above, and what does not:
 `Envelope::validate_for_send`, `WF-04`). The server maps rows to these values; the
 engine never sees SQL. The same types serialize to the public JSON in [40](40-API-DESIGN.md) through explicit DTOs, so
 an internal field never leaks into the API by accident.
+
+### As built (`ASVS-16`, `ASVS-18`, migration 0045, ADR-039 Accepted)
+
+`users.erased_at` (the identity was pseudonymised by `openseal_erase_user`, a definer that acts only on a member of
+the current account and of no other, because the factor columns change only as the owner); `retention_rules`
+(`account_id`, `data_class` in `draft`, `ended`, `completed`, `sessions`, `keep_days` 1 to 36500, `updated_at`; one
+per account and class; no row keeps for ever) replacing `retention_policies`, which nothing read or wrote;
+`envelopes.legal_hold_at`; `openseal_enqueue_retention_jobs(day, now)`, a definer that queues one `retention_sweep`
+job per account with a rule and day and returns a count. The table count stays 66. The purge of an envelope's records
+and the erasure of a member never touch `audit_events`, `admin_events` or `envelope_tombstones` (docs/32 §7 As built).

@@ -138,6 +138,78 @@ async fn jobs(api: &Api, env: &str) -> Vec<String> {
         .collect()
 }
 
+/// Each personal-data operation once, as the signed-in administrator (who owns the
+/// organization, so may not erase themselves), against ids of no object where one is
+/// named. Boxed: the contract test's future is already large.
+fn privacy_operations<'a>(
+    api: &'a Api,
+    s: &'a common::harness::Auth,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        let none = uuid::Uuid::now_v7();
+        let calls: [(&str, String, Option<Value>, &[StatusCode]); 9] = [
+            (
+                "GET",
+                "/api/v1/users/me/export".into(),
+                None,
+                &[StatusCode::OK],
+            ),
+            (
+                "DELETE",
+                "/api/v1/users/me".into(),
+                None,
+                &[StatusCode::CONFLICT, StatusCode::FORBIDDEN],
+            ),
+            (
+                "POST",
+                format!("/api/v1/users/{none}/erase"),
+                None,
+                &[StatusCode::NOT_FOUND],
+            ),
+            ("GET", "/api/v1/retention".into(), None, &[StatusCode::OK]),
+            (
+                "PUT",
+                "/api/v1/retention".into(),
+                Some(json!({"keep_days": {}})),
+                &[StatusCode::OK, StatusCode::FORBIDDEN],
+            ),
+            (
+                "GET",
+                "/api/v1/retention/preview".into(),
+                None,
+                &[StatusCode::OK],
+            ),
+            (
+                "PUT",
+                format!("/api/v1/envelopes/{none}/legal-hold"),
+                None,
+                &[StatusCode::NOT_FOUND],
+            ),
+            (
+                "DELETE",
+                format!("/api/v1/envelopes/{none}/legal-hold"),
+                None,
+                &[StatusCode::NOT_FOUND],
+            ),
+            (
+                "POST",
+                format!("/api/v1/envelopes/{none}/purge"),
+                None,
+                &[StatusCode::NOT_FOUND],
+            ),
+        ];
+        for (method, path, body, want) in calls {
+            let r = api.call(method, &path, s, body, &[]).await;
+            assert!(
+                want.contains(&r.status),
+                "{method} {path}: {} {:?}",
+                r.status,
+                r.json()
+            );
+        }
+    })
+}
+
 #[tokio::test]
 async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     let Some(api) = Api::new("contract_scenario", Rls::On).await else {
@@ -2260,6 +2332,8 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "reauthenticate without the second factor",
     )
     .await;
+    // Personal-data controls (ASVS-16, ASVS-18); `tests/privacy.rs` covers them in depth.
+    privacy_operations(&api, &s).await;
     ok(
         api.call(
             "DELETE",
@@ -2278,6 +2352,89 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             .await,
         StatusCode::OK,
         "end other sessions",
+    )
+    .await;
+    // Passkeys and the person's own factors (CON-13, ASVS-32; `tests/passkeys.rs` walks
+    // them through): a passkey added beside the TOTP factor, listed, renamed; new
+    // recovery codes; the TOTP factor, then the passkey, removed; and an administrator's
+    // reset of a member who is not there.
+    let o = ok(
+        api.call(
+            "POST",
+            "/api/v1/auth/mfa/passkeys/options",
+            &s,
+            Some(json!({"purpose": "register"})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "passkey options",
+    )
+    .await;
+    let soft = common::passkey::Soft::new();
+    let pk = ok(
+        api.call(
+            "POST",
+            "/api/v1/auth/mfa/passkeys",
+            &s,
+            Some(soft.register(&o, "Contract key")),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "passkey register",
+    )
+    .await;
+    let pk_path = format!(
+        "/api/v1/auth/mfa/passkeys/{}",
+        pk["passkey"]["id"].as_str().unwrap()
+    );
+    ok(
+        api.call("GET", "/api/v1/auth/mfa/passkeys", &s, None, &[])
+            .await,
+        StatusCode::OK,
+        "passkeys",
+    )
+    .await;
+    ok(
+        api.call("PATCH", &pk_path, &s, Some(json!({"name": "Renamed"})), &[])
+            .await,
+        StatusCode::OK,
+        "passkey rename",
+    )
+    .await;
+    ok(
+        api.call("POST", "/api/v1/auth/mfa/recovery-codes", &s, None, &[])
+            .await,
+        StatusCode::OK,
+        "recovery codes replaced",
+    )
+    .await;
+    ok(
+        api.call("DELETE", "/api/v1/auth/mfa/totp", &s, None, &[])
+            .await,
+        StatusCode::NO_CONTENT,
+        "totp removed",
+    )
+    .await;
+    ok(
+        api.call("DELETE", &pk_path, &s, None, &[]).await,
+        StatusCode::NO_CONTENT,
+        "passkey removed",
+    )
+    .await;
+    ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/users/{}/second-factor/reset", uuid::Uuid::now_v7()),
+            &s,
+            Some(json!({"identity_verified_by": "in_person"})),
+            &[],
+        )
+        .await,
+        // With every factor gone the administrator owes enrolment first (ASVS-31).
+        StatusCode::FORBIDDEN,
+        "factor reset",
     )
     .await;
     ok(

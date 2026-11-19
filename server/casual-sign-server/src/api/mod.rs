@@ -10,11 +10,13 @@
 pub mod admin;
 pub(crate) mod bulk;
 pub mod envelopes;
+pub(crate) mod factors;
 pub(crate) mod folders;
 pub(crate) mod groups;
 pub(crate) mod mfa;
 pub(crate) mod ml;
 pub(crate) mod org;
+pub(crate) mod privacy;
 pub(crate) mod sessions;
 pub(crate) mod switch;
 pub(crate) mod templates;

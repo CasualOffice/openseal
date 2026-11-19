@@ -18,6 +18,7 @@ pub mod groups;
 pub mod idempotency;
 pub mod jobs;
 pub mod ml;
+pub mod privacy;
 pub mod recipients;
 pub mod seal_signatures;
 pub mod sessions;
@@ -171,6 +172,12 @@ impl TenantTx {
     /// Document analysis: settings, entitlements, runs, suggestions (docs/33, WEB-19).
     pub fn ml(&mut self) -> ml::Ml<'_> {
         ml::Ml { tx: self }
+    }
+
+    /// Personal-data controls: exports, erasure, retention rules and legal holds
+    /// (ASVS-16, ASVS-18).
+    pub fn privacy(&mut self) -> privacy::Privacy<'_> {
+        privacy::Privacy { tx: self }
     }
 
     /// Idempotency records of API requests.

@@ -48,6 +48,7 @@ pub const KINDS: &[&str] = &[
     SEND_SECURITY_NOTICE,
     SEAL_ENDED_CERTIFICATE,
     ANCHOR_CHAIN_HEADS,
+    RETENTION_SWEEP,
     // Advisory, not effects (docs/33 §2, WEB-19): claimed so a worker with a model
     // service fills them; enqueued only while a workspace has a feature in effect.
     crate::ml::ANALYZE_DOCUMENT,
@@ -95,6 +96,21 @@ pub const ANCHOR_CHAIN_HEADS: &str = "anchor_chain_heads";
 pub struct AnchorJob {
     /// The UTC day, `YYYY-MM-DD`.
     pub period: String,
+}
+
+/// Not an effect (`ASVS-18`, docs/32 §7): apply an account's retention rules once a UTC
+/// day. Queued by `openseal_enqueue_retention_jobs` (migration 0045) with the idempotency
+/// key `retention:<day>` and the payload [`RetentionJob`]; it has no envelope. It purges
+/// each envelope a rule has expired (not one under legal hold) through the engine's
+/// `Purge`, which appends `envelope.purged`, and deletes expired ended staff sessions.
+pub const RETENTION_SWEEP: &str = "retention_sweep";
+
+/// The payload of a [`RETENTION_SWEEP`] job.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RetentionJob {
+    /// The UTC day, `YYYY-MM-DD`.
+    pub day: String,
 }
 
 /// `SendInvitation`.
@@ -261,10 +277,19 @@ pub enum SecurityNotice {
     PasswordReset,
     /// The password was set through an invitation link.
     PasswordSet,
-    /// A second factor was added.
+    /// A second factor was added (a TOTP authenticator app).
     FactorAdded,
-    /// A second factor was removed.
+    /// A second factor was removed (the TOTP authenticator app, by the user).
     FactorRemoved,
+    /// A passkey was added as a second factor (CON-13).
+    PasskeyAdded,
+    /// A passkey was removed (CON-13).
+    PasskeyRemoved,
+    /// The recovery codes were replaced by new ones (ASVS-32).
+    RecoveryCodesReplaced,
+    /// An administrator reset every second factor after proving the user's identity;
+    /// the user sets up a new one at their next sign-in (ASVS-32, ASVS 2.5.7).
+    FactorsReset,
 }
 
 /// The payload of a [`SEND_SECURITY_NOTICE`] job.

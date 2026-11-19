@@ -192,6 +192,22 @@ components:
           description: The workspace actions held (ORG-07, docs/23 §2.2), narrowed by a key's scopes
           items: {$ref: '#/components/schemas/ActionName'}
         second_factor: {type: string, enum: [none, passed, verify, enrol]}
+        factors:
+          type: [object, 'null']
+          description: >-
+            A staff session's own second factors (CON-13, ASVS-32), so the sign-in step
+            and step-up offer the right ones; null for API keys and tokens and for users
+            who sign in through an identity provider
+          properties:
+            totp: {type: boolean}
+            passkeys: {type: integer}
+            recovery_codes_left: {type: integer}
+            reset_by_admin:
+              type: boolean
+              description: An administrator reset the factors; a new one must be enrolled
+            passkeys_available:
+              type: boolean
+              description: False when the server's public URL cannot be a WebAuthn RP id
         reauthenticated_until:
           type: [string, 'null']
           format: date-time
@@ -199,6 +215,28 @@ components:
             Until when a staff session's sensitive actions are served without proving the
             password again (ASVS-07); null when they need it now, and for API keys and
             tokens, which are never asked
+    PasskeyAssertion:
+      type: object
+      description: >-
+        A WebAuthn assertion (`navigator.credentials.get`), each part base64url without
+        padding (CON-13)
+      additionalProperties: false
+      required: [credential_id, client_data_json, authenticator_data, signature]
+      properties:
+        credential_id: {type: string, description: "`rawId`"}
+        client_data_json: {type: string}
+        authenticator_data: {type: string}
+        signature: {type: string}
+        user_handle: {type: string}
+    Passkey:
+      type: object
+      description: One of the person's passkeys (CON-13)
+      properties:
+        id: {type: string}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+        last_used_at: {type: [string, 'null'], format: date-time}
+        backup_eligible: {type: boolean, description: A synced passkey}
     OwnSession:
       type: object
       description: One of the caller's own sessions (ASVS-06)
@@ -1534,8 +1572,9 @@ paths:
       operationId: reauthenticate
       summary: "Prove the password again before a sensitive action (ASVS-07)"
       description: >-
-        `password`, and when the user has a second factor also `code` (single use) or
-        `recovery_code` (spent). Opens a five-minute window in which the session's
+        `password`, and when the user has a second factor also `code` (single use),
+        `recovery_code` (spent), or `passkey`, an assertion answering a `reauthenticate`
+        challenge from `POST /auth/mfa/passkeys/options` (CON-13). Opens a five-minute window in which the session's
         sensitive actions are served; outside it they answer `403 CS-AUTH-0013` and the
         client asks for this and repeats the request. `401 CS-AUTH-0007` for a wrong
         password, `401 CS-AUTH-0012` for a wrong or reused code, `422 CS-API-0001`
@@ -1556,6 +1595,7 @@ paths:
                 password: {type: string}
                 code: {type: string}
                 recovery_code: {type: string}
+                passkey: {$ref: '#/components/schemas/PasskeyAssertion'}
       responses:
         '200':
           description: OK
@@ -1677,7 +1717,11 @@ paths:
         refused. `401 CS-AUTH-0012` for a wrong, replayed or spent code. Rate-limited per
         user as login is. Until a session that owes a factor passes it, every other
         `/api/v1` call but `GET /auth/session` and `POST /auth/logout` answers
-        `403 CS-AUTH-0011`.
+        `403 CS-AUTH-0011`. With `passkey`, an assertion answering the session's
+        `verify` challenge (CON-13): refused (`401 CS-AUTH-0012`) for another purpose's,
+        an expired or a spent challenge, another origin or RP id, a credential not the
+        user's, a bad signature, or a signature counter that did not move past the
+        stored one (a cloned authenticator; logged with `reason: counter`).
       x-permission: signing-in
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
@@ -1691,6 +1735,7 @@ paths:
               properties:
                 code: {type: string}
                 recovery_code: {type: string}
+                passkey: {$ref: '#/components/schemas/PasskeyAssertion'}
       responses:
         '200':
           description: Passed
@@ -1757,6 +1802,191 @@ paths:
                 type: object
                 properties:
                   second_factor: {type: string, enum: [passed]}
+                  recovery_codes: {type: array, items: {type: string}, minItems: 10, maxItems: 10}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/passkeys/options:
+    post:
+      operationId: passkeyOptions
+      summary: "Options and a challenge for one passkey ceremony (CON-13)"
+      description: >-
+        `purpose` is `register` (`navigator.credentials.create`), `verify` (the sign-in
+        step) or `reauthenticate` (step-up, `navigator.credentials.get`). The 32-byte
+        challenge is kept on the session for five minutes, one at a time, and spent by
+        the call that answers it, whatever the outcome. The RP id is the public URL's
+        host (or `OPENSEAL_WEBAUTHN_RP_ID`); attestation `none`; ES256, EdDSA and RS256.
+        `register` beside an existing factor needs a session that passed it and
+        re-authenticated within five minutes (`403 CS-AUTH-0011`, `403 CS-AUTH-0013`);
+        at most 10 passkeys (`409 CS-API-0009`). `verify` and `reauthenticate` without a
+        passkey: `409 CS-API-0009`. `409 CS-API-0014` when the public URL's host cannot be
+        an RP id. A staff session only.
+      x-permission: signing-in
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [purpose]
+              properties:
+                purpose: {type: string, enum: [register, verify, reauthenticate]}
+      responses:
+        '200':
+          description: "The options (`Cache-Control: no-store`), binary members base64url"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  purpose: {type: string}
+                  public_key: {type: object}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/passkeys:
+    post:
+      operationId: registerPasskey
+      summary: "Register a passkey as a second factor (CON-13, ASVS 2.3.2)"
+      description: >-
+        The browser's registration answering a `register` challenge: `id` (`rawId`),
+        `client_data_json`, `authenticator_data` (`getAuthenticatorData()`), `public_key`
+        (`getPublicKey()`, SubjectPublicKeyInfo DER), `public_key_algorithm` and
+        `transports`, base64url. Checked per WebAuthn Level 2 §7.1: type, challenge,
+        origin, RP id hash, user presence, the attested credential id. As the first
+        factor it is the enrolment a policy asks for: the session has passed, and the
+        answer shows ten recovery codes once. Beside another factor, only from a session
+        that passed it and re-authenticated within five minutes. `401 CS-AUTH-0012` for a
+        refused registration; `409 CS-API-0009` for a credential already registered or
+        an eleventh passkey. The user is told by email.
+      x-permission: signing-in
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [credential]
+              properties:
+                name: {type: string, maxLength: 64}
+                credential:
+                  type: object
+                  additionalProperties: false
+                  required: [id, client_data_json, authenticator_data, public_key, public_key_algorithm]
+                  properties:
+                    id: {type: string}
+                    client_data_json: {type: string}
+                    authenticator_data: {type: string}
+                    public_key: {type: string}
+                    public_key_algorithm: {type: integer, enum: [-7, -8, -257]}
+                    transports: {type: array, items: {type: string}}
+      responses:
+        '201':
+          description: "Registered (`Cache-Control: no-store`)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  passkey: {$ref: '#/components/schemas/Passkey'}
+                  second_factor: {type: string, enum: [passed]}
+                  recovery_codes: {type: array, items: {type: string}, minItems: 10, maxItems: 10}
+        default: {$ref: '#/components/responses/Problem'}
+    get:
+      operationId: listPasskeys
+      summary: "The caller's passkeys (CON-13)"
+      description: In every workspace of theirs. A staff session only.
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/Passkey'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/passkeys/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    patch:
+      operationId: renamePasskey
+      summary: "Rename one of the caller's passkeys (CON-13)"
+      description: >-
+        1 to 64 characters. Needs a re-authentication within five minutes
+        (`403 CS-AUTH-0013`). `404` for a passkey that is not the caller's.
+      x-permission: ""
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name]
+              properties:
+                name: {type: string, maxLength: 64}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Passkey'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: removePasskey
+      summary: "Remove one of the caller's passkeys (CON-13)"
+      description: >-
+        Needs a re-authentication within five minutes (`403 CS-AUTH-0013`); `404` for a
+        passkey that is not the caller's. With it the last factor, the recovery codes go
+        too and the workspace's policy applies at once. The user is told by email.
+      x-permission: ""
+      responses:
+        '204': {description: Removed}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/totp:
+    delete:
+      operationId: removeTotp
+      summary: "Remove the caller's TOTP authenticator, to replace it (ASVS-32)"
+      description: >-
+        Needs a re-authentication within five minutes, which proved the current factor
+        (`403 CS-AUTH-0013`). `409 CS-API-0009` when there is none. With it the last
+        factor, the recovery codes go too and the workspace's policy applies at once.
+        The user is told by email.
+      x-permission: ""
+      responses:
+        '204': {description: Removed}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/auth/mfa/recovery-codes:
+    post:
+      operationId: replaceRecoveryCodes
+      summary: "Ten new recovery codes, replacing the earlier ones (ASVS-32)"
+      description: >-
+        Needs a re-authentication within five minutes (`403 CS-AUTH-0013`). `409
+        CS-API-0009` without a second factor. Shown once; only their SHA-256 is stored.
+        The user is told by email.
+      x-permission: ""
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      responses:
+        '200':
+          description: "The codes (`Cache-Control: no-store`)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
                   recovery_codes: {type: array, items: {type: string}, minItems: 10, maxItems: 10}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/oauth/token:
@@ -2197,6 +2427,41 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Object'}
         default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: eraseMe
+      summary: "Erase one's own identity in this workspace (ASVS-16)"
+      description: >-
+        After a recent re-authentication (`403 CS-AUTH-0013` otherwise), from a session of
+        the person (`422` with another credential): name and email replaced by a marker,
+        login binding, password and second factor removed, sessions here ended, saved
+        signature, notices, invitations and password resets deleted, owned API clients
+        revoked; recorded as the admin event `member.erased`. Audit events, admin logs,
+        tombstones and sealed documents are never altered (docs/32). `403 CS-API-0015`
+        for a member of another workspace too; `409 CS-API-0018` for the workspace's last
+        administrator or an organization administrator.
+      x-permission: ""
+      responses:
+        '204': {description: Erased}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users/me/export:
+    get:
+      operationId: exportMe
+      summary: "Export one's own data in this workspace (ASVS-16)"
+      description: >-
+        One JSON document `{format: "openseal.personal-data-export", v: 1, exported_at,
+        workspace, user, login_kind, profile, sessions, api_clients, envelopes, templates,
+        kept}`. Each envelope the caller sent lists the routes serving its documents,
+        certificate and audit trail, each authorized and logged per object. Nothing of
+        another workspace or member. At most 3 a minute per user (`429`); logged as a
+        `data.document_read` security event.
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/users:
     get:
       operationId: listUsers
@@ -2228,6 +2493,143 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/User'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users/{id}/erase:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string, format: uuid}
+    post:
+      operationId: eraseUser
+      summary: "Erase a member's identity (ASVS-16)"
+      description: >-
+        As `DELETE /users/me`, by an administrator after a recent re-authentication:
+        never their own (`422`), never a member above them (`403 CS-ORG-0005`), never a
+        member of another workspace too (`403 CS-API-0015`), never the last administrator
+        or an organization administrator (`409 CS-API-0018`).
+      x-permission: "users.remove"
+      x-level: workspace
+      responses:
+        '204': {description: Erased}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/retention:
+    get:
+      operationId: getRetention
+      summary: "The account's retention rules (ASVS-18)"
+      description: >-
+        `{keep_days: {draft, ended, completed, sessions}, max_keep_days}`: days a record of
+        each class is kept after its last change (completion, for completed envelopes),
+        or `null` to keep it for ever (the default).
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      operationId: setRetention
+      summary: "Set or remove retention rules (ASVS-18)"
+      description: >-
+        `{keep_days: {class: days | null}}`, days 1 to 36500; classes left out are
+        unchanged. After a recent re-authentication. Each change is the admin event
+        `retention.rule_set`. The daily retention job then purges what a rule expires,
+        never an envelope under legal hold or in flight.
+      x-permission: "retention.manage"
+      x-level: workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/Object'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/retention/preview:
+    get:
+      operationId: previewRetention
+      summary: "Dry run of the retention job (ASVS-18)"
+      description: >-
+        What the job would delete now, changing nothing: `{at, counts {draft, ended,
+        completed}, sessions, held, envelopes [{id, class, since}]}` (at most 100 listed,
+        oldest first; `held` counts expired envelopes a legal hold keeps).
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/legal-hold:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string, format: uuid}
+    put:
+      operationId: setLegalHold
+      summary: "Place an envelope under legal hold (ASVS-18)"
+      description: >-
+        No retention rule or purge request removes it until released. Admin event
+        `envelope.legal_hold_set`. Answers `{envelope_id, legal_hold, since}`.
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: releaseLegalHold
+      summary: "Release an envelope's legal hold (ASVS-18)"
+      description: Admin event `envelope.legal_hold_released`. Answers as `PUT`.
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/purge:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string, format: uuid}
+    post:
+      operationId: purgeEnvelope
+      summary: "Purge an envelope now, at the controller's request (ASVS-16, ASVS-18)"
+      description: >-
+        For an envelope that completed, ended or was never sent, after a recent
+        re-authentication: appends `envelope.purged` with the policy `request` and queues
+        the purge of its documents and personal data; its audit chain and a tombstone
+        stay (docs/32 §7). `409 CS-API-0019` under legal hold; `409 CS-WF-0001` in flight
+        or already purged. How a signer's erasure request is carried out by the account
+        that holds their envelope.
+      x-permission: "retention.manage"
+      x-level: workspace
+      responses:
+        '202':
+          description: Purged; the records follow by job
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Object'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/users/{id}:
     parameters:
@@ -2280,6 +2682,59 @@ paths:
       x-level: workspace
       responses:
         '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/users/{id}/second-factor/reset:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: resetMemberSecondFactor
+      summary: "Reset the second factors of a member who lost them (ASVS-32, ASVS 2.5.7)"
+      description: >-
+        For an administrator of the workspace (or of its organization) signed in with a
+        staff session that re-authenticated within five minutes (`403 CS-AUTH-0013`);
+        never an API key or token, never oneself (`422`). `identity_verified_by` records
+        how the person's identity was proved out of band. The member must belong to this
+        workspace alone (`403 CS-API-0015`). Their TOTP authenticator, passkeys and
+        recovery codes are removed, their sessions end, and their next sign-in must enrol
+        a new factor before anything else, whatever the policy. Recorded in the
+        administrative log (`member.factors_reset`) and the security log
+        (`auth.mfa_remove`); the member is told by email.
+      x-permission: "users.update"
+      x-level: workspace
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [identity_verified_by]
+              properties:
+                identity_verified_by:
+                  type: string
+                  enum: [in_person, video_call, phone_callback, manager_confirmation, identity_document]
+      responses:
+        '200':
+          description: Reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id: {type: string}
+                  removed:
+                    type: object
+                    properties:
+                      totp: {type: boolean}
+                      passkeys: {type: integer}
+                  identity_verified_by: {type: string}
+                  enrol_at_next_sign_in: {type: boolean}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/users/{id}/invite:
     parameters:

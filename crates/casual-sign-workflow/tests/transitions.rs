@@ -1555,6 +1555,29 @@ fn purge_is_for_terminal_envelopes_and_scrubs_personal_data() {
 }
 
 #[test]
+fn a_retention_rule_purges_a_draft_but_never_an_envelope_in_flight() {
+    // ASVS-18: a rule on drafts never sent purges them; a sent one is refused until it
+    // ends, and a sender cannot purge at all.
+    let purge = Command::Purge {
+        policy: Text::new("retention.draft").unwrap(),
+    };
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1)]);
+    assert_eq!(code(hx.run(sender(), purge.clone())), "CS-WF-0003");
+    let d = hx.ok(Principal::System, purge.clone());
+    assert_eq!(types(&d), ["envelope.purged"]);
+    let s = hx.state();
+    assert!(s.purged && s.status == EnvelopeStatus::Draft);
+    assert!(s.recipients.iter().all(|r| r.spec.email.0.is_empty()));
+    assert_eq!(code(hx.run(Principal::System, purge.clone())), "CS-WF-0001");
+
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1)]);
+    hx.ok(sender(), Command::Send);
+    assert_eq!(code(hx.run(Principal::System, purge)), "CS-WF-0001");
+}
+
+#[test]
 fn access_is_recorded_without_changing_the_envelope() {
     let mut hx = completing();
     hx.seal();

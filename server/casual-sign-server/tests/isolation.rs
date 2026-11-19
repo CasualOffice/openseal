@@ -189,12 +189,14 @@ async fn another_accounts_ids_are_not_found_on_every_operation(rls: Rls) {
     for ((method, path), _) in openapi_operations() {
         // Organization routes need a staff session, so an API key is refused with 403 before any
         // id is read; their cross-organization isolation is tested in tests/organizations.rs.
-        // A person's own sessions (ASVS-06) likewise: their cross-user and cross-workspace
-        // isolation is tested in tests/sessions.rs.
+        // A person's own sessions (ASVS-06) and passkeys (CON-13) likewise: their
+        // cross-user and cross-workspace isolation is tested in tests/sessions.rs and
+        // tests/passkeys.rs.
         if !path.contains('{')
             || path.starts_with("/s/")
             || path.starts_with("/api/v1/organizations/")
             || path.starts_with("/api/v1/auth/sessions/")
+            || path.starts_with("/api/v1/auth/mfa/passkeys/")
         {
             continue;
         }

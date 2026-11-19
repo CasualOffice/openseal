@@ -10,8 +10,9 @@ Sister repos `../opencalc` and `../openslide` (OpenPresent) are the architecture
 ## Do not repeat these mistakes
 
 **Read [docs/04](docs/04-MISTAKES-AND-RULES.md) before starting work; its rules bind every session.** The ones that cost most, inherited from the sisters:
+- **Follow the [docs/06 Execution plan](docs/06-ROADMAP-AND-DELIVERY.md) (owner instruction 62).** One slice at a time, in its order, end to end to closure. Name the slice and tracker id before any work; refuse work outside it unless the owner asks. Never abandon started work. `tools/check-plan.py` enforces it.
 - Build for Release 1 (docs/06): engine, server and web app proceed in parallel (owner instructions 19, 21). The PDF and evidence core still comes first when they compete.
-- Biggest remaining work starts first. Independent stages all start at once.
+- Within the current slice, the biggest remaining work starts first.
 - Every status update gives the phase percentage, from the tracker, merged only. Short, plain language.
 - Say "stopped", "done" or "tested" only after checking by running. Read gate output before committing.
 - Nothing that can pop up or crash on the owner's desktop.

@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-console"
-version = "0.0.1"
+version = "0.1.0"
 description = "OpenSeal platform console: a separate binary on a private listener with its own operator identity (Argon2id and TOTP), sessions, operator log, and tenant metadata without content (ADR-028, docs/23 §5)"
 edition.workspace = true
 license.workspace = true

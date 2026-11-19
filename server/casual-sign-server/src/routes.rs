@@ -11,8 +11,8 @@ use axum::routing::{MethodFilter, MethodRouter, on};
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
-    admin, bulk, envelopes as env, folders, groups, mfa, ml, org, sessions, switch, templates,
-    usetemplates, webhooks,
+    admin, bulk, envelopes as env, factors, folders, groups, mfa, ml, org, privacy, sessions,
+    switch, templates, usetemplates, webhooks,
 };
 use crate::authz::{Action, Level, OrgAction};
 use crate::ceremony;
@@ -120,8 +120,8 @@ pub fn table() -> Vec<Route> {
     use Action::{
         AdminAuditRead, ApiClientsManage, AuditRead, BulkSend, EnvelopesRead, EnvelopesSend,
         EnvelopesTransfer, EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage,
-        SettingsSending, TemplatesRead, TemplatesWrite, UsersInvite, UsersRead, UsersRemove,
-        UsersUpdate, WebhooksManage,
+        RetentionManage, SettingsSending, TemplatesRead, TemplatesWrite, UsersInvite, UsersRead,
+        UsersRemove, UsersUpdate, WebhooksManage,
     };
     let er = A(EnvelopesRead);
     let ew = A(EnvelopesWrite);
@@ -173,6 +173,56 @@ pub fn table() -> Vec<Route> {
             SigningIn,
             JSON,
             mfa::confirm,
+        ),
+        // Staff passkeys and a person's own factors (CON-13, ASVS-32).
+        r(
+            "POST",
+            "/api/v1/auth/mfa/passkeys/options",
+            SigningIn,
+            JSON,
+            factors::options,
+        ),
+        r(
+            "POST",
+            "/api/v1/auth/mfa/passkeys",
+            SigningIn,
+            JSON,
+            factors::register,
+        ),
+        r(
+            "GET",
+            "/api/v1/auth/mfa/passkeys",
+            Member,
+            JSON,
+            factors::list,
+        ),
+        r(
+            "PATCH",
+            "/api/v1/auth/mfa/passkeys/{id}",
+            Member,
+            JSON,
+            factors::rename,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/auth/mfa/passkeys/{id}",
+            Member,
+            JSON,
+            factors::remove,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/auth/mfa/totp",
+            Member,
+            JSON,
+            factors::remove_totp,
+        ),
+        r(
+            "POST",
+            "/api/v1/auth/mfa/recovery-codes",
+            Member,
+            JSON,
+            factors::replace_recovery_codes,
         ),
         r(
             "POST",
@@ -275,6 +325,70 @@ pub fn table() -> Vec<Route> {
             admin::admin_events,
         ),
         r("GET", "/api/v1/users/me", Member, JSON, admin::me),
+        // Personal-data controls (ASVS-16, ASVS-18).
+        r(
+            "GET",
+            "/api/v1/users/me/export",
+            Member,
+            JSON,
+            privacy::export,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/users/me",
+            Member,
+            JSON,
+            privacy::erase_me,
+        ),
+        r(
+            "POST",
+            "/api/v1/users/{id}/erase",
+            A(UsersRemove),
+            JSON,
+            privacy::erase_user,
+        ),
+        r(
+            "GET",
+            "/api/v1/retention",
+            A(RetentionManage),
+            JSON,
+            privacy::rules,
+        ),
+        r(
+            "PUT",
+            "/api/v1/retention",
+            A(RetentionManage),
+            JSON,
+            privacy::set_rules,
+        ),
+        r(
+            "GET",
+            "/api/v1/retention/preview",
+            A(RetentionManage),
+            JSON,
+            privacy::preview,
+        ),
+        r(
+            "PUT",
+            "/api/v1/envelopes/{id}/legal-hold",
+            A(RetentionManage),
+            JSON,
+            privacy::set_hold,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/envelopes/{id}/legal-hold",
+            A(RetentionManage),
+            JSON,
+            privacy::release_hold,
+        ),
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/purge",
+            A(RetentionManage),
+            JSON,
+            privacy::purge,
+        ),
         r(
             "PATCH",
             "/api/v1/users/me",
@@ -396,6 +510,14 @@ pub fn table() -> Vec<Route> {
             A(UsersInvite),
             JSON,
             admin::reinvite_user,
+        ),
+        // An administrator's reset of a member's lost factors (ASVS-32, ASVS 2.5.7).
+        r(
+            "POST",
+            "/api/v1/users/{id}/second-factor/reset",
+            A(UsersUpdate),
+            JSON,
+            factors::reset_member,
         ),
         // Admin groups and custom permission profiles (UXW-07).
         r(

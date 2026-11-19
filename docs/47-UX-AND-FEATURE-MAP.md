@@ -301,7 +301,20 @@ The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign us
   "Confirm it's you": the password, and the authenticator's code when the person has a second factor, with the
   refusal said beside the field it concerns. On Continue the action is made again by itself, so the person does not
   start over; Cancel leaves it undone. Not asked again for five minutes. Tests: `webapp/tests/sessions.test.mjs`,
-  `webapp/e2e/sessions.spec.mjs` (Chromium and WebKit).
+  `webapp/e2e/sessions.spec.mjs` (Chromium and WebKit). A person with a passkey (`CON-13`) also gets **Continue with
+  passkey**, which opens the browser's own passkey prompt after the password (the only button when they have no
+  authenticator app).
+- **Passkeys and two-step verification** (`passkey.js`, `CON-13`, `ASVS-32`): the sign-in card's second step asks
+  for the passkey first when the person has one (**Use passkey**, the browser's prompt), with "Use your authenticator
+  app instead" and "Use a recovery code instead"; setting up the second step offers **Set up a passkey instead**
+  beside the app, and a person whose factors an administrator reset is told so. The profile panel's **Two-step
+  verification** section lists passkeys (name, added, last used) with Rename and Remove, **Add a passkey**, the
+  authenticator app's state with **Remove authenticator app**, and **Make new recovery codes** (shown once in a
+  dialog); every change but a first factor goes through the step-up prompt. Admin, Users: a member's menu has **Reset
+  two-step verification**, a confirmation that says when to use it and asks how their identity was checked (in person,
+  video call, call-back, manager, identity document). A ceremony the person closes, or a key already registered, is
+  said in words, never as an error code. Tests: `webapp/tests/passkey.test.mjs`, `webapp/e2e/passkeys.spec.mjs`
+  (Chromium's virtual authenticator).
 - **Help menu**: Keyboard shortcuts, Verify a signed PDF, About OpenSeal. The **shortcuts panel** lists every table,
   grouped (Everywhere, with ⌘K for the command menu; Send editor; Placing fields, the editor's single-key tools from
   `preparemodel.TOOL_KEYS`, V and S I D N E O T C, which prepare.js dispatches itself on the Fields step), one row per
@@ -997,7 +1010,7 @@ Spec: `docs/assets/design-canvas/Intelligence.dc.html` (and Main for the list la
   `tests/ux08.test.mjs`. The per-envelope choice in the editor is not built yet.
 - **Verify, accessibility and demo** (`VS-07`): axe on `verify.html` at start, valid, tampered and refused, light and
   dark (`a11y.spec.mjs`), and on the site's Verify page (`site.spec.mjs`); `verify-demo.spec.mjs` records the
-  verify flow in Chromium and WebKit to `target/e2e-demo/vs07-*.webm`, uploaded by CI's `e2e` job as `slice-7-demo`.
+  verify flow in Chromium and WebKit to `target/e2e-demo/vs07-*.webm`, uploaded by CI's `e2e` job as `slice-7-demo` (since 2026-11-19 `slice-7-demo-<shard>`, from the shard that ran it).
 - **Audit log** (UXW-09, `GET /admin-events`): the workspace's admin log, newest first of the events loaded (pages of
   1,000, five at a time, then "Load more"), with When, Action, Made by (a member's or API client's name, or "The
   server") and the changed keys; a search box and Action and Made by filters over the loaded events (the route takes
@@ -1318,3 +1331,15 @@ conflict, so this carries behaviour and the units rule, not the old looks.
   sizes), a sub-pixel rounding guard, PDF points × scale, canvas pixels, measured client rects, and
   IntersectionObserver margins. Icons size from `--os-icon-size` (icons.js sets it from the size asked, 16 = 1rem);
   logos size in CSS; menu offsets are rem (`placeMenu`'s `remPx`); `dom.js` `rootPx()` and `rem()` convert.
+
+## As built: Your data and Retention (ASVS-16, ASVS-18, 2026-11-19)
+
+- **Profile › Your data** (`profile.js` `dataSection`): "Download my data" saves `GET /users/me/export` as
+  `openseal-personal-data.json`; "Delete my account" asks first (a danger confirmation saying what is replaced and that
+  agreements and their trails stay), then calls `DELETE /users/me` (the step-up prompt asks for the password when the
+  last proof is old) and signs the person out; a refusal (`CS-API-0018`) says to hand the role over first.
+- **Admin › Retention** (`adminretention.js`, `retentionmodel.js`; no longer "Soon"): one days field per data class
+  (drafts never sent; declined, voided and expired; completed; ended sessions), empty for kept for ever; Save sends
+  only what changed (`PUT /retention`, a sensitive action); a field that is not whole days 1–36500 is said in place;
+  Preview shows the dry run per class, ended sessions and what legal holds keep. Tests: `tests/retention.test.mjs`,
+  `e2e/privacy.spec.mjs` (chromium, webkit). Legal holds and a purge request are API-only for now (`ASVS-42`).

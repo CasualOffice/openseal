@@ -170,6 +170,8 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-API-0015 | The user is also a member of another account: only they may change their password or name (403, `SEC-ID-01`); from the store's `CS-DB-0009` with SQLSTATE `OS003` |
 | CS-API-0016 | The recipient's identity provider (`sso`, RAUTH-01) could not be reached, or answered neither a token nor a refusal (502); not counted as a failed sign-in |
 | CS-API-0017 | No head of the envelope's audit chain is anchored yet (404, `GET /envelopes/{id}/anchor-proof`, `FG-158`): the envelope exists and may be read; the daily anchor job has not covered it |
+| CS-API-0018 | The member cannot be erased now (409, `ASVS-16`): the workspace's last enabled administrator, or an administrator of the organization; `detail` says which (`last administrator`, `organization administrator`) |
+| CS-API-0019 | The envelope is under legal hold, so it is not purged (409, `POST /envelopes/{id}/purge`, `ASVS-18`) |
 | CS-AUTH-0001 | Not authenticated |
 | CS-AUTH-0002 | Token expired or revoked; a staff session past its idle or absolute limit (`detail` `idle` or `lifetime`, `ASVS-06`) |
 | CS-AUTH-0003 | Recipient authentication failed |
@@ -181,7 +183,7 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-AUTH-0009 | Ceremony link bound to another browser, or not yet opened in this one (403) |
 | CS-AUTH-0010 | The API client does not own the embedding it acts for (row WF-05) (403) |
 | CS-AUTH-0011 | The staff session owes a second factor: it has not passed it (`detail` `verify`), or the account's `mfa_policy` asks for one the user has not enrolled (`detail` `enrol`; administrators by default, `ASVS-31`); only the sign-in steps, `GET /auth/session` and `POST /auth/logout` serve it (403, `ASVS-01`) |
-| CS-AUTH-0012 | Second factor refused: a wrong TOTP code, one for a step already used, or a recovery code not among the user's unspent ones (401, `ASVS-01`) |
+| CS-AUTH-0012 | Second factor refused: a wrong TOTP code, one for a step already used, or a recovery code not among the user's unspent ones (401, `ASVS-01`); a passkey registration or assertion refused: a challenge spent, expired or for another purpose, another origin or RP id, a credential not the user's, a bad signature, or a counter that did not move (`CON-13`) |
 | CS-AUTH-0013 | A sensitive action on a staff session that has not proved its holder's password (and second factor) within the last five minutes (`detail` `reauthenticate`): the client calls `POST /auth/reauthenticate` and repeats the request; nothing changed (403, `ASVS-07`). `CS-AUTH-0002` also answers a staff session past its workspace's idle or absolute limit (`detail` `idle` or `lifetime`, `ASVS-06`) |
 | CS-KEY-0001 | Caller not authorized by keyd: no client certificate, an untrusted one, or one not on the allow-list |
 | CS-KEY-0002 | Unknown key alias |

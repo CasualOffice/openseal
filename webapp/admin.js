@@ -31,10 +31,11 @@
 // invitation state, so it is read per local member (`GET /users/{id}`); the account's
 // name is shown, not edited (the API has no rename).
 
+import { retentionPage } from "./adminretention.js";
 import { h, clear, fmtDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { WEBHOOK_EVENT_TYPES } from "./api.js";
+import { WEBHOOK_EVENT_TYPES, errorMessage } from "./api.js";
 import { register, unregisterPrefix } from "./commands.js";
 import {
   NAV, routeFrom, navHref, SCOPE_GROUPS, PERMISSION_GROUPS, profileChoices, profileValue, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
@@ -44,9 +45,12 @@ import {
 import { intelligence } from "./adminintel.js";
 import { ersdCard } from "./adminersd.js";
 import { strengthMeter } from "./pwmeter.js";
-import { button, emptyState, skeletonRows, skeletonBlock, errorState, openPanel, confirmDialog, toast, toastError, selectField, toggle, menuButton, checkbox, tabs } from "./ui/index.js";
+import { button, emptyState, skeletonRows, skeletonBlock, errorState, openPanel, openDialog, confirmDialog, toast, toastError, selectField, toggle, menuButton, checkbox, tabs } from "./ui/index.js";
 
 const PROFILES = ["admin", "sender", "viewer"];
+/// How an administrator proved a member's identity before resetting their lost factors
+/// (ASVS-32): the server's closed list (docs/40 §2).
+const RESET_PROOFS = ["in_person", "video_call", "phone_callback", "manager_confirmation", "identity_document"];
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const HEX = /^#[0-9a-fA-F]{6}$/;
 
@@ -59,7 +63,7 @@ const TITLE = {
 const LEDE = {
   organization: () => t("admin.lede.organization"), members: () => t("admin.lede.members"), branding: () => t("admin.lede.branding"),
   integrations: () => t("admin.lede.integrations"), intelligence: () => t("intel.lede"), signing: () => t("admin.lede.signing"),
-  audit: () => t("admin.lede.audit"),
+  audit: () => t("admin.lede.audit"), retention: () => t("admin.lede.retention"),
 };
 const TAB = {
   api: () => t("admin.api"), webhooks: () => t("admin.webhooks"),
@@ -110,6 +114,7 @@ export function mount(view, ctx, _match, params) {
   else if (current === "integrations") integrations(body, ctx, tab);
   else if (current === "intelligence") intelligence(body, ctx, HEADS.get(body));
   else if (current === "audit") adminLog(body, ctx);
+  else if (current === "retention") retentionPage(body, ctx, HEADS.get(body));
   else account(body, ctx, current);
   return () => { for (const p of ["users.", "groups.", "profiles.", "webhooks.", "apiclients.", "admin.go.", "intel.", "adminlog."]) unregisterPrefix(p); };
 }
@@ -476,6 +481,7 @@ function users(panel, ctx) {
         items: () => [
           { label: t("admin.edit"), icon: "pencil", run: () => edit(u, me) },
           state === "pending" ? { label: t("admin.reinvite"), icon: "mail", run: () => reinvite(u) } : null,
+          me ? null : { label: t("admin.reset-factor"), icon: "key-round", run: () => resetFactor(u) },
           me ? null : "separator",
           me ? null : { label: t("admin.remove"), icon: "trash-2", danger: true, run: () => remove(u) },
         ],
@@ -601,6 +607,33 @@ function users(panel, ctx) {
 
   async function reinvite(u) {
     try { await ctx.api.users.reinvite(u.id); toast(t("admin.reinvited", { email: u.email }), "success"); } catch (err) { if (!ctx.failed(err)) toastError(err); }
+  }
+
+  /// ASVS-32, ASVS 2.5.7: a member who lost every second factor. The administrator says
+  /// how they proved it is really this person; the server ends the member's sessions,
+  /// removes their factors and recovery codes, and asks them to set up a new one at
+  /// their next sign-in. A sensitive action: the API client asks for the password first
+  /// when the last proof is older than five minutes.
+  async function resetFactor(u) {
+    const how = selectField(t("admin.reset-factor-how"), RESET_PROOFS.map((k) => [k, t(`admin.reset-factor-how.${k}`)]), { id: "u-reset-how" });
+    const v = await openDialog({
+      title: t("admin.reset-factor-title", { name: u.name || u.email }),
+      description: t("admin.reset-factor-text"),
+      className: "os-reset-factor",
+      build(body) { body.append(how.el); },
+      actions: [
+        { label: t("action.cancel"), value: false },
+        { label: t("admin.reset-factor-confirm"), variant: "danger", attrs: { "data-testid": "reset-factor-confirm", "data-os-command": "users.reset-second-factor" }, value: true },
+      ],
+    });
+    if (!v) return;
+    try {
+      await ctx.api.users.resetSecondFactor(u.id, how.select.value);
+      toast(t("admin.reset-factor-done", { name: u.name || u.email }), "success");
+    } catch (err) {
+      if (ctx.failed(err) || err?.code === "CS-AUTH-0013") return;
+      toast(err?.code === "CS-API-0015" ? t("admin.reset-factor-shared") : errorMessage(err), "error");
+    }
   }
 
   async function remove(u) {

@@ -237,3 +237,34 @@ it does not extend the chain (it is not an act on the agreement); each download 
 The audit chain is retained at least as long as the envelope's documents. Purging an envelope (by retention policy or
 a controller's request) deletes documents and personal fields and keeps a **tombstone**: envelope id, chain head,
 sealed hash, purge time and policy, so the fact that an agreement existed and was purged is itself evidence.
+
+### As built (`ASVS-16`, `ASVS-18`, migration 0045, ADR-039 Accepted)
+
+- **Retention rules.** An account sets, per data class, the days a record is kept after its last change (completion,
+  for completed envelopes): `draft`, `ended` (declined, voided, expired), `completed`, `sessions` (ended staff
+  sessions). None is set by default: nothing is purged unless an administrator sets a rule (`PUT /retention`, after a
+  recent re-authentication; each change the admin event `retention.rule_set`). An envelope in flight is in no class.
+- **The job.** Once a UTC day each account with a rule gets a `retention_sweep` job. It purges each expired envelope
+  in a transaction of its own that first locks the envelope's row and skips it under **legal hold**
+  (`envelopes.legal_hold_at`, set and released by `retention.manage` with an admin event), through the engine's
+  `Purge`: the chain gains `envelope.purged {policy: "retention.<class>"}` and nothing else changes in it. The purge
+  job then records the **tombstone** (chain head and length after `envelope.purged`, the first sealed document's
+  hash, the time and policy) and deletes the envelope's relational records that hold personal data or content
+  (documents and their versions, recipients with their tokens, one-time codes, SSO challenges, authentication
+  requirements and adopted signatures, fields and values, comments, custom fields, the certificate's key, the bulk
+  row's input). Ended sessions go under the `sessions` rule with an admin event `retention.sessions_purged {count}`.
+  A dry run (`GET /retention/preview`) says what would go now and what a hold keeps; a second run purges nothing twice.
+- **A controller's request** (`POST /envelopes/{id}/purge`, policy `request`) purges one ended, completed or unsent
+  envelope now, the same way; refused under legal hold (`409 CS-API-0019`). This is how a signer's erasure request
+  is carried out by the account that holds their envelope.
+- **Kept, always:** every audit event (including the names, emails and addresses they recorded), the admin logs,
+  tombstones, and the blob bytes. `verify-evidence` still rebuilds every chain; a purged envelope's documents are no
+  longer named by any record, so it reads only what is kept. Reclaiming the orphaned bytes is `HRD-09`'s sweep, which
+  must keep a blob any retained record still names (keys are content hashes, shared across records); until it runs,
+  a purged envelope's bytes stay in the blob store, unreachable through the API.
+- **Erasure of a member** (`DELETE /users/me`, `POST /users/{id}/erase`) changes no evidence: the `users` row is
+  pseudonymised, the admin event `member.erased` records it, and the audit events that recorded the member's name
+  and email stay as every party received them. Tests: `-worker/tests/retention.rs` (expired items of a ruled class
+  only, holds, idempotent, chains and admin logs verify, sealed bytes unchanged; seen red with the hold filter and the
+  record purge removed; an erased sender's sealed agreement and chain unchanged, seen red with the pseudonymisation
+  removed), `-server/tests/privacy.rs`.

@@ -311,8 +311,8 @@ JSON, HTTP Basic or body credentials, RFC 6749 errors) and get a one-hour ES256 
 `openseal-api`), verified by `GET /.well-known/jwks.json`; the signing key comes from the secrets crate
 (`OPENSEAL_JWT_SIGNING_KEY`). Every request re-checks the credential: a revoked key or client, an expired token, a
 removed member or a disabled user is refused on its next request. A credential acts as a member and holds at most the
-scopes of that member's permission profile, narrowed by its own. **Not built:** staff OIDC and SAML login (a recipient's OpenID Connect sign-in is built, `RAUTH-01`; the staff TOTP second factor is below, `ASVS-01`), WebAuthn
-(`webauthn-rs` is MPL-2.0, outside `deny.toml`), OAuth authorization code with PKCE, the JWT bearer grant.
+scopes of that member's permission profile, narrowed by its own. **Not built:** staff OIDC and SAML login (a recipient's OpenID Connect sign-in is built, `RAUTH-01`; the staff TOTP second factor is below, `ASVS-01`, and staff passkeys as a second factor, `CON-13`), passwordless
+WebAuthn sign-in, OAuth authorization code with PKCE, the JWT bearer grant.
 
 **Requests.** RFC 9457 problems with `code`, `request_id` (also `X-Request-Id`) and JSON-pointer `errors`; the
 router's own refusals (no route, wrong method, too large) are problems too. `Idempotency-Key` on any guarded `POST`:
@@ -463,7 +463,7 @@ had written `optional` before the default changed keep it, as a recorded decisio
 the server does not start without `OPENSEAL_MFA_KEY` outside development (docs/65; it rotates with
 `OPENSEAL_MFA_PREVIOUS_KEY`, each seed re-sealed under the new key when its user next proves a code or by
 `casual-sign-server mfa-reseal`, `HRD-12`, docs/65 §Rotation); an administrator who loses their
-authenticator signs in with one of their recovery codes (`ASVS-32` adds replacing the factor). A user with a confirmed factor owes it in every session, whatever
+authenticator signs in with one of their recovery codes, or an administrator resets their factors (below, `ASVS-32`). A user with a confirmed factor owes it in every session, whatever
 the policy, so a password reset or a new password does not bypass it. A session that owes a factor reaches only the
 routes marked `x-permission: signing-in` (`GET /auth/session`, `POST /auth/logout` and the three below); every other
 `/api/v1` call is `403 CS-AUTH-0011` with `detail` `verify` or `enrol`. API keys and access tokens are not asked for
@@ -477,9 +477,52 @@ one (they are credentials of their own, made by a member who signed in). `GET /a
 | `POST /auth/mfa/verify {code}` or `{recovery_code}` | Passes the session's factor. A TOTP code is accepted only for a step later than the last accepted one for the user, so a code works once; a recovery code is spent (case, spaces and dashes ignored) and the answer says how many are left. `401 CS-AUTH-0012` for a wrong, replayed or spent code |
 
 All three are staff sessions only (`422 CS-API-0001` for a key or token) and are rate-limited per user at the login
-rate. Not built yet: WebAuthn (`CON-13`), replacing or resetting a
-lost factor and regenerating recovery codes (`ASVS-32`). The web app shows the code step and enrolment on the sign-in
-card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a QR code is `ASVS-33`.
+rate. The web app shows the code step and enrolment on the sign-in card (`webapp/signin.js`), with the setup key as
+text and an `otpauth:` link; a QR code is `ASVS-33`.
+
+## As built (`CON-13`, `ASVS-32`, staff passkeys and lost factors)
+
+**Passkeys (ADR-040, Accepted 2026-11-19 (owner instruction 65); ASVS 2.3.2).** A staff user may register WebAuthn passkeys (at most 10) as a second
+factor beside, or instead of, the TOTP authenticator. The server is the relying party: the RP id is the host of
+`OPENSEAL_PUBLIC_URL` (or `OPENSEAL_WEBAUTHN_RP_ID`, the host or a parent domain of it), the one origin accepted is the
+public URL's; a public URL whose host is an IP address has no passkeys (`409 CS-API-0014`). Attestation is `none`;
+algorithms ES256, EdDSA and RS256. Registration reads the key from the browser's `getPublicKey()`
+(SubjectPublicKeyInfo DER), so no CBOR is decoded; every check of WebAuthn Level 2 §7.1/§7.2 that applies is made
+(`casual-sign-server/src/webauthn.rs`), with SHA-256 and signature verification from `aws-lc-rs` (ADR-006). Each
+ceremony's 32-byte challenge is kept on the staff session for five minutes, one at a time, for one purpose
+(`register`, `verify`, `reauthenticate`), and spent by the call that answers it whatever the outcome. A signature
+counter that does not move past the stored one (both zero excepted, for authenticators that keep none) is refused as
+a cloned credential and logged `auth.mfa` with `reason: counter`. Passkeys are the person's factor in every workspace,
+as the TOTP factor is. Passwordless sign-in is not offered: the passkey is a second factor after the password.
+
+| Endpoint | As built |
+| --- | --- |
+| `POST /auth/mfa/passkeys/options {purpose}` | The options for `navigator.credentials.create` (`register`) or `.get` (`verify`, `reauthenticate`), binary members base64url, `Cache-Control: no-store`. `register` beside an existing factor needs a session that passed it and re-authenticated within five minutes (`403 CS-AUTH-0011`, `CS-AUTH-0013`); `verify`/`reauthenticate` without a passkey `409 CS-API-0009` |
+| `POST /auth/mfa/passkeys {name?, credential}` | Registers. As the first factor it is the enrolment a policy asks for: the session passes and ten recovery codes are shown once. `401 CS-AUTH-0012` for a refused registration, `409 CS-API-0009` for a credential already registered or an eleventh |
+| `POST /auth/mfa/verify {passkey}` | The sign-in step with an assertion answering a `verify` challenge |
+| `POST /auth/reauthenticate {password, passkey}` | Step-up with an assertion answering a `reauthenticate` challenge |
+| `GET /auth/mfa/passkeys`; `PATCH`, `DELETE /auth/mfa/passkeys/{id}` | List; rename and remove after a re-authentication. Another person's passkey answers `404` |
+| `DELETE /auth/mfa/totp` | Remove the authenticator app to replace it (`ASVS-32`), after a re-authentication, which proved the current factor |
+| `POST /auth/mfa/recovery-codes` | Ten new recovery codes, replacing the earlier ones, after a re-authentication |
+| `POST /users/{id}/second-factor/reset {identity_verified_by}` | See below |
+
+Removing the last factor clears the recovery codes and the factor every session of the person had passed, so the
+workspace's policy applies at once. `GET /auth/session` answers `factors`: `{totp, passkeys, recovery_codes_left,
+reset_by_admin, passkeys_available}` (null for keys and tokens). Every addition and removal emails the user a notice
+(`passkey_added`, `passkey_removed`, `factor_removed`, `recovery_codes_replaced`).
+
+**Lost factors (ASVS 2.5.7).** There is no self-service path around a lost factor: the person uses a recovery code,
+or an administrator resets them. `POST /users/{id}/second-factor/reset {identity_verified_by}` is for an
+administrator of the workspace or its organization, from a staff session (never a key or token, `403 CS-AUTH-0006`)
+that re-authenticated within five minutes (`403 CS-AUTH-0013`), never for oneself (`422`), and only for a member of
+this workspace alone (`403 CS-API-0015`, as `SEC-ID-01`). `identity_verified_by` records how the person's identity was
+proved out of band: `in_person`, `video_call`, `phone_callback`, `manager_confirmation` or `identity_document`. The
+member's TOTP authenticator, passkeys and recovery codes are removed, their sessions in the workspace end, and their
+next sign-in must enrol a new factor before anything else whatever the policy (`users.factor_reset_at`). The reset is
+an administrative event (`member.factors_reset`, with the proof and what was removed), a security event
+(`auth.mfa_remove`, `by: admin`) and an email to the member (`factors_reset`). The web app offers it in the member's
+menu (Users) with the proof chosen in the confirmation; the profile panel lists, adds, renames and removes passkeys,
+removes the app and makes new recovery codes; sign-in and step-up use the browser's passkey prompt.
 
 ## As built (`ASVS-06`, `ASVS-07`, staff sessions and step-up)
 
@@ -569,7 +612,7 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
 | `GET /envelopes?recipient=&date_field=` | `UXW-03`: `recipient` is text a recipient's name or email contains (wildcards literal, at most 200 characters, no control characters); `date_field` is which date `from` and `to` bound: `updated_at` (default), `created_at`, `sent_at`, `completed_at` (an envelope without that date is not in a bounded range). With `status`, `sender`, `q`, `sort` and `order` of `WEB-08`, all server-side |
 | `GET /envelopes?folder=` | `UXW-02`: one of the caller's own folders, or `none` (filed in none of theirs); another member's or another account's folder id answers an empty page. Every item has `folder_id`, the caller's own filing or null |
 | `GET`/`POST /folders`, `PATCH`/`DELETE /folders/{id}`, `POST /folders/{id\|none}/envelopes {envelope_ids}` | `UXW-02`: each member's own folders (`folders.owner_user_id`, migration 0022): `{items: [{id, name, count}]}` by name, `count` the envelopes filed there that are not deleted; a name is 1–100 characters, trimmed, unique among the member's own ignoring case (`422 CS-API-0001` with code `exists` at `/name`), at most 500 folders a member. Removing a folder unfiles its envelopes. Filing (1–200 ids) is the member's own view: an envelope is in at most one of each member's folders, and another member files the same envelope independently; every id must be an envelope the caller may see (`404` otherwise, nothing filed). Filing is not an act on the agreement and records nothing in the chain. Another member's or account's folder is `404`. Scopes `envelopes:read` to list, `envelopes:write` to change. Each folder also carries `kind` (below) |
-| `GET /folders?kind=templates`, `POST /folders {name, kind: templates}`, `POST /folders/{id\|none}/templates {template_ids}`, `GET /templates?folder=` | Template folders (`TSH-03`, slice 3, migration 0045): each member's own folders of kind `templates`, beside their envelope folders (a name is unique per member and kind; `kind` other than `envelopes` or `templates` is `422` at `/query/kind` or `/kind`; a rename may not change it, `422` at `/kind`). `count` is the live templates filed there that the member may still use. Filing (1–200 ids) is the member's own view and changes no template or version; every id must be a live template the caller may use (UXW-06; `404` otherwise, nothing filed); an envelope folder takes no template and a template folder no envelope (`404`; the database's composite reference names the kind). `GET /templates` items carry the caller's `folder_id` (or null); `folder={id}` narrows to one of the caller's template folders (another member's matches nothing), `folder=none` to those in none. `PATCH`/`DELETE /folders/{id}` act on either kind; removing a template folder unfiles its templates. Scope `templates:read` to file. `tests/use_templates.rs` `template_folders_are_each_members_own_*` (RLS on and off), contract and isolation scenarios, store `tests/isolation.rs`; seen red 2026-11-19 with the route renamed (`404` for `200`) |
+| `GET /folders?kind=templates`, `POST /folders {name, kind: templates}`, `POST /folders/{id\|none}/templates {template_ids}`, `GET /templates?folder=` | Template folders (`TSH-03`, slice 3, migration 0047): each member's own folders of kind `templates`, beside their envelope folders (a name is unique per member and kind; `kind` other than `envelopes` or `templates` is `422` at `/query/kind` or `/kind`; a rename may not change it, `422` at `/kind`). `count` is the live templates filed there that the member may still use. Filing (1–200 ids) is the member's own view and changes no template or version; every id must be a live template the caller may use (UXW-06; `404` otherwise, nothing filed); an envelope folder takes no template and a template folder no envelope (`404`; the database's composite reference names the kind). `GET /templates` items carry the caller's `folder_id` (or null); `folder={id}` narrows to one of the caller's template folders (another member's matches nothing), `folder=none` to those in none. `PATCH`/`DELETE /folders/{id}` act on either kind; removing a template folder unfiles its templates. Scope `templates:read` to file. `tests/use_templates.rs` `template_folders_are_each_members_own_*` (RLS on and off), contract and isolation scenarios, store `tests/isolation.rs`; seen red 2026-11-19 with the route renamed (`404` for `200`) |
 | `POST /envelopes/from-templates {template_ids, recipients, subject?, message?, status?}` | Using templates (slice 3, `VS-03A`): one envelope from one to ten templates (composite templates, `FG-097`, after DocuSign's), made on the server from the templates' stored documents through the path of `POST /envelopes` (`create_in`), so it is checked, audited and sent the same way; the documents are scanned again (ASVS-11). Documents come in the order the templates are named. Roles are matched by name ignoring case and surrounding spaces: one recipient per name, with the type and routing order of the first template naming it, who gets every template's fields for that role; the same name with another type is `422` at `/template_ids/{i}`. `recipients`: one `{role, name, email}` per role (a role no template has, or filled twice, `422` at `/recipients/{i}/role`; a role left unfilled `422` at `/recipients`), and people with no `role` (`type` `cc` by default, or `signer`) after every role in routing order. Subject and message default to the first template's (its name when it has no subject). `status` `draft` (default) or `sent` (scope `envelopes:send`). A template the caller may not use, another account's, a repeated one or not an id is `422` at its position. Answers `201` and the envelope, as `POST /envelopes`. Scopes `envelopes:write` and `templates:read`. `tests/use_templates.rs` (RLS on and off; access by share), the contract scenario; seen red 2026-11-19 with the route renamed (`405` for `201`) and with role names matched by case (unit test). The envelope does not yet record `template_ids` (`TSH-06`) |
 | `GET /envelopes?deleted=true` | The Deleted view (`UXW-02`): exactly the envelopes removed from the lists (`DELETE` of an envelope that ended without completing, `envelope.deleted`), readable by id as before. Restoring one is `NOT_ON_SERVER.restoreEnvelope` (ADR-031 Proposed) |
 | `DELETE /templates/{id}`, `GET /templates?deleted=true`, `POST /templates/{id}/restore` | Templates' Deleted view (`UXW-02`): deleting a live template (`If-Match` required) moves it there, kept with its roles, documents and fields (`templates.deleted_at`, migration 0022); it leaves `GET /templates` and every read and edit (`404`). `?deleted=true` lists them, most recently deleted first (any value but `true` or `false` is `422`). `restore` (`If-Match` honoured) brings it back whole, `200` with the whole template; a live template or none is `404`. Deleting it again in the Deleted view removes it for good. A template has no audit chain, so neither step is evidence. Another account's is `404`. `tests/inbox_folders.rs` `deleted_templates_*`, RLS on and off; seen red with delete removing at once (the Deleted view was empty) |
@@ -609,6 +652,18 @@ refused outside the plan and to non-administrators; identical bytes uploaded by 
 | `GET`/`PATCH /organizations/me` | `ORG-08`: `policy` is the organization policy, `{key: {value, locked}}` (docs/23 §3 As built). `PATCH {name?, policy?}` replaces the whole document (`422 CS-API-0001` at `/policy/<key>` for an unknown key or bad value); loosening, unlocking or removing a security key by an admin who is not an owner is `403 CS-ORG-0013`; each change appends `organization.policy_changed` |
 | `GET`/`PATCH /accounts/me` | `ORG-08`: `GET` adds `organization_policy.settings`, per governed setting (`mfa_policy`, `first_reminder_days`, `workflow_policy.date_format`, `branding`) `{key, value, locked, from_organization}`. `PATCH` refuses a governed setting changed to a locked or looser value with `422 CS-ORG-0002`, naming the setting and key; an unchanged one is not checked. The organization's `login.mfa_required` applies on every staff request when stricter than `mfa_policy` |
 | `POST /envelopes/{id}/transfer {to_user, to_workspace?}` | `ORG-09`: `envelopes.transfer` (an API key or OAuth token also needs `envelopes:send` granted, else `403 CS-AUTH-0006`); passes ownership to an enabled member of this workspace in any status but purged, recording `envelope.transferred`; `to_workspace` other than this one, or a `to_user` not an enabled member here, is `422 CS-ORG-0009`; another workspace's envelope `404`; the same owner `409 CS-WF-0001`. Answers the envelope |
+
+## As built (`ASVS-16`, `ASVS-18`: personal data and retention)
+
+| Endpoint | As built |
+| --- | --- |
+| `GET /users/me/export` | Any member, own data in the session's workspace only: `{format: "openseal.personal-data-export", v: 1, exported_at, workspace, user, login_kind, profile, sessions, api_clients, envelopes, templates, kept}`; each sent envelope lists the routes of its documents, certificate and trail (each authorized and logged per object). At most 3 a minute per user (`429 CS-API-0003`); a `data.document_read` security event |
+| `DELETE /users/me` | The person, from a session (`422` with a key), after a recent re-authentication (`403 CS-AUTH-0013`): pseudonymise their identity here (ADR-039 Accepted), `204`. `403 CS-API-0015` for a member of another workspace too; `409 CS-API-0018` for the last administrator or an organization administrator |
+| `POST /users/{id}/erase` | `users.remove`, recent re-authentication: as above for another member; oneself `422`, a member above the caller `403 CS-ORG-0005`, outside a group-scoped caller's groups or another workspace `404` |
+| `GET`/`PUT /retention` | `retention.manage`: `{keep_days: {draft, ended, completed, sessions}, max_keep_days}`, days or `null` (kept for ever, the default). `PUT {keep_days: {class: days|null}}` (recent re-authentication) sets the named classes, each an admin event `retention.rule_set`; an unknown class or days outside 1–36500 `422` |
+| `GET /retention/preview` | `retention.manage`: the job's dry run, `{at, counts {draft, ended, completed}, sessions, held, envelopes [{id, class, since}]}` (at most 100 listed); changes nothing |
+| `PUT`/`DELETE /envelopes/{id}/legal-hold` | `retention.manage`: place or release a hold (admin events `envelope.legal_hold_set`, `…_released`); `{envelope_id, legal_hold, since}`; another workspace's envelope `404` |
+| `POST /envelopes/{id}/purge` | `retention.manage`, recent re-authentication: purge an ended, completed or unsent envelope now (`envelope.purged`, policy `request`), `202`; `409 CS-API-0019` under hold, `409 CS-WF-0001` in flight or purged |
 
 ## Web client and mock contract (`UX-03`)
 

@@ -322,6 +322,19 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-ORG-0005").detail(format!("cannot grant {what}"))
     }
 
+    /// `CS-API-0018` 409: the member cannot be erased now (ASVS-16): the workspace's last
+    /// enabled administrator, or an administrator of the organization; the detail says
+    /// which. Hand the role over first.
+    pub fn erasure_blocked(detail: &str) -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-API-0018").detail(detail)
+    }
+
+    /// `CS-API-0019` 409: the envelope is under legal hold, so it is not purged (ASVS-18);
+    /// release the hold first.
+    pub fn legal_hold() -> Self {
+        Self::new(StatusCode::CONFLICT, "CS-API-0019")
+    }
+
     /// `CS-ORG-0008` 409: the organization must keep at least one enabled owner.
     pub fn last_owner() -> Self {
         Self::new(StatusCode::CONFLICT, "CS-ORG-0008")

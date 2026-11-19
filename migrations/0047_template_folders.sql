@@ -1,4 +1,4 @@
--- 0045: template folders (TSH-03, slice 3 `VS-03`; docs/22 §9).
+-- 0047: template folders (TSH-03, slice 3 `VS-03`; docs/22 §9).
 --
 -- 1. A member's folders (`folders`, 0002) of kind `templates`, beside their envelope
 --    folders: each member's own, names unique per member and kind ignoring case

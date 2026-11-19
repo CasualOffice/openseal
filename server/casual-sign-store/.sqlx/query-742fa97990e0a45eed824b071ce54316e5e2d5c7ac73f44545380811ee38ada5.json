@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM signature_adoptions AS a USING recipients AS r WHERE a.account_id = $1 AND r.account_id = a.account_id AND r.id = a.recipient_id AND r.envelope_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "742fa97990e0a45eed824b071ce54316e5e2d5c7ac73f44545380811ee38ada5"
+}

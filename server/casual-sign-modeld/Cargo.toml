@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-modeld"
-version = "0.0.1"
+version = "0.1.0"
 description = "OpenSeal model daemon: pretrained ML models (OCR, page hashes, embeddings, entity and personal-data spans) served over mTLS, with no secrets and no egress (ADR-029, docs/33, ML-01, ML-09)"
 edition.workspace = true
 license.workspace = true

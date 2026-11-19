@@ -54,9 +54,11 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of 2026-11-17 (`main` at `900d0b6`, pull request #18 open). Since 2026-11-13 feature expansion is
-paused for the hardening release and M3 (instructions 48, 51, 54; §Freeze, §Hardening release); the M3 evidence per
-gate item is in [73](73-M3-SLICE-EVIDENCE.md). Proven by CI on `main` (runs 44001061169 and 44018844840): `HRD-01`, `HRD-02`, `HRD-10`,
+Docs are true as of 2026-11-19 (`main` at `584634d`, the PR #30 merge; CI run 44419251440 green on every job). **M3,
+"first signature", is reached:** slices 1, 2, 5 and 7 closed on 2026-11-19 under owner instruction 59 on run 44419251440,
+every gate item with its evidence in [73](73-M3-SLICE-EVIDENCE.md). **v0.1.0 is prepared** (§Release 1, v0.1.0;
+instruction 61). Since 2026-11-13 feature expansion was paused for the hardening release and M3 (instructions 48, 51,
+54; §Freeze, §Hardening release); the paused rows are `Paused` in docs/14 and resume in order (§Freeze). Proven by CI on `main` (runs 44001061169 and 44018844840): `HRD-01`, `HRD-02`, `HRD-10`,
 `ASVS-08`, `ASVS-13`, `ASVS-14`, `ASVS-31`, keyd seal tokens (`KEYD-02`), slice 5 on the real stack with its demo
 (`RAUTH-02`) and slice 2's routing spec there; the slice 1, 2, 5 and 7 demos of run 44023485128 are watched and linked from [65](65-RUNNING-IT.md) §Demos (2026-11-18). Also proven on `main`: Acrobat Reader reading
 B-LTA seals valid offline (`HRD-14`, `HRD-03`; acrobat run 44024248440) and slice 7 with public anchoring (`VS-07`,
@@ -77,14 +79,16 @@ authorities (`CON-03` to `CON-07`, `CON-16`, `CON-17`, `PLAN-02` to `PLAN-04`), 
 | 0 Foundation | **Closed** 2026-11-11 | Owner, instruction 12; `W-2` retired |
 | 1 PDF and evidence core | **Closed** 2026-11-11 | Owner, instruction 18, after clean fuzz run 42907980149; stages `T-1A`–`T-1J` done, leftovers in their own rows |
 | 2 Envelope engine and server | **Closed** 2026-11-12 | Owner, instruction 23; `compose-e2e`, `P2-CRASH`, `P2-THREATS` |
-| Milestones | M0, M1, M2 **reached** | Owner, instruction 38 (`MS-0`–`MS-2` in [14](14-EXECUTION-TRACKER.md)); M3 needs slices 1, 2, 5 and 7 closed |
+| Milestones | M0, M1, M2, M3 **reached** | M0–M2: owner, instruction 38; M3 "first signature": 2026-11-19, instruction 59, its slices closed on `main` run 44419251440 (`MS-0`–`MS-3` in [14](14-EXECUTION-TRACKER.md)). Next: M4 team beta |
 | Release 1 / v0.0.1 | **Published** 2026-11-12 | Tagged at `4780d84` after GitHub CI run 43123420112 was green on all 14 jobs; images with SBOM and provenance; pre-release on GitHub. Left in `REL-01`: GHCR packages public, the manual walkthrough in [65](65-RUNNING-IT.md); the boxes below are ticked by `REL-01` from evidence |
-| Slices 1–35 | Not closed | Release 1's part of slices 1, 2, 3, 5 and 7 is built and in browser runs; no slice has met its end point; slice 1 (`VS-01`) is in progress, its boxes below. Slice 5 (`VS-05`): access code, email, SMS and voice codes, sign-in through an OpenID Connect provider (`RAUTH-01`, ADR-033 Accepted 2026-11-17), versioned ERSD and withdrawal built, tested and in a mock-mode browser run on desktop and phone; the Compose run with SMS and OIDC stubs and the demo (`RAUTH-02`) passed on `main` run 44018844840. [96](96-FEATURE-FIT-GAP.md) counts 50 of 168 rows working, 27 in part and 15 with their engine built |
-| Slice 3 templates (`VS-03`) | In progress 2026-11-19 | Every outcome element built and tested ([74](74-SLICE-3-EVIDENCE.md)): roles, save as template, use template and sharing on `main` (run 44419251440); composite templates (`VS-03A`, `POST /envelopes/from-templates`) and template folders (`TSH-03`, migration 0045) built on a branch with `templates.spec.mjs` (real stack and mock), axe and the i18n check. End point not met: merged, a green `main` run, the `slice-3-demo` watched, owner closure |
-| Slice 2 routing (`VS-02`) | In progress 2026-11-13 | Outcome met by tests: sequential (`E2E-01`); parallel and mixed with a copy, an agent, an approver and a viewer acting through the ceremony (`casual-sign-server` tests/routing.rs); the agent, offered by the editor, names later recipients by `POST /s/{token}/recipients`; decline (worker tests/flow.rs); void; reminders (worker tests/crash.rs); expiry and its warning through the worker (worker tests/expiry.rs). The signing page's approver, viewer and agent steps and the in-person host are in a browser run (`webapp/e2e/recipient-types.spec.mjs`, `RTE-01`), and the receipt says what each type did (`RTE-02`). End point not met: CI green on main after the merge, including the in-person Compose spec (`UXW-18`); the demo (`RTE-04`); owner closure |
+| v0.1.0 | **Prepared** 2026-11-19 | The second pre-release: the hardening work and M3 since v0.0.1, the first through the signed release workflow (cosign, SBOMs, provenance, signed checksums; `REL-04`). Its tag is pushed on the green `main` commit after this merges (owner instruction 61, §v0.1.0 below); still not for production agreements |
+| Slices 1, 2, 5, 7 | **Closed** 2026-11-19 | Owner, instruction 59 ("complete M3"), on `main` run 44419251440 green on every job; the readings of instruction 58 applied (slice 7: B-LT as the account default, anchoring served and shown; `VS-07D`, `VS-07E` after M3). Evidence per gate item: [73](73-M3-SLICE-EVIDENCE.md) |
+| Other slices | Not closed | Release 1's part of slice 3 is built and in browser runs; slices 3, 4, 6, 8 and 9 lead to M4. [96](96-FEATURE-FIT-GAP.md) counts 50 of 168 rows working, 27 in part and 15 with their engine built |
+| Slice 3 templates (`VS-03`) | In progress 2026-11-19 | Every outcome element built and tested ([74](74-SLICE-3-EVIDENCE.md)): roles, save as template, use template and sharing on `main` (run 44419251440); composite templates (`VS-03A`, `POST /envelopes/from-templates`) and template folders (`TSH-03`, migration 0047) built on a branch with `templates.spec.mjs` (real stack and mock), axe and the i18n check. End point not met: merged, a green `main` run, the `slice-3-demo` watched, owner closure |
+| Slice 2 routing (`VS-02`) | **Closed** 2026-11-19 (row above); as of 2026-11-13: | Outcome met by tests: sequential (`E2E-01`); parallel and mixed with a copy, an agent, an approver and a viewer acting through the ceremony (`casual-sign-server` tests/routing.rs); the agent, offered by the editor, names later recipients by `POST /s/{token}/recipients`; decline (worker tests/flow.rs); void; reminders (worker tests/crash.rs); expiry and its warning through the worker (worker tests/expiry.rs). The signing page's approver, viewer and agent steps and the in-person host are in a browser run (`webapp/e2e/recipient-types.spec.mjs`, `RTE-01`), and the receipt says what each type did (`RTE-02`). End point not met: CI green on main after the merge, including the in-person Compose spec (`UXW-18`); the demo (`RTE-04`); owner closure |
 | UI pass (`UX-01`) | **Done** 2026-11-13 | All seven packages `UX-02` to `UX-08` merged: design system and a distinct destructive colour, send editor (click-to-place, every field kind, recipient types), signing page, Home/Agreements/envelope, Templates/Reports/Admin rail, app shell with notifications and profile. Signer view names the sender and serves the disclosure (`UXW-34`). Follow-ups and missing workflows are `UXW-*` and `UX-09` onward |
-| In progress: organizations, console, plans | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | Done: organizations (`ORG-02`), organization routes (`ORG-03`), switching (`ORG-04`), admin audit logs (`ORG-05`); console operators with TOTP (`CON-03`), the Keys page (`CON-06`), timestamp authorities with two-person changes (`CON-07`), operator actions copied to organization logs (`CON-16`); plans, metering and quota enforcement (`PLAN-02` to `PLAN-04`). In progress: organization admin screens (`ORG-06`), the console as a Compose service (`CON-02`), approvals and suspend or resume (`CON-04`), health (`CON-05`), the console UI (`CON-17`). Done since: workspace actions (`ORG-07`), organization policy with locked and tighten-only keys (`ORG-08`), envelope transfer within a workspace (`ORG-09`). Next: `CON-08`, `PLAN-05` onward; for v0.0.2 (instruction 29) |
-| In progress: ML | ADR-029 Accepted ([33](33-ML-MODELS.md)) | Merged: `casual-sign-modeld` with bundle tooling (`ML-09`), OCR (`ML-02`), page hashes and embeddings for template matching (`ML-05`), GLiNER spans for extraction and personal data with fp16 parity (`ML-07`, `ML-08`), `casual-sign-pii` recognisers, value normalisation, the worker's analysis jobs and the server's analysis routes (`WEB-19`). Left: the worker on modeld's network in Compose (`compose --profile ml up`, `ML-09`) and the editor's suggestions on the real stack (`WEB-18`). Every feature off by default; nothing a model says enters the evidence |
+| Organizations; console and plans **paused** | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | Done: organizations (`ORG-02`), organization routes (`ORG-03`), switching (`ORG-04`), admin audit logs (`ORG-05`); console operators with TOTP (`CON-03`), the Keys page (`CON-06`), timestamp authorities with two-person changes (`CON-07`), operator actions copied to organization logs (`CON-16`); plans, metering and quota enforcement (`PLAN-02` to `PLAN-04`). In progress: organization admin screens (`ORG-06`), the console as a Compose service (`CON-02`), approvals and suspend or resume (`CON-04`), health (`CON-05`), the console UI (`CON-17`). Done since: workspace actions (`ORG-07`), organization policy with locked and tighten-only keys (`ORG-08`), envelope transfer within a workspace (`ORG-09`). Since 2026-11-19 every console (`CON-*`) and plans (`PLAN-*`) row not Done is `Paused` under instruction 51 (`FRZ-01`) and resumes in order after it; organizations (`ORG-*`) are not paused |
+| ML **paused** | ADR-029 Accepted ([33](33-ML-MODELS.md)) | Merged: `casual-sign-modeld` with bundle tooling (`ML-09`), OCR (`ML-02`), page hashes and embeddings for template matching (`ML-05`), GLiNER spans for extraction and personal data with fp16 parity (`ML-07`, `ML-08`), `casual-sign-pii` recognisers, value normalisation, the worker's analysis jobs and the server's analysis routes (`WEB-19`). Left: the worker on modeld's network in Compose (`compose --profile ml up`, `ML-09`) and the editor's suggestions on the real stack (`WEB-18`). Every feature off by default; nothing a model says enters the evidence. Since 2026-11-19 every `ML-*` row not Done and `WEB-19` are `Paused` under instruction 51 (`FRZ-01`) |
 | Security | `SEC-ID-01`, `SEC-CER-01`, `ASVS-02`, `ASVS-04`, `ASVS-08`, `ASVS-11`, `ASVS-13`, `ASVS-14`, `ASVS-31` **Done**; `ASVS-01`, `SEC-ASVS-01` in progress | Shared-account changes refused across workspaces (migration 0013); signer content and every ceremony write require the recipient's authentication first; staff TOTP with recovery codes, required of administrators by default (`ASVS-01`, `ASVS-31`; WebAuthn and lost-factor recovery left); breached passwords refused; security event log, anomaly alerting, malware scanning, and a backup restore drill green on CI; the ASVS 4.0.3 self-assessment ([67](67-ASVS-SELF-ASSESSMENT.md), 2026-11-17: 210 Met, 32 Partly, 12 Not met) with 43 finding rows in docs/14, 14 closed. Not a certification |
 
 ### Waivers
@@ -94,6 +98,38 @@ authorities (`CON-03` to `CON-07`, `CON-16`, `CON-17`, `PLAN-02` to `PLAN-04`), 
 | W-2 (retired 2026-11-11: Phase 0 closed) | Phase 1 opens before Phase 0 closes: CI cannot run on GitHub while the repository is private (instruction 7), so "CI green on three platforms" is unmet | Platform-specific failures (Linux, Windows) found late; the local run is macOS only, with Linux only for the validators in Docker | Owner's "proceed", 2026-11-10, with instruction 7 | Phase 0 still closes only on a green GitHub run, at the latest when the repository goes public for the pre-release alpha (M3); failures found then are fixed first |
 | W-1 | Phase 2 opens before Phase 1 closes, once stages 1A and 1B are closed | The model or API may need a change when sealing lands | Owner, 2026-11-11 (instruction 12, `DEC-13`); Phase 2 open | Phase 2 work adapts; Phase 2 cannot close before Phase 1 |
 
+## Execution plan (from 2026-11-19; owner instruction 62, `PLN-01`)
+
+**Binding.** Work proceeds one slice at a time, in this order, end to end to closure: server, API, screens,
+real-stack browser test, CI green on `main`, demo, docs/96 rows `Works`, closed by the owner. Nothing outside the
+current slice starts unless the owner asks for it. Work already started is finished, never abandoned.
+`tools/check-plan.py` (in `tools/check-repo.py`) fails if a docs/14 row is `In progress` and is not listed on the
+Current, Finishing or Paused line below. A slice moves to Current only when the one before it is closed; its new
+rows go on the Current line in the same commit.
+
+- Current: `VS-03` `VS-03A` `VS-03B` `VS-03C` `TSH-04` `TSH-05` `TSH-06` `UXW-05` `UXW-15` `UXW-49` `WEB-23` `UX-08C` `UX-08F` `UX-11A` `TSH-02` `TSH-03`
+- Finishing (started before 2026-11-19; each closes or goes back to Open by 2026-11-21): `VS-01` `VS-02` `VS-05` `VS-07` `VS-07B` `VS-07C` `S1-10` `I18N-01` `E2E-04` `E2E-05` `E2E-10` `E2E-11` `E2E-12` `E2E-13` `WEB-12` `FRZ-01` `REL-01` `LEG-01` `SITE-08` `SITE-09` `HRD-06` `HRD-11` `HRD-12` `DEP-07` `ASVS-01` `ASVS-03` `ASVS-06` `ASVS-07` `ASVS-10` `ASVS-13A` `ASVS-13B` `ASVS-19` `ASVS-22` `ASVS-28` `ASVS-29` `ASVS-16` `ASVS-18` `CON-13` `ASVS-32`
+- Paused (owner instruction 51, until M4): `ML-02` `ML-05` `ML-07` `ML-08` `ML-09` `ML-21` `CON-01` `CON-02` `CON-04` `CON-05` `CON-15` `CON-17` `PLAN-01` `WEB-19`
+
+| Order | Slice | Users it unlocks | Target closed | Includes (returned to Open today, picked up here) |
+| --- | --- | --- | --- | --- |
+| 0 | M3: 1 send and sign, 2 routing, 5 authentication, 7 verify | Small teams, freelancers, self-hosters | 2026-11-19 (green `main` run) | — |
+| 1 | **3 Templates** (current) | Teams sending the same documents: sales, HR | 2026-11-21 | — |
+| 2 | 4 Every field | Complex forms: applications, insurance, loans | 2026-11-24 | — |
+| 3 | 8 API and webhooks | Developers integrating signing | 2026-11-27 | `UXW-10` `UXW-31` `UXW-32` `UXW-33` |
+| 4 | 6 Manage and correct | Daily senders: folders, search, correct, resend | 2026-12-01 | `UXW-02` `UXW-20` `UXW-42` `WEB-07` |
+| 5 | 9 Embedding | Developers embedding signing in their app → **M4** | 2026-12-03 | — |
+| 6 | 10 Organization admin and SSO | Mid-size and large companies | 2026-12-08 | `ORG-01` `ORG-06` `UXW-09` `UXW-37` `UXW-38` `UXW-39` |
+| 7 | 11 Bulk send and signing links | High-volume senders | 2026-12-11 | — |
+| 8 | 12 Brand and language | Branded and non-English use | 2026-12-15 | `UXW-12` |
+| 9 | 15 Enterprise data controls | Retention, legal hold, BYOK | 2026-12-18 | — |
+| 10 | 20 Operations → M5 slices done | Production operators | 2026-12-22 | `F-007` `SEAL-14` |
+
+Then the M5 release gates (`PV-01`, `SEC-REV-01`, `SEC-ASVS-01`, `A11Y-01`, `LEG-02`, `UXR-01`), then M6 slices in
+the table's order. Dates are targets; a slip is reported in the next status update with its cause, never hidden.
+`WEB-17` (the redesign umbrella), `SITE-01`, `SITE-03`, `SITE-06` and `UXW-37`–`UXW-39` went back to Open on
+2026-11-19: their remaining work belongs to the slices above. ML, the console and plans resume after M4.
+
 ## Freeze until M3 — engine first (owner instruction 51, `FRZ-01`)
 
 OpenSeal leads with its Apache-2.0 signing and verification engine you embed (Rust engine, WASM verifier, API and
@@ -102,6 +138,10 @@ runs reliably on the real stack in CI, only these move: the core flow (send → 
 release below, the verifier, and the API and SDK. **Paused** (sequenced after M3, nothing removed): ML (`ML-*`,
 `WEB-19`), the platform console (`CON-*`), plans and metering (`PLAN-*`). Right after M3: the verifier as a standalone
 crate and npm/WASM package (`VER-01`).
+
+**M3 closed on 2026-11-19** (instruction 59), so the freeze's condition is met (`FRZ-01` Done). The paused rows are
+marked `Paused` in docs/14 (docs/05) and stay so until each resumes, in order: the dependency exceptions and release
+v0.1.0 first (instructions 58, 61), then `VER-01`, then the paused groups.
 
 ## Hardening release — one production-grade deployment first (owner instruction 48)
 
@@ -162,6 +202,17 @@ is cut when every box below is ticked, from evidence, not from intent (`REL-01`)
   - [x] Site: Download page and roadmap updated for v0.0.1.
 - **Not in v0.0.1** (stays on the roadmap, after it): SSO, SAML and WebAuthn, SMS authentication, bulk send, payments,
   B-LTA renewal jobs, production deployment (Helm, HA), and everything in the slices after Release 1.
+
+### v0.1.0 (owner instruction 61)
+
+The second pre-release, prepared 2026-11-19: the hardening work and M3 since v0.0.1, summarised in `CHANGELOG.md`
+§0.1.0, from which the release workflow takes its notes. Version `0.1.0` is in every workspace crate's `Cargo.toml`
+(shown by `openseal --version`; the app footer and `/api/v1` health do not show it yet, as for v0.0.1 above), `Cargo.lock`, `webapp/package.json` and `console-ui/package.json`. It is
+the first tag through the signed release workflow (docs/65 §Releases): cosign signatures on every image, SPDX and
+CycloneDX SBOMs, build provenance and a signed `SHA256SUMS`, which v0.0.1 lacks (`REL-04`). The main session pushes the
+tag on the green `main` commit after this merges, verifies the published signatures and SBOMs, and reports; the owner
+then makes the three GHCR packages public. Still not for production agreements (the development CA, software HSM and
+timestamp authority), and no claim of legal validity, compliance or certification (docs/09).
 
 ## Phase D — Design
 
@@ -315,11 +366,13 @@ extraction are part of every UI slice's end point, not a later slice.
 - [x] Demo recorded (`S1-02`): `compose-e2e` records the VS-01 run (sender and phone) and uploads it as artefact
   `slice-1-demo`; ticked when a green run's recording is linked from [65](65-RUNNING-IT.md). Evidence: `slice-1-demo`
   of green run 44023485128, watched and linked from docs/65 §Demos (2026-11-18).
-- [ ] Accessibility (WCAG 2.2 AA) and i18n extraction: axe scans the editor (`a11y.spec.mjs`), every ceremony step
+- [x] Accessibility (WCAG 2.2 AA) and i18n extraction: axe scans the editor (`a11y.spec.mjs`), every ceremony step
   (`a11y-sign.spec.mjs`) and the done screen with the certificate (`ceremony.spec.mjs`, seen red with an unnamed
   button), and every string is in `webapp/strings/`; ticked when `e2e` is green on GitHub with them. Axe green in
   `e2e` of run 44023485128; the strings check is `I18N-01` (`webapp/tests/i18n-slices.test.mjs`, [73](73-M3-SLICE-EVIDENCE.md)). The WCAG audit
-  `A11Y-01` is a release gate, below.
+  `A11Y-01` is a release gate, below. Evidence: `e2e` green with `I18N-01` on `main` run 44419251440 (2026-11-19).
+
+**Slice 1 closed by the owner, 2026-11-19** (instruction 59), with slices 2, 5 and 7 ([73](73-M3-SLICE-EVIDENCE.md)).
 
 **Release gates** (before any version is called 1.0): `PV-01` Acrobat verification; `SEC-REV-01` external security
 review of the ceremony, sealing and keyd; `SEC-ASVS-01` ASVS self-assessment; `A11Y-01` accessibility audit;

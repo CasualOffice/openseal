@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE recipients SET reassigned_to = NULL WHERE account_id = $1 AND envelope_id = $2 AND reassigned_to IS NOT NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "284a17e42cee3c861f012cd7a71c8f5b6abda07faadcac7da72b461423df50f4"
+}

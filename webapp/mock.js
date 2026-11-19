@@ -1533,17 +1533,128 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   /// when unset, ASVS-31, and the demo user is an administrator) or `none`.
   function secondFactor() {
     if (db.session?.mfa) return "passed";
-    if (db.mfa?.confirmed) return "verify";
+    if (hasFactor()) return "verify";
     return account().settings?.mfa_policy === "optional" ? "none" : "enrol";
+  }
+
+  /// Whether the demo user has a second factor: the TOTP app or a passkey (CON-13).
+  function hasFactor() {
+    return !!db.mfa?.confirmed || (db.passkeys || []).length > 0;
+  }
+
+  /// `GET /auth/session`'s `factors`, as the server.
+  function factorsOf() {
+    return { totp: !!db.mfa?.confirmed, passkeys: (db.passkeys || []).length, recovery_codes_left: (db.mfa?.recovery || []).length, reset_by_admin: false, passkeys_available: true };
+  }
+
+  const b64url = (bytes) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const unb64url = (s) => { try { return atob(String(s).replace(/-/g, "+").replace(/_/g, "/")); } catch { return null; } };
+
+  /// Ten recovery codes as the server shows them, kept canonical.
+  function newRecoveryCodes(tag) {
+    const codes = Array.from({ length: 10 }, (_, n) => `${tag}${n}`.padEnd(23, "A"));
+    db.mfa ||= { confirmed: false, secret: null, used: [], recovery: [] };
+    db.mfa.recovery = codes.slice();
+    return codes.map((c) => c.match(/.{1,5}/g).join("-"));
+  }
+
+  /// A WebAuthn answer's client data, as the server checks it (the mock cannot check
+  /// the signature, the server's tests and the real-server e2e do): the ceremony type
+  /// and the session's outstanding challenge for `purpose`, which it spends.
+  function passkeyClientData(cd, type, purpose) {
+    const want = db.session?.webauthn;
+    if (db.session) db.session.webauthn = null;
+    let c = null;
+    try { c = JSON.parse(unb64url(cd) ?? ""); } catch { c = null; }
+    if (!want || want.purpose !== purpose || !c || c.type !== type || c.challenge !== want.challenge) fail(401, "CS-AUTH-0012", "Second factor refused");
+  }
+
+  /// The person's passkeys (CON-13), as the server.
+  function passkeys(method, subId, body) {
+    db.passkeys ||= [];
+    const view = (k) => ({ id: k.id, name: k.name, created_at: k.created_at, last_used_at: k.last_used_at, backup_eligible: false });
+    if (subId === "options" && method === "POST") {
+      const purpose = body?.purpose;
+      if (!["register", "verify", "reauthenticate"].includes(purpose)) fail(422, "CS-API-0001", "Invalid request", [{ pointer: "/purpose", code: "CS-API-0001" }]);
+      const challenge = b64url(crypto.getRandomValues(new Uint8Array(32)));
+      const rpId = globalThis.location?.hostname || "localhost";
+      const allow = db.passkeys.map((k) => ({ type: "public-key", id: k.credential_id, transports: k.transports || [] }));
+      let publicKey;
+      if (purpose === "register") {
+        if (hasFactor() && !db.session?.mfa) fail(403, "CS-AUTH-0011", "Second factor required", undefined, "verify");
+        if (hasFactor() && !recentUntil()) fail(403, "CS-AUTH-0013", "Recent re-authentication required", undefined, "reauthenticate");
+        publicKey = {
+          rp: { id: rpId, name: "OpenSeal" }, user: { id: b64url(new TextEncoder().encode("user-demo")), name: MOCK.email, displayName: "Demo User" },
+          challenge, pubKeyCredParams: [-7, -8, -257].map((alg) => ({ type: "public-key", alg })), timeout: 300000,
+          excludeCredentials: allow, authenticatorSelection: { residentKey: "discouraged", requireResidentKey: false, userVerification: "preferred" }, attestation: "none",
+        };
+      } else {
+        if (!db.passkeys.length) fail(409, "CS-API-0009", "Not available", undefined, "no passkey");
+        publicKey = { challenge, rpId, allowCredentials: allow, userVerification: "preferred", timeout: 300000 };
+      }
+      db.session.webauthn = { purpose, challenge };
+      save();
+      return json(200, { purpose, public_key: publicKey });
+    }
+    if (!subId && method === "POST") {
+      if (hasFactor() && !db.session?.mfa) fail(403, "CS-AUTH-0011", "Second factor required", undefined, "verify");
+      if (hasFactor() && !recentUntil()) fail(403, "CS-AUTH-0013", "Recent re-authentication required", undefined, "reauthenticate");
+      const c = body?.credential || {};
+      passkeyClientData(c.client_data_json, "webauthn.create", "register");
+      if (typeof c.id !== "string" || !c.public_key || db.passkeys.some((k) => k.credential_id === c.id)) fail(409, "CS-API-0009", "Not available", undefined, "passkey not added");
+      if (db.passkeys.length >= 10) fail(409, "CS-API-0009", "Not available", undefined, "too many passkeys");
+      const first = !hasFactor();
+      const k = { id: uid(), credential_id: c.id, transports: Array.isArray(c.transports) ? c.transports : [], name: String(body?.name || "Passkey").trim().slice(0, 64) || "Passkey", created_at: iso(), last_used_at: null };
+      db.passkeys.push(k);
+      db.session.mfa = true;
+      const out = { passkey: view(k), second_factor: "passed" };
+      if (first) out.recovery_codes = newRecoveryCodes("PASS");
+      save();
+      return json(201, out);
+    }
+    if (secondFactor() === "verify" || secondFactor() === "enrol") fail(403, "CS-AUTH-0011", "Second factor required", undefined, secondFactor());
+    if (!subId && method === "GET") return json(200, { items: db.passkeys.map(view) });
+    const k = db.passkeys.find((x) => x.id === subId);
+    if (!k) fail(404, "CS-API-0002", "Not found");
+    if (!recentUntil()) fail(403, "CS-AUTH-0013", "Recent re-authentication required", undefined, "reauthenticate");
+    if (method === "PATCH") {
+      const name = typeof body?.name === "string" ? body.name.trim() : "";
+      if (!name || name.length > 64) fail(422, "CS-API-0001", "Invalid request", [{ pointer: "/name", code: "CS-API-0001" }]);
+      k.name = name;
+      save();
+      return json(200, view(k));
+    }
+    if (method === "DELETE") {
+      db.passkeys = db.passkeys.filter((x) => x !== k);
+      if (!hasFactor()) { db.mfa.recovery = []; db.session.mfa = false; }
+      save();
+      return json(204, null);
+    }
+    fail(404, "CS-API-0002", "Not found");
+  }
+
+  /// A passkey answer to the step (`verify`) or step-up (`reauthenticate`).
+  function passkeyAnswer(a, purpose) {
+    passkeyClientData(a?.client_data_json, "webauthn.get", purpose);
+    const k = (db.passkeys || []).find((x) => x.credential_id === a?.credential_id);
+    if (!k) fail(401, "CS-AUTH-0012", "Second factor refused");
+    k.last_used_at = iso();
   }
 
   function mfa(method, sub, subId, body) {
     db.mfa ||= { confirmed: false, secret: null, used: [], recovery: [] };
     const sixDigits = (c) => typeof c === "string" && /^[0-9]{6}$/.test(c.trim());
     const fresh = (c) => sixDigits(c) && !db.mfa.used.includes(c.trim());
+    if (sub === "passkeys") return passkeys(method, subId, body);
     if (sub === "verify" && method === "POST") {
-      for (const k of Object.keys(body || {})) if (!["code", "recovery_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
-      if (!db.mfa.confirmed) fail(401, "CS-AUTH-0012", "Second factor refused");
+      for (const k of Object.keys(body || {})) if (!["code", "recovery_code", "passkey"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+      if (body?.passkey) {
+        passkeyAnswer(body.passkey, "verify");
+        db.session.mfa = true;
+        save();
+        return json(200, { second_factor: "passed" });
+      }
+      if (!hasFactor()) fail(401, "CS-AUTH-0012", "Second factor refused");
       if (typeof body?.recovery_code === "string") {
         const canon = body.recovery_code.replace(/[\s-]/g, "").toUpperCase();
         const i = db.mfa.recovery.indexOf(canon);
@@ -1552,10 +1663,27 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         db.session.mfa = true;
         return json(200, { second_factor: "passed", recovery_codes_left: db.mfa.recovery.length });
       }
-      if (!fresh(body?.code)) fail(401, "CS-AUTH-0012", "Second factor refused");
+      if (!db.mfa.confirmed || !fresh(body?.code)) fail(401, "CS-AUTH-0012", "Second factor refused");
       db.mfa.used.push(body.code.trim());
       db.session.mfa = true;
       return json(200, { second_factor: "passed" });
+    }
+    // ASVS-32: the person removes the app, or replaces their recovery codes, after a
+    // recent re-authentication.
+    if ((sub === "totp" && !subId && method === "DELETE") || (sub === "recovery-codes" && method === "POST")) {
+      if (secondFactor() === "verify" || secondFactor() === "enrol") fail(403, "CS-AUTH-0011", "Second factor required", undefined, secondFactor());
+      if (!recentUntil()) fail(403, "CS-AUTH-0013", "Recent re-authentication required", undefined, "reauthenticate");
+      if (sub === "totp") {
+        if (!db.mfa.confirmed) fail(409, "CS-API-0009", "Not available", undefined, "no authenticator app");
+        db.mfa = { ...db.mfa, confirmed: false, secret: null };
+        if (!hasFactor()) { db.mfa.recovery = []; db.session.mfa = false; }
+        save();
+        return json(204, null);
+      }
+      if (!hasFactor()) fail(409, "CS-API-0009", "Not available", undefined, "no second factor");
+      const shown = newRecoveryCodes("NEW");
+      save();
+      return json(200, { recovery_codes: shown });
     }
     if (sub === "totp" && subId === "enrol" && method === "POST") {
       if (db.mfa.confirmed) fail(409, "CS-API-0009", "Not available", undefined, "already enrolled");
@@ -1597,15 +1725,22 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "organizations" && id === "me" && sub === "admins" && (method === "POST" || method === "PATCH")) return true;
     if (res === "permission-profiles" && (method === "POST" || method === "PATCH")) return true;
     if (res === "auth" && id === "sessions" && (method === "DELETE" || (method === "POST" && sub === "end-others"))) return true;
+    if (res === "users" && id && sub === "second-factor") return true;
+    if (res === "users" && id === "me" && !sub && method === "DELETE") return true;
+    if (res === "retention" && !id && method === "PUT") return true;
     return false;
   }
 
   /// `POST /auth/reauthenticate`, as the server: the demo password, and a fresh six-digit
   /// code when the demo user has a second factor.
   function reauthenticate(body) {
-    for (const k of Object.keys(body || {})) if (!["password", "code", "recovery_code"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+    for (const k of Object.keys(body || {})) if (!["password", "code", "recovery_code", "passkey"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
     if (body?.password !== MOCK.password) fail(401, "CS-AUTH-0007", "Invalid credentials");
-    if (db.mfa?.confirmed) {
+    if (body?.passkey && (db.passkeys || []).length) {
+      passkeyAnswer(body.passkey, "reauthenticate");
+    } else if (hasFactor() && !db.mfa?.confirmed) {
+      fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/code", code: "CS-API-0001" }]);
+    } else if (db.mfa?.confirmed) {
       const c = typeof body?.code === "string" ? body.code.trim() : null;
       if (c == null) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/code", code: "CS-API-0001" }]);
       if (!/^[0-9]{6}$/.test(c) || db.mfa.used.includes(c)) fail(401, "CS-AUTH-0012", "Second factor refused");
@@ -1679,7 +1814,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       return json(200, { account_id: body.account_id, user_id: "user-demo", csrf_token: db.session.csrf, expires_at: iso(60 * 12) });
     }
     if (res === "auth" && id === "session" && method === "GET") {
-      return json(200, { account_id: here, user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true, second_factor: secondFactor(), reauthenticated_until: recentUntil() });
+      return json(200, { account_id: here, user_id: "user-demo", credential: "session", client_id: null, scopes: ["envelopes:read", "envelopes:write", "envelopes:send", "templates:read", "templates:write", "admin:users", "admin:account"], admin: true, second_factor: secondFactor(), factors: factorsOf(), reauthenticated_until: recentUntil() });
     }
     if (res === "auth" && id === "logout" && method === "POST") { db.session = null; return json(204, null); }
     // The staff second factor (ASVS-01), as the server: a TOTP code is six digits (the
@@ -1740,6 +1875,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "account" && id === "settings" && sub === "ml") return mlSettings(method, body);
     if (res === "search" && !id && method === "GET") return mlSearch(query);
     if (res === "templates") return templates(method, id, sub, subId, subSub, headers, body, query);
+    if (res === "users" && id === "me" && sub === "export" && method === "GET") return exportMe();
+    if (res === "users" && id === "me" && !sub && method === "DELETE") return eraseMe();
+    if (res === "retention") return retention(method, id, body);
     if (res === "users" && id === "me" && !sub) return me(method, body);
     if (res === "users") return users(method, id, body, sub);
     if (res === "api-clients") return apiClients(method, id, body);
@@ -2282,6 +2420,59 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   /// statuses these follow): name, email (only an administrator changes it), notification
   /// choices, a saved signature and initials, and a password change that needs the
   /// current password.
+  /// `GET /users/me/export` (ASVS-16), as the server: the demo user's own data in this
+  /// workspace, three a minute.
+  function exportMe() {
+    const u = db.users.find((x) => x.id === "user-demo");
+    if (!u) fail(404, "CS-API-0002", "Not found");
+    const minute = Math.floor(now().getTime() / 60_000);
+    db.exports = db.exports?.minute === minute ? db.exports : { minute, n: 0 };
+    db.exports.n += 1;
+    if (db.exports.n > 3) fail(429, "CS-API-0003", "Too many requests");
+    const p = db.profiles?.[u.id] || { notifications: { completed: true, declined: true, viewed: false }, signature: null, initials: null };
+    return json(200, {
+      format: "openseal.personal-data-export", v: 1, exported_at: iso(),
+      workspace: { id: "acct-demo", name: account().name },
+      user: { id: u.id, name: u.name, email: u.email, ...p },
+      login_kind: "local", profile: null, sessions: [], api_clients: [],
+      envelopes: db.envelopes.filter((e) => !e.sender_user_id || e.sender_user_id === u.id).map((e) => ({ id: e.id, status: e.status, subject: e.subject })),
+      templates: [], kept: "Audit events and the admin log are kept unchanged.",
+    });
+  }
+
+  /// `DELETE /users/me` (ASVS-16), as the server: the demo user owns the organization,
+  /// so the mock answers as the server does for them.
+  function eraseMe() {
+    fail(409, "CS-API-0018", "Not erasable now", [], "organization administrator");
+  }
+
+  /// `GET/PUT /retention`, `GET /retention/preview` (ASVS-18), as the server.
+  async function retention(method, id, body) {
+    const CLASSES = ["draft", "ended", "completed", "sessions"];
+    const rules = (db.retention ||= { draft: null, ended: null, completed: null, sessions: null });
+    const out = () => json(200, { keep_days: { ...rules }, max_keep_days: 36500 });
+    if (id === "preview" && method === "GET") {
+      const ended = db.envelopes.filter((e) => ["declined", "voided", "expired"].includes(e.status));
+      return json(200, { at: iso(), counts: { draft: 0, ended: rules.ended ? ended.length : 0, completed: 0 }, sessions: 0, held: 0, envelopes: [] });
+    }
+    if (id) fail(404, "CS-API-0002", "Not found");
+    if (method === "GET") return out();
+    if (method !== "PUT") fail(405, "CS-API-0012", "Method not allowed");
+    const k = body?.keep_days;
+    if (!k || typeof k !== "object") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/keep_days", code: "CS-API-0001" }]);
+    for (const [c, d] of Object.entries(k)) {
+      if (!CLASSES.includes(c) || (d !== null && !(Number.isInteger(d) && d >= 1 && d <= 36500))) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/keep_days/${c}`, code: "CS-API-0001" }]);
+    }
+    for (const [c, d] of Object.entries(k)) {
+      if (rules[c] !== d) {
+        await adminEvent("retention.rule_set", { changes: [{ key: c, old: rules[c], new: d }] });
+        rules[c] = d;
+      }
+    }
+    save();
+    return out();
+  }
+
   function me(method, body) {
     const u = db.users.find((x) => x.id === "user-demo");
     if (!u) fail(404, "CS-API-0002", "Not found");
@@ -2314,6 +2505,16 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   }
 
   async function users(method, id, body, sub) {
+    if (id && sub === "second-factor" && method === "POST") {
+      // ASVS-32, as the server: a member who lost every factor, after the administrator
+      // says how they proved who it is. The demo has no other member with a factor.
+      const u = db.users.find((x) => x.id === id);
+      if (!u) fail(404, "CS-API-0002", "Not found");
+      if (u.id === "user-demo") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/id", code: "CS-API-0001" }]);
+      if (!["in_person", "video_call", "phone_callback", "manager_confirmation", "identity_document"].includes(body?.identity_verified_by)) fail(422, "CS-API-0001", "Invalid request", [{ pointer: "/identity_verified_by", code: "CS-API-0001" }]);
+      await adminEvent("member.factors_reset", { target: { user: u.id }, changes: [{ key: "identity_verified_by", old: null, new: body.identity_verified_by }] });
+      return json(200, { user_id: u.id, removed: { totp: false, passkeys: 0 }, identity_verified_by: body.identity_verified_by, enrol_at_next_sign_in: true });
+    }
     if (!id && method === "POST" && body?.invite === true) {
       // `POST /users` with `invite: true` (WEB-06 AD-01): a member who sets up their own
       // sign-in from the emailed link. As the server: `invitation` (the latest one's

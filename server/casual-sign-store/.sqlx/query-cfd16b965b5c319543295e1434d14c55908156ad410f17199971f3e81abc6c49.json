@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"n!\" FROM account_memberships AS m\n               JOIN permission_profiles AS p\n                 ON p.account_id = m.account_id AND p.id = m.permission_profile_id\n               JOIN users AS u ON u.id = m.user_id\n              WHERE m.account_id = $1 AND m.user_id <> $2 AND p.kind = 'admin'\n                AND m.disabled_at IS NULL AND u.disabled_at IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "cfd16b965b5c319543295e1434d14c55908156ad410f17199971f3e81abc6c49"
+}

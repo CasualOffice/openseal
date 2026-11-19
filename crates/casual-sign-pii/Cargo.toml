@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-pii"
-version = "0.0.1"
+version = "0.1.0"
 description = "OpenSeal personal-data recognisers: deterministic pattern, checksum and context rules for email, phone, IBAN, card, national ids, IP addresses and dates of birth, identical natively and in WASM (ML-08, docs/33)"
 edition.workspace = true
 license.workspace = true

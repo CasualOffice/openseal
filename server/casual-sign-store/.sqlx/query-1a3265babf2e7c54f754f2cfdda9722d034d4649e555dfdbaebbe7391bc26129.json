@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH old AS (\n                   SELECT webauthn_challenge, webauthn_purpose, webauthn_challenge_expires_at\n                     FROM staff_sessions WHERE account_id = $1 AND id = $2 FOR UPDATE)\n               UPDATE staff_sessions AS s\n                  SET webauthn_challenge = NULL, webauthn_purpose = NULL,\n                      webauthn_challenge_expires_at = NULL\n                 FROM old\n                WHERE s.account_id = $1 AND s.id = $2\n               RETURNING CASE WHEN old.webauthn_purpose = $3\n                               AND old.webauthn_challenge_expires_at > $4\n                              THEN old.webauthn_challenge END AS challenge",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "challenge",
+        "type_info": "Bytea",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "1a3265babf2e7c54f754f2cfdda9722d034d4649e555dfdbaebbe7391bc26129"
+}

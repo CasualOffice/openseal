@@ -1,0 +1,43 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.data_class, count(*) AS \"n!\",\n                      count(*) FILTER (WHERE e.legal_hold_at IS NOT NULL) AS \"held!\"\n               FROM envelopes AS e\n               JOIN retention_rules AS r ON r.account_id = e.account_id AND r.data_class =\n                   CASE WHEN e.status = 'draft' THEN 'draft'\n                        WHEN e.status = 'completed' THEN 'completed'\n                        WHEN e.status IN ('declined', 'voided', 'expired') THEN 'ended' END\n               JOIN envelope_states AS s ON s.account_id = e.account_id AND s.envelope_id = e.id\n              WHERE e.account_id = $1\n                AND COALESCE((s.state ->> 'purged')::boolean, false) = false\n                AND (CASE WHEN e.status = 'completed' THEN COALESCE(e.completed_at, e.updated_at)\n                          ELSE e.updated_at END) + make_interval(days => r.keep_days) <= $2\n              GROUP BY r.data_class",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "data_class",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "retention_rules",
+            "name": "data_class"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "n!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "held!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "9aed03fef9ec8620fb064e7c2a48d768d1d0ba059246bbd80c7c1a09f1f46339"
+}

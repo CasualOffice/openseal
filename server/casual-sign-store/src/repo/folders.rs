@@ -1,5 +1,5 @@
 //! Members' own folders and where they filed envelopes (UXW-02, migration 0022) and
-//! templates (TSH-03, migration 0045). Every statement names the member as well as the
+//! templates (TSH-03, migration 0047). Every statement names the member as well as the
 //! account: a folder is its owner's alone, and the filing tables' composite references
 //! refuse a filing into another member's folder (and, for templates, into a folder of
 //! the other kind) even if a caller tried. Filing is a member's view of their lists,

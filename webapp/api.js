@@ -312,6 +312,25 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// password?, current_password?}` (a new password needs the current one, `401
     /// CS-AUTH-0007` when wrong, and ends the user's other sessions).
     patchMe: (body) => data(request("PATCH", "/api/v1/users/me", { body })),
+    /// The person's own data in this workspace as one JSON document (ASVS-16):
+    /// `{format: "openseal.personal-data-export", v, exported_at, workspace, user, …}`.
+    /// At most three a minute (`429`).
+    exportMe: () => data(request("GET", "/api/v1/users/me/export")),
+    /// Erase one's own identity in this workspace (ASVS-16; needs a recent
+    /// re-authentication). `409 CS-API-0018` for the last administrator or an
+    /// organization administrator; `403 CS-API-0015` for a member of another workspace.
+    eraseMe: () => data(request("DELETE", "/api/v1/users/me")),
+    /// An administrator erases a member's identity (ASVS-16; recent re-authentication).
+    eraseUser: (id) => data(request("POST", `/api/v1/users/${encodeURIComponent(id)}/erase`)),
+    /// The account's retention rules (ASVS-18): `{keep_days: {draft, ended, completed,
+    /// sessions}, max_keep_days}`, each days or null (kept for ever).
+    retention: () => data(request("GET", "/api/v1/retention")),
+    /// Set or remove rules: `{draft?: days|null, …}` (recent re-authentication).
+    setRetention: (keepDays) => data(request("PUT", "/api/v1/retention", { body: { keep_days: keepDays } })),
+    /// The retention job's dry run: `{at, counts, sessions, held, envelopes}`.
+    retentionPreview: () => data(request("GET", "/api/v1/retention/preview")),
+    /// Place or release an envelope's legal hold (ASVS-18).
+    setLegalHold: (id, hold) => data(request(hold ? "PUT" : "DELETE", `/api/v1/envelopes/${encodeURIComponent(id)}/legal-hold`)),
     /// Ask for a password-reset email (UX-04, UXW-38); no session. `202 {}` whether or
     /// not the address has an account.
     requestPasswordReset: (email) => data(request("POST", "/api/v1/auth/password-reset", { body: { email } })),
@@ -338,6 +357,21 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     enrolTotp: () => data(request("POST", "/api/v1/auth/mfa/totp/enrol")),
     /// Confirm enrolment with a first code: `{second_factor, recovery_codes}`, shown once.
     confirmTotp: (code) => data(request("POST", "/api/v1/auth/mfa/totp/confirm", { body: { code } })),
+    /// Passkeys (CON-13): the options for one ceremony, `purpose` `register`, `verify`
+    /// or `reauthenticate`: `{purpose, public_key}` (binary members base64url).
+    passkeyOptions: (purpose) => data(request("POST", "/api/v1/auth/mfa/passkeys/options", { body: { purpose } })),
+    /// Register a passkey (passkey.js `registrationBody`): `{passkey, second_factor,
+    /// recovery_codes?}` (the codes when it is the person's first factor, shown once).
+    registerPasskey: (body) => data(request("POST", "/api/v1/auth/mfa/passkeys", { body })),
+    /// The person's passkeys: `{items: [{id, name, created_at, last_used_at, backup_eligible}]}`.
+    passkeys: () => data(request("GET", "/api/v1/auth/mfa/passkeys")),
+    /// Rename or remove one (each needs a recent re-authentication).
+    renamePasskey: (id, name) => data(request("PATCH", `/api/v1/auth/mfa/passkeys/${encodeURIComponent(id)}`, { body: { name } })),
+    removePasskey: (id) => data(request("DELETE", `/api/v1/auth/mfa/passkeys/${encodeURIComponent(id)}`)),
+    /// Remove the authenticator app, to set up another (needs a recent re-authentication).
+    removeTotp: () => data(request("DELETE", "/api/v1/auth/mfa/totp")),
+    /// Ten new recovery codes, replacing the earlier ones: `{recovery_codes}`, shown once.
+    replaceRecoveryCodes: () => data(request("POST", "/api/v1/auth/mfa/recovery-codes")),
 
     // ---- Envelopes ---------------------------------------------------------
     /// `q`: text the subject or a recipient's name or email contains (WEB-04).
@@ -607,6 +641,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// `{name?, password?, profile?, disabled?}`.
       patch: (u, body) => data(request("PATCH", `/api/v1/users/${encodeURIComponent(u)}`, { body })),
       remove: (u) => data(request("DELETE", `/api/v1/users/${encodeURIComponent(u)}`)),
+      /// Reset the second factors of a member who lost them all (ASVS-32; needs a recent
+      /// re-authentication): `how` is how their identity was proved (`in_person`,
+      /// `video_call`, `phone_callback`, `manager_confirmation`, `identity_document`).
+      resetSecondFactor: (u, how) => data(request("POST", `/api/v1/users/${encodeURIComponent(u)}/second-factor/reset`, { body: { identity_verified_by: how } })),
     },
     apiClients: {
       list: () => data(request("GET", "/api/v1/api-clients")),

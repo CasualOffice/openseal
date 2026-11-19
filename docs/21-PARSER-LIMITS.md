@@ -227,6 +227,9 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Staff session idle (`session_idle`, `ASVS-06`); activity written | 30 minutes by default, 5 minutes to 12 hours; at most every 15 seconds | CS-AUTH-0002, CS-API-0001 |
 | Step-up window (`ASVS-07`); re-authentication attempts per user | 5 minutes after the sign-in or `POST /auth/reauthenticate`; 10 per minute (the login rate) | CS-AUTH-0013, CS-API-0003 |
 | Own sessions listed (`GET /auth/sessions`); a session's browser name | 200; 1–64 characters from a closed list | — |
+| Staff passkeys (`CON-13`): per person; a name; a ceremony's challenge | 10; 1–64 characters, no control characters; 32 bytes, 5 minutes, one per session, used once | CS-API-0009, CS-API-0001, CS-AUTH-0012 |
+| A passkey's `clientDataJSON`; authenticator data; credential id; public key (SPKI); signature; user handle | 4,096 B; 4,096 B; 1–1,023 B; 32–2,048 B; 1,024 B; 64 B (each base64url, length checked before decoding) | CS-API-0001, CS-AUTH-0012 |
+| Passkey options asked; registrations and assertions per user | 10 per minute each (the login rate) | CS-API-0003 |
 | API client expiry | 1–3,650 days | CS-API-0001 |
 | Webhook URL; signing secret references | 2,048 bytes; 1–4 names of 64 bytes | CS-API-0013, CS-API-0001 |
 
