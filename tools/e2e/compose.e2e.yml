@@ -37,6 +37,9 @@ services:
       OPENSEAL_SMS_GATEWAY_SECRET: ci-only-sms-gateway-secret
       SSL_CERT_FILE: /secrets/ca.pem
       OPENSEAL_WEBHOOK_ALLOW: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      # The receiver's certificate chains to the stack's own CA; webhook delivery trusts
+      # only the platform roots plus this file (SSL_CERT_FILE is not read for webhooks).
+      OPENSEAL_WEBHOOK_EXTRA_ROOTS: /secrets/ca.pem
       OPENSEAL_E2E_WEBHOOK_SECRET: whsec_Y2ktb25seS13ZWJob29rLXNpZ25pbmctc2VjcmV0
     depends_on:
       sms-gateway: {condition: service_healthy}
