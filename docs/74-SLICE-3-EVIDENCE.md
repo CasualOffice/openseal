@@ -54,7 +54,7 @@ The outcome is the slice-3 row: "Roles, save as template, use template, composit
 Recommendation: ready to close once a `main` run with this branch is green on every job and `slice-3-demo` has been
 watched.
 
-Owner decision: close / not yet, because …
+Owner decision (2026-11-19, instruction 66): **close on green `main`**: slice 3 closes once `main`'s CI run on `af038fd` (run 44432837346) is green. Decisions 1 and 3 below are answered: template folders are each member's own; template locking (`TSH-04`) is outside slice 3. Status: run 44432837346 was still queued when this was recorded; the rows stay In progress until it is green.
 
 **Decisions only the owner can make:**
 
