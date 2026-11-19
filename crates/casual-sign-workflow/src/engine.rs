@@ -859,13 +859,16 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
                 Principal::System | Principal::Admin { .. } => {}
                 _ => return Err(not_permitted(cmd)),
             }
-            if !s.status.is_terminal() {
+            // A draft too (a retention rule on drafts never sent, ASVS-18): one in
+            // flight is never purged.
+            if !s.status.is_terminal() && s.status != EnvelopeStatus::Draft {
                 return Err(not_allowed(cmd, s));
             }
             out.event(EventData::EnvelopePurged {
                 policy: policy.as_str().to_owned(),
             });
             cancel_pending(s, out);
+            s.send_at = None;
             out.effect(EffectKind::PurgeData {
                 policy: policy.clone(),
             });

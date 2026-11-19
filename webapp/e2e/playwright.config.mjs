@@ -55,14 +55,17 @@ const chromiumArgs = (process.env.OPENSEAL_E2E_CHROMIUM_ARGS || "").split(" ").f
 const chromiumChannel = process.env.OPENSEAL_E2E_CHROMIUM_CHANNEL || undefined; // e.g. "chromium" (new headless)
 const chrome = { ...devices["Desktop Chrome"], channel: chromiumChannel, launchOptions: { args: chromiumArgs } };
 
-const desktop = /(prepare-layout|org|field-kinds|admin|shell|manage|signin-dashboard|send|editor|keyboard|a11y|screens|empty-states|web02|redesign-screens|visual|docview|real-stack|real-api|routing|inbox-folders|template-sharing|admin-groups|xss|verify-demo|verify-anchor|sessions)\.spec\.mjs$/;
+const desktop = /(prepare-layout|org|field-kinds|admin|shell|manage|signin-dashboard|send|editor|keyboard|a11y|screens|empty-states|web02|redesign-screens|visual|docview|real-stack|real-api|routing|inbox-folders|template-sharing|admin-groups|xss|verify-demo|verify-anchor|sessions|privacy)\.spec\.mjs$/;
 const signer = /(ceremony|decline|a11y-sign|sign-layout|xss|recipient-types|recipient-auth)\.spec\.mjs$/;
 
 export default defineConfig({
   testDir: ".",
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  workers: 1,
+  // Several at once in mock mode, where every test has its own browser context and mock
+  // store; one at a time against a real stack, where specs share one account (owner,
+  // 2026-11-19: CI jobs under 20-25 minutes). OPENSEAL_E2E_WORKERS overrides.
+  workers: Number(process.env.OPENSEAL_E2E_WORKERS) || (process.env.OPENSEAL_E2E_BASE_URL ? 1 : 2),
   retries: 0,
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? [["github"], ["list"]] : [["list"]],

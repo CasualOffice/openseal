@@ -93,6 +93,38 @@ authorities (`CON-03` to `CON-07`, `CON-16`, `CON-17`, `PLAN-02` to `PLAN-04`), 
 | W-2 (retired 2026-11-11: Phase 0 closed) | Phase 1 opens before Phase 0 closes: CI cannot run on GitHub while the repository is private (instruction 7), so "CI green on three platforms" is unmet | Platform-specific failures (Linux, Windows) found late; the local run is macOS only, with Linux only for the validators in Docker | Owner's "proceed", 2026-11-10, with instruction 7 | Phase 0 still closes only on a green GitHub run, at the latest when the repository goes public for the pre-release alpha (M3); failures found then are fixed first |
 | W-1 | Phase 2 opens before Phase 1 closes, once stages 1A and 1B are closed | The model or API may need a change when sealing lands | Owner, 2026-11-11 (instruction 12, `DEC-13`); Phase 2 open | Phase 2 work adapts; Phase 2 cannot close before Phase 1 |
 
+## Execution plan (from 2026-11-19; owner instruction 62, `PLN-01`)
+
+**Binding.** Work proceeds one slice at a time, in this order, end to end to closure: server, API, screens,
+real-stack browser test, CI green on `main`, demo, docs/96 rows `Works`, closed by the owner. Nothing outside the
+current slice starts unless the owner asks for it. Work already started is finished, never abandoned.
+`tools/check-plan.py` (in `tools/check-repo.py`) fails if a docs/14 row is `In progress` and is not listed on the
+Current, Finishing or Paused line below. A slice moves to Current only when the one before it is closed; its new
+rows go on the Current line in the same commit.
+
+- Current: `VS-03` `UXW-05` `UXW-15` `UXW-49` `WEB-23` `UX-08C` `UX-08F` `UX-11A` `TSH-02` `TSH-03`
+- Finishing (started before 2026-11-19; each closes or goes back to Open by 2026-11-21): `VS-01` `VS-02` `VS-05` `VS-07` `VS-07B` `VS-07C` `S1-10` `I18N-01` `E2E-04` `E2E-05` `E2E-10` `E2E-11` `E2E-12` `E2E-13` `WEB-12` `FRZ-01` `REL-01` `LEG-01` `SITE-08` `SITE-09` `HRD-06` `HRD-11` `HRD-12` `DEP-07` `ASVS-01` `ASVS-03` `ASVS-06` `ASVS-07` `ASVS-10` `ASVS-13A` `ASVS-13B` `ASVS-19` `ASVS-22` `ASVS-28` `ASVS-29` `ASVS-16` `ASVS-18`
+- Paused (owner instruction 51, until M4): `ML-02` `ML-05` `ML-07` `ML-08` `ML-09` `ML-21` `CON-01` `CON-02` `CON-04` `CON-05` `CON-15` `CON-17` `PLAN-01` `WEB-19`
+
+| Order | Slice | Users it unlocks | Target closed | Includes (returned to Open today, picked up here) |
+| --- | --- | --- | --- | --- |
+| 0 | M3: 1 send and sign, 2 routing, 5 authentication, 7 verify | Small teams, freelancers, self-hosters | 2026-11-19 (green `main` run) | — |
+| 1 | **3 Templates** (current) | Teams sending the same documents: sales, HR | 2026-11-21 | — |
+| 2 | 4 Every field | Complex forms: applications, insurance, loans | 2026-11-24 | — |
+| 3 | 8 API and webhooks | Developers integrating signing | 2026-11-27 | `UXW-10` `UXW-31` `UXW-32` `UXW-33` |
+| 4 | 6 Manage and correct | Daily senders: folders, search, correct, resend | 2026-12-01 | `UXW-02` `UXW-20` `UXW-42` `WEB-07` |
+| 5 | 9 Embedding | Developers embedding signing in their app → **M4** | 2026-12-03 | — |
+| 6 | 10 Organization admin and SSO | Mid-size and large companies | 2026-12-08 | `ORG-01` `ORG-06` `UXW-09` `UXW-37` `UXW-38` `UXW-39` |
+| 7 | 11 Bulk send and signing links | High-volume senders | 2026-12-11 | — |
+| 8 | 12 Brand and language | Branded and non-English use | 2026-12-15 | `UXW-12` |
+| 9 | 15 Enterprise data controls | Retention, legal hold, BYOK | 2026-12-18 | — |
+| 10 | 20 Operations → M5 slices done | Production operators | 2026-12-22 | `F-007` `SEAL-14` |
+
+Then the M5 release gates (`PV-01`, `SEC-REV-01`, `SEC-ASVS-01`, `A11Y-01`, `LEG-02`, `UXR-01`), then M6 slices in
+the table's order. Dates are targets; a slip is reported in the next status update with its cause, never hidden.
+`WEB-17` (the redesign umbrella), `SITE-01`, `SITE-03`, `SITE-06` and `UXW-37`–`UXW-39` went back to Open on
+2026-11-19: their remaining work belongs to the slices above. ML, the console and plans resume after M4.
+
 ## Freeze until M3 — engine first (owner instruction 51, `FRZ-01`)
 
 OpenSeal leads with its Apache-2.0 signing and verification engine you embed (Rust engine, WASM verifier, API and

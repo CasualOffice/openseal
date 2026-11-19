@@ -35,6 +35,10 @@ Every task, none of it optional:
   needs an Accepted ADR first.
 - **Track everything** in [14](docs/14-EXECUTION-TRACKER.md). No untracked work.
 
+## Execution plan
+
+- **Follow the [docs/06 Execution plan](docs/06-ROADMAP-AND-DELIVERY.md) (owner instruction 62).** One slice at a time, in its order, end to end to closure. Name the slice and tracker id before any work; refuse work outside it unless the owner asks. Never abandon started work. `tools/check-plan.py` enforces it.
+
 ## Priorities (the earlier wins)
 
 1. **Integrity of evidence** — never produce a sealed document or audit trail that misstates what happened.

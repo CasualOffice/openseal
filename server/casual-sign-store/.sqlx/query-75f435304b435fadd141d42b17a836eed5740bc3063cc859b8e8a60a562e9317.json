@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM retention_rules WHERE account_id = $1 AND data_class = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "75f435304b435fadd141d42b17a836eed5740bc3063cc859b8e8a60a562e9317"
+}

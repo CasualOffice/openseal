@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO envelope_tombstones\n                   (account_id, envelope_id, chain_head, event_count, sealed_sha256, purged_at, policy)\n               SELECT e.account_id, e.id, e.chain_head,\n                      (SELECT count(*) FROM audit_events AS a\n                        WHERE a.account_id = e.account_id AND a.envelope_id = e.id),\n                      (SELECT v.sha256 FROM document_versions AS v\n                         JOIN documents AS d ON d.account_id = v.account_id AND d.id = v.document_id\n                        WHERE d.account_id = e.account_id AND d.envelope_id = e.id\n                          AND v.kind = 'sealed'\n                        ORDER BY d.ord, v.created_at LIMIT 1),\n                      $3, left($4, 255)\n                 FROM envelopes AS e\n                WHERE e.account_id = $1 AND e.id = $2 AND e.chain_head IS NOT NULL\n               ON CONFLICT (account_id, envelope_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d0e679a4025efd81905a3551df5c46e1b9b05323a8233c224ff7931b44d83c76"
+}

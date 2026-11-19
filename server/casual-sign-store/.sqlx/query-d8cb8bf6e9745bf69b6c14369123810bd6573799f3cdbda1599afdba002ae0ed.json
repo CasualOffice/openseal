@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT openseal_erase_user($1, $2) AS \"erased!\"",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "erased!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d8cb8bf6e9745bf69b6c14369123810bd6573799f3cdbda1599afdba002ae0ed"
+}

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM recipient_auth_requirements AS a USING recipients AS r WHERE a.account_id = $1 AND r.account_id = a.account_id AND r.id = a.recipient_id AND r.envelope_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bfdb89e464087c1e4e45e8428e111e4694b618826214420040263f81508148a7"
+}

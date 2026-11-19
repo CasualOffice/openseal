@@ -138,6 +138,78 @@ async fn jobs(api: &Api, env: &str) -> Vec<String> {
         .collect()
 }
 
+/// Each personal-data operation once, as the signed-in administrator (who owns the
+/// organization, so may not erase themselves), against ids of no object where one is
+/// named. Boxed: the contract test's future is already large.
+fn privacy_operations<'a>(
+    api: &'a Api,
+    s: &'a common::harness::Auth,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        let none = uuid::Uuid::now_v7();
+        let calls: [(&str, String, Option<Value>, &[StatusCode]); 9] = [
+            (
+                "GET",
+                "/api/v1/users/me/export".into(),
+                None,
+                &[StatusCode::OK],
+            ),
+            (
+                "DELETE",
+                "/api/v1/users/me".into(),
+                None,
+                &[StatusCode::CONFLICT, StatusCode::FORBIDDEN],
+            ),
+            (
+                "POST",
+                format!("/api/v1/users/{none}/erase"),
+                None,
+                &[StatusCode::NOT_FOUND],
+            ),
+            ("GET", "/api/v1/retention".into(), None, &[StatusCode::OK]),
+            (
+                "PUT",
+                "/api/v1/retention".into(),
+                Some(json!({"keep_days": {}})),
+                &[StatusCode::OK, StatusCode::FORBIDDEN],
+            ),
+            (
+                "GET",
+                "/api/v1/retention/preview".into(),
+                None,
+                &[StatusCode::OK],
+            ),
+            (
+                "PUT",
+                format!("/api/v1/envelopes/{none}/legal-hold"),
+                None,
+                &[StatusCode::NOT_FOUND],
+            ),
+            (
+                "DELETE",
+                format!("/api/v1/envelopes/{none}/legal-hold"),
+                None,
+                &[StatusCode::NOT_FOUND],
+            ),
+            (
+                "POST",
+                format!("/api/v1/envelopes/{none}/purge"),
+                None,
+                &[StatusCode::NOT_FOUND],
+            ),
+        ];
+        for (method, path, body, want) in calls {
+            let r = api.call(method, &path, s, body, &[]).await;
+            assert!(
+                want.contains(&r.status),
+                "{method} {path}: {} {:?}",
+                r.status,
+                r.json()
+            );
+        }
+    })
+}
+
 #[tokio::test]
 async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     let Some(api) = Api::new("contract_scenario", Rls::On).await else {
@@ -2257,6 +2329,8 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "reauthenticate without the second factor",
     )
     .await;
+    // Personal-data controls (ASVS-16, ASVS-18); `tests/privacy.rs` covers them in depth.
+    privacy_operations(&api, &s).await;
     ok(
         api.call(
             "DELETE",

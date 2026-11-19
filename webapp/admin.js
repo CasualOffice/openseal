@@ -31,6 +31,7 @@
 // invitation state, so it is read per local member (`GET /users/{id}`); the account's
 // name is shown, not edited (the API has no rename).
 
+import { retentionPage } from "./adminretention.js";
 import { h, clear, fmtDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
@@ -59,7 +60,7 @@ const TITLE = {
 const LEDE = {
   organization: () => t("admin.lede.organization"), members: () => t("admin.lede.members"), branding: () => t("admin.lede.branding"),
   integrations: () => t("admin.lede.integrations"), intelligence: () => t("intel.lede"), signing: () => t("admin.lede.signing"),
-  audit: () => t("admin.lede.audit"),
+  audit: () => t("admin.lede.audit"), retention: () => t("admin.lede.retention"),
 };
 const TAB = {
   api: () => t("admin.api"), webhooks: () => t("admin.webhooks"),
@@ -110,6 +111,7 @@ export function mount(view, ctx, _match, params) {
   else if (current === "integrations") integrations(body, ctx, tab);
   else if (current === "intelligence") intelligence(body, ctx, HEADS.get(body));
   else if (current === "audit") adminLog(body, ctx);
+  else if (current === "retention") retentionPage(body, ctx, HEADS.get(body));
   else account(body, ctx, current);
   return () => { for (const p of ["users.", "groups.", "profiles.", "webhooks.", "apiclients.", "admin.go.", "intel.", "adminlog."]) unregisterPrefix(p); };
 }

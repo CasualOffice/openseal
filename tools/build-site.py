@@ -37,6 +37,7 @@ import sitelib  # noqa: E402
 ROOT = sitelib.ROOT
 SITE = sitelib.SITE
 SRC = sitelib.SRC
+BASE_URL = "https://seal.casualoffice.org/"  # site/CNAME's domain, as GitHub Pages serves it
 
 
 def _load(name: str):
@@ -116,6 +117,32 @@ SAMPLE_ROOTS = ("fixtures/sealed/trust-root.pem", "fixtures/signed/trust-root.pe
 
 # ---- Pages --------------------------------------------------------------------------------
 
+def llms_txt(pages: dict[str, str]) -> str:
+    """The llms.txt convention (llmstxt.org): a plain summary and links an AI assistant can read."""
+    import html
+    import re
+    def title(text: str) -> str:
+        m = re.search(r"<title>(.*?)</title>", text, re.S)
+        return html.unescape(re.sub(r"\s+", " ", m.group(1)).strip()) if m else ""
+    def desc(text: str) -> str:
+        m = re.search(r'<meta name="description" content="([^"]*)"', text)
+        return html.unescape(m.group(1)) if m else ""
+    lines = ["# OpenSeal", "",
+             "> Open-source (Apache-2.0) electronic-signature platform: send PDFs for signature, sign in the browser, "
+             "seal with PAdES, and verify offline. Self-hostable with Docker Compose. Pre-release; designed to support "
+             "ESIGN and eIDAS simple and advanced electronic signatures, not certified.", ""]
+    groups = (("Site", lambda r: not r.startswith("docs/")), ("Documentation", lambda r: r.startswith("docs/")))
+    for name, keep in groups:
+        lines += [f"## {name}", ""]
+        for rel in sorted(r for r in pages if keep(r)):
+            url = BASE_URL + ("" if rel == "index.html" else rel)
+            d = desc(pages[rel])
+            lines.append(f"- [{title(pages[rel])}]({url})" + (f": {d}" if d else ""))
+        lines.append("")
+    lines += ["## Optional", "", "- [Source code](https://github.com/CasualOffice/openseal)", ""]
+    return "\n".join(lines)
+
+
 def build() -> dict[str, bytes]:
     """Every generated file, relative to site/."""
     files: dict[str, bytes] = {}
@@ -155,6 +182,15 @@ def build() -> dict[str, bytes]:
         files[rel] = text.encode("utf8")
         index.extend(sitelib.index_entries(rel, text))
     files["search-index.json"] = (json.dumps(index, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf8")
+    # For search engines (submit https://seal.casualoffice.org/sitemap.xml in Google Search
+    # Console). No dates, so the build stays the same for the same sources.
+    urls = [BASE_URL + ("" if rel == "index.html" else rel) for rel in sorted(pages)]
+    files["sitemap.xml"] = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+                            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                            + "".join(f"  <url><loc>{u}</loc></url>\n" for u in urls)
+                            + "</urlset>\n").encode("utf8")
+    files["llms.txt"] = llms_txt(pages).encode("utf8")
+    files["robots.txt"] = f"User-agent: *\nAllow: /\n\nSitemap: {BASE_URL}sitemap.xml\n".encode("utf8")
     return files
 
 

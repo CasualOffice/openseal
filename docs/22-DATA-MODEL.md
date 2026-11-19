@@ -252,7 +252,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | SigningLink | `signing_links` | resolution only |
 | WebhookSubscription, WebhookDelivery | `webhook_subscriptions`, `webhook_deliveries` | `TenantTx::webhooks` |
 | ApiClient | `api_clients` | `TenantTx::api_clients` |
-| RetentionPolicy | `retention_policies` | schema only |
+| RetentionPolicy | `retention_rules` (migration 0045; replaced the unused `retention_policies`) | `TenantTx::privacy` (rules, legal holds, the retention job's candidates, tombstones, the record purge, member erasure; `ASVS-16`, `ASVS-18`) |
 | Jobs (ADR-012) | `jobs` | `TenantTx::jobs`; claim through `EntryPoints` |
 
 **Tenancy as built.** Every table but `accounts` and `users` has `account_id uuid NOT NULL`, `UNIQUE (account_id, id)`
@@ -603,3 +603,13 @@ the rules above, and what does not:
 `Envelope::validate_for_send`, `WF-04`). The server maps rows to these values; the
 engine never sees SQL. The same types serialize to the public JSON in [40](40-API-DESIGN.md) through explicit DTOs, so
 an internal field never leaks into the API by accident.
+
+### As built (`ASVS-16`, `ASVS-18`, migration 0045, ADR-039 Accepted)
+
+`users.erased_at` (the identity was pseudonymised by `openseal_erase_user`, a definer that acts only on a member of
+the current account and of no other, because the factor columns change only as the owner); `retention_rules`
+(`account_id`, `data_class` in `draft`, `ended`, `completed`, `sessions`, `keep_days` 1 to 36500, `updated_at`; one
+per account and class; no row keeps for ever) replacing `retention_policies`, which nothing read or wrote;
+`envelopes.legal_hold_at`; `openseal_enqueue_retention_jobs(day, now)`, a definer that queues one `retention_sweep`
+job per account with a rule and day and returns a count. The table count stays 66. The purge of an envelope's records
+and the erasure of a member never touch `audit_events`, `admin_events` or `envelope_tombstones` (docs/32 §7 As built).

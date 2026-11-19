@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE envelopes SET legal_hold_at = CASE WHEN $3 THEN $4::timestamptz END WHERE account_id = $1 AND id = $2 AND (legal_hold_at IS NULL) = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bool",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "075bbfe9af922cab06ef10558ddc14ac8bba087f5e732e4775071a9d71b011b8"
+}
