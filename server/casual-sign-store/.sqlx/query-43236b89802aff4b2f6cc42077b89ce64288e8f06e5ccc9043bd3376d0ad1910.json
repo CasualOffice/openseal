@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, name, status FROM accounts WHERE organization_id = $1 ORDER BY name, id",
+  "query": "SELECT id, name, status, sandbox FROM accounts WHERE id = $1 AND organization_id = $2",
   "describe": {
     "columns": [
       {
@@ -35,18 +35,31 @@
             "name": "status"
           }
         }
+      },
+      {
+        "ordinal": 3,
+        "name": "sandbox",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "sandbox"
+          }
+        }
       }
     ],
     "parameters": {
       "Left": [
+        "Uuid",
         "Uuid"
       ]
     },
     "nullable": [
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "53a5d2964426258aa8379e4fc45700399593b61393628b6c1022d23a9387daee"
+  "hash": "43236b89802aff4b2f6cc42077b89ce64288e8f06e5ccc9043bd3376d0ad1910"
 }

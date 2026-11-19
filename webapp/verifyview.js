@@ -155,6 +155,8 @@ export function receipt({ file, size, report: r, trusted, checkedAt, onAnother }
         h("h2", { id: "verdict-h", class: "os-vfy__verdict", attrs: { tabindex: "-1" }, text: t(`verify.state.${r.state}`) }),
         h("p", { class: "os-vfy__verdict-text", text }),
         r.needsTrust ? h("p", { class: "os-vfy__hint" }, icon("info", { size: 16 }), h("span", { text: t("verify.needs-trust") })) : null,
+        // ADR-041: a sandbox seal is a test, whatever its verdict.
+        r.sandbox ? h("p", { class: "os-vfy__hint os-vfy__sandbox", attrs: { role: "note", "data-testid": "verify-sandbox" } }, icon("triangle-alert", { size: 16 }), h("span", { text: t("verify.sandbox") })) : null,
         h("dl", { class: "os-vfy__facts" }, ...rows.flatMap(([k, v]) => [h("dt", { text: t(k) }), h("dd", {}, v)])),
         h("div", { class: "os-vfy__actions" }, another))));
 }

@@ -248,6 +248,9 @@ pub struct CertificateInput<'a> {
     /// says how it ended and never claims completion. `None`: a certificate of
     /// completion, byte for byte as before.
     pub ending: Option<Ending>,
+    /// The envelope was sent from a sandbox workspace (ADR-041, `VS-08D`): the title and
+    /// the first lines say it is a test and not an agreement. `false`: as before.
+    pub sandbox: bool,
 }
 
 /// How an envelope that did not complete ended (UXW-30).

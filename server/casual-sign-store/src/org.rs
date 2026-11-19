@@ -103,6 +103,9 @@ pub struct Workspace {
     pub name: String,
     /// Active or archived.
     pub status: WorkspaceStatus,
+    /// A sandbox workspace (ADR-041): its envelopes are sealed with the sandbox key and
+    /// marked as not for agreements, and nothing it does is metered. Fixed at creation.
+    pub sandbox: bool,
 }
 
 /// The ids of a new workspace's three built-in permission profiles (administrator,
@@ -375,7 +378,7 @@ impl OrgTx {
     pub async fn workspaces(&mut self) -> Result<Vec<Workspace>> {
         let org = self.org();
         let rows = sqlx::query!(
-            "SELECT id, name, status FROM accounts WHERE organization_id = $1 ORDER BY name, id",
+            "SELECT id, name, status, sandbox FROM accounts WHERE organization_id = $1 ORDER BY name, id",
             org
         )
         .fetch_all(&mut *self.tx)
@@ -387,6 +390,7 @@ impl OrgTx {
                     id: AccountId(r.id),
                     name: r.name,
                     status: WorkspaceStatus::parse(&r.status, "status")?,
+                    sandbox: r.sandbox,
                 })
             })
             .collect()
@@ -422,7 +426,7 @@ impl OrgTx {
     pub async fn workspace_row(&mut self, account: AccountId) -> Result<Option<Workspace>> {
         let org = self.org();
         let r = sqlx::query!(
-            "SELECT id, name, status FROM accounts WHERE id = $1 AND organization_id = $2",
+            "SELECT id, name, status, sandbox FROM accounts WHERE id = $1 AND organization_id = $2",
             account.0,
             org
         )
@@ -434,6 +438,7 @@ impl OrgTx {
                 id: AccountId(r.id),
                 name: r.name,
                 status: WorkspaceStatus::parse(&r.status, "status")?,
+                sandbox: r.sandbox,
             })
         })
         .transpose()
@@ -713,15 +718,51 @@ impl OrgTx {
         name: &str,
         profiles: &BuiltinProfiles,
     ) -> Result<WorkspaceOf> {
-        let e = self
-            .next_event(
-                &AdminChange::new("workspace.created")
-                    .target("workspace", id.0)
-                    .target("admin_profile", profiles.admin.0)
-                    .target("sender_profile", profiles.sender.0)
-                    .target("viewer_profile", profiles.viewer.0),
-            )
-            .await?;
+        self.create_workspace_of_kind(id, name, profiles, false)
+            .await
+    }
+
+    /// Create a sandbox workspace (ADR-041, `VS-08D`): as [`OrgTx::create_workspace`],
+    /// marked a sandbox for good; its admin event names it so.
+    ///
+    /// # Errors
+    ///
+    /// As [`OrgTx::create_workspace`].
+    pub async fn create_sandbox_workspace(
+        &mut self,
+        id: AccountId,
+        name: &str,
+        profiles: &BuiltinProfiles,
+    ) -> Result<WorkspaceOf> {
+        self.create_workspace_of_kind(id, name, profiles, true)
+            .await
+    }
+
+    async fn create_workspace_of_kind(
+        &mut self,
+        id: AccountId,
+        name: &str,
+        profiles: &BuiltinProfiles,
+        sandbox: bool,
+    ) -> Result<WorkspaceOf> {
+        // Read by `accounts.sandbox`'s default at the insert (0049), for this
+        // transaction only.
+        sqlx::query!(
+            "SELECT set_config('openseal.new_sandbox', $1, true)",
+            if sandbox { "on" } else { "off" }
+        )
+        .fetch_one(&mut *self.tx)
+        .await
+        .map_err(db)?;
+        let mut change = AdminChange::new("workspace.created")
+            .target("workspace", id.0)
+            .target("admin_profile", profiles.admin.0)
+            .target("sender_profile", profiles.sender.0)
+            .target("viewer_profile", profiles.viewer.0);
+        if sandbox {
+            change = change.target("sandbox", "true");
+        }
+        let e = self.next_event(&change).await?;
         let created = sqlx::query_scalar!(
             r#"SELECT openseal_create_workspace($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                AS "created!""#,

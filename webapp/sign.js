@@ -280,6 +280,9 @@ function fillHeader() {
   markEl.textContent = mark;
   markEl.hidden = !mark;
   document.getElementById("brand-mark").hidden = !!mark;
+  // ADR-041: a sandbox workspace's envelope says it is a test.
+  const sandbox = document.getElementById("sandbox-banner");
+  if (sandbox) sandbox.hidden = view.sandbox !== true;
   const ask = askLine(view.sender);
   const askEl = document.getElementById("ask-line");
   askEl.textContent = ask ? t(ask.key, ask.vars) : "";

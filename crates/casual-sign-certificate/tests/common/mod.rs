@@ -449,5 +449,6 @@ pub fn input(chain: &Chain, delivered: Hash256, n: usize) -> CertificateInput<'_
         chain,
         generated: t(1_000_000),
         ending: None,
+        sandbox: false,
     }
 }

@@ -140,6 +140,8 @@ export const COMMON = {
   "ftype.signature": "Signature",
   "ftype.text": "Text",
 
+  "sandbox.banner": "Sandbox workspace: for testing. Nothing sent, signed or sealed here is an agreement.",
+  "sandbox.sign-banner": "Sandbox: this is a test envelope. Nothing you sign here is an agreement.",
   "mock.banner": "Demo mode: data lives only in this browser tab. Nothing is sent or signed.",
   "mock.signing-link": "Open signing page (demo)",
   "mock.user": "Demo sender",

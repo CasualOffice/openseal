@@ -74,3 +74,32 @@ test("the mock registers an OAuth app and a JWT integration, and answers consent
   await c.oauth.revoke(items[0].id);
   assert.equal((await c.oauth.consents()).items.length, 0);
 });
+
+// ---- Sandbox workspaces (ADR-041, VS-08D) ------------------------------------------------
+
+test("a sandbox seal is named by its signer's subject, and only marks the report", async () => {
+  const { summarize, isSandboxSigner } = await import("../verifyreport.js");
+  assert.equal(isSandboxSigner("O=OpenSeal development,OU=Sandbox - not for agreements,CN=OpenSeal sandbox seal - not for agreements"), true);
+  assert.equal(isSandboxSigner("O=OpenSeal development,CN=OpenSeal development seal"), false);
+  assert.equal(isSandboxSigner(null), false);
+  const sig = (signer) => ({ signer, indication: { indication: "TOTAL_PASSED" }, checks: {}, covers_whole_document: true });
+  const sandbox = summarize({ ok: { signatures: [sig("CN=OpenSeal sandbox seal - not for agreements")] } });
+  assert.equal(sandbox.sandbox, true);
+  assert.equal(sandbox.state, "valid", "the mark never changes the verdict");
+  assert.equal(sandbox.signatures[0].signer, "CN=OpenSeal sandbox seal - not for agreements");
+  assert.equal(summarize({ ok: { signatures: [sig("CN=OpenSeal seal")] } }).sandbox, false);
+});
+
+test("the mock makes a sandbox workspace for good; in it the session says so and keys start osk_test_", async () => {
+  const c = createClient({ fetch: createMockFetch() });
+  await c.login(MOCK.email, MOCK.password);
+  assert.equal((await c.session()).sandbox, false);
+  const ws = await c.org.createWorkspace("Integration tests", { sandbox: true });
+  assert.equal(ws.sandbox, true);
+  assert.equal((await c.org.workspaces()).items.find((w) => w.id === ws.id).sandbox, true);
+  await c.org.joinWorkspace(ws.id, "admin");
+  await c.switchWorkspace(ws.id);
+  assert.equal((await c.session()).sandbox, true);
+  const key = await c.apiClients.create({ name: "CI", kind: "api_key", scopes: ["envelopes:read"] });
+  assert.match(key.key, /^osk_test_/);
+});

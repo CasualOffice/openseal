@@ -221,6 +221,39 @@ fn signer_attachments_are_listed_by_hash() {
     );
 }
 
+/// ADR-041 (`VS-08D`): a sandbox envelope's certificate says, in its title, its first
+/// lines and the PDF's own title, that it is a sandbox test and not for agreements, and
+/// never reads as a certificate of completion.
+#[test]
+fn a_sandbox_certificate_says_it_is_not_for_agreements() {
+    let fonts = FontSet::bundled();
+    let (chain, delivered) = chain(2);
+    let mut sb = input(&chain, delivered, 2);
+    sb.sandbox = true;
+    let r = render_certificate(&sb, &fonts, &CertificateOptions::default()).unwrap();
+    let mut a = admit(&r.bytes, &Limits::default(), &never).unwrap();
+    let pages = a.report.pages.clone();
+    let text = casual_sign_fields::extract_text(&mut a.document, &pages, &never)
+        .unwrap()
+        .iter()
+        .flat_map(|p| p.runs.iter().map(|r| r.text.clone()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(
+        text.contains("Sandbox Certificate (not for agreements)"),
+        "{text}"
+    );
+    assert!(text.contains("SANDBOX: NOT FOR AGREEMENTS"), "{text}");
+    assert!(!text.contains("Certificate of Completion"), "{text}");
+    let needle = b"Sandbox Certificate";
+    assert!(r.bytes.windows(needle.len()).any(|w| w == needle));
+    assert!(
+        !r.bytes
+            .windows(25)
+            .any(|w| w == b"Certificate of Completion")
+    );
+}
+
 /// An envelope that ended without completing (UXW-30) gets an envelope certificate that
 /// says how it ended, who ended it, when and why, and never claims completion; without
 /// an ending the certificate is one of completion, as before.

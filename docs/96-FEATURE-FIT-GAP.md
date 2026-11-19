@@ -209,8 +209,8 @@ instructions 8 and 9).
 | FG-196 | Embedded signing view | DS, SN | Build | 9 | Designed |
 | FG-197 | Embedded sending / prepare view | DS, SN | Build | 9 | Designed |
 | FG-198 | Embedded correct and template edit views | DS, SN | Build | 9 | Designed |
-| FG-199 | SDKs (TS, Python, then Java, C#, Go, PHP, Ruby) | DS | Build | 8 | Partial: TypeScript and Python built (`VS-08E`, `sdk/`), generated from the contract, tested offline; not published (registry accounts, owner). Java, C#, Go, PHP, Ruby: `VS-08H` |
-| FG-200 | Sandbox / demo environment | DS, SN | Build | 8 | — (`VS-08D`: waits for the owner's choice of model, [76](76-SLICE-8-EVIDENCE.md)) |
+| FG-199 | SDKs (TS, Python, then Java, C#, Go, PHP, Ruby) | DS | Build | 8 | Partial: TypeScript and Python built (`VS-08E`, `sdk/`), generated from the contract, tested offline; not published: owner instruction 70, "Not now" (`VS-08J`). Java, C#, Go, PHP, Ruby: `VS-08H` |
+| FG-200 | Sandbox / demo environment | DS, SN | Build | 8 | Partial: built on the slice 8 branch (`VS-08D`, ADR-041): sandbox workspaces sealed with a separate sandbox key, marked everywhere, not metered, `osk_test_` keys; server, worker, keyd, verify and web tests, `api-webhooks.spec.mjs` in mock mode. `Works` once `compose-e2e` is green on `main` with it |
 | FG-201 | Rate limit headers | DS | Build | Phase 2 | Works |
 | FG-202 | DocuSign-compatible API | — | Build, subject to counsel (`DEC-10`) | 25 | — |
 | FG-203 | MCP agent access | — (sisters) | Build | 22 | — |

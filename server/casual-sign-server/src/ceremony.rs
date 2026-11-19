@@ -86,6 +86,9 @@ pub(crate) struct Open {
     secure: bool,
     /// Who sent the envelope, as the view answers it (UXW-34).
     sender: Value,
+    /// The envelope is a sandbox workspace's (ADR-041, `VS-08D`): the page says it is
+    /// not for agreements.
+    sandbox: bool,
     /// `/s/{token}`, the path the view's `consent_required.url` extends. The token is
     /// the caller's own, already resolved (URL-safe base64), so nothing new is revealed.
     link: String,
@@ -296,6 +299,7 @@ async fn reopen(
             sso_url: None,
             secure: st.config().secure_cookies,
             sender,
+            sandbox: acct.sandbox,
             link: format!("/s/{token}"),
             disclosure,
             on_commit: Vec::new(),
@@ -595,6 +599,8 @@ impl Open {
                 c
             }),
             "sender": self.sender,
+            // ADR-041: a sandbox workspace's envelope; the page shows it is a test.
+            "sandbox": self.sandbox,
             "auth_required": me.map(|r| r.spec.auth.iter().filter(|m| !r.auth_passed.contains(m)).copied().collect::<Vec<_>>()),
         });
         // VS-02: an agent, intermediary or editor names later recipients, so their view

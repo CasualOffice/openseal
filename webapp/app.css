@@ -59,6 +59,16 @@ a:hover { color: var(--os-accent-hover); }
   background: var(--os-st-wait-soft); color: var(--os-st-wait);
 }
 
+/* ADR-041: the sandbox workspace's banner, on every screen and the signing page. */
+.os-sandbox-banner {
+  display: flex; flex-wrap: wrap; text-align: center; align-items: center; justify-content: center; gap: var(--os-s1);
+  min-height: 1.75rem; padding: 0.25rem var(--os-s2);
+  font-size: var(--os-fs-12); font-weight: 600;
+  background: var(--os-st-wait-soft); color: var(--os-st-wait);
+  border-bottom: 1px solid var(--os-st-wait);
+}
+.os-sandbox-banner[hidden] { display: none; }
+
 /* ---- Logos per theme --------------------------------------------------------------- */
 .os-logo--dark { display: none; }
 :root[data-theme="dark"] .os-logo--light { display: none; }

@@ -164,6 +164,18 @@ allow-list are refused. Not yet built: cloud KMS backends (AWS KMS, GCP KMS, Azu
 socket transport with peer credentials, and several keys per daemon from a configuration file. (The reconciliation of
 keyd's log with the seals recorded is built: `CON-09` above.)
 
+### 5.1 The sandbox key (ADR-041, `VS-08D`)
+
+A sandbox workspace's envelopes are sealed with **a separate sandbox key**, never the platform key: keyd serves it
+beside the platform key under its own alias (`OPENSEAL_KEYD_SANDBOX_ALIAS`, `_SANDBOX_PKCS11_KEY_LABEL` or `_KEY_ID`,
+`_SANDBOX_CHAIN`; development `_SANDBOX_FILE_KEY`), and the worker uses it (`OPENSEAL_KEYD_SANDBOX_ALIAS`) for every
+seal of a sandbox workspace, documents and the ended-envelope certificate alike, with the `/Reason` "Sandbox: not for
+agreements". Without one the seal waits (`CS-WRK-0020`). Its certificate says "not for agreements" in its subject
+(the Compose stack's: `OU=Sandbox - not for agreements, CN=OpenSeal sandbox seal - not for agreements`); the verifier
+reports every signer's subject (`SignatureReport::signer`), and the Verify page marks such a seal as a sandbox test
+without changing its verdict. An operator provisions the sandbox key in the HSM as any key, with a certificate whose
+subject carries those words.
+
 ## 6. Timestamps
 
 `TimestampSource` is a list of TSAs with failover. Requests carry a nonce and `certReq=true`; the response is checked

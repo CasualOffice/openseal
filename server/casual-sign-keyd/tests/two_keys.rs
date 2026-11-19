@@ -128,6 +128,87 @@ fn keyd_serves_the_next_key_beside_the_current_one() {
     assert!(new.contains("seal 2027"), "{new}");
 }
 
+/// ADR-041 (`VS-08D`): keyd serves the sandbox key (`OPENSEAL_KEYD_SANDBOX_*`) beside
+/// the platform key, each under its own alias, so the worker seals sandbox envelopes
+/// with it and every other envelope with the platform key.
+#[test]
+fn keyd_serves_the_sandbox_key_beside_the_platform_key() {
+    let pki = Pki::new();
+    let dir = scratch("keyd-sandbox-key");
+    let (tls_cert, tls_key, _) = pki.server_identity();
+    let worker = pki.client_identity("worker");
+    let (old_key, old_chain) = seal_key(&pki, "seal 2026");
+    let (new_key, new_chain) = seal_key(&pki, "OpenSeal sandbox seal - not for agreements");
+    for (name, text) in [
+        ("tls.pem", tls_cert.as_str()),
+        ("tls.key", tls_key.as_str()),
+        ("ca.pem", &pki.tls_ca.pem()),
+        ("allow", &format!("{} worker\n", worker.2)),
+        ("old.key", &old_key),
+        ("old.pem", &old_chain),
+        ("new.key", &new_key),
+        ("new.pem", &new_chain),
+    ] {
+        std::fs::write(dir.join(name), text).unwrap();
+    }
+    let mut child = Killed(
+        Command::new(KEYD)
+            .env_clear()
+            // Windows cannot load its network stack without SystemRoot, so a cleared
+            // environment made keyd exit before it listened (Windows CI only).
+            .envs(std::env::var_os("SystemRoot").map(|v| ("SystemRoot", v)))
+            .env("OPENSEAL_DEV_INSECURE_KEY", "1")
+            .env("OPENSEAL_KEYD_LISTEN", "127.0.0.1:0")
+            .env("OPENSEAL_KEYD_TLS_CERT", dir.join("tls.pem"))
+            .env("OPENSEAL_KEYD_TLS_KEY", dir.join("tls.key"))
+            .env("OPENSEAL_KEYD_CLIENT_CA", dir.join("ca.pem"))
+            .env("OPENSEAL_KEYD_ALLOW_LIST", dir.join("allow"))
+            .env("OPENSEAL_KEYD_OPLOG", dir.join("oplog"))
+            .env("OPENSEAL_KEYD_ALIAS", "platform")
+            .env("OPENSEAL_KEYD_FILE_KEY", dir.join("old.key"))
+            .env("OPENSEAL_KEYD_CHAIN", dir.join("old.pem"))
+            .env("OPENSEAL_KEYD_SANDBOX_ALIAS", "sandbox")
+            .env("OPENSEAL_KEYD_SANDBOX_FILE_KEY", dir.join("new.key"))
+            .env("OPENSEAL_KEYD_SANDBOX_CHAIN", dir.join("new.pem"))
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let mut lines = BufReader::new(child.0.stderr.take().unwrap()).lines();
+    let mut seen = Vec::new();
+    let addr = loop {
+        let Some(line) = lines.next() else {
+            panic!("keyd exited before serving: {seen:#?}");
+        };
+        let line = line.unwrap();
+        seen.push(line.clone());
+        // keyd's lines are JSON (ASVS-08): `"event":"serving"` with `alias` and `listen`.
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else {
+            continue;
+        };
+        if v["event"] == "serving" {
+            assert_eq!(v["alias"], "platform and sandbox", "{line}");
+            break v["listen"].as_str().unwrap().to_owned();
+        }
+    };
+    let keyd = RunningKeyd {
+        addr,
+        oplog: dir.join("oplog"),
+    };
+    let subject = |alias: &str| {
+        let key = RemoteKey::connect(endpoint(&pki, &keyd, Some(&worker)), alias).unwrap();
+        key.certificate_chain()[0]
+            .tbs_certificate()
+            .subject()
+            .to_string()
+    };
+    let (old, new) = (subject("platform"), subject("sandbox"));
+    drop(child);
+    assert!(old.contains("seal 2026"), "{old}");
+    assert!(new.contains("not for agreements"), "{new}");
+}
+
 #[test]
 fn the_next_alias_must_differ_from_the_current_one() {
     let out = Command::new(KEYD)

@@ -31,6 +31,8 @@ pub struct Account {
     pub data_region: Option<String>,
     /// Created.
     pub created_at: OffsetDateTime,
+    /// A sandbox workspace (ADR-041, `VS-08D`): fixed at creation.
+    pub sandbox: bool,
 }
 
 /// The account's own row. Reached through `TenantTx::account`.
@@ -48,8 +50,8 @@ impl Accounts<'_> {
     pub async fn get(&mut self) -> Result<Account> {
         let acct = self.tx.acct();
         let r = sqlx::query!(
-            "SELECT id, organization_id, status, name, settings, data_region, created_at \
-             FROM accounts WHERE id = $1",
+            "SELECT id, organization_id, status, name, settings, data_region, created_at, \
+             sandbox FROM accounts WHERE id = $1",
             acct
         )
         .fetch_optional(self.tx.conn())
@@ -64,6 +66,7 @@ impl Accounts<'_> {
             settings: r.settings,
             data_region: r.data_region,
             created_at: r.created_at,
+            sandbox: r.sandbox,
         })
     }
 

@@ -68,9 +68,25 @@ mfa_key() {
     fi
 }
 
+# The sandbox seal key (ADR-041, VS-08D): sandbox workspaces' envelopes are sealed with
+# it only; its certificate says, in its subject, that it is not for agreements, which
+# the verify page reads. On its own check, so an existing stack gains it.
+sandbox_seal() {
+    if [ ! -f "$OUT/sandbox-seal-chain.pem" ]; then
+        (
+            cd "$OUT"
+            leaf sandbox-seal "/O=OpenSeal development/OU=Sandbox - not for agreements/CN=OpenSeal sandbox seal - not for agreements" \
+                "keyUsage=critical,digitalSignature,nonRepudiation"
+            cat sandbox-seal.pem ca.pem > sandbox-seal-chain.pem
+            chmod 0644 sandbox-seal.key sandbox-seal.pem sandbox-seal-chain.pem
+        )
+    fi
+}
+
 if [ -f "$OUT/.complete" ]; then
     echo "dev-pki: secrets already present"
     mfa_key
+    sandbox_seal
     modeld_identity
     exit 0
 fi
@@ -118,6 +134,7 @@ EOF
 chmod 0644 ./*.key ./*.pem postgres-password postgres-app-password softhsm-pin softhsm-so-pin \
     s3-secret-key database-url migrate-database-url s3.json keyd-allow-list
 mfa_key
+sandbox_seal
 touch .complete
 echo "dev-pki: development secrets written"
 modeld_identity

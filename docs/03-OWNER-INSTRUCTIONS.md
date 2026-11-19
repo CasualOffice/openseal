@@ -77,6 +77,9 @@ by saying so.
 | 66 | 2026-11-19 | "Close on green main." Slice 3 (Templates) closes once `main`'s CI run on `af038fd` is green (run 44432837346); template folders are each member's own; template locking is `TSH-04`, outside slice 3. | `VS-03`, [74](74-SLICE-3-EVIDENCE.md) |
 | 67 | 2026-11-20 | "VS-04G: optional signature fields, free-form signing, field presets, 3,000 fields per envelope and field colour are not part of slice 4; they stay as their own rows, picked up in plan order." | `VS-04G`, `FLD-OPT-01`, `FLD-FREE-01`, `FLD-PRESET-01`, `FLD-3K-01`, `FLD-COLOUR-01`, [75](75-SLICE-4-EVIDENCE.md) |
 | 68 | 2026-11-20 | "Slice 4 (Every field) closes once main's CI run on 6bd9646 is green (owner sign-off 2026-11-20)." | `VS-04`, [75](75-SLICE-4-EVIDENCE.md) |
+| 69 | 2026-11-20 | Chose, from options: sandbox accounts follow model (a), DocuSign's: a permanently marked sandbox workspace, sealed with a separate test key whose certificate says it is not for agreements, a banner on every page and email, not metered, keys prefixed `osk_test_`. Written as ADR-041, Accepted; built end to end in slice 8 | `VS-08D`, ADR-041, [76](76-SLICE-8-EVIDENCE.md) |
+| 70 | 2026-11-20 | SDK publishing: "Not now." The TypeScript and Python SDKs stay in the repository with no release step yet; slice 8 closes on the SDKs built and tested in the repository; M4's "SDKs released as beta" item stays open with its own row | `VS-08E`, `VS-08J`, [76](76-SLICE-8-EVIDENCE.md), docs/06 M4 |
+| 71 | 2026-11-20 | Approved adding the SDK drift check (`tools/build-sdks.py --check`) to CI's `checks` job | `VS-08E`, `.github/workflows/ci.yml` |
 
 ## Inherited working rules
 

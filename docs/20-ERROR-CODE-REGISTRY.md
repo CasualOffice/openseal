@@ -261,6 +261,7 @@ marked *final* is dead-lettered at once with an operator alert; the others are r
 | CS-WRK-0017 | The SMS or voice provider did not accept a one-time code message (its HTTP status, when it answered); retried within the code's attempts (VS-05) |
 | CS-WRK-0018 | A time-stamping authority not reached, refused by the address policy, or answering no time-stamp (connection, TLS, timeout, HTTP status, an answer over its limit); logged as `transport.backend_failed` with the TSA's index in the list, never its URL, and the next TSA is tried (`ASVS-08`, ASVS 9.2.5). A log code, not a job's |
 | CS-WRK-0019 | The anchor sink did not take a published anchor of chain heads (`FG-158`; the file of `OPENSEAL_ANCHOR_LOG` not writable); the anchor is stored, and the retried job publishes it again |
+| CS-WRK-0020 | A sandbox workspace's envelope (ADR-041) waits unsealed: the worker has no sandbox key (`OPENSEAL_KEYD_SANDBOX_ALIAS`, or in development `OPENSEAL_WORKER_DEV_SANDBOX_KEY`); the seal job retries and the operator is alerted. Never sealed with the platform key instead (`VS-08D`) |
 
 ## Log and security events (`casual-sign-seclog`, `ASVS-08`)
 

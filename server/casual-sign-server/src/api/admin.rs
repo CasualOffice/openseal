@@ -25,7 +25,10 @@ use uuid::Uuid;
 
 use super::envelopes::rfc3339;
 use super::{json, path_id};
-use crate::auth::{API_KEY_PREFIX, CSRF_HEADER, Credential, SCOPES, profile_grant, session_cookie};
+use crate::auth::{
+    API_KEY_PREFIX, CSRF_HEADER, Credential, SANDBOX_KEY_PREFIX, SCOPES, profile_grant,
+    session_cookie,
+};
 use crate::authz::{self, Action, Grant};
 use crate::call::Call;
 use crate::crypto::{
@@ -52,6 +55,8 @@ pub(crate) async fn account(c: Call) -> Result<Response, ApiError> {
         &json!({
             "id": a.id.to_string(), "name": a.name, "settings": a.settings,
             "data_region": a.data_region, "created_at": rfc3339(a.created_at),
+            // ADR-041: a sandbox workspace, fixed at creation.
+            "sandbox": a.sandbox,
             "organization_policy": organization_policy_json(&org, &a.settings),
         }),
     ))
@@ -1129,13 +1134,17 @@ pub(crate) async fn create_client(c: Call, body: Bytes) -> Result<Response, ApiE
     let id = ApiClientId(Uuid::now_v7());
     let secret = random_secret()?;
     let jwt = kind == ApiClientKind::JwtIntegration;
+    // ADR-041: a sandbox workspace's keys say so (`osk_test_`), so one is never taken
+    // for a live key in code or in a secret scanner's report.
+    let key_prefix = if tx.account().get().await?.sandbox {
+        SANDBOX_KEY_PREFIX
+    } else {
+        API_KEY_PREFIX
+    };
     let (shown, prefix) = match kind {
         ApiClientKind::ApiKey => {
-            let prefix = format!(
-                "{API_KEY_PREFIX}{}",
-                secret.chars().take(8).collect::<String>()
-            );
-            (format!("{API_KEY_PREFIX}{secret}"), prefix)
+            let prefix = format!("{key_prefix}{}", secret.chars().take(8).collect::<String>());
+            (format!("{key_prefix}{secret}"), prefix)
         }
         _ => (
             format!("oss_{secret}"),
@@ -1459,6 +1468,11 @@ pub(crate) async fn session(c: Call) -> Result<Response, ApiError> {
     // CON-13, ASVS-32: which factors the person has, so the sign-in step and step-up
     // offer the right ones.
     let factors = super::factors::session_factors(&c).await?;
+    // ADR-041: the app marks every screen of a sandbox workspace.
+    let sandbox = {
+        let mut tx = c.tx().await?;
+        tx.account().get().await?.sandbox
+    };
     Ok(json(
         StatusCode::OK,
         &json!({
@@ -1468,6 +1482,7 @@ pub(crate) async fn session(c: Call) -> Result<Response, ApiError> {
             "actions": c.p.actions.iter().map(|a| a.as_str()).collect::<Vec<_>>(),
             "second_factor": c.p.second_factor.as_str(),
             "factors": factors,
+            "sandbox": sandbox,
             // ASVS-07: until when sensitive actions are served without proving the
             // password again; null when they need it now (and for keys and tokens,
             // which are never asked).

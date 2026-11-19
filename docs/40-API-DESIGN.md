@@ -484,6 +484,18 @@ The web app: the consent screen (`authorize.js`), the Admin client form (kinds, 
 key refused before sending), and Connected apps in the profile panel. `server/casual-sign-server/tests/oauth.rs`,
 `webapp/tests/slice8.test.mjs`, `webapp/e2e/api-webhooks.spec.mjs`.
 
+## As built (`VS-08D`: sandbox workspaces, ADR-041)
+
+| Endpoint | As built |
+| --- | --- |
+| `POST /organizations/me/workspaces {name, sandbox?}` | `sandbox: true` makes a sandbox workspace for good (migration 0049: the database refuses any later change); the admin event `workspace.created` names it. Every workspace answers `sandbox` |
+| `GET /auth/session`, `GET /accounts/me` | `sandbox`: the web app shows its banner on every screen |
+| `POST /api-clients` | In a sandbox workspace an API key starts `osk_test_` (it begins `osk_`, so it authenticates the same way) |
+| `GET /s/{token}`, `POST /s/{token}/session` | `sandbox`: the signing page says the envelope is a test, not an agreement |
+| Metering and quotas | Nothing a sandbox does is counted or refused by a quota; a suspended organization still stops it |
+
+Sealing, the certificate, emails and the Verify page: [31](31-SEALING-AND-SIGNATURES.md) §5.1, ADR-041.
+
 ## As built (`ASVS-01`, staff second factor)
 
 A staff user may add a TOTP authenticator (RFC 6238: HMAC-SHA1, six digits, 30-second steps, one step of drift either

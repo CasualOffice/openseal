@@ -445,6 +445,10 @@ pub(crate) fn plan(
     );
     wr.y += line_h(18.0);
     let intro = match &input.ending {
+        None if input.sandbox => format!(
+            "SANDBOX: NOT FOR AGREEMENTS. This envelope was sent from a sandbox workspace, for testing; it is not an agreement, and its seal was made with the sandbox key, whose certificate says the same. This certificate records who received, viewed, consented to and signed the documents of envelope {}, when, and how they were authenticated. The complete audit trail is attached to this PDF as audit-trail.json.",
+            e.id
+        ),
         None => format!(
             "This certificate records who received, viewed, consented to and signed the documents of envelope {}, when, and how they were authenticated. The complete audit trail is attached to this PDF as audit-trail.json.",
             e.id
@@ -747,10 +751,12 @@ pub(crate) fn plan(
 /// The certificate's title: a certificate of completion, or for an envelope that ended
 /// without completing an envelope certificate, which never claims completion (UXW-30).
 pub(crate) fn title(input: &CertificateInput<'_>) -> &'static str {
-    if input.ending.is_some() {
-        "Envelope Certificate (not completed)"
-    } else {
-        "Certificate of Completion"
+    match (input.ending.is_some(), input.sandbox) {
+        (true, false) => "Envelope Certificate (not completed)",
+        (true, true) => "Sandbox Envelope Certificate (not completed)",
+        (false, false) => "Certificate of Completion",
+        // ADR-041: a sandbox envelope's certificate never reads as a real one.
+        (false, true) => "Sandbox Certificate (not for agreements)",
     }
 }
 

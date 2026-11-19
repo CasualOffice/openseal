@@ -69,6 +69,8 @@
       <label class="os-sr-only" for="top-search" data-i18n="agreements.search">Search agreements</label>
       <input id="top-search" class="os-input os-screensearch__input" type="search" autocomplete="off" data-i18n-attr="placeholder:top.search-placeholder">
     </form>
+    <!-- ADR-041: every screen of a sandbox workspace says so. -->
+    <div id="sandbox-banner" class="os-sandbox-banner" role="note" data-testid="sandbox-banner" hidden><span data-i18n="sandbox.banner">Sandbox workspace: for testing. Nothing sent, signed or sealed here is an agreement.</span></div>
     <main id="main" class="os-main" tabindex="-1"></main>
   </div>
   <!-- WEB-12 (NAV-05): says which screen a module switch opened. -->

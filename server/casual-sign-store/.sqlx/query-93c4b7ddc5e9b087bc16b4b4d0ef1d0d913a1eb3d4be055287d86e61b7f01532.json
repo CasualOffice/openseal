@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, organization_id, status, name, settings, data_region, created_at FROM accounts WHERE id = $1",
+  "query": "SELECT id, organization_id, status, name, settings, data_region, created_at, sandbox FROM accounts WHERE id = $1",
   "describe": {
     "columns": [
       {
@@ -79,6 +79,17 @@
             "name": "created_at"
           }
         }
+      },
+      {
+        "ordinal": 7,
+        "name": "sandbox",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "accounts",
+            "name": "sandbox"
+          }
+        }
       }
     ],
     "parameters": {
@@ -93,8 +104,9 @@
       false,
       false,
       true,
+      false,
       false
     ]
   },
-  "hash": "f15a4ee0d941ed48757cffea9c888f17a3920172d22b80eaa292493129cf1f38"
+  "hash": "93c4b7ddc5e9b087bc16b4b4d0ef1d0d913a1eb3d4be055287d86e61b7f01532"
 }

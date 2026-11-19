@@ -208,6 +208,7 @@ components:
             passkeys_available:
               type: boolean
               description: False when the server's public URL cannot be a WebAuthn RP id
+        sandbox: {type: boolean, description: 'A sandbox workspace (ADR-041, `VS-08D`): fixed at creation; its envelopes are sealed with the sandbox key and marked as not for agreements, nothing it does is metered, its API keys start `osk_test_`'}
         reauthenticated_until:
           type: [string, 'null']
           format: date-time
@@ -345,6 +346,7 @@ components:
         settings: {type: object}
         data_region: {type: [string, 'null']}
         created_at: {type: string, format: date-time}
+        sandbox: {type: boolean, description: 'A sandbox workspace (ADR-041, `VS-08D`): fixed at creation; its envelopes are sealed with the sandbox key and marked as not for agreements, nothing it does is metered, its API keys start `osk_test_`'}
         organization_policy:
           type: object
           description: >-
@@ -428,6 +430,7 @@ components:
         id: {type: string}
         name: {type: string}
         status: {type: string, enum: [active, archived]}
+        sandbox: {type: boolean, description: 'A sandbox workspace (ADR-041, `VS-08D`): fixed at creation; its envelopes are sealed with the sandbox key and marked as not for agreements, nothing it does is metered, its API keys start `osk_test_`'}
     OrgWorkspaceList:
       type: object
       properties:
@@ -438,6 +441,7 @@ components:
       additionalProperties: false
       properties:
         name: {type: string, minLength: 1, maxLength: 255}
+        sandbox: {type: boolean, default: false, description: 'Make a sandbox workspace, for good (ADR-041)'}
     OrgWorkspaceJoin:
       type: object
       required: [profile]
@@ -1334,6 +1338,7 @@ components:
             version: {type: string, description: 'The label `POST /s/{token}/consent` takes'}
             sha256: {type: string, description: '`sha256:<hex>` over the text''s UTF-8, the hash consent records'}
             url: {type: string, description: '`/s/{token}/disclosure`, present only when the account has published that text (UXW-34)'}
+        sandbox: {type: boolean, description: 'The envelope is a sandbox workspace''s (ADR-041): the page says it is a test, not an agreement'}
         auth_required: {type: [array, 'null'], items: {$ref: '#/components/schemas/AuthMethod'}}
         later_recipients:
           type: array

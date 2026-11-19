@@ -24,11 +24,31 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { test, expect } from "@playwright/test";
-import { signIn, REAL, app, expectAccessible } from "./helpers.mjs";
+import { signIn, REAL, app, expectAccessible, creds, passFactor } from "./helpers.mjs";
 import { makePdf } from "../mockpdf.js";
 
 const BASE = (process.env.OPENSEAL_E2E_BASE_URL || "").replace(/\/$/, "");
 const HOOKS = (process.env.OPENSEAL_E2E_HOOKS_URL || "http://127.0.0.1:8027").replace(/\/$/, "");
+const MAIL = (process.env.OPENSEAL_E2E_MAIL_URL || "http://127.0.0.1:8025").replace(/\/$/, "");
+
+/// Real stack: the signing link in the newest email to `to` sent after `after` (Mailpit).
+async function emailedLink(to, after) {
+  const deadline = Date.now() + 90_000;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${MAIL}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`);
+    if (res.ok) {
+      const { messages = [] } = await res.json();
+      for (const m of messages) {
+        if (after && Date.parse(m.Created) < after) continue;
+        const full = await (await fetch(`${MAIL}/api/v1/message/${encodeURIComponent(m.ID)}`)).json();
+        const link = `${full.Text || ""}\n${full.HTML || ""}`.match(/https?:\/\/[^\s"'<>]+\/s\/[A-Za-z0-9._~%-]+/);
+        if (link) return link[0];
+      }
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`no signing link emailed to ${to} within 90 s`);
+}
 const DEMO = path.resolve(fileURLToPath(new URL("../../target/e2e-demo", import.meta.url)));
 const SIZE = { width: 1280, height: 800 };
 const CALLBACK = "https://app.vs08.example/callback";
@@ -215,6 +235,121 @@ test("slice 8 (VS-08C): an API key sends an envelope, signed webhooks arrive and
   if (!REAL) return;
   await page.close();
   await page.video()?.saveAs(path.join(DEMO, `vs08-${testInfo.project.name}-integrator-key-webhooks-redelivery-consent.webm`));
+});
+
+// ADR-041 (VS-08D): a sandbox workspace, made by the organization's owner, marks every
+// screen; its keys start osk_test_; on the real stack an envelope sent with such a key
+// is signed through its emailed link (the signing page says it is a test), sealed with the
+// sandbox key, and the Verify page says the seal is not for agreements. The sandbox
+// session is a sign-in of its own, in a context of its own: switching workspace ends the
+// session it switches from, which the rest of the run shares.
+test("sandbox (VS-08D): a sandbox workspace is marked everywhere, keys start osk_test_, and its seal says not for agreements", async ({ browser, page: shared }, testInfo) => {
+  test.setTimeout(REAL ? 300_000 : 120_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  const name = `VS-08 sandbox ${run}`;
+  let context = null;
+  let page = shared;
+  if (REAL) {
+    context = await browser.newContext({ viewport: SIZE, recordVideo: { dir: testInfo.outputPath("video-sandbox"), size: SIZE } });
+    page = await context.newPage();
+    await page.goto(app("#/signin"));
+    await page.getByLabel("Email").fill(creds.email);
+    await page.getByLabel("Password").fill(creds.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await passFactor(page);
+    await expect(page.getByRole("heading", { name: "Home", exact: true })).toBeVisible();
+  } else {
+    await page.setViewportSize(SIZE);
+    await signIn(page, "home");
+  }
+  await expect(page.getByTestId("sandbox-banner")).toBeHidden();
+
+  // The owner makes the sandbox workspace and joins it.
+  await page.goto(app("#/org?section=workspaces"));
+  await page.getByRole("button", { name: "New workspace" }).first().click();
+  const create = page.getByRole("dialog", { name: "New workspace" });
+  await create.getByLabel("Name", { exact: true }).fill(name);
+  await create.getByLabel("Sandbox workspace").check();
+  await create.getByRole("button", { name: "Create workspace" }).click();
+  const row = page.getByRole("row", { name: new RegExp(name) });
+  await expect(row.getByTestId("ws-sandbox")).toHaveText("Sandbox");
+  await row.getByRole("button", { name: `Join ${name}` }).click();
+  await page.getByRole("dialog", { name: new RegExp(name) }).getByRole("button", { name: "Join" }).click();
+  await expect(page.locator(".os-toast").last()).toContainText(name);
+
+  // Switched into it: every screen says it is a sandbox.
+  // The workspace menu lists what the page loaded: a fresh load lists the new one.
+  await page.goto(app("#/home"));
+  await page.reload();
+  await page.locator("#ws-btn").click();
+  await page.getByRole("menu", { name: "Workspace" }).getByRole("menuitem", { name }).click();
+  if (REAL) await passFactor(page);
+  await expect(page.getByTestId("sandbox-banner")).toBeVisible();
+  await expect(page.getByTestId("sandbox-banner")).toContainText("Nothing sent, signed or sealed here is an agreement");
+  await expectAccessible(page, "sandbox banner");
+
+  // Its keys start osk_test_.
+  await page.goto(app("#/admin?section=api"));
+  await expect(page.getByTestId("sandbox-banner")).toBeVisible();
+  const [key] = await newClient(page, { name: `VS-08 sandbox key ${run}`, kind: "api_key" });
+  expect(key).toMatch(/^osk_test_/);
+  if (!REAL) return;
+
+  // An envelope sent with the key, signed through its emailed link.
+  const signer = { name: "Sandy Box", email: `vs08-sandbox-${run}@example.com` };
+  const started = Date.now() - 5_000;
+  const pdf = Buffer.from(makePdf([{ title: "Sandbox order", lines: ["Sent from a sandbox workspace."] }])).toString("base64");
+  const res = await fetch(`${BASE}/api/v1/envelopes`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      subject: `VS-08 sandbox envelope ${run}`, status: "sent",
+      documents: [{ name: "order.pdf", content_base64: pdf }],
+      recipients: [{ ref: "s", type: "signer", name: signer.name, email: signer.email }],
+      fields: [{ recipient: "s", document: 0, type: "signature", page: 1, x: 72, y: 600, width: 180, height: 40, required: true }],
+    }),
+  });
+  expect(res.status).toBe(201);
+  const envelopeId = (await res.json()).id;
+  const link = await emailedLink(signer.email, started);
+  const p = await context.newPage();
+  await p.goto(link, { waitUntil: "domcontentloaded" });
+  await expect(p.getByTestId("sandbox-banner")).toBeVisible();
+  const consent = p.getByRole("heading", { name: "Electronic records and signatures" });
+  const progress = p.locator("#guide-progress");
+  await expect(consent.or(progress).first()).toBeVisible();
+  if (await consent.isVisible()) {
+    await p.getByLabel("I agree to use electronic records and signatures.").check();
+    await p.getByRole("button", { name: "Continue" }).click();
+  }
+  await expect(progress).toBeVisible();
+  await p.getByRole("button", { name: /Signature, required/ }).click();
+  const dlg = p.getByRole("dialog", { name: "Adopt your signature" });
+  await dlg.getByTestId("adopt-confirm").click();
+  await p.getByRole("button", { name: "Finish" }).click();
+  await p.getByTestId("review-finish").click();
+  await expect(p.getByTestId("sign-done")).toBeVisible();
+
+  // Sealed with the sandbox key: the Verify page says it is not for agreements.
+  let sealed = null;
+  await expect.poll(async () => {
+    const r = await fetch(`${BASE}/api/v1/envelopes/${envelopeId}/documents/combined`, { headers: { authorization: `Bearer ${key}` } });
+    if (r.status !== 200) return r.status;
+    sealed = Buffer.from(await r.arrayBuffer());
+    return 200;
+  }, { timeout: 120_000, intervals: [2000] }).toBe(200);
+  fs.mkdirSync(DEMO, { recursive: true });
+  const file = testInfo.outputPath("sandbox-sealed.pdf");
+  fs.writeFileSync(file, sealed);
+  await p.goto("/verify.html", { waitUntil: "domcontentloaded" });
+  await expect(p.getByTestId("verify-engine")).toHaveAttribute("data-state", "ready");
+  await p.getByTestId("verify-input").setInputFiles(file);
+  await expect(p.getByTestId("verdict")).toBeVisible();
+  await expect(p.getByTestId("verify-sandbox")).toContainText("not for agreements");
+  await p.close();
+  await page.close();
+  await context.close();
+  await page.video()?.saveAs(path.join(DEMO, `vs08-${testInfo.project.name}-sandbox-workspace-envelope-verify.webm`));
 });
 
 for (const scheme of ["light", "dark"]) {

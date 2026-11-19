@@ -353,7 +353,13 @@ pub struct Fill<'a> {
     pub product: &'a str,
     /// The operator's abuse-report address or page (`SEC-M01`).
     pub abuse: &'a str,
+    /// From a sandbox workspace (ADR-041, `VS-08D`): the subject and the first line say
+    /// it is a test and not an agreement.
+    pub sandbox: bool,
 }
+
+/// The first line of every email from a sandbox workspace (ADR-041).
+pub const SANDBOX_LINE: &str = "SANDBOX: NOT FOR AGREEMENTS. This message comes from a sandbox workspace, used for testing. Nothing sent, signed or sealed in it is an agreement.";
 
 /// The subject and body of `template` (English; localisation is slice 27).
 #[must_use]
@@ -463,6 +469,13 @@ pub fn render(template: Template, f: &Fill<'_>) -> (String, String) {
         ),
     };
     let mut body = String::new();
+    let subject = if f.sandbox {
+        body.push_str(SANDBOX_LINE);
+        body.push_str("\n\n");
+        format!("[Sandbox] {subject}")
+    } else {
+        subject
+    };
     if !f.name.is_empty() {
         body.push_str(&format!("Hello {},\n\n", f.name));
     }

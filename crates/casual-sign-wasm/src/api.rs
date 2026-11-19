@@ -221,6 +221,7 @@ fn signature_json(s: &SignatureReport) -> Value {
         "byte_range": s.byte_range,
         "signed_revision": s.signed_revision,
         "covers_whole_document": s.covers_whole_document,
+        "signer": s.signer,
         "indication": indication_json(&s.indication),
         "checks": {
             "byte_range": check_json(&c.byte_range),

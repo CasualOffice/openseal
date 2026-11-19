@@ -394,6 +394,9 @@ async function route(how) {
     }
   }
   let [entry, match] = matchRoute(hash) || [null, null];
+  // ADR-041: a sandbox workspace's every screen carries the banner.
+  const sandboxBanner = document.getElementById("sandbox-banner");
+  if (sandboxBanner) sandboxBanner.hidden = !ctx.session?.sandbox;
   // Admin is shown to account admins only; the server enforces it on every call.
   const adminLink = document.getElementById("nav-admin");
   if (adminLink) adminLink.hidden = !ctx.session?.admin;

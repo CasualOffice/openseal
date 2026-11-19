@@ -203,7 +203,7 @@ async function workspaces(page) {
       }) : null;
       const join = joinable ? button(t("admin.org.ws.join"), { icon: "arrow-right", size: "sm", attrs: { "aria-label": t("admin.org.ws.join-named", { name: w.name }) }, onClick: () => joinWs(w) }) : null;
       tb.append(h("tr", { attrs: { "data-id": w.id } },
-        h("td", {}, h("strong", { text: w.name })),
+        h("td", {}, h("strong", { text: w.name }), w.sandbox ? h("span", { class: "os-badge os-badge--expired os-org__sandbox", attrs: { "data-testid": "ws-sandbox" }, text: t("admin.org.ws.sandbox") }) : null),
         cell(t("admin.col.status"), h("span", { class: `os-badge os-badge--user-${archived ? "disabled" : "active"}`, text: archived ? t("admin.org.ws.archived") : t("admin.active") }), "os-col-date"),
         cell(t("admin.org.col.you"), h("span", { class: "os-muted os-small", text: m ? (m.current ? t("admin.org.ws.current") : t("admin.org.ws.member")) : "—" }), "os-col-date"),
         h("td", { class: "os-col-actions" }, h("div", { class: "os-actions os-actions--row" }, join, menu))));
@@ -220,7 +220,13 @@ async function workspaces(page) {
       build(b) {
         f.name = h("input", { id: "org-ws-name", class: "os-input", maxLength: 255, autocomplete: "off", attrs: { autofocus: true, "aria-describedby": "org-ws-err" } });
         f.err = h("p", { id: "org-ws-err", class: "os-field-error", attrs: { role: "alert" } });
-        b.append(h("label", { class: "os-label", attrs: { for: "org-ws-name" }, text: t("prepare.name") }), f.name, f.err);
+        // ADR-041: a sandbox workspace is chosen here, once, and never changed.
+        f.sandbox = h("input", { id: "org-ws-sandbox", type: "checkbox", attrs: { "aria-describedby": "org-ws-sandbox-d" } });
+        b.append(h("label", { class: "os-label", attrs: { for: "org-ws-name" }, text: t("prepare.name") }), f.name,
+          h("label", { class: "os-check os-check--desc", attrs: { for: "org-ws-sandbox" } }, f.sandbox,
+            h("span", {}, h("span", { text: t("admin.org.ws.sandbox-label") }),
+              h("span", { id: "org-ws-sandbox-d", class: "os-muted os-small os-block", text: t("admin.org.ws.sandbox-help") }))),
+          f.err);
       },
       actions: [
         { label: t("action.cancel"), value: null },
@@ -229,7 +235,7 @@ async function workspaces(page) {
           onClick: async () => {
             const name = f.name.value.trim();
             if (!name) { f.err.textContent = t("form.required"); f.name.setAttribute("aria-invalid", "true"); f.name.focus(); return undefined; }
-            return ctx.api.org.createWorkspace(name);
+            return ctx.api.org.createWorkspace(name, { sandbox: f.sandbox.checked });
           },
         },
       ],

@@ -69,6 +69,9 @@ pub fn ran_out(start: OffsetDateTime, secs: u64, now: OffsetDateTime) -> bool {
 
 /// API keys start with this, for secret scanning (SEC-A10).
 pub(crate) const API_KEY_PREFIX: &str = "osk_";
+/// A sandbox workspace's API keys start with this (ADR-041); it begins with
+/// [`API_KEY_PREFIX`], so they authenticate the same way.
+pub(crate) const SANDBOX_KEY_PREFIX: &str = "osk_test_";
 
 /// How the caller proved who they are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -614,7 +614,8 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       rename: (name) => data(request("PATCH", "/api/v1/organizations/me", { body: { name } })),
       /// `{items: [{id, name, status}]}`.
       workspaces: () => data(request("GET", "/api/v1/organizations/me/workspaces")),
-      createWorkspace: (name) => data(request("POST", "/api/v1/organizations/me/workspaces", { body: { name } })),
+      /// `sandbox`: a sandbox workspace, for good (ADR-041, `VS-08D`).
+      createWorkspace: (name, { sandbox = false } = {}) => data(request("POST", "/api/v1/organizations/me/workspaces", { body: sandbox ? { name, sandbox: true } : { name } })),
       archiveWorkspace: (id) => data(request("POST", `/api/v1/organizations/me/workspaces/${encodeURIComponent(id)}/archive`)),
       /// Become a member of that workspace with `profile` (`admin`, `sender`, `viewer`);
       /// owners and admins only; written to both admin logs.

@@ -107,6 +107,12 @@ services:
       # Development: import the generated key into a new token on first start.
       OPENSEAL_KEYD_IMPORT_KEY: /secrets/seal.key
       OPENSEAL_KEYD_SO_PIN_FILE: /secrets/softhsm-so-pin
+      # The sandbox key (ADR-041), beside the platform key on the same token; development:
+      # the generated sandbox key, imported on first start.
+      OPENSEAL_KEYD_SANDBOX_ALIAS: sandbox
+      OPENSEAL_KEYD_SANDBOX_PKCS11_KEY_LABEL: sandbox
+      OPENSEAL_KEYD_SANDBOX_CHAIN: /secrets/sandbox-seal-chain.pem
+      OPENSEAL_KEYD_IMPORT_SANDBOX_KEY: /secrets/sandbox-seal.key
     volumes: [keyd:/var/lib/keyd, *secrets]
     depends_on: {pki: {condition: service_completed_successfully}}
 
@@ -168,6 +174,8 @@ services:
       OPENSEAL_KEYD_CLIENT_KEY: /secrets/worker-client.key
       OPENSEAL_SEAL_NAME: OpenSeal development
       OPENSEAL_SEAL_REASON: Sealed on completion (development)
+      # ADR-041: sandbox workspaces are sealed with keyd's sandbox key only.
+      OPENSEAL_KEYD_SANDBOX_ALIAS: sandbox
     volumes: [*secrets]
     depends_on:
       server: {condition: service_healthy}
