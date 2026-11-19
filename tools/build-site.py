@@ -176,7 +176,7 @@ def build() -> dict[str, bytes]:
             # The variables' tables come from the binaries' own module docs (SITE-12).
             body = _load("site_config").fill(body)
         pages[f"docs/{slug}.html"] = sitelib.docs_page(slug, meta.get("title", title), meta["description"],
-                                                       sitelib.expand(body, "../"))
+                                                       sitelib.expand(body, "../"), wide=meta.get("wide", False))
     pages["changelog.html"] = changelog()
     pages["roadmap.html"] = _load("build-roadmap").render()
     # The API reference: an overview, a page per resource and the objects (SITE-12).

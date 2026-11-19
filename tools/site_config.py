@@ -100,8 +100,12 @@ COMPOSE_DESC = {
 TRACKER = re.compile(r"\s*\((?:row\s+)?`?(?:[A-Z][A-Z0-9]*-\d+[A-Z]?|ASVS[- ][\d.]+)`?(?:,\s*`?(?:[A-Z][A-Z0-9]*-\d+[A-Z]?|ASVS[- ][\d.]+)`?)*\)")
 
 
+# A tracker id trailing other words inside parentheses: "(…, CON-13)" -> "(…)".
+TRAILING = re.compile(r"[,;]\s*(?:row\s+)?`?(?:[A-Z][A-Z0-9]*-\d+[A-Z]?|ASVS[- ][\d.]+)`?(?=\))")
+
+
 def _md(text: str) -> str:
-    out = html.escape(TRACKER.sub("", text).strip(), quote=False)
+    out = html.escape(TRAILING.sub("", TRACKER.sub("", text)).strip(), quote=False)
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", out)
 
 

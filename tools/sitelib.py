@@ -352,7 +352,7 @@ def add_heading_ids(body: str) -> str:
     return re.sub(r"<(h[23])([^>]*)>(.*?)</\1>", sub, body, flags=re.S)
 
 
-def docs_page(slug: str, title: str, description: str, article: str) -> str:
+def docs_page(slug: str, title: str, description: str, article: str, wide: bool = False) -> str:
     """A documentation page: left nav, the article, on-this-page links, previous and next."""
     root = "../"
     article = add_heading_ids(article)
@@ -369,7 +369,7 @@ def docs_page(slug: str, title: str, description: str, article: str) -> str:
     side = "".join(f'<h2>{g}</h2><ul>{"".join(items)}</ul>' for g, items in groups.items())
     toc_items = re.findall(r'<h2[^>]*id="([^"]+)"[^>]*>(.*?)</h2>', article, flags=re.S)
     toc = ""
-    if len(toc_items) >= 2:
+    if len(toc_items) >= 2 and not wide:  # a wide page (a reference table) gives the TOC column to the article
         lis = "".join(f'<li><a href="#{i}">{re.sub(r"<[^>]+>", "", t)}</a></li>' for i, t in toc_items)
         toc = f'<nav class="toc" aria-label="On this page"><h2>On this page</h2><ul>{lis}</ul></nav>'
     page_title = next((t for s, t, _ in docs if s == slug), title)
@@ -387,7 +387,7 @@ def docs_page(slug: str, title: str, description: str, article: str) -> str:
     if i + 1 < len(docs):
         ns, nt, _ = docs[i + 1]
         pn.append(f'<a class="pn pn-next" href="{ns}.html"><span class="pn-dir">Next{icon("chevron-right", 16)}</span><span class="pn-title">{_esc(nt)}</span></a>')
-    body = f"""<div class="wrap docs-layout">
+    body = f"""<div class="wrap docs-layout{" docs-layout--wide" if wide else ""}">
   <aside class="docs-side">
     <details class="docs-nav-toggle"><summary>{icon("list-tree", 16)}Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)">{side}</nav></details>
     <nav class="docs-nav docs-nav--wide" aria-label="Documentation">{side}</nav>

@@ -157,9 +157,21 @@ def inline(text: str) -> str:
     return out
 
 
+TITLES = {"jwks": "JSON Web Key Set", "oauthMetadata": "Authorization server metadata", "token": "Token endpoint",
+          "authProviders": "List sign-in providers", "login": "Sign in", "logout": "Sign out",
+          "getCombined": "Get combined PDF", "getAudit": "Get audit trail", "exportMe": "Export my data",
+          "eraseMe": "Erase my account", "getMe": "Get my profile", "patchMe": "Update my profile",
+          "hostInPersonSigner": "Host an in-person signer", "authorizeRedirect": "Authorization endpoint",
+          "authorize": "Answer a consent request", "authorizeRequest": "Check an authorization request"}
+
+
 def title_of(op_id: str) -> str:
+    if op_id in TITLES:
+        return TITLES[op_id]
     words = re.findall(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])", op_id)
     words = [ACRONYMS.get(w.capitalize(), w) for w in words]
+    if words and words[0] == "patch":
+        words[0] = "update"
     t = " ".join(words)
     t = t[0].upper() + t[1:].lower() if t else op_id
     for w in ACRONYMS.values():
@@ -555,21 +567,21 @@ def errors_box(op: Op) -> str:
 def auth_line(op: Op, scopes: dict[str, str]) -> str:
     perm = op.raw.get("x-permission")
     if op.ceremony:
-        return '<p class="api-auth"><span class="api-auth__k">Auth</span>The signing link\'s token in the path; no API credential. Not public API.</p>'
+        return '<p class="api-auth"><span class="api-auth__k">Auth</span><span>The signing link\'s token in the path; no API credential. Not public API.</span></p>'
     if op.public:
-        return '<p class="api-auth"><span class="api-auth__k">Auth</span>None (public)</p>'
+        return '<p class="api-auth"><span class="api-auth__k">Auth</span><span>None (public)</span></p>'
     if perm == "signing-in":
-        return ('<p class="api-auth"><span class="api-auth__k">Auth</span>A staff session, also one that still owes its second factor</p>')
+        return ('<p class="api-auth"><span class="api-auth__k">Auth</span><span>A staff session, also one that still owes its second factor</span></p>')
     cred = "API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session"
     if not perm:
-        return f'<p class="api-auth"><span class="api-auth__k">Auth</span>{cred}; any signed-in caller</p>'
+        return f'<p class="api-auth"><span class="api-auth__k">Auth</span><span>{cred}; any signed-in caller</span></p>'
     scope = scopes.get(perm, "")
     sc = (f' · OAuth scope <a href="api.html#scopes"><code>{esc(scope)}</code></a>' if scope
-          else ' · no OAuth scope grants it (a staff session or an administrator\'s key)' if perm.startswith("org.") or perm in ("envelopes.transfer", "envelopes.read_all") else "")
+          else ' · no OAuth scope covers it: it comes from the member\'s role' if perm.startswith("org.") or perm in ("envelopes.transfer", "envelopes.read_all") else "")
     level = op.raw.get("x-level")
     lv = f" ({esc(level)} level)" if level == "organization" else ""
-    return (f'<p class="api-auth"><span class="api-auth__k">Auth</span>{cred}</p>'
-            f'<p class="api-auth"><span class="api-auth__k">Permission</span><code>{esc(perm)}</code>{lv}{sc}</p>')
+    return (f'<p class="api-auth"><span class="api-auth__k">Auth</span><span>{cred}</span></p>'
+            f'<p class="api-auth"><span class="api-auth__k">Permission</span><span><code>{esc(perm)}</code>{lv}{sc}</span></p>')
 
 
 def op_section(op: Op, scopes: dict[str, str], limit_rows: list) -> str:
