@@ -141,6 +141,8 @@ export interface Operations {
   getEnvelopeCustomFields(params: { "id": string | number | boolean }): Promise<any>;
   /** Envelope and recipient statuses — `GET /api/v1/envelopes/{id}/status` (envelopes.read) */
   getEnvelopeStatus(params: { "id": string | number | boolean }): Promise<any>;
+  /** One ZIP with everything that proves the agreement (VS-06D), recorded as envelope.exported — `GET /api/v1/envelopes/{id}/evidence-package` (envelopes.read) */
+  getEvidencePackage(params: { "id": string | number | boolean }): Promise<any>;
   /** A field — `GET /api/v1/envelopes/{id}/fields/{f}` (envelopes.read) */
   getField(params: { "id": string | number | boolean; "f": string | number | boolean }): Promise<any>;
   /** Every labelled field's value by data label — `GET /api/v1/envelopes/{id}/form-data` (envelopes.read) */

@@ -657,6 +657,16 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "getEvidencePackage": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/envelopes/{id}/evidence-package",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
   "getField": {
     "body": false,
     "body_required": false,

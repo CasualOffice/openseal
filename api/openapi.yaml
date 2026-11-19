@@ -3634,6 +3634,37 @@ paths:
             application/pdf:
               schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/evidence-package:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getEvidencePackage
+      summary: "One ZIP with everything that proves the agreement (VS-06D), recorded as envelope.exported"
+      description: >-
+        For an envelope that is over (completed, or declined, voided or expired): a ZIP of
+        stored entries holding `manifest.json`, each document as sealed (as it ended, with
+        the "not signed" banner, for one that ended without completing) under
+        `documents/`, `certificate.pdf` (the certificate of completion, or the envelope
+        certificate of UXW-30) and `audit-trail.json` (the events as `GET …/audit` gives
+        them, with `chain_head`). The manifest (`format: openseal.evidence-package`,
+        `version: 1`) names every other entry with its `sha256` and `size`, and the chain
+        head. The export is recorded first as `envelope.exported` (ORG-09), so the trail
+        in the package ends with it. In flight, a draft, or purged is `409 CS-WF-0001`; a
+        certificate not made yet `409 CS-API-0009` (an ended envelope asks the worker for
+        it, as `GET …/certificate` does).
+      x-permission: "envelopes.read"
+      x-level: workspace
+      responses:
+        '200':
+          description: ZIP
+          content:
+            application/zip:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/attachments/{sha256}:
     parameters:
       - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}

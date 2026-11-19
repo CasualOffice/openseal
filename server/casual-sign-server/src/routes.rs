@@ -685,6 +685,14 @@ pub fn table() -> Vec<Route> {
         r("GET", "/api/v1/envelopes/{id}", er, JSON, env::get),
         r("PATCH", "/api/v1/envelopes/{id}", ew, JSON, env::patch),
         r("DELETE", "/api/v1/envelopes/{id}", ew, JSON, env::delete),
+        // VS-06D: everything that proves the agreement, as one ZIP.
+        r(
+            "GET",
+            "/api/v1/envelopes/{id}/evidence-package",
+            er,
+            JSON,
+            env::evidence_package,
+        ),
         // ADR-031 (UXW-02): back from the Deleted view.
         r(
             "POST",

@@ -162,7 +162,7 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; every signer downloads it too, from the completion email's link (`VS-01`); a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`) |
+| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; every signer downloads it too, from the completion email's link (`VS-01`); a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`); one evidence package per envelope (documents, certificate, audit trail and a manifest of SHA-256s as one ZIP) built on a branch (`VS-06D`) |
 | FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Works |
 | FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Works |
 | FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Works |

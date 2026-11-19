@@ -293,8 +293,9 @@ pub enum Access {
         /// SHA-256 of the bytes served (the value names the same hash).
         hash: Hash256,
     },
-    /// A completed envelope's evidence package was exported (ORG-09, docs/23 §2.4);
-    /// recorded as `envelope.exported` naming the member who exported it.
+    /// An envelope's evidence package was exported (ORG-09, docs/23 §2.4, `VS-06D`): a
+    /// completed one, or one that ended without completing; recorded as
+    /// `envelope.exported` naming the member who exported it.
     EvidenceExported,
 }
 

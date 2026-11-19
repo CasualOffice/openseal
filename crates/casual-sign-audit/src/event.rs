@@ -556,8 +556,9 @@ pub enum EventData {
         /// SHA-256 of the bytes served.
         hash: Hash256,
     },
-    /// The envelope's evidence package was exported (ORG-09, docs/23 §2.4: the way a
-    /// completed agreement leaves its workspace; additive to ADR-010 as ADR-027 was).
+    /// The envelope's evidence package was exported (ORG-09, docs/23 §2.4: the way an
+    /// agreement leaves its workspace, `GET …/evidence-package`, `VS-06D`; additive to
+    /// ADR-010 as ADR-027 was).
     #[serde(rename = "envelope.exported")]
     EnvelopeExported {
         /// The member who exported it.

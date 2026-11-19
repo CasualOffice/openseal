@@ -27,8 +27,9 @@ export function envelopeActions(status, { cert = false, transfer = false, fields
   const tail = own.length ? [own] : [];
   if (status === "draft") return { primary: "edit", secondary: null, more: [["copy", "template"], ...tail, ["delete"]] };
   if (ACTIVE.has(status)) return { primary: "correct", secondary: "resend", more: [["correct-docs", "download-current", "copy", "template", "history"], ...tail, ["void"]] };
-  if (status === "completed") return { primary: "download", secondary: "certificate", more: [["copy", "template", "history"], ...tail] };
-  if (ENDED.has(status)) return { primary: deleted ? "restore" : "copy-resend", secondary: "download-ended", more: [[...(deleted ? ["copy-resend"] : []), ...(cert ? ["certificate"] : []), "template", "history"], ...tail, ...(deleted ? [] : [["delete"]])] };
+  // VS-06D: the evidence package once it is over (completed or ended).
+  if (status === "completed") return { primary: "download", secondary: "certificate", more: [["evidence", "copy", "template", "history"], ...tail] };
+  if (ENDED.has(status)) return { primary: deleted ? "restore" : "copy-resend", secondary: "download-ended", more: [[...(deleted ? ["copy-resend"] : []), ...(cert ? ["certificate", "evidence"] : []), "template", "history"], ...tail, ...(deleted ? [] : [["delete"]])] };
   return { primary: null, secondary: null, more: [["copy", "template"], ...tail] };
 }
 

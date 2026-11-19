@@ -2234,12 +2234,21 @@ fn record_access(
             });
         }
         Access::EvidenceExported => {
-            // Staff only, and only a completed agreement has an evidence package.
+            // Staff only, and only an envelope that is over has an evidence package: a
+            // completed agreement, or one that ended without completing (declined,
+            // voided, expired; its documents as they ended, `VS-06D`).
             let by = match &ctx.principal {
                 Principal::Sender { user_id } | Principal::Admin { user_id } => user_id.clone(),
                 _ => return Err(not_permitted(cmd)),
             };
-            if s.status != EnvelopeStatus::Completed || s.purged {
+            let over = matches!(
+                s.status,
+                EnvelopeStatus::Completed
+                    | EnvelopeStatus::Declined
+                    | EnvelopeStatus::Voided
+                    | EnvelopeStatus::Expired
+            );
+            if !over || s.purged {
                 return Err(not_allowed(cmd, s));
             }
             out.event(EventData::EnvelopeExported { by });

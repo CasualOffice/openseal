@@ -258,7 +258,7 @@ objects concerned, never their content.
 | Delete draft | Built |
 | Delete an envelope that ended without completing from the lists (`envelope.deleted`, nothing purged; `WEB-08`) | Built |
 | Restore a deleted envelope to the lists (`envelope.restored`; ADR-031, `UXW-43`) | Built |
-| Transfer ownership within the workspace (`envelope.transferred`; `ORG-09`) and record an evidence export (`envelope.exported`) | Built (the export route: `ORG-18`) |
+| Transfer ownership within the workspace (`envelope.transferred`; `ORG-09`) and record an evidence export (`envelope.exported`, once the envelope is over: completed or ended) | Built (the export route `GET …/evidence-package`, `VS-06D`; the import: `ORG-18`) |
 | Deliver/open (`recipient.delivered`; envelope `delivered` per §2) | Built |
 | Consent to the current ERSD; withdraw | Built |
 | Authenticate: challenge, pass, fail with lockout after `max_auth_attempts`, unlock by resend; host-asserted | Built |

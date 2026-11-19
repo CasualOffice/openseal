@@ -266,6 +266,11 @@ export async function downloadCertificate(ctx, id) {
   download(await ctx.api.certificate(id), `certificate-${id}.pdf`);
 }
 
+/// Download the evidence package (VS-06D): one ZIP for an envelope that is over.
+export async function downloadEvidencePackage(ctx, id) {
+  download(await ctx.api.evidencePackage(id), `evidence-${id}.zip`);
+}
+
 /// Whether the certificate can be asked for in this state: a completed envelope's
 /// always; an ended one's (UXW-30) where the backend serves it.
 export function hasCertificate(ctx, status) {

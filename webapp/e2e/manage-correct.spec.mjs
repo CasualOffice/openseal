@@ -7,6 +7,7 @@
 // slice 6 demo (target/e2e-demo/vs06-*, uploaded as `slice-6-demo`). In mock mode the
 // seeded "Offer letter" (access code, signing token) is used. Then axe, light and dark,
 // on each new screen (mock mode).
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -324,4 +325,73 @@ test("ADR-031: a deleted envelope is restored from the Deleted view, with both e
   const hist = page.getByTestId("history-timeline");
   await expect(hist.getByText("Removed from the lists").first()).toBeVisible();
   await expect(hist.getByText("Restored to the lists").first()).toBeVisible();
+});
+
+/// The stored entries of a ZIP, from its central directory: `[{name, bytes}]`.
+function readZip(buf) {
+  const end = buf.length - 22;
+  if (buf.readUInt32LE(end) !== 0x06054b50) throw new Error("not a ZIP end record");
+  const count = buf.readUInt16LE(end + 10);
+  let at = buf.readUInt32LE(end + 16);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const size = buf.readUInt32LE(at + 24);
+    const nameLen = buf.readUInt16LE(at + 28);
+    const local = buf.readUInt32LE(at + 42);
+    const name = buf.subarray(at + 46, at + 46 + nameLen).toString("utf8");
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    out.push({ name, bytes: buf.subarray(start, start + size) });
+    at += 46 + nameLen + buf.readUInt16LE(at + 30) + buf.readUInt16LE(at + 32);
+  }
+  return out;
+}
+
+// VS-06D (UXW-20): the envelope page's "Download evidence package" saves one ZIP whose
+// manifest names every entry's SHA-256; the export shows in the history. Mock: the
+// seeded completed envelope; Compose stack: one voided for the run, once the worker
+// has made its envelope certificate.
+test("VS-06D: the evidence package downloads as one ZIP whose manifest hashes every entry", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 90_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  let id;
+  let subject;
+  if (REAL) {
+    subject = `VS-06D evidence ${run}`;
+    id = await inApp(page, async ({ subject, pdf, run }) => {
+      const api = window.__vs06;
+      const e = await api.createEnvelope({
+        subject, status: "sent",
+        documents: [{ name: "e.pdf", content_base64: pdf }],
+        recipients: [{ ref: "s", type: "signer", name: "Eve Evidence", email: `vs06d-${run}@example.com`, routing_order: 1 }],
+        fields: [{ recipient: "s", document: 0, type: "signature", page: 1, x: 72, y: 600, width: 180, height: 40, required: true }],
+      });
+      await api.voidEnvelope(e.id, "Wrong party");
+      // The worker makes the envelope certificate when it ends (UXW-30).
+      for (let i = 0; i < 60; i++) {
+        try { await api.certificate(e.id); return e.id; } catch { await new Promise((r) => setTimeout(r, 1000)); }
+      }
+      throw new Error("no envelope certificate within 60 s");
+    }, { subject, pdf: Buffer.from(makePdf([{ title: subject, lines: ["Clause 1."] }])).toString("base64"), run });
+  } else {
+    ({ id, subject } = await page.evaluate(() => JSON.parse(sessionStorage.getItem("openseal.mock.v1")).envelopes.find((e) => e.status === "completed")));
+  }
+  await page.goto(app(`#/envelopes/${encodeURIComponent(id)}`), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+  const [dl] = await Promise.all([page.waitForEvent("download"), more(page, "Download evidence package")]);
+  expect(dl.suggestedFilename()).toBe(`evidence-${id}.zip`);
+  const entries = readZip(fs.readFileSync(await dl.path()));
+  expect(entries[0].name).toBe("manifest.json");
+  const manifest = JSON.parse(entries[0].bytes.toString("utf8"));
+  expect(manifest.envelope_id).toBe(id);
+  expect(manifest.entries.map((e) => e.path)).toEqual(entries.slice(1).map((e) => e.name));
+  for (const [i, e] of manifest.entries.entries()) {
+    expect(e.sha256, e.path).toBe(crypto.createHash("sha256").update(entries[i + 1].bytes).digest("hex"));
+  }
+  expect(entries.map((e) => e.name)).toEqual(expect.arrayContaining(["certificate.pdf", "audit-trail.json"]));
+  const trail = JSON.parse(entries.find((e) => e.name === "audit-trail.json").bytes.toString("utf8"));
+  expect(trail.items.at(-1).type).toBe("envelope.exported");
+  expect(trail.chain_head).toBe(manifest.chain_head);
 });

@@ -660,6 +660,16 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "getEvidencePackage": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/envelopes/{id}/evidence-package",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
     "getField": {
         "body": False,
         "body_required": False,

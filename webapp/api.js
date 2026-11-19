@@ -441,6 +441,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// expired one, the envelope certificate saying how it ended (UXW-30; 409 until the
     /// worker has made it).
     certificate: async (id) => (await request("GET", `${E(id)}/certificate`, { raw: true })).blob,
+    /// One ZIP with everything that proves the agreement (VS-06D): each document as
+    /// sealed or as it ended, the certificate, the audit trail and a manifest of SHA-256s.
+    /// Recorded on the server as `envelope.exported`; an envelope still in flight is 409.
+    evidencePackage: async (id) => (await request("GET", `${E(id)}/evidence-package`, { raw: true })).blob,
     /// The anchor proof of the envelope's latest anchored chain head (`FG-158`), as a
     /// Blob of `openseal.anchor-proof` JSON; null while nothing is anchored (`404
     /// CS-API-0017`). Other refusals throw.

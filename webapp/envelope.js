@@ -24,7 +24,7 @@ import { register, unregisterPrefix } from "./commands.js";
 import { button, busy, statusPill, errorState, skeletonLines, skeletonBlock, toast, toastError, emptyState, pdfPreview, menuButton } from "./ui/index.js";
 import {
   statusLine, auditTable, copyEnvelope, saveAsTemplate, deleteEnvelope, downloadCurrent, downloadSealed, downloadCertificate, hasCertificate,
-  correctPanel, historyPanel, voidEnvelopes, copyText, shortDate, DELETABLE, ENDED, customFieldsPanel, transferPanel, restoreEnvelope,
+  correctPanel, historyPanel, voidEnvelopes, copyText, shortDate, DELETABLE, ENDED, customFieldsPanel, transferPanel, restoreEnvelope, downloadEvidencePackage,
 } from "./envactions.js";
 import { envelopeActions, pillOf } from "./managemodel.js";
 import { recipientsSection, evidenceSection, insightsSection, insightsAvailable } from "./agreementparts.js";
@@ -81,6 +81,7 @@ export function mount(view, ctx, [rawId]) {
       "download-ended": { label: t("envelope.download-ended"), icon: "download", title: t("envelope.download-ended-help"), run: guard(() => downloadCurrent(ctx, id, env)) },
       download: { label: t("envelope.download"), icon: "download", run: guard(() => downloadSealed(ctx, id, env)) },
       certificate: { label: t("envelope.certificate"), icon: "file-check", run: guard(() => downloadCertificate(ctx, id)) },
+      evidence: { label: t("envelope.evidence-package"), icon: "shield-check", testId: "envelope-evidence", run: guard(() => downloadEvidencePackage(ctx, id)) },
       "copy-resend": { label: t("envelope.copy-resend"), icon: "copy", title: t("envelope.copy-resend-help"), run: copyThen },
       copy: { label: t("agreements.copy"), icon: "copy", run: copyThen },
       template: { label: t("agreements.save-template"), icon: "layout-template", run: guard(() => saveAsTemplate(ctx, id)) },

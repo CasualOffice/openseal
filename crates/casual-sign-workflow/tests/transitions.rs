@@ -262,6 +262,34 @@ fn restore_deleted_lists_a_deleted_envelope_again_and_only_while_deleted_and_not
     );
 }
 
+#[test]
+fn an_evidence_package_is_exported_once_the_envelope_is_over_never_while_in_flight() {
+    // VS-06D: a voided envelope's package (its documents as they ended) is recorded as
+    // `envelope.exported`; one in flight, or purged, is refused.
+    let export = Command::RecordAccess {
+        access: Access::EvidenceExported,
+    };
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1)]);
+    assert_eq!(code(hx.run(sender(), export.clone())), "CS-WF-0001");
+    hx.send();
+    assert_eq!(code(hx.run(sender(), export.clone())), "CS-WF-0001");
+    hx.ok(sender(), Command::Void { reason: text("x") });
+    let d = hx.ok(sender(), export.clone());
+    assert_eq!(types(&d), ["envelope.exported"]);
+    assert_eq!(
+        d.events[0].data,
+        EventData::EnvelopeExported { by: id("sender") }
+    );
+    hx.ok(
+        Principal::System,
+        Command::Purge {
+            policy: Text::new("retention.ended").unwrap(),
+        },
+    );
+    assert_eq!(code(hx.run(sender(), export)), "CS-WF-0001");
+}
+
 // Routing -----------------------------------------------------------------------------
 
 #[test]

@@ -296,6 +296,7 @@ export const MANAGE = {
   "agreements.delete-text": "{subject} is removed from your lists. This cannot be undone.",
   "agreements.deleted": "Envelope deleted.",
   "agreements.restore": "Restore",
+  "envelope.evidence-package": "Download evidence package",
   "agreements.restored": "Envelope restored to the lists.",
   "agreements.history": "History",
   "agreements.history-title": "History: {subject}",

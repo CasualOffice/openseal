@@ -64,6 +64,7 @@ by JWKS (OpenCalc's docs/59 pattern).
   /envelopes/{id}/documents/{doc}/pages/{n}.png GET  (thumbnail)
   /envelopes/{id}/documents/combined            GET  sealed documents + certificate as one PDF
   /envelopes/{id}/certificate                   GET  certificate of completion PDF; envelope certificate once ended
+  /envelopes/{id}/evidence-package              GET  one ZIP: documents, certificate, audit trail, manifest (VS-06D)
   /envelopes/{id}/sign-link                     POST the signed-in member's own signing link (Inbox)
   /envelopes/{id}/restore                       POST a deleted envelope back to the lists (ADR-031)
   /envelopes/{id}/audit                         GET  audit events (JSON); ?format=pdf
@@ -693,8 +694,16 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
   Deleted view in the sidebar's Views (rows from `?deleted=true`, shown only there), Restore as the inspector's primary
   action, in the row menu and as the command `list.restore`; a deleted envelope's page offers Restore in place of
   Delete. `NOT_ON_SERVER.restoreEnvelope` is gone.
+- **Evidence package** (`VS-06D`, `UXW-20`; docs/32 §6.1): `GET /envelopes/{id}/evidence-package`
+  (`envelopes.read`) answers `application/zip` (`attachment; filename="evidence-<id>.zip"`) for an envelope that is
+  over (completed, declined, voided, expired): `manifest.json` (every other entry's SHA-256 and size, the chain head),
+  `documents/NN-<name>.pdf` (sealed, or as it ended), `certificate.pdf`, `audit-trail.json` (as `GET …/audit`). It
+  records `envelope.exported` first, so the trail ends with it. In flight or purged `409 CS-WF-0001`, nothing
+  recorded; certificate not made yet `409 CS-API-0009`; another account's id `404`. Web app: "Download evidence
+  package" in the envelope page's More menu, once it is over (`api.evidencePackage`, the mock answers the same ZIP).
 - Tests: `-server` `tests/manage_views.rs`, `tests/correct_documents.rs`, `tests/editor_intermediary.rs`,
-  `tests/reports.rs`, `tests/lists.rs` (restore); the contract test calls every new operation.
+  `tests/reports.rs`, `tests/lists.rs` (restore), `tests/evidence_package.rs`; the contract test calls every new
+  operation.
 
 ## As built (`WEB-19`, document analysis; docs/33 §6, §7 As built)
 
