@@ -87,7 +87,7 @@ NAMES = {
     "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", "csv": "name,email\nExample Signer,signer@example.com\n",
     "content_base64": "JVBERi0xLjcKJcfsj6IK", "text": "Example text", "value": "Example Corp",
     "user_agent": "Mozilla/5.0", "ip": "192.0.2.10", "public_key": "-----BEGIN PUBLIC KEY-----\n…\n-----END PUBLIC KEY-----",
-    "event": "envelope.completed", "anchor": "/sig1/", "color": "#1d5fbf", "colour": "#1d5fbf",
+    "event": "envelope.completed", "seal_profile": "pades-b-lt", "default_seal_profile": "pades-b-lt", "anchor": "/sig1/", "color": "#1d5fbf", "colour": "#1d5fbf",
     "detail": "subject is longer than 255 characters", "request_id": fake_id("request"),
 }
 NAME_BY_PARENT = (("Document", "contract.pdf"), ("Folder", "Q4 contracts"), ("Template", "Mutual NDA"),
@@ -177,6 +177,9 @@ def example(spec: dict, schema: dict | None, name: str = "", parent: str = "", d
     if "example" in schema:
         return schema["example"]
     if "enum" in schema:
+        # An envelope or recipient seen in flight reads better than a draft.
+        if name == "status" and "sent" in schema["enum"]:
+            return "sent"
         return schema["enum"][0]
     if "allOf" in schema:
         if len(schema["allOf"]) == 1:

@@ -144,9 +144,16 @@ def esc(s) -> str:
 TRACKER_REF = re.compile(r"\s*\((?:(?:[A-Z][A-Z0-9]*-\d+[A-Z]?|ADR-\d+|docs/\d+[^,;)]*|SEC-[A-Z0-9-]+)(?:,\s*|;\s*)?)+\)")
 
 
+TRACKER_LEAD = re.compile(r"^(?:[A-Z][A-Z0-9]*-\d+[A-Z]?(?:,\s*)?)+:\s*")
+TRACKER_TAIL = re.compile(r"[,;]\s*`?(?:[A-Z][A-Z0-9]*-\d+[A-Z]?)`?(?=\))")
+
+
 def clean(text: str) -> str:
-    """Spec prose for readers: drop parenthesised tracker ids, keep the rest."""
-    return TRACKER_REF.sub("", text or "").strip()
+    """Spec prose for readers: drop tracker ids (parenthesised, leading "VS-04E: ", or
+    trailing inside parentheses), keep the rest."""
+    out = TRACKER_REF.sub("", text or "").strip()
+    out = TRACKER_TAIL.sub("", TRACKER_LEAD.sub("", out))
+    return out[:1].upper() + out[1:] if out[:1].islower() and TRACKER_LEAD.match((text or "").strip()) else out
 
 
 def inline(text: str) -> str:
@@ -338,14 +345,30 @@ def attr_list(spec: dict, props: dict, required: set, prefix: str, depth: int = 
 
 # ---- Code samples ----------------------------------------------------------------------------------
 
-def sample_param(p: dict) -> str:
+def sample_param(spec: dict, path: str, p: dict) -> str:
+    """An example value of a parameter. A path id is the id of the resource the segment
+    before it names (`/envelopes/{id}` -> the envelope's), the same id the response
+    examples use for that resource."""
     n = p["name"]
     if p.get("in") == "path":
-        ent = {"id": "", "doc": "document", "r": "recipient", "f": "field", "s": "suggestion", "role": "role",
-               "user": "user", "delivery": "delivery", "field": "field", "sha256": ""}.get(n, n)
-        return ax.NAMES["sha256"] if n == "sha256" else ("tok_example" if n == "token" else ax.fake_id(ent or "path"))
-    v = ax.example({}, p.get("schema") or {"type": "string"}, n) if "$ref" not in (p.get("schema") or {}) else None
+        if n == "sha256":
+            return ax.NAMES["sha256"]
+        if n == "token":
+            return "tok_example"
+        m = re.search(r"/([a-z-]+)/\{" + re.escape(n) + r"\}", path)
+        seg = (m.group(1) if m else n).replace("-", "_")
+        ent = {"me": "user", "admins": "user", "deliveries": "delivery", "bulk_sends": "bulk", "api_clients": "client",
+               "permission_profiles": "profile", "consents": "consent", "passkeys": "passkey"}.get(seg, seg.rstrip("s"))
+        return ax.fake_id(ent)
+    v = ax.example(spec, p.get("schema") or {"type": "string"}, n)
     return str(v).lower() if isinstance(v, bool) else str(v)
+
+
+def js_value(v) -> str:
+    """A JavaScript literal: a string holding a double quote goes in single quotes."""
+    if isinstance(v, str) and '"' in v and "'" not in v:
+        return "'" + v + "'"
+    return json.dumps(v)
 
 
 class Op:
@@ -408,12 +431,12 @@ class Op:
         path, query, args = self.path, [], []
         for p in self.params:
             if p.get("in") == "path":
-                v = sample_param(p)
+                v = sample_param(self.spec, self.path, p)
                 path = path.replace("{" + p["name"] + "}", v)
                 args.append((p["name"], v))
         for p in self.params:
             if p.get("in") == "query" and (p.get("required") or p["name"] == "limit"):
-                v = sample_param(p) if p["name"] != "limit" else "20"
+                v = sample_param(self.spec, self.path, p) if p["name"] != "limit" else "20"
                 query.append((p["name"], v))
                 args.append((p["name"], int(v) if v.isdigit() else v))
         qs = "?" + "&".join(f"{k}={v}" for k, v in query) if query else ""
@@ -457,9 +480,9 @@ class Op:
                     'const os = new OpenSeal({ baseUrl: "https://sign.example.com" });\n'
                     "const token = await os.token({\n  clientId: process.env.CLIENT_ID,\n  clientSecret: process.env.CLIENT_SECRET,\n"
                     '  grant_type: "client_credentials",\n  scope: "envelopes:read envelopes:write",\n});')
-        fields = [f"  {k}: {json.dumps(v)}," for k, v in args]
+        fields = [f"  {k}: {js_value(v)}," for k, v in args]
         for _, value, ts, _ in self.headers():
-            fields.append(f"  {ts}: {json.dumps(value)},")
+            fields.append(f"  {ts}: {js_value(value)},")
         body = self.request_example()
         if body is not None:
             fields.append("  body: " + json.dumps(body, indent=2, ensure_ascii=False).replace("\n", "\n  ") + ",")
