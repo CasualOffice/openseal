@@ -1651,7 +1651,9 @@ fn complete_field(
         kind: ObjectKind::Field,
         id: Some(entry.field.clone()),
     })?;
-    let editable = field.recipient_id.as_ref() == Some(&rid)
+    // VS-04D: the field's own recipient, or one it is shared with (DocuSign's shared
+    // tabs); each change is that recipient's own event, the last value kept.
+    let editable = (field.recipient_id.as_ref() == Some(&rid) || field.shared_with.contains(&rid))
         && field.field_type.takes_input()
         && !field.read_only
         && !field.locked;

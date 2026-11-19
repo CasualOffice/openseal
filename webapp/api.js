@@ -91,7 +91,7 @@ export const FIELD_TYPES_READY = Object.freeze([
 /// multi-selects, `allow_custom` for a dropdown.
 export const FIELD_MEMBERS = Object.freeze([
   "required", "read_only", "locked", "label", "value", "default", "validation", "format", "group", "conditional",
-  "formula", "options", "allow_custom", "tooltip", "placeholder",
+  "formula", "options", "allow_custom", "tooltip", "placeholder", "shared_with",
 ]);
 const PLACE = ["page", "x", "y", "width", "height"];
 

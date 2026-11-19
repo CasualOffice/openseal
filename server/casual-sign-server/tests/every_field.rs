@@ -87,11 +87,10 @@ impl Signer<'_> {
     }
 }
 
-/// A 1×1 PNG of its own for each mark, so each adoption is a capture of its own (a
-/// capture is named by its image: one image adopted twice is one capture).
+/// The image each mark adopts: the stamp the same image as the signature (`VS-04H`: the
+/// capture still differs by its mark), the drawing one of its own.
 fn image_for(mark: &str) -> String {
     match mark {
-        "stamp" => "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGM4ISf3HwAEugIEPlcfxwAAAABJRU5ErkJggg==".to_owned(),
         "drawing" => "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQkzvxHwADZgIEs8pYSgAAAABJRU5ErkJggg==".to_owned(),
         _ => b64(&png()),
     }
@@ -462,4 +461,189 @@ async fn the_signing_view_carries_the_servers_rules_as_the_signer_fills() {
         2,
         "both linked fields drawn: {text}"
     );
+}
+
+/// The signer whose email is `s{n}@example.test` (as `common::flow::sent` names them).
+async fn signer_n<'a>(
+    api: &'a Api,
+    a: &common::harness::Tenant,
+    e: &Value,
+    n: usize,
+) -> (Signer<'a>, String) {
+    let id = e["id"].as_str().unwrap();
+    let want = format!("s{n}@example.test");
+    let r = e["recipients"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["email"] == want.as_str())
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let token = invite(api, a, id, &r).await;
+    let (_, headers) = open(api, &token).await;
+    (
+        Signer {
+            api,
+            token,
+            headers,
+        },
+        r,
+    )
+}
+
+/// Open every page, adopt and sign the signer's own signature field, finish.
+async fn finish_as(s: &Signer<'_>, e: &Value, rid: &str) {
+    let doc = e["documents"][0]["id"].as_str().unwrap();
+    ok(
+        s.call(
+            "POST",
+            &format!("/documents/{doc}/viewed"),
+            Some(json!({"pages_seen": [1, 2]})),
+        )
+        .await,
+        StatusCode::OK,
+        "viewed",
+    );
+    let sig = e["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["type"] == "signature" && f["recipient_id"] == rid)
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let adopted = ok(s.adopt("signature", "draw").await, StatusCode::OK, "adopt");
+    let done = ok(
+        s.call(
+            "POST",
+            "/finish",
+            Some(
+                json!({"values": [{"field": sig, "value": {"signature": adopted["adoption_id"]}}]}),
+            ),
+        )
+        .await,
+        StatusCode::OK,
+        "finish",
+    );
+    assert_eq!(done["recipient"]["status"], "completed");
+}
+
+#[tokio::test]
+async fn a_shared_field_is_filled_by_each_recipient_it_is_shared_with_the_last_value_kept() {
+    let Some(api) = Api::new("every_field_shared", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    // Refused at send: shared with its own recipient, or with nobody in the envelope.
+    for bad in [json!(["s1"]), json!(["s1", "s2"]), json!(["s2", "s2"])] {
+        let r = api
+            .call(
+                "POST",
+                "/api/v1/envelopes",
+                &a.auth,
+                Some(json!({
+                    "subject": "VS-04D", "status": "sent",
+                    "documents": [{"name": "w.pdf", "content_base64": b64(&common::harness::pdf(2))}],
+                    "recipients": [
+                        {"ref": "s1", "type": "signer", "name": "S1", "email": "s1@example.test", "routing_order": 1},
+                        {"ref": "s2", "type": "signer", "name": "S2", "email": "s2@example.test", "routing_order": 2},
+                    ],
+                    "fields": [
+                        {"recipient": "s1", "document": 0, "type": "signature", "page": 1, "x": 72, "y": 100, "width": 180, "height": 40},
+                        {"recipient": "s2", "document": 0, "type": "signature", "page": 1, "x": 72, "y": 200, "width": 180, "height": 40},
+                        {"recipient": "s1", "document": 0, "type": "text", "label": "notes", "shared_with": bad.clone(), "page": 2, "x": 72, "y": 100, "width": 220, "height": 20},
+                    ],
+                })),
+                &[],
+            )
+            .await;
+        assert_eq!(
+            r.status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{bad}: {:?}",
+            r.json()
+        );
+    }
+
+    let fields = [with(
+        at(100, "text"),
+        json!({"label": "notes", "shared_with": ["s2"]}),
+    )];
+    let e = sent(&api, &a, 2, &fields).await;
+    let notes = id_of(&e["fields"], "notes");
+    assert_eq!(
+        e["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["id"] == notes.as_str())
+            .unwrap()["shared_with"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let (s1, r1) = signer_n(&api, &a, &e, 1).await;
+    ok(
+        s1.put(&notes, json!({"text": "First draft"})).await,
+        StatusCode::OK,
+        "s1 fills",
+    );
+    finish_as(&s1, &e, &r1).await;
+
+    // The second signer sees the shared field with its value, and changes it.
+    let (s2, r2) = signer_n(&api, &a, &e, 2).await;
+    let view = ok(s2.call("GET", "", None).await, StatusCode::OK, "view");
+    let mine = view["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["id"] == notes.as_str())
+        .cloned()
+        .expect("the shared field is in the second signer's view");
+    assert_eq!(mine["value"], json!({"text": "First draft"}));
+    ok(
+        s2.put(&notes, json!({"text": "Agreed final"})).await,
+        StatusCode::OK,
+        "s2 changes",
+    );
+    finish_as(&s2, &e, &r2).await;
+
+    // Each change is its own recipient's event; the last value is sealed.
+    let id = e["id"].as_str().unwrap();
+    let audit = ok(
+        api.call(
+            "GET",
+            &format!("/api/v1/envelopes/{id}/audit"),
+            &a.auth,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "audit",
+    );
+    let by: Vec<String> = audit["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|x| {
+            x["type"] == "recipient.field_completed"
+                && x["event"]["data"]["field_id"] == notes.as_str()
+        })
+        .map(|x| {
+            x["event"]["data"]["recipient_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(by, vec![r1, r2]);
+    let text = drawn(&api, &a, &e).await;
+    assert!(text.contains("Agreed final"), "{text}");
+    assert!(!text.contains("First draft"), "{text}");
 }

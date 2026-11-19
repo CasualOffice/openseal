@@ -216,6 +216,45 @@ test("slice 4 (VS-04): a signer fills every field kind, the logic follows the se
   }).toPass({ timeout: 120_000, intervals: [2_000] });
 });
 
+test("slice 4 (VS-04E, VS-04F): a PDF's own form fields and its text tags are suggested in the editor and placed", async ({ page }) => {
+  test.setTimeout(REAL ? 180_000 : 90_000);
+  // A one-page form: two AcroForm fields (a text box and a signature), and a text tag.
+  const form = Buffer.from(makePdf([{
+    title: "Insurance application",
+    lines: ["Applicant details", "{{date:applicant:req:start_date}}"],
+    form: [
+      { name: "policy_number", type: "text", rect: [72, 560, 272, 580] },
+      { name: "applicant_signature", type: "signature", rect: [72, 200, 272, 240] },
+    ],
+  }]));
+  await signIn(page);
+  await page.goto(app("#/prepare"));
+  await page.getByTestId("pdf-input").setInputFiles({ name: "application.pdf", mimeType: "application/pdf", buffer: form });
+  await expect(page.getByTestId("doc-card")).toHaveCount(1);
+  await page.getByTestId("wizard-next").click();
+  await page.getByRole("button", { name: "Add recipient" }).first().click();
+  const row = page.locator(".os-rcpt").first();
+  await row.getByTestId("recipient-name").fill("Ann Applicant");
+  await row.getByTestId("recipient-email").fill(`vs04f-${Date.now()}@example.com`);
+  await row.getByTestId("recipient-email").blur();
+  await page.getByTestId("wizard-next").click();
+  await expect(page.locator(".os-page.is-loading")).toHaveCount(0);
+  await placingFor(page, 0);
+  await page.getByTestId("detect-fields").click();
+  // The form's fields and the tag are among the suggestions, named after themselves.
+  await expect(page.getByRole("button", { name: /Accept suggested Text field/ }).first()).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: /Accept suggested Date field/ })).toHaveCount(1);
+  await page.getByTestId("accept-all").click();
+  await expect(page.getByTestId("ghost")).toHaveCount(0);
+  await expect(page.locator('.os-field[data-field="date"]')).toHaveCount(1);
+  await expect(page.locator('.os-field[data-field="text"]').first()).toBeVisible();
+  // The converted text box keeps the form field's name as its data label.
+  await page.locator('.os-field[data-field="text"]').first().click();
+  await expect(page.getByLabel("Data label", { exact: true })).toHaveValue("policy_number");
+  const labels = await page.locator(".os-field").evaluateAll((els) => els.map((e) => e.getAttribute("data-field")));
+  expect(labels).toEqual(expect.arrayContaining(["text", "signature", "date"]));
+});
+
 for (const scheme of ["light", "dark"]) {
   test.describe(`${scheme} theme`, () => {
     test.use({ colorScheme: scheme });

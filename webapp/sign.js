@@ -696,8 +696,11 @@ async function documents() {
   }
 }
 
+/// VS-04D: a field shared with this signer is theirs to change, but only its own
+/// recipient must fill it.
+const ownRequired = (f) => (f.required && f.recipient_id && view.recipient?.id && f.recipient_id !== view.recipient.id ? { ...f, required: false } : f);
 function myFields() {
-  return (view.fields || []).map((f) => ({ ...f, p: fromWire(f.placement) })).filter((f) => f.p);
+  return (view.fields || []).map((f) => ({ ...ownRequired(f), p: fromWire(f.placement) })).filter((f) => f.p);
 }
 
 /// Phones: how much each field grows while in use, at the current zoom (zoom.js).
@@ -1482,7 +1485,7 @@ function choicePopover(f, label, anchor, paint) {
   (group.querySelector("input:checked") || group.querySelector("input"))?.focus({ preventScroll: true });
 }
 
-const myInputs = () => (view.fields || []).filter((f) => fills(f) && fromWire(f.placement));
+const myInputs = () => (view.fields || []).map(ownRequired).filter((f) => fills(f) && fromWire(f.placement));
 function remaining() {
   return myInputs().filter((f) => f.required && !isDone(f));
 }

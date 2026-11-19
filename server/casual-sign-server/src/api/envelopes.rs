@@ -723,28 +723,42 @@ pub(crate) async fn create_in(
     let mut changes = Vec::new();
     let mut doc_ids = Vec::new();
     let mut uploads = Vec::new();
+    let mut sources: Vec<super::placing::Source> = Vec::new();
     for (name, bytes, scan) in decoded {
         let spec = add_document(&c.st, tx, env, &name, bytes, scan).await?;
         doc_ids.push(spec.id.clone());
+        sources.push((
+            spec.id.clone(),
+            casual_sign_store::blob::BlobKey(spec.delivered_hash.0),
+        ));
         uploads.push((uid(&spec.id)?, spec.delivered_hash.0));
         changes.push(Change::AddDocument { document: spec });
     }
     let (rchanges, refs, codes) =
         recipients_in(tx, &req.recipients, "/recipients", &doc_ids).await?;
     changes.extend(rchanges);
-    for (i, f) in req.fields.iter().enumerate() {
+    let doc_of = |d: &Value| match d {
+        Value::Number(n) => n
+            .as_u64()
+            .and_then(|i| doc_ids.get(usize::try_from(i).ok()?).cloned()),
+        Value::String(s) => Id::new(s.as_str()).ok(),
+        _ => None,
+    };
+    // VS-04E: anchored fields placed at their text, then the text tags' fields.
+    let mut placed =
+        super::placing::place_anchors(&c.st, &req.fields, &sources, doc_of, "/fields").await?;
+    if req.text_tags {
+        for f in super::placing::tag_fields(&c.st, &sources).await? {
+            placed.push((f, "/text_tags".to_owned()));
+        }
+    }
+    for (f, at) in &placed {
         let field = dto::field_from(
             f,
             new_id()?,
             |r| refs.get(r).cloned().or_else(|| Id::new(r).ok()),
-            |d| match d {
-                Value::Number(n) => n
-                    .as_u64()
-                    .and_then(|i| doc_ids.get(usize::try_from(i).ok()?).cloned()),
-                Value::String(s) => Id::new(s.as_str()).ok(),
-                _ => None,
-            },
-            &format!("/fields/{i}"),
+            doc_of,
+            at,
         )?;
         changes.push(Change::AddField {
             field: Personal(field),
@@ -1379,11 +1393,16 @@ pub(crate) async fn detect_fields(
             n = n.saturating_add(1);
             Id::new(format!("acroform-{n}")).unwrap_or_else(|_| doc_id.clone())
         };
-        engine.detect_fields(&bytes, &doc_id, &mut next)
+        // VS-04E: the document's text tags are suggested too (source `tag`), so a
+        // sender who prepared one with tags places them in the editor.
+        let found = engine.detect_fields(&bytes, &doc_id, &mut next)?;
+        let tags = engine.text_tags(&bytes)?;
+        Ok::<_, casual_sign_sdk::SdkError>((found, tags))
     })
     .await
     .map_err(|_| ApiError::internal("detection"))??;
-    let items: Vec<Value> = found
+    let (found, tags) = found;
+    let mut items: Vec<Value> = found
         .fields
         .iter()
         .map(|f| {
@@ -1400,6 +1419,21 @@ pub(crate) async fn detect_fields(
             v
         })
         .collect();
+    for t in &tags.tags {
+        let mut v = serde_json::to_value(t.placement).unwrap_or(Value::Null);
+        if let Some(o) = v.as_object_mut() {
+            o.insert("document_id".into(), json!(d));
+            o.insert("type".into(), json!(t.field_type));
+            o.insert("source".into(), json!("tag"));
+            o.insert("confidence".into(), json!(100));
+            let cue = t
+                .label
+                .as_ref()
+                .map_or_else(|| t.recipient.to_string(), |l| l.as_str().to_owned());
+            o.insert("cue".into(), json!(cue));
+        }
+        items.push(v);
+    }
     Ok(json(
         StatusCode::OK,
         &json!({ "items": items, "truncated": found.truncated }),
@@ -1889,15 +1923,23 @@ pub(crate) async fn add_fields(
     };
     let mut changes = Vec::new();
     let mut ids = Vec::new();
-    for (i, f) in list.iter().enumerate() {
+    // VS-04E: an anchored field is placed at its text in the delivered document.
+    let sources: Vec<super::placing::Source> = l
+        .state
+        .documents
+        .iter()
+        .map(|d| {
+            (
+                d.id().clone(),
+                casual_sign_store::blob::BlobKey(d.spec.delivered_hash.0),
+            )
+        })
+        .collect();
+    let doc_of = |d: &Value| d.as_str().and_then(|s| Id::new(s).ok());
+    let placed = super::placing::place_anchors(&c.st, &list, &sources, doc_of, "/items").await?;
+    for (f, at) in &placed {
         let fid = new_id()?;
-        let field = dto::field_from(
-            f,
-            fid.clone(),
-            |r| Id::new(r).ok(),
-            |d| d.as_str().and_then(|s| Id::new(s).ok()),
-            &format!("/items/{i}"),
-        )?;
+        let field = dto::field_from(f, fid.clone(), |r| Id::new(r).ok(), doc_of, at)?;
         ids.push(fid);
         changes.push(Change::AddField {
             field: Personal(field),

@@ -347,6 +347,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!env.documents.some((d) => d.id === did)) fail(422, "CS-WF-0008", "Unknown document", [{ pointer: "/document", code: "unknown" }]);
     const field = { id: f.id || uid(), document_id: did, recipient_id: rid, type: fieldType(f.type), placement: placementOf(f) };
     setMembers(field, f);
+    // VS-04D, as the server: shared with other recipients, named as the owner is.
+    const shared = (Array.isArray(f.shared_with) ? f.shared_with : []).map((x) => refs[x] || x);
+    if (shared.length) field.shared_with = shared;
     env.fields.push(field);
     return field;
   }
@@ -392,6 +395,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     return order;
   }
+  /// Whether recipient `rid` fills field `f`: theirs, or shared with them (VS-04D).
+  const holds = (f, rid) => f.recipient_id === rid || (f.shared_with || []).includes(rid);
   const viewedAll = (env, rec) => env.documents.every((d) => (rec.viewed_to_end || []).includes(d.id));
   /// Required input fields of this recipient left empty refuse finishing or approving.
   function checkRequired(env, rec) {
@@ -483,7 +488,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return {
       envelope: { id: env.id, status: env.status, subject: env.subject, message: env.message, signing_options: env.signing_options, documents: shown ? env.documents : [], expires_at: env.expires_at },
       recipient: publicRecipient(rec),
-      fields: shown ? env.fields.filter((f) => f.recipient_id === rec.id) : [],
+      fields: shown ? env.fields.filter((f) => holds(f, rec.id)) : [],
       // VS-04C, as the server: the rules over every field, named for this recipient's.
       rules: shown ? rulesFor(env.fields, rec.id) : null,
       capture_location: !!env.signing_options?.capture_location,
@@ -2053,6 +2058,22 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
             { document_id: d.id, type: "name", page, x: "72", y: "730", width: "180", height: "22", source: "label", cue: "Print name", confidence: 61 },
           );
         }
+        // VS-04E, VS-04F, as the server: the document's own form fields (source
+        // `acroform`) and its text tags (source `tag`), read from what mockpdf.js
+        // writes (not a parser: the real server reads them with the engine).
+        const text = new TextDecoder("latin1").decode(unb64(db.blobs[d.id]));
+        const kind = { Tx: "text", Btn: "checkbox", Sig: "signature" };
+        const pageAt = (at) => Math.max(1, (text.slice(0, at).match(/\/Type \/Page\b(?!s)/g) || []).length + 1);
+        for (const m of text.matchAll(/\/Subtype \/Widget \/FT \/(Tx|Btn|Sig) \/T \(([^)]*)\) \/Rect \[([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)\]/g)) {
+          const [x1, y1, x2, y2] = m.slice(3, 7).map(Number);
+          items.push({ document_id: d.id, type: kind[m[1]], page: pageAt(m.index), x: String(x1), y: String(792 - y2), width: String(x2 - x1), height: String(y2 - y1), source: "acroform", cue: m[2], confidence: 100 });
+        }
+        let page = 0;
+        for (const m of text.matchAll(/\/Type \/Page\b(?!s)|BT \/F\d+ [\d.]+ Tf ([\d.]+) ([\d.]+) Td \(\{\{([a-z_]+):([A-Za-z0-9_-]+)(?::(req|required))?(?::([^:}]+))?\}\}\) Tj ET/g)) {
+          if (!m[1]) { page++; continue; }
+          const type = { s: "signature", i: "initials", t: "text", d: "date", c: "checkbox", a: "attachment" }[m[3]] || m[3];
+          items.push({ document_id: d.id, type, page: Math.max(1, page), x: m[1], y: String(792 - Number(m[2]) - 11), width: "160", height: "22", source: "tag", cue: m[6] || m[4], confidence: 100 });
+        }
         return json(200, { items, truncated: false });
       }
       if (subSub === "content" && method === "GET") {
@@ -2921,7 +2942,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "fields" && method === "PUT") {
       const f = env.fields.find((x) => x.id === parts[4]);
       if (!f) fail(404, "CS-API-0002", "Not found");
-      if (f.recipient_id !== rec.id || !INPUT_TYPES.has(f.type) || f.locked || f.read_only) fail(409, "CS-WF-0016", "Field not editable by this recipient");
+      if (!holds(f, rec.id) || !INPUT_TYPES.has(f.type) || f.locked || f.read_only) fail(409, "CS-WF-0016", "Field not editable by this recipient");
       const v = body?.value;
       const bad = (code) => fail(422, "CS-WF-0015", "Field value refused", [{ pointer: "/value", code }]);
       if (f.type === "signature" || f.type === "initials" || f.type === "stamp" || f.type === "drawing") {

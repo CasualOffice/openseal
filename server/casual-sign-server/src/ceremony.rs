@@ -304,6 +304,11 @@ async fn reopen(
     inner.await.map_err(IntoResponse::into_response)
 }
 
+/// Whether recipient `r` fills field `f`: it is theirs, or shared with them (`VS-04D`).
+fn holds(f: &casual_sign_model::Field, r: &Id) -> bool {
+    f.recipient_id.as_ref() == Some(r) || f.shared_with.contains(r)
+}
+
 /// The server's own evaluation of recipient `me`'s fields (`VS-04C`, docs/24 §5): the
 /// rules `casual_sign_fields::evaluate_envelope` applies at finish and at sealing, over
 /// every field and value stored so far. `hidden`: their fields a condition hides now
@@ -315,12 +320,7 @@ async fn reopen(
 /// one of theirs mirrors or computes from it, as the sealed document will.
 fn rules_of(s: &casual_sign_workflow::EnvelopeState, me: &Id) -> Value {
     let o = casual_sign_fields::evaluate_envelope(&s.fields.0, &casual_sign_fields::Values::new());
-    let mine: Vec<&casual_sign_model::Field> = s
-        .fields
-        .0
-        .iter()
-        .filter(|f| f.recipient_id.as_ref() == Some(me))
-        .collect();
+    let mine: Vec<&casual_sign_model::Field> = s.fields.0.iter().filter(|f| holds(f, me)).collect();
     let is_mine = |id: &Id| mine.iter().any(|f| &f.id == id);
     let hidden: Vec<Value> = o
         .hidden
@@ -381,7 +381,7 @@ impl Open {
             .iter()
             .find(|f| {
                 same_id(&f.id, field)
-                    && f.recipient_id.as_ref() == Some(&self.recipient)
+                    && holds(f, &self.recipient)
                     && f.field_type == casual_sign_model::FieldType::Attachment
             })
             .map(|f| f.id.clone())
@@ -465,9 +465,13 @@ impl Open {
             // An attachment value must name a file this recipient uploaded through
             // `PUT …/fields/{field}/attachment` (WEB-06): one of their fields holds it.
             if let FieldValue::Attachment(_) = v {
-                let theirs = self.l.state.fields.0.iter().any(|f| {
-                    f.recipient_id.as_ref() == Some(&self.recipient) && f.value.as_ref() == Some(v)
-                });
+                let theirs = self
+                    .l
+                    .state
+                    .fields
+                    .0
+                    .iter()
+                    .any(|f| holds(f, &self.recipient) && f.value.as_ref() == Some(v));
                 if !theirs {
                     return Err(ApiError::invalid(&at));
                 }
@@ -552,7 +556,7 @@ impl Open {
             s.fields
                 .0
                 .iter()
-                .filter(|f| f.recipient_id.as_ref() == Some(&self.recipient))
+                .filter(|f| holds(f, &self.recipient))
                 .map(dto::field)
                 .collect()
         } else {
@@ -1603,9 +1607,10 @@ pub(crate) async fn adopt(
                 return Err(ApiError::invalid("/image_base64"));
             }
             let key = st.0.blobs.put(&image).await?;
-            let capture =
-                serde_json::to_vec(&json!({"kind": "image", "image": Hash256(key.0).hex()}))
-                    .map_err(|_| ApiError::internal("capture"))?;
+            let capture = serde_json::to_vec(
+                &json!({"kind": "image", "image": Hash256(key.0).hex(), "mark": req.mark}),
+            )
+            .map_err(|_| ApiError::internal("capture"))?;
             let capture = Hash256(st.0.blobs.put(&capture).await?.0);
             let r = o.recipient.clone();
             o.run(Command::AdoptSignature {
@@ -1643,7 +1648,7 @@ pub(crate) async fn fill(
                 .fields
                 .0
                 .iter()
-                .find(|f| same_id(&f.id, &field) && f.recipient_id.as_ref() == Some(&o.recipient))
+                .find(|f| same_id(&f.id, &field) && holds(f, &o.recipient))
                 .map(|f| f.id.clone())
                 .ok_or_else(ApiError::not_found)?;
         let req: FieldIn = parse(&body)?;

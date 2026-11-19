@@ -1553,10 +1553,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       i.addEventListener("change", () => onSet(i.value));
       return h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: t(labelKey) }), i, help ? h("p", { id: `${id}-help`, class: "os-help", text: t(help) }) : null);
     };
-    const check = (id, labelKey, on, onSet) => {
+    const check = (id, labelKey, on, onSet, text = null) => {
       const i = h("input", { id, type: "checkbox", checked: !!on });
       i.addEventListener("change", () => onSet(i.checked));
-      return h("label", { class: "os-check", attrs: { for: id } }, i, h("span", { text: t(labelKey) }));
+      return h("label", { class: "os-check", attrs: { for: id } }, i, h("span", { text: text ?? t(labelKey) }));
     };
     /// A section of the panel (UX-05: General, Formatting, Validation, Options), open by
     /// default, remembered while the editor is open.
@@ -1690,6 +1690,22 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         logic.push(textIn("fp-formula", "prepare.formula", expr, (v) => { expr = v; applyF(); }, { help: "prepare.formula-help", max: 2000, area: true }));
         logic.push(textIn("fp-precision", "prepare.precision", prec, (v) => { prec = v; applyF(); }, { type: "number" }));
         if (!f.label) logic.push(h("p", { class: "os-muted os-small", text: t("prepare.formula-label") }));
+      }
+      // VS-04D: DocuSign's shared fields: other signers may fill this one too; the last
+      // value is kept, and only its own recipient must fill it. Envelopes only.
+      const others = TPL || !takesInput(f.type) ? [] : S.recipients.map((r, i) => [r, i]).filter(([r]) => takesFields(r) && r.key !== f.recipientKey);
+      if (others.length) {
+        const box = h("fieldset", { class: "os-fieldset", attrs: { "data-testid": "shared-with" } }, h("legend", { class: "os-label", text: t("prepare.shared-with") }));
+        for (const [r, i] of others) {
+          const id = `fp-share-${r.key}`;
+          box.append(check(id, null, (f.sharedKeys || []).includes(r.key), (v) => {
+            const next = new Set(f.sharedKeys || []);
+            if (v) next.add(r.key); else next.delete(r.key);
+            set("sharedKeys", [...next]);
+          }, displayName(r, i)));
+        }
+        box.append(h("p", { class: "os-help", text: t("prepare.shared-help") }));
+        logic.push(box);
       }
       props.append(section("logic", ...logic));
     }
@@ -1876,7 +1892,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.fields = (env.fields || []).map((f) => {
       const p = fromWire(f.placement);
       if (!p || !dkey.has(f.document_id)) return null;
-      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", ...membersOf(f), server: serverKey(f) };
+      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", ...membersOf(f), sharedKeys: (f.shared_with || []).map((x) => rkey.get(x)).filter(Boolean), server: serverKey(f) };
     }).filter(Boolean);
     // Keep whom fields are being placed for across a save (the list keeps its order).
     S.active = S.recipients[prevActive]?.key || S.recipients[0]?.key || null;
@@ -1971,13 +1987,18 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const p = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
   }
-  function fieldBody(f, recipientRef, documentRef) {
+  function fieldBody(f, recipientRef, documentRef, refOf = (k) => S.recipients.find((r) => r.key === k)?.id) {
     const body = { recipient: recipientRef, document: documentRef, type: f.type, ...toWire(f.page, f) };
     if (f.required && takesInput(f.type)) body.required = true;
     if (f.label) body.label = f.label;
     Object.assign(body, membersOf(f));
+    // VS-04D: the other recipients the field is shared with, named as its owner is.
+    const shared = sharedWith(f).map(refOf).filter((x) => x != null);
+    if (shared.length) body.shared_with = shared;
     return body;
   }
+  /// The keys of the recipients a field is shared with who still take fields (VS-04D).
+  const sharedWith = (f) => (f.sharedKeys || []).filter((k) => k !== f.recipientKey && S.recipients.some((r) => r.key === k && takesFields(r)));
   const options = () => ({ ...(S.captureLocation ? { capture_location: true } : {}) });
   /// Reminders and expiry as the API takes them; absent members mean "account default".
   const sendOptions = () => ({
@@ -2055,7 +2076,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         ...(S.expiresDays ? { expires_in_days: S.expiresDays } : {}),
         documents: S.docs.map((d) => ({ name: d.name, content_base64: toB64(d.bytes) })),
         recipients: S.recipients.map((r, i) => ({ ref: `r${i}`, ...recipientBody(r) })),
-        fields: S.fields.map((f) => fieldBody(f, `r${S.recipients.findIndex((r) => r.key === f.recipientKey)}`, S.docs.findIndex((d) => d.key === f.docKey))),
+        fields: S.fields.map((f) => fieldBody(f, `r${S.recipients.findIndex((r) => r.key === f.recipientKey)}`, S.docs.findIndex((d) => d.key === f.docKey), (k) => `r${S.recipients.findIndex((r) => r.key === k)}`)),
       };
       const sentDocs = S.docs.slice();
       const sentRecs = S.recipients.slice();
@@ -2099,12 +2120,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const rid = (k) => S.recipients.find((r) => r.key === k)?.id;
       const did = (k) => S.docs.find((d) => d.key === k)?.id;
       for (const f of S.fields.filter((x) => x.id)) {
-        const now = JSON.stringify({ r: rid(f.recipientKey), p: toWire(f.page, f), q: !!f.required, l: f.label || "", m: membersOf(f) });
+        const now = JSON.stringify({ r: rid(f.recipientKey), p: toWire(f.page, f), q: !!f.required, l: f.label || "", m: membersOf(f), s: sharedWith(f).map(rid) });
         if (now === f.server) continue;
         const body = fieldBody(f, rid(f.recipientKey), did(f.docKey));
         // Every member named: null removes one the sender cleared (a JSON merge, UX-05).
         const members = Object.fromEntries(MEMBERS.map((k) => [k, blankMember(f[k]) ? null : f[k]]));
-        await ctx.api.patchField(S.id, f.id, await etagNow(), { recipient_id: body.recipient, placement: toWire(f.page, f), required: !!body.required, label: f.label || null, ...members });
+        await ctx.api.patchField(S.id, f.id, await etagNow(), { recipient_id: body.recipient, placement: toWire(f.page, f), required: !!body.required, label: f.label || null, ...members, shared_with: body.shared_with || null });
       }
       // A field whose recipient or document was added after their step above waits for the
       // next save (E2E-13).

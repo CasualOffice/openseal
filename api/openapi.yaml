@@ -571,6 +571,7 @@ components:
         document_id: {type: string}
         recipient_id: {type: string}
         type: {type: string}
+        shared_with: {type: array, items: {type: string}, description: 'VS-04D: other recipients who may also fill this field; the last value is kept'}
         placement:
           type: object
           properties:
@@ -581,8 +582,23 @@ components:
             height: {type: string}
     FieldIn:
       type: object
-      description: 'A field without ids: `recipient` (id or ref), `document` (id, or index in the same request), `type`, and `page`, `x`, `y`, `width`, `height` flat or as `placement`.'
+      description: 'A field without ids: `recipient` (id or ref), `document` (id, or index in the same request), `type`, and `page`, `x`, `y`, `width`, `height` flat or as `placement`; or, in place of `page`, `x` and `y`, an `anchor` (VS-04E): a field is placed at each match of its text in the delivered document (CS-FLD-0010 when absent unless `ignore_if_absent`). `shared_with` (VS-04D): other recipients (ids or refs) who may also fill it.'
       additionalProperties: true
+      properties:
+        anchor:
+          type: object
+          required: [text]
+          additionalProperties: false
+          properties:
+            text: {type: string}
+            offset_x: {type: string, description: 'Decimal, in units; to the right'}
+            offset_y: {type: string, description: 'Decimal, in units; downwards'}
+            units: {type: string, enum: [points, inches, millimetres, centimetres, pixels]}
+            ignore_if_absent: {type: boolean}
+            case_sensitive: {type: boolean}
+            whole_word: {type: boolean}
+            matching: {type: string, enum: [first, all]}
+        shared_with: {type: array, maxItems: 100, items: {type: string}}
     FieldList:
       type: object
       properties:
@@ -926,6 +942,7 @@ components:
         expires_in_days: {type: integer}
         signing_options: {$ref: '#/components/schemas/SigningOptions'}
         seal_profile: {type: string, enum: [pades-b-t, pades-b-lt, pades-b-lta]}
+        text_tags: {type: boolean, description: 'VS-04E: place a field at each {{type:recipient[:req][:label][:WxH]}} tag in the documents; the recipient is a request ref. A malformed tag refuses the request (CS-FLD-0011).'}
     EnvelopePatch:
       type: object
       additionalProperties: false
