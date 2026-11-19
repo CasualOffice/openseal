@@ -1665,6 +1665,9 @@ fn complete_field(
         let mark = match field.field_type {
             FieldType::Signature => Some(MarkKind::Signature),
             FieldType::Initials => Some(MarkKind::Initials),
+            // VS-04A: a stamp or a drawing field takes a capture adopted as one.
+            FieldType::Stamp => Some(MarkKind::Stamp),
+            FieldType::Drawing => Some(MarkKind::Drawing),
             _ => None,
         };
         if let Some(mark) = mark

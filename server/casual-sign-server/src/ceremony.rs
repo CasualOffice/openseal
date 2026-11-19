@@ -304,6 +304,55 @@ async fn reopen(
     inner.await.map_err(IntoResponse::into_response)
 }
 
+/// The server's own evaluation of recipient `me`'s fields (`VS-04C`, docs/24 §5): the
+/// rules `casual_sign_fields::evaluate_envelope` applies at finish and at sealing, over
+/// every field and value stored so far. `hidden`: their fields a condition hides now
+/// (a hidden field's value is dropped, and it is never required); `computed`: each of
+/// their formula fields' result (`{ok}` text or `{error}`, the error value's name);
+/// `values`: the value each of their other fields will be sealed with where it is not
+/// the one stored for it (a linked field's, a sender's starting value). Only this
+/// recipient's fields are named, and no other recipient's value is shown except as
+/// one of theirs mirrors or computes from it, as the sealed document will.
+fn rules_of(s: &casual_sign_workflow::EnvelopeState, me: &Id) -> Value {
+    let o = casual_sign_fields::evaluate_envelope(&s.fields.0, &casual_sign_fields::Values::new());
+    let mine: Vec<&casual_sign_model::Field> = s
+        .fields
+        .0
+        .iter()
+        .filter(|f| f.recipient_id.as_ref() == Some(me))
+        .collect();
+    let is_mine = |id: &Id| mine.iter().any(|f| &f.id == id);
+    let hidden: Vec<Value> = o
+        .hidden
+        .iter()
+        .filter(|id| is_mine(id))
+        .map(|id| Value::String(id.to_string()))
+        .collect();
+    let computed: serde_json::Map<String, Value> = o
+        .computed
+        .iter()
+        .filter(|(id, _)| is_mine(id))
+        .map(|(id, c)| {
+            let v = match c {
+                Ok(text) => json!({ "ok": text }),
+                Err(e) => json!({ "error": e.name() }),
+            };
+            (id.to_string(), v)
+        })
+        .collect();
+    let values: serde_json::Map<String, Value> = mine
+        .iter()
+        .filter(|f| f.field_type != casual_sign_model::FieldType::Formula)
+        .filter_map(|f| {
+            let v = o.values.get(&f.id)?;
+            (Some(v) != f.value.as_ref())
+                .then(|| serde_json::to_value(v).ok().map(|j| (f.id.to_string(), j)))
+                .flatten()
+        })
+        .collect();
+    json!({ "hidden": hidden, "computed": computed, "values": values })
+}
+
 impl Open {
     /// Who uploads through this link, for a malware-scan event (ASVS-11): the server
     /// on the recipient's behalf (a recipient is no staff actor), with the request id
@@ -389,13 +438,30 @@ impl Open {
 
     /// Refuse a signature or initials value that does not name a capture this
     /// recipient adopted in this envelope (the seal job draws what the value names; a
-    /// value naming anyone else's capture must never reach it).
+    /// value naming anyone else's capture must never reach it). A stamp field takes only
+    /// a capture adopted as a stamp, a drawing field only one adopted as a drawing, and
+    /// a signature or initials field neither (VS-04A): the chain's `mark` then says
+    /// what each capture was for. `field` names the field each value is for.
     async fn check_marks<'v>(
         &mut self,
-        values: impl Iterator<Item = (&'v FieldValue, String)>,
+        values: impl Iterator<Item = (&'v FieldValue, Option<&'v str>, String)>,
     ) -> Result<(), ApiError> {
-        let mut mine: Option<Vec<String>> = None;
-        for (v, at) in values {
+        let mut mine: Option<Vec<(String, MarkKind)>> = None;
+        for (v, field, at) in values {
+            let kind = field.and_then(|id| {
+                self.l
+                    .state
+                    .fields
+                    .0
+                    .iter()
+                    .find(|f| same_id(&f.id, id))
+                    .map(|f| f.field_type)
+            });
+            let allowed: &[MarkKind] = match kind {
+                Some(casual_sign_model::FieldType::Stamp) => &[MarkKind::Stamp],
+                Some(casual_sign_model::FieldType::Drawing) => &[MarkKind::Drawing],
+                _ => &[MarkKind::Signature, MarkKind::Initials],
+            };
             // An attachment value must name a file this recipient uploaded through
             // `PUT …/fields/{field}/attachment` (WEB-06): one of their fields holds it.
             if let FieldValue::Attachment(_) = v {
@@ -420,17 +486,18 @@ impl Open {
                             EventData::RecipientSignatureAdopted {
                                 recipient_id,
                                 image_hash,
+                                mark,
                                 ..
-                            } if *recipient_id == self.recipient => Some(image_hash.hex()),
+                            } if *recipient_id == self.recipient => Some((image_hash.hex(), *mark)),
                             _ => None,
                         })
                         .collect(),
                 );
             }
-            if !mine
-                .as_ref()
-                .is_some_and(|m| m.iter().any(|h| h == id.as_str()))
-            {
+            if !mine.as_ref().is_some_and(|m| {
+                m.iter()
+                    .any(|(h, k)| h == id.as_str() && allowed.contains(k))
+            }) {
                 return Err(ApiError::invalid(&at));
             }
         }
@@ -508,6 +575,9 @@ impl Open {
                 v
             }),
             "fields": fields,
+            // VS-04C: what the seal will do with this recipient's fields, as the
+            // server's engine says it, so the page hides, computes and mirrors alike.
+            "rules": if shown { rules_of(s, &self.recipient) } else { Value::Null },
             // Whether the page asks the device for its location (GEO-01); when false it
             // never asks.
             "capture_location": s.options.capture_location,
@@ -1577,8 +1647,12 @@ pub(crate) async fn fill(
                 .map(|f| f.id.clone())
                 .ok_or_else(ApiError::not_found)?;
         let req: FieldIn = parse(&body)?;
-        o.check_marks(std::iter::once((&req.value, "/value".to_owned())))
-            .await?;
+        o.check_marks(std::iter::once((
+            &req.value,
+            Some(field.as_str()),
+            "/value".to_owned(),
+        )))
+        .await?;
         let r = o.recipient.clone();
         o.run(Command::CompleteField {
             recipient: r,
@@ -1707,12 +1781,13 @@ pub(crate) async fn finish(
     ceremony!(st, token, headers, ip, method, false, |o| {
         let req: FinishIn = parse(&body)?;
         o.locate(req.location.as_ref());
-        o.check_marks(
-            req.values
-                .iter()
-                .enumerate()
-                .map(|(i, v)| (&v.value, format!("/values/{i}/value"))),
-        )
+        o.check_marks(req.values.iter().enumerate().map(|(i, v)| {
+            (
+                &v.value,
+                Some(v.field.as_str()),
+                format!("/values/{i}/value"),
+            )
+        }))
         .await?;
         let mut values = Vec::with_capacity(req.values.len());
         for (i, v) in req.values.into_iter().enumerate() {

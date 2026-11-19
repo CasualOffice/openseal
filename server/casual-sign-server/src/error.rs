@@ -536,6 +536,18 @@ impl From<WorkflowError> for ApiError {
             _ => StatusCode::CONFLICT,
         };
         let mut out = Self::new(status, code).detail(e.to_string());
+        // VS-04C: each field the rules refused, by id and code, so the signing page
+        // shows the problem on the field (a group's rule, a required field a condition
+        // now shows). Ids only, never a value.
+        if let WorkflowError::Fields { issues } = &e {
+            out.errors = issues
+                .iter()
+                .map(|i| FieldProblem {
+                    pointer: format!("/fields/{}", i.field_id),
+                    code: i.code(),
+                })
+                .collect();
+        }
         if let WorkflowError::Invalid { violations } = &e {
             out.errors = violations
                 .iter()
