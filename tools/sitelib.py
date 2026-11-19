@@ -135,23 +135,34 @@ NAV = [
     ("download", "Download", "download.html"),
 ]
 
-# The documentation, in reading order: (slug, title, group).
+# The documentation, in reading order: (slug, title, section). The sidebar shows the
+# sections in this order; previous and next follow it (SITE-12).
 DOCS = [
-    ("index", "Documentation", "Start"),
-    ("getting-started", "Getting started", "Start"),
-    ("first-envelope", "Sending your first envelope", "Use"),
-    ("signing", "Signing", "Use"),
-    ("templates", "Templates", "Use"),
-    ("verifying", "Verifying a document", "Use"),
-    ("administration", "Administration", "Operate"),
-    ("self-hosting", "Self-hosting and configuration", "Operate"),
-    ("api", "API reference", "Build"),
-    ("webhooks", "Webhooks", "Build"),
-    ("security", "Security and evidence model", "Understand"),
-    ("architecture", "Architecture overview", "Understand"),
-    ("faq", "FAQ", "Understand"),
-    ("contributing", "Contributing", "Project"),
+    ("index", "Documentation", "Get started"),
+    ("getting-started", "Getting started", "Get started"),
+    ("first-envelope", "Sending your first envelope", "Get started"),
+    ("signing", "Signing", "Guides"),
+    ("templates", "Templates", "Guides"),
+    ("verifying", "Verifying a document", "Guides"),
+    ("webhooks", "Webhooks", "Guides"),
+    ("administration", "Administration", "Guides"),
+    ("self-hosting", "Deployment overview", "Deploy"),
+    ("deploy-compose", "Deploy with Docker Compose", "Deploy"),
+    ("deploy-production", "Production deployment", "Deploy"),
+    ("configuration", "Configuration reference", "Deploy"),
+    ("troubleshooting", "Troubleshooting", "Deploy"),
+    ("api", "API overview", "API reference"),
+    ("security", "Security and evidence model", "Reference"),
+    ("architecture", "Architecture overview", "Reference"),
+    ("faq", "FAQ", "Reference"),
+    ("contributing", "Contributing", "Reference"),
 ]
+# Generated API pages the sidebar's API section also links (tools/build-api-docs.py writes them).
+API_LINKS = [
+    ("api-envelopes", "Envelopes"), ("api-recipients", "Recipients"), ("api-documents", "Documents"),
+    ("api-templates", "Templates"), ("api-webhooks", "Webhooks"), ("api-objects", "Objects"),
+]
+
 
 def available_docs() -> list[tuple[str, str, str]]:
     """DOCS entries that have a source page (the API reference is generated)."""
@@ -212,7 +223,7 @@ def footer(root: str) -> str:
       <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
     </div>
     {col("Product", [("Overview", "index.html#product"), ("Try the demo", "app/app.html#/signin"), ("Verify a PDF", "verify.html"), ("Download and deploy", "download.html"), ("Roadmap", "roadmap.html"), ("Changelog", "changelog.html")])}
-    {col("Documentation", [("Getting started", "docs/getting-started.html"), ("Self-hosting", "docs/self-hosting.html"), ("API reference", "docs/api.html"), ("Webhooks", "docs/webhooks.html")])}
+    {col("Documentation", [("Getting started", "docs/getting-started.html"), ("Deploy with Docker Compose", "docs/deploy-compose.html"), ("Production deployment", "docs/deploy-production.html"), ("API reference", "docs/api.html"), ("Webhooks", "docs/webhooks.html")])}
     {col("Trust", [("Security and evidence", "docs/security.html"), ("Verifying a document", "docs/verifying.html"), ("Security policy", "security.html"), ("Architecture", "docs/architecture.html")])}
     {col("Project", [("GitHub", REPO), ("Contributing", "docs/contributing.html"), ("Brand and attribution", "brand.html")])}
   </div>
@@ -347,15 +358,26 @@ def docs_page(slug: str, title: str, description: str, article: str) -> str:
     article = add_heading_ids(article)
     docs = available_docs()
     groups: dict[str, list[str]] = {}
+    section = ""
     for s, t, g in docs:
         cur = ' aria-current="page"' if s == slug else ""
+        if s == slug:
+            section = g
         groups.setdefault(g, []).append(f'<li><a href="{s}.html"{cur}>{_esc(t)}</a></li>')
+        if s == "api":
+            groups[g] += [f'<li class="docs-nav__sub"><a href="{h}.html">{_esc(n)}</a></li>' for h, n in API_LINKS]
     side = "".join(f'<h2>{g}</h2><ul>{"".join(items)}</ul>' for g, items in groups.items())
     toc_items = re.findall(r'<h2[^>]*id="([^"]+)"[^>]*>(.*?)</h2>', article, flags=re.S)
     toc = ""
     if len(toc_items) >= 2:
         lis = "".join(f'<li><a href="#{i}">{re.sub(r"<[^>]+>", "", t)}</a></li>' for i, t in toc_items)
         toc = f'<nav class="toc" aria-label="On this page"><h2>On this page</h2><ul>{lis}</ul></nav>'
+    page_title = next((t for s, t, _ in docs if s == slug), title)
+    crumbs = ['<li><a href="index.html">Docs</a></li>'] if slug != "index" else []
+    if section and slug != "index":
+        crumbs.append(f"<li>{_esc(section)}</li>")
+    crumbs.append(f'<li aria-current="page">{_esc(page_title)}</li>')
+    crumb_html = f'<nav class="crumbs" aria-label="Breadcrumb"><ol>{"".join(crumbs)}</ol></nav>'
     order = [s for s, _, _ in docs]
     i = order.index(slug)
     pn = []
@@ -371,6 +393,7 @@ def docs_page(slug: str, title: str, description: str, article: str) -> str:
     <nav class="docs-nav docs-nav--wide" aria-label="Documentation">{side}</nav>
   </aside>
   <article class="docs-article prose">
+    {crumb_html}
 {article}
     <nav class="prevnext" aria-label="Previous and next">{"".join(pn)}</nav>
   </article>
@@ -470,15 +493,27 @@ class _Text(HTMLParser):
         self.head: str | None = None
         self.head_id = ""
 
+    # An element marked `data-nosearch` (the API reference's code columns and its
+    # sub-headings) is left out: its text, and a heading's section break.
+    ns_tag: str | None = None
+    ns_depth = 0
+
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         if tag == "main":
             self.in_main += 1
         if not self.in_main:
             return
+        if self.ns_tag is not None:
+            if tag == self.ns_tag:
+                self.ns_depth += 1
+            return
+        if "data-nosearch" in a and tag not in ("h1", "h2", "h3"):
+            self.ns_tag, self.ns_depth = tag, 1
+            return
         if tag in self.SKIP:
             self.skip += 1
-        elif tag in ("h1", "h2", "h3") and not self.skip:
+        elif tag in ("h1", "h2", "h3") and not self.skip and "data-nosearch" not in a:
             self.head = ""
             self.head_id = a.get("id", "") or ""
 
@@ -487,6 +522,12 @@ class _Text(HTMLParser):
             self.in_main -= 1
         if not self.in_main:
             return
+        if self.ns_tag is not None:
+            if tag == self.ns_tag:
+                self.ns_depth -= 1
+                if self.ns_depth == 0:
+                    self.ns_tag = None
+            return
         if tag in self.SKIP:
             self.skip = max(0, self.skip - 1)
         elif tag in ("h1", "h2", "h3") and self.head is not None:
@@ -494,7 +535,7 @@ class _Text(HTMLParser):
             self.head = None
 
     def handle_data(self, data):
-        if not self.in_main or self.skip:
+        if not self.in_main or self.skip or self.ns_tag is not None:
             return
         if self.head is not None:
             self.head += data

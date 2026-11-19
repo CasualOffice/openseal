@@ -1,0 +1,41 @@
+<!--meta {"title": "Configuration reference", "description": "Every environment variable of the OpenSeal server, worker and key daemon, and of the production profile: default, whether it is required, whether it is a secret, and what it does."} -->
+<h1>Configuration reference</h1>
+<p class="lede">OpenSeal is configured entirely through environment variables. These tables are generated from each program's own documentation in the source, so they list exactly what the release reads.</p>
+
+<h2 id="conventions">How settings are read</h2>
+<ul>
+  <li><strong>Secrets have a file form.</strong> Every variable marked <span class="tag tag--secret">Secret</span> can be given as <code>NAME_FILE</code>, the path of a file holding the value; prefer it, and the production profile uses nothing else. Setting both <code>NAME</code> and <code>NAME_FILE</code> is an error (<code>CS-KEY-0005</code>), and so is an empty or unreadable file.</li>
+  <li><strong>Read once, at start.</strong> A change takes effect on the next restart. The exception is the database URL file, read again every <code>OPENSEAL_SECRET_RELOAD_SECONDS</code> so a credential can be rotated without a restart.</li>
+  <li><strong>Refused, not guessed.</strong> A malformed or out-of-range value stops the program at start with one JSON <code>start_failed</code> line naming the setting and, where there is one, its error code.</li>
+  <li><strong>Security settings are pinned.</strong> With <code>OPENSEAL_CONFIG_MANIFEST</code> (the production profile sets it), keyd and the worker refuse to start when a security setting differs from the recorded manifest (<code>CS-KEY-0014</code>). See <a href="deploy-production.html#configure">recording the manifests</a>.</li>
+  <li><strong>Required</strong> means the program does not start without it; "With S3", "Outside development" and similar say when.</li>
+</ul>
+
+<div class="filter-box" data-filter-box hidden>
+  <label class="filter-box__label" for="config-filter">{{icon:search:16}}<span class="sr-only">Filter variables</span></label>
+  <input id="config-filter" class="filter-box__input" type="search" placeholder="Filter variables, for example SMTP or secret" autocomplete="off" spellcheck="false" data-filter="config">
+  <p class="filter-box__status" role="status" aria-live="polite"></p>
+</div>
+
+<h2 id="server">Server (<code>casual-sign-server</code>)</h2>
+<p>The API, the signing ceremony and the web app. Its subcommands (<code>migrate</code>, <code>bootstrap</code>, <code>verify-evidence</code>, <code>mfa-reseal</code>, <code>blobs-export</code>, <code>blobs-import</code>, <code>healthcheck</code>) read the same environment.</p>
+<!--config:server-->
+
+<h2 id="worker">Worker (<code>casual-sign-worker</code>)</h2>
+<p>Runs every background job: email, reminders and expiry, sealing through keyd and the timestamp authorities, webhooks, daily anchoring and retention. <code>casual-sign-worker config-manifest</code> prints its manifest; <code>casual-sign-worker healthcheck</code> is its container health check.</p>
+<!--config:worker-->
+<p>Webhook signing secrets are not listed here: each subscription names its secret by reference, and the worker reads that reference as an environment variable <code>NAME</code> or <code>NAME_FILE</code>.</p>
+
+<h2 id="keyd">Key daemon (<code>casual-sign-keyd</code>)</h2>
+<p>Holds the seal key, one key per alias, and signs only for callers on its allow list over mutual TLS. <code>casual-sign-keyd config-manifest</code> prints its manifest; <code>casual-sign-keyd verify-oplog PATH</code> checks an operation log's chain.</p>
+<!--config:keyd-->
+
+<h2 id="production-profile">Production profile (<code>deploy/compose.production.yml</code>)</h2>
+<p>The variables the profile itself reads when Compose renders it. It maps them onto the services' variables above and sets the rest (paths under <code>/run/secrets/</code>, listen addresses, the ops listener, the drain period). Compose refuses to start while a required one is unset, naming it.</p>
+<!--config:profile-->
+
+<h2 id="evaluation-stack">Evaluation stack (<code>docker-compose.yml</code>)</h2>
+<p>The evaluation stack sets everything it needs itself. You may set <code>OPENSEAL_HTTP_PORT</code> (default <code>8080</code>) and <code>OPENSEAL_MAIL_PORT</code> (default <code>8025</code>) to move its ports, <code>OPENSEAL_CLAMD_ADDR=clamav:3310</code> with <code>--profile production</code> to scan uploads, and <code>OPENSEAL_IMAGE_PREFIX</code> and <code>OPENSEAL_VERSION</code> to run published images. The optional settings it leaves unset (trusted proxies, GeoIP, identity providers, the SMS gateway, the model service, the webhook allow list) are yours to add.</p>
+
+<h2 id="console">Platform console</h2>
+<p>The separate operators' console (<code>casual-sign-console</code>) reads <code>OPENSEAL_CONSOLE_DATABASE_URL</code> and <code>OPENSEAL_CONSOLE_MFA_KEY</code> (secrets), <code>OPENSEAL_CONSOLE_LISTEN</code>, <code>OPENSEAL_CONSOLE_ORIGIN</code>, the <code>OPENSEAL_CONSOLE_KEYD_*</code> settings for its Keys page, and <code>OPENSEAL_CONSOLE_TSA_ALLOW</code>. They are documented with the console in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/65-RUNNING-IT.md">docs/65</a>.</p>

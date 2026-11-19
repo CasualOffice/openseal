@@ -18,7 +18,8 @@ tools/build-webapp-wasm.sh; `--require-wasm` fails when it is absent). The copy 
 at publish time, not committed, so the app is never duplicated in the repository.
 
 Runs tools/build-roadmap.py (docs/06 and docs/14 to roadmap.html) and
-tools/build-api-docs.py (api/openapi.yaml to docs/api.html) as part of the build.
+tools/build-api-docs.py (api/openapi.yaml to docs/api*.html and docs/openapi.yaml) as part of the build,
+and fills the configuration reference from the binaries' module docs (tools/site_config.py).
 Standard library, except Pillow for --screens and PyYAML for the API page (so run it
 without -I where PyYAML is a user-site package).
 """
@@ -171,11 +172,16 @@ def build() -> dict[str, bytes]:
             continue
         path = SRC / "docs" / f"{slug}.html"
         meta, body = sitelib.read_fragment(path)
+        if slug == "configuration":
+            # The variables' tables come from the binaries' own module docs (SITE-12).
+            body = _load("site_config").fill(body)
         pages[f"docs/{slug}.html"] = sitelib.docs_page(slug, meta.get("title", title), meta["description"],
                                                        sitelib.expand(body, "../"))
     pages["changelog.html"] = changelog()
     pages["roadmap.html"] = _load("build-roadmap").render()
-    pages["docs/api.html"] = _load("build-api-docs").render()
+    # The API reference: an overview, a page per resource and the objects (SITE-12).
+    pages.update(_load("build-api-docs").render_all())
+    files["docs/openapi.yaml"] = (ROOT / "api/openapi.yaml").read_bytes()
 
     index = []
     for rel, text in sorted(pages.items()):

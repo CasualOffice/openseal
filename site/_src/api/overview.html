@@ -1,0 +1,243 @@
+<!--meta {"title": "API reference", "description": "The OpenSeal REST API: base URL, authentication (API keys, OAuth 2.1 with PKCE, JWT grant), errors, pagination, idempotency, ETags, rate limits, versioning, webhooks and sandbox, with every resource."} -->
+<h1>API reference</h1>
+<p class="lede">The OpenSeal API is a JSON REST API over HTTPS. Everything the web app does, it does through this API: <!--api:count--> public operations, from creating and sending an envelope to reading its sealed documents and audit trail.</p>
+
+<div class="callout warn">{{icon:triangle-alert}}<div><p>Pre-release. The contract is version <code><!--api:version--></code> and may still change before 1.0. OpenSeal v0.1.0 is for evaluation, not yet for production agreements.</p></div></div>
+
+<div class="api-quick">
+  <div>
+    <h2 id="base-url">Base URL</h2>
+    <p>Every deployment serves the API at its own address, the <code>OPENSEAL_PUBLIC_URL</code> its operator configures (see <a href="configuration.html">Configuration</a>). Operations live under <code>/api/v1</code>; discovery documents under <code>/.well-known/</code>. The examples on these pages use <code>https://sign.example.com</code>.</p>
+    <ul>
+      <li>Request and response bodies are JSON (<code>application/json</code>); a JSON body sent as anything else is refused <code>415</code>.</li>
+      <li>Times are RFC 3339 in UTC; ids are UUIDv7 strings.</li>
+      <li>Every response carries <code>X-Request-Id</code>; quote it when you report a problem.</li>
+      <li>An object of another account answers exactly as one that does not exist: <code>404 CS-API-0002</code>.</li>
+    </ul>
+  </div>
+  <div class="api-quick__code">
+    <p class="codebox-label">Your first request</p>
+<pre><code>curl https://sign.example.com/api/v1/envelopes?limit=5 \
+  -H "Authorization: Bearer $OPENSEAL_API_KEY"</code></pre>
+  </div>
+</div>
+
+<h2 id="sdks">Client libraries</h2>
+<p>Two clients are generated from the same contract as this reference, one method per operation, with the OAuth helpers and webhook verification. Every operation on these pages shows its call in both.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Client libraries">
+<table>
+  <thead><tr><th scope="col">Language</th><th scope="col">Package</th><th scope="col">Method names</th></tr></thead>
+  <tbody>
+    <tr><td>TypeScript and JavaScript (Node 20+, Deno, Bun, browsers)</td><td><code>@openseal/sdk</code> 0.1.0-beta.0, <a href="https://github.com/CasualOffice/openseal/tree/main/sdk/typescript">sdk/typescript</a></td><td>The operation id: <code>os.createEnvelope(…)</code></td></tr>
+    <tr><td>Python 3.9+</td><td><code>openseal</code> 0.1.0b0, <a href="https://github.com/CasualOffice/openseal/tree/main/sdk/python">sdk/python</a></td><td>Snake case: <code>client.create_envelope(…)</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>Neither is published to npm or PyPI yet; install them from a checkout of the repository:</p>
+<pre><code>npm install ./openseal/sdk/typescript     # or: pip install ./openseal/sdk/python</code></pre>
+
+<h2 id="authentication">Authentication</h2>
+<p>Every operation except the public ones (sign-in, the token endpoint, discovery) needs a credential. Integrations send it as a bearer token:</p>
+<pre><code>Authorization: Bearer &lt;API key or access token&gt;</code></pre>
+<p>A credential belongs to one workspace and acts as one member. It holds at most the permissions of that member's profile, narrowed by its own <a href="#scopes">scopes</a>, and it is checked again on every request: a revoked key, an expired token or a removed member is refused on the next call.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Ways to authenticate">
+<table>
+  <thead><tr><th scope="col">Method</th><th scope="col">Use it for</th><th scope="col">Credential</th></tr></thead>
+  <tbody>
+    <tr><td><a href="#api-keys">API key</a></td><td>Scripts and server-side integrations of your own workspace</td><td><code>osk_…</code>, scoped, optionally expiring, shown once</td></tr>
+    <tr><td><a href="#oauth">OAuth 2.1, authorization code with PKCE</a></td><td>Apps that act for members who sign in and consent</td><td>Access token (1 hour) and refresh token (<code>osr_…</code>, 30 days, rotated)</td></tr>
+    <tr><td><a href="#client-credentials">OAuth client credentials</a></td><td>A service acting as the OAuth app's owner</td><td>Access token (1 hour)</td></tr>
+    <tr><td><a href="#jwt-grant">JWT bearer grant</a> (RFC 7523)</td><td>Server-to-server integrations acting for a member who consented once</td><td>Access token (1 hour), no refresh token</td></tr>
+    <tr><td>Staff session</td><td>OpenSeal's own web app</td><td>A <code>__Host-os_session</code> cookie with a CSRF token; not for integrations</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3 id="api-keys">API keys</h3>
+<p>An administrator creates a key in the web app (Admin, API) or with <a href="api-api-clients.html#op-createapiclient">Create API client</a> (<code>kind: "api_key"</code>). The key is <code>osk_</code> followed by 256 random bits; OpenSeal stores only its SHA-256, so it is shown once, in the response that creates it. Keys of a <a href="#sandbox">sandbox workspace</a> start <code>osk_test_</code>.</p>
+<div class="code-trio">
+<pre><code># Create a key (as an administrator), then use it
+curl -X POST https://sign.example.com/api/v1/api-clients \
+  -H "Authorization: Bearer $ADMIN_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "CRM sync", "kind": "api_key", "scopes": ["envelopes:read", "envelopes:write"], "expires_in_days": 90}'
+
+curl https://sign.example.com/api/v1/envelopes \
+  -H "Authorization: Bearer osk_3f9a6c1e8b2d4f7a9c0e5b1d3f6a8c2e"</code></pre>
+</div>
+
+<h3 id="oauth">OAuth 2.1: authorization code with PKCE</h3>
+<p>For an app that acts for members of a workspace. Register it with <code>kind: "oauth_app"</code> and its <code>redirect_uris</code> (<code>https://</code>, or <code>http://</code> to a loopback address); it gets a <code>client_id</code> and a <code>client_secret</code>. OpenSeal accepts confidential clients only: the app authenticates at the token endpoint with its secret <em>and</em> sends a PKCE verifier (S256).</p>
+<ol class="steps">
+  <li><p><strong>Send the member to the authorization endpoint</strong> with a fresh PKCE challenge and <code>state</code>. OpenSeal signs them in if needed and asks for consent.</p>
+<pre><code>https://sign.example.com/api/v1/oauth/authorize?response_type=code
+  &amp;client_id=CLIENT_ID&amp;redirect_uri=https%3A%2F%2Fapp.example.com%2Fcallback
+  &amp;scope=envelopes%3Aread%20envelopes%3Asend&amp;state=STATE
+  &amp;code_challenge=CHALLENGE&amp;code_challenge_method=S256</code></pre></li>
+  <li><p><strong>Receive the redirect.</strong> On consent the member's browser returns to your redirect URI with <code>code</code>, your <code>state</code> (check it) and <code>iss</code> (RFC 9207). A code lasts ten minutes and works once.</p></li>
+  <li><p><strong>Exchange the code</strong> with your client credentials and the verifier:</p>
+<pre><code>curl -X POST https://sign.example.com/api/v1/oauth/token \
+  -u "$CLIENT_ID:$CLIENT_SECRET" \
+  -d grant_type=authorization_code \
+  -d code="$CODE" \
+  -d redirect_uri=https://app.example.com/callback \
+  -d code_verifier="$VERIFIER"</code></pre>
+<pre><code>{
+  "access_token": "eyJhbGciOiJFUzI1NiJ9…",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "envelopes:read envelopes:send",
+  "refresh_token": "osr_…"
+}</code></pre></li>
+  <li><p><strong>Refresh</strong> before the hour is up with <code>grant_type=refresh_token</code>. Each refresh token works once and is replaced; one used twice revokes the whole family, so store the new one every time.</p></li>
+</ol>
+<p>The SDKs do steps 1 and 3 for you:</p>
+<pre><code>// TypeScript
+const { url, verifier, state } = await os.authorizationUrl({ clientId, redirectUri, scope: "envelopes:read envelopes:send" });
+// … redirect to url, then on the callback:
+await os.token({ clientId, clientSecret, grant_type: "authorization_code", code, redirect_uri: redirectUri, code_verifier: verifier });</code></pre>
+<pre><code># Python
+url, verifier, state = client.authorization_url(client_id, redirect_uri, "envelopes:read envelopes:send")
+client.token(client_id=client_id, client_secret=client_secret, grant_type="authorization_code",
+             code=code, redirect_uri=redirect_uri, code_verifier=verifier)</code></pre>
+<p>Members see and withdraw the apps they consented to under Connected apps; withdrawing revokes the refresh tokens at once and the access tokens on their next request.</p>
+
+<h3 id="client-credentials">OAuth client credentials</h3>
+<p>An OAuth app can also take a token for itself, acting as its owner:</p>
+<pre><code>curl -X POST https://sign.example.com/api/v1/oauth/token \
+  -u "$CLIENT_ID:$CLIENT_SECRET" \
+  -d grant_type=client_credentials \
+  -d scope="envelopes:read"</code></pre>
+
+<h3 id="jwt-grant">JWT bearer grant</h3>
+<p>For a server that acts for a member without a browser each time, as DocuSign's JWT grant does. Register a <code>kind: "jwt_integration"</code> client with your <code>public_key</code> (PEM, EC P-256 or RSA; never send the private key). The member consents once, through the same authorization URL as above. Then your server signs an assertion with its private key and exchanges it:</p>
+<pre><code>{
+  "iss": "CLIENT_ID",                       // the integration's client id
+  "sub": "USER_ID",                         // the member who consented
+  "aud": "https://sign.example.com",        // the public URL, or the token endpoint's
+  "iat": 1763631000,
+  "exp": 1763634600,                        // in the future, at most an hour after iat
+  "scope": "envelopes:read envelopes:send"  // optional; within the consent
+}</code></pre>
+<pre><code># Python, with any JWT library (PyJWT shown) for the assertion
+assertion = jwt.encode(claims, private_key_pem, algorithm="ES256")
+token = client.token(assertion=assertion)        # grant_type is set for you</code></pre>
+<pre><code>curl -X POST https://sign.example.com/api/v1/oauth/token \
+  -d grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer \
+  -d assertion="$ASSERTION"</code></pre>
+<p>A member who has not consented gets <code>invalid_grant</code> with <code>CS-AUTH-0005</code>; a bad signature, audience or lifetime gets <code>invalid_grant</code> with <code>CS-AUTH-0014</code>. No refresh token is issued: sign a new assertion when the hour is up.</p>
+
+<h3 id="tokens">Access tokens</h3>
+<p>Access tokens are ES256 JWTs (issuer the public URL, audience <code>openseal-api</code>) valid for one hour. The keys that verify them are at <code>/.well-known/jwks.json</code>; the server's OAuth metadata (RFC 8414) is at <code>/.well-known/oauth-authorization-server</code>. Token endpoint errors follow RFC 6749 (<code>invalid_client</code>, <code>invalid_grant</code>, <code>invalid_scope</code>, <code>unsupported_grant_type</code>) with OpenSeal's code in <code>error_description</code>.</p>
+
+<h3 id="scopes">Scopes and permissions</h3>
+<p>Each operation names the permission it needs (on its page, under Permission). A key or token holds the permissions its scopes cover, and never more than its member's profile allows:</p>
+<!--api:scopes-->
+
+<h2 id="errors">Errors</h2>
+<p>Every error is an RFC 9457 problem (<code>application/problem+json</code>) with a stable <code>code</code>, never reused, that you can branch on. <code>errors[]</code> points at the members that are wrong with JSON pointers. Messages never contain document text or personal data.</p>
+<pre><code>HTTP/1.1 422 Unprocessable Entity
+Content-Type: application/problem+json
+
+{
+  "type": "urn:openseal:problem:CS-API-0001",
+  "title": "Malformed or invalid request",
+  "status": 422,
+  "code": "CS-API-0001",
+  "detail": "subject is longer than 255 characters",
+  "request_id": "0193d3a1-5b7c-7e2f-9a41-6c8d2e0f3b15",
+  "errors": [{ "pointer": "/subject", "code": "CS-API-0001" }]
+}</code></pre>
+<p>The SDKs raise these as <code>OpenSealError</code> with <code>code</code>, <code>status</code>, <code>requestId</code> (<code>request_id</code> in Python) and <code>errors</code>.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="HTTP status codes">
+<table>
+  <thead><tr><th scope="col">Status</th><th scope="col">Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>200</code> <code>201</code> <code>202</code> <code>204</code></td><td>Done; <code>202</code> when the work continues in the background (sending email, sealing)</td></tr>
+    <tr><td><code>400</code> <code>422</code></td><td>The request is malformed or breaks a rule; <code>errors[]</code> says where</td></tr>
+    <tr><td><code>401</code></td><td>No credential, or an expired or revoked one</td></tr>
+    <tr><td><code>403</code></td><td>The credential lacks the permission, or the action is not allowed (plan limits add <code>meter</code>, <code>limit</code>, <code>used</code> and <code>period_end</code>)</td></tr>
+    <tr><td><code>404</code></td><td>No such object, or one of another account</td></tr>
+    <tr><td><code>409</code></td><td>The object's state does not allow it, or an idempotency conflict</td></tr>
+    <tr><td><code>412</code> <code>428</code></td><td>Stale or missing <code>If-Match</code></td></tr>
+    <tr><td><code>413</code> <code>415</code></td><td>Body too large, or not JSON</td></tr>
+    <tr><td><code>429</code></td><td>Rate limited; retry after <code>Retry-After</code> seconds</td></tr>
+    <tr><td><code>500</code> <code>502</code> <code>503</code></td><td>OpenSeal or a service it depends on failed; safe to retry with the same <code>Idempotency-Key</code></td></tr>
+  </tbody>
+</table>
+</div>
+<h3 id="error-codes-api">Request codes (<code>CS-API</code>)</h3>
+<!--api:errors-api-->
+<h3 id="error-codes-auth">Authentication codes (<code>CS-AUTH</code>)</h3>
+<!--api:errors-auth-->
+<h3 id="error-codes-workflow">Workflow codes (<code>CS-WF</code>)</h3>
+<!--api:errors-wf-->
+<p>Other families (documents <code>CS-PDF</code>, fields <code>CS-FLD</code>, bulk send <code>CS-BLK</code>, malware scanning <code>CS-SCAN</code>, plans <code>CS-PLAN</code> and the rest) are listed in the <a href="https://github.com/CasualOffice/openseal/blob/main/docs/20-ERROR-CODE-REGISTRY.md">error code registry</a>.</p>
+
+<h2 id="pagination">Pagination</h2>
+<p>Lists are cursor-paginated and stay stable while new objects arrive. Ask for up to <code>limit</code> items (1 to 200, default 50); the answer has <code>items</code> and <code>next_cursor</code>. Pass <code>next_cursor</code> back as <code>cursor</code> until it is <code>null</code>. A cursor belongs to the sort and order it was issued for.</p>
+<pre><code>curl "https://sign.example.com/api/v1/envelopes?limit=50&amp;status=sent" -H "Authorization: Bearer $OPENSEAL_API_KEY"
+
+{ "items": [ { "id": "0193…", "status": "sent", "subject": "Please sign: Mutual NDA" } ],
+  "next_cursor": "eyJpZCI6IjAxOTMifQ" }
+
+curl "https://sign.example.com/api/v1/envelopes?limit=50&amp;status=sent&amp;cursor=eyJpZCI6IjAxOTMifQ" -H "Authorization: Bearer $OPENSEAL_API_KEY"</code></pre>
+
+<h2 id="idempotency">Idempotency</h2>
+<p>Every <code>POST</code> accepts an <code>Idempotency-Key</code> (1 to 255 printable ASCII characters). Retrying with the same key and body within 24 hours returns the first response, marked <code>Idempotency-Replayed: true</code>, and does the work once: a network failure while creating or sending an envelope never sends it twice.</p>
+<ul>
+  <li>The same key with a different body: <code>409 CS-API-0004</code>.</li>
+  <li>The first request still running: <code>409 CS-API-0011</code>; retry shortly.</li>
+  <li>A response that held a secret (a new API key) is not stored; its replay answers <code>409 CS-API-0009</code>.</li>
+</ul>
+<pre><code>curl -X POST https://sign.example.com/api/v1/envelopes/$ID/send \
+  -H "Authorization: Bearer $OPENSEAL_API_KEY" \
+  -H "Idempotency-Key: send-order-1042"</code></pre>
+
+<h2 id="etags">Versions, ETags and If-Match</h2>
+<p>Envelopes, and templates, have a version that every change raises. Reads return it as <code>ETag: "v&lt;version&gt;"</code>. Changing or deleting a draft envelope, its recipients, fields or documents, and opening a correction, require <code>If-Match</code> with the version you read, so two editors never overwrite each other:</p>
+<pre><code>curl -X PATCH https://sign.example.com/api/v1/envelopes/$ID \
+  -H "Authorization: Bearer $OPENSEAL_API_KEY" \
+  -H 'If-Match: "v3"' \
+  -H "Content-Type: application/json" \
+  -d '{"subject": "Please sign: Mutual NDA (revised)"}'</code></pre>
+<p>A stale version answers <code>412 CS-WF-0002</code>: read the envelope again and reapply your change. No <code>If-Match</code> where one is required answers <code>428 CS-API-0008</code>.</p>
+
+<h2 id="rate-limits">Rate limits and request limits</h2>
+<p>Requests are limited per credential, per signing link, per client address and per sign-in name. Responses carry <code>RateLimit</code> and <code>RateLimit-Policy</code> (the IETF draft headers); a refused request answers <code>429 CS-API-0003</code> with <code>Retry-After</code> in seconds. Back off and retry after it, keeping the same <code>Idempotency-Key</code>.</p>
+<!--api:limits-->
+<p>Every limit, with its error code, is in the <a href="https://github.com/CasualOffice/openseal/blob/main/docs/21-PARSER-LIMITS.md">limits register</a>; an operation with limits of its own lists them on its page.</p>
+
+<h2 id="versioning">Versioning</h2>
+<p>The version is in the path: <code>/api/v1</code>. Within a version changes are additive only: new operations, new optional parameters, new members in responses and new event types. Clients must ignore members they do not know. A breaking change gets a new path (<code>/api/v2</code>), and the old version is kept for twelve months alongside it. The <a href="../changelog.html">changelog</a> records every change. Until 1.0 the contract (<code><!--api:version--></code>) may still change.</p>
+
+<h2 id="webhooks">Webhooks</h2>
+<p>Subscribe a URL with <a href="api-webhooks.html#op-createwebhook">Create webhook</a> to receive events such as <code>envelope.completed</code> as they happen. Each delivery is a <code>POST</code> of a small JSON event (ids and status, never names, addresses or documents: fetch those with your credential):</p>
+<pre><code>{
+  "id": "0193b2f4-7c1e-7b3d-8e45-1f2a3b4c5d6e",
+  "type": "envelope.completed",
+  "created_at": "2026-11-20T09:30:00Z",
+  "account_id": "0193a0c2-…",
+  "data": { "envelope_id": "0193…", "status": "completed", "version": 7 }
+}</code></pre>
+<p>Deliveries are signed with the <a href="https://www.standardwebhooks.com/">Standard Webhooks</a> scheme: <code>webhook-id</code>, <code>webhook-timestamp</code> and <code>webhook-signature</code> (<code>v1,</code> and the base64 HMAC-SHA256 of <code>id.timestamp.body</code> under your <code>whsec_…</code> secret). Verify the raw body before parsing it, and refuse a timestamp more than five minutes away:</p>
+<pre><code>// TypeScript
+import { verifyWebhook } from "@openseal/sdk";
+const event = await verifyWebhook(process.env.OPENSEAL_WEBHOOK_SECRET, request.headers, rawBody);</code></pre>
+<pre><code># Python
+from openseal import verify_webhook
+event = verify_webhook(os.environ["OPENSEAL_WEBHOOK_SECRET"], request.headers, raw_body)</code></pre>
+<p>Delivery is at least once: answer <code>2xx</code> within 10 seconds, and deduplicate on <code>webhook-id</code>. Failures are retried with exponential back-off for 15 attempts, about three days, and each attempt is in the delivery log. Order is not guaranteed; use <code>data.version</code> to discard stale events. URLs must be HTTPS to a public address. The <a href="webhooks.html">Webhooks guide</a> lists every event type and covers secret rotation.</p>
+
+<h2 id="sandbox">Sandbox</h2>
+<p>Build and test against a sandbox workspace. An organization administrator creates one in Organization settings, Workspaces ("Sandbox workspace"), or with <code>sandbox: true</code> on <a href="api-organizations.html#op-createorgworkspace">Create organization workspace</a>; a workspace is a sandbox for good. In a sandbox:</p>
+<ul>
+  <li>API keys start <code>osk_test_</code> and authenticate the same way;</li>
+  <li>envelopes are sealed with a separate test key whose certificate says it is not for agreements, and the signing page, emails and certificate say it is a test;</li>
+  <li>nothing is counted against plan quotas.</li>
+</ul>
+<p>Every workspace answers <code>sandbox</code> in <a href="api-account.html#op-getaccount">Get account</a>, so your integration can check where it is.</p>
+
+<h2 id="resources">Resources</h2>
+<!--api:resources-->
+<p>The whole contract is one OpenAPI 3.1 document: <a href="openapi.yaml">download openapi.yaml</a>. A contract test keeps it equal to the server's route table, scope by scope.</p>
