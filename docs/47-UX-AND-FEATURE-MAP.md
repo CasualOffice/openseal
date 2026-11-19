@@ -997,7 +997,7 @@ Spec: `docs/assets/design-canvas/Intelligence.dc.html` (and Main for the list la
   `tests/ux08.test.mjs`. The per-envelope choice in the editor is not built yet.
 - **Verify, accessibility and demo** (`VS-07`): axe on `verify.html` at start, valid, tampered and refused, light and
   dark (`a11y.spec.mjs`), and on the site's Verify page (`site.spec.mjs`); `verify-demo.spec.mjs` records the
-  verify flow in Chromium and WebKit to `target/e2e-demo/vs07-*.webm`, uploaded by CI's `e2e` job as `slice-7-demo`.
+  verify flow in Chromium and WebKit to `target/e2e-demo/vs07-*.webm`, uploaded by CI's `e2e` job as `slice-7-demo` (since 2026-11-19 `slice-7-demo-<shard>`, from the shard that ran it).
 - **Audit log** (UXW-09, `GET /admin-events`): the workspace's admin log, newest first of the events loaded (pages of
   1,000, five at a time, then "Load more"), with When, Action, Made by (a member's or API client's name, or "The
   server") and the changed keys; a search box and Action and Made by filters over the loaded events (the route takes
