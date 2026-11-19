@@ -242,14 +242,14 @@ jobs:
   # VS-07: the WebAssembly verifier is built first (as pages.yml builds it), so the
   # Verify specs run the real verifier instead of skipping; the build is cached on the
   # sources it is made from, and the job fails if it is missing.
-  # Split into four shards (owner, 2026-11-19: no job over 40-45 minutes); one runner took 40+.
+  # Eight shards, one test at a time in each (owner, 2026-11-19: no job over 20-25 minutes).
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 75   # a hung test fails the job instead of holding the main queue for 6 h
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Restore the WebAssembly verifier
@@ -275,7 +275,7 @@ jobs:
       - working-directory: webapp/e2e
         run: npm ci && npx playwright install --with-deps chromium webkit
       - working-directory: webapp/e2e
-        run: npx playwright test --shard=${{ matrix.shard }}/4
+        run: npx playwright test --shard=${{ matrix.shard }}/8
       # The slice 7 demo (VS-07): the Verify page checking a sealed and a tampered PDF,
       # recorded by verify-demo.spec.mjs in Chromium and WebKit, in whichever shard ran it.
       - if: success() && hashFiles('target/e2e-demo/vs07-*') != ''
@@ -308,7 +308,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     env:
       COMPOSE_FILE: docker-compose.yml:tools/e2e/compose.e2e.yml
       OPENSEAL_E2E_BASE_URL: http://localhost:8080
@@ -333,7 +333,7 @@ jobs:
       - working-directory: webapp/e2e
         run: npm ci && npx playwright install --with-deps chromium webkit
       - working-directory: webapp/e2e
-        run: npx playwright test --project=chromium --project=webkit --shard=${{ matrix.shard }}/2
+        run: npx playwright test --project=chromium --project=webkit --shard=${{ matrix.shard }}/4
       - run: docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.pem
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
       - if: hashFiles('target/e2e-sealed/*.pdf') != ''
