@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
 <meta name="referrer" content="no-referrer">
-<title>Self-hosting and configuration | OpenSeal</title>
-<meta name="description" content="OpenSeal&#x27;s services, configuration through environment variables and _FILE secrets, and the production checklist: keys, timestamps, email, database, storage, edge and retention.">
+<title>Deployment overview | OpenSeal</title>
+<meta name="description" content="How OpenSeal runs on your own infrastructure: its services, the evaluation stack and the hardened production profile, and which guide to follow.">
 <meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)">
-<meta property="og:title" content="Self-hosting and configuration | OpenSeal">
-<meta property="og:description" content="OpenSeal&#x27;s services, configuration through environment variables and _FILE secrets, and the production checklist: keys, timestamps, email, database, storage, edge and retention.">
+<meta property="og:title" content="Deployment overview | OpenSeal">
+<meta property="og:description" content="How OpenSeal runs on your own infrastructure: its services, the evaluation stack and the hardened production profile, and which guide to follow.">
 <link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
 <link rel="preload" href="../assets/fonts/ui/geist-1.3.1-variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="../assets/tokens.css">
@@ -42,93 +42,70 @@
 <main id="main" tabindex="-1" class="docs-main">
 <div class="wrap docs-layout">
   <aside class="docs-side">
-    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html" aria-current="page">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav></details>
-    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Start</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li></ul><h2>Use</h2><ul><li><a href="first-envelope.html">Sending your first envelope</a></li><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li></ul><h2>Operate</h2><ul><li><a href="administration.html">Administration</a></li><li><a href="self-hosting.html" aria-current="page">Self-hosting and configuration</a></li></ul><h2>Build</h2><ul><li><a href="api.html">API reference</a></li><li><a href="webhooks.html">Webhooks</a></li></ul><h2>Understand</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li></ul><h2>Project</h2><ul><li><a href="contributing.html">Contributing</a></li></ul></nav>
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Get started</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li><li><a href="first-envelope.html">Sending your first envelope</a></li></ul><h2>Guides</h2><ul><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li><li><a href="webhooks.html">Webhooks</a></li><li><a href="administration.html">Administration</a></li></ul><h2>Deploy</h2><ul><li><a href="self-hosting.html" aria-current="page">Deployment overview</a></li><li><a href="deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="deploy-production.html">Production deployment</a></li><li><a href="configuration.html">Configuration reference</a></li><li><a href="troubleshooting.html">Troubleshooting</a></li></ul><h2>API reference</h2><ul><li><a href="api.html">API overview</a></li><li class="docs-nav__sub"><a href="api-envelopes.html">Envelopes</a></li><li class="docs-nav__sub"><a href="api-recipients.html">Recipients</a></li><li class="docs-nav__sub"><a href="api-documents.html">Documents</a></li><li class="docs-nav__sub"><a href="api-templates.html">Templates</a></li><li class="docs-nav__sub"><a href="api-webhooks.html">Webhooks</a></li><li class="docs-nav__sub"><a href="api-objects.html">Objects</a></li></ul><h2>Reference</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li><li><a href="contributing.html">Contributing</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li><li><a href="first-envelope.html">Sending your first envelope</a></li></ul><h2>Guides</h2><ul><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li><li><a href="webhooks.html">Webhooks</a></li><li><a href="administration.html">Administration</a></li></ul><h2>Deploy</h2><ul><li><a href="self-hosting.html" aria-current="page">Deployment overview</a></li><li><a href="deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="deploy-production.html">Production deployment</a></li><li><a href="configuration.html">Configuration reference</a></li><li><a href="troubleshooting.html">Troubleshooting</a></li></ul><h2>API reference</h2><ul><li><a href="api.html">API overview</a></li><li class="docs-nav__sub"><a href="api-envelopes.html">Envelopes</a></li><li class="docs-nav__sub"><a href="api-recipients.html">Recipients</a></li><li class="docs-nav__sub"><a href="api-documents.html">Documents</a></li><li class="docs-nav__sub"><a href="api-templates.html">Templates</a></li><li class="docs-nav__sub"><a href="api-webhooks.html">Webhooks</a></li><li class="docs-nav__sub"><a href="api-objects.html">Objects</a></li></ul><h2>Reference</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li><li><a href="contributing.html">Contributing</a></li></ul></nav>
   </aside>
   <article class="docs-article prose">
-<h1>Self-hosting and configuration</h1>
-<p class="lede">OpenSeal is built to run on your infrastructure. The single-node Docker Compose stack is for evaluation and development today; this page explains its parts, how they are configured, and what a production deployment needs.</p>
+    <nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li>Deploy</li><li aria-current="page">Deployment overview</li></ol></nav>
+<h1>Deployment overview</h1>
+<p class="lede">OpenSeal runs on your own infrastructure as a handful of containers. Pick the guide for what you are doing: trying it on one machine, or running it for others.</p>
 
-<div class="callout warn"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div><p>OpenSeal is pre-alpha. The Compose stack generates its own keys and certificate authority and sends cookies over plain HTTP. It is not a production deployment, and the production checklist below is guidance for when the release gates have passed. A Helm chart and a high-availability reference are planned (<code>VS-20</code>).</p></div></div>
+<div class="callout warn"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div><p>OpenSeal is pre-release. v0.1.0 is for evaluation and for rehearsing a production deployment, not yet for production agreements. Nothing on these pages makes a deployment legally valid or compliant: that depends on your certificates, your processes and your counsel.</p></div></div>
 
-<h2 id="the-services">The services</h2>
+<div class="guide-grid">
+  <a class="guide-card" href="deploy-compose.html"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M22 7.7c0-.6-.4-1.2-.8-1.5l-6.3-3.9a1.72 1.72 0 0 0-1.7 0l-10.3 6c-.5.2-.9.8-.9 1.4v6.6c0 .5.4 1.2.8 1.5l6.3 3.9a1.72 1.72 0 0 0 1.7 0l10.3-6c.5-.3.9-1 .9-1.5Z"/><path d="M10 21.9V14L2.1 9.1"/><path d="m10 14 11.9-6.9"/><path d="M14 19.8v-8.1"/><path d="M18 17.5V9.4"/></svg><span class="guide-card__t">Deploy with Docker Compose</span><span class="guide-card__d">One machine, ten minutes. Generated keys, a local timestamp authority and a mail catcher. For evaluation and development.</span></a>
+  <a class="guide-card" href="deploy-production.html"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><line x1="6" x2="6.01" y1="6" y2="6"/><line x1="6" x2="6.01" y1="18" y2="18"/></svg><span class="guide-card__t">Production deployment</span><span class="guide-card__d">The hardened profile step by step: TLS, secrets, the seal key in an HSM, timestamps, email, signed images, backups and monitoring.</span></a>
+  <a class="guide-card" href="configuration.html"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg><span class="guide-card__t">Configuration reference</span><span class="guide-card__d">Every environment variable of the server, worker and keyd, with defaults, and which are secrets.</span></a>
+  <a class="guide-card" href="troubleshooting.html"><svg class="i" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5"/><circle cx="11.5" cy="14.5" r="2.5"/><path d="M13.3 16.3 15 18"/></svg><span class="guide-card__t">Troubleshooting</span><span class="guide-card__d">Common failures, what the logs show, and how to fix them.</span></a>
+</div>
+
+<h2 id="services">The services</h2>
+<p>OpenSeal is three programs of its own (the server, the worker and the key daemon) beside PostgreSQL and an S3-compatible object store. The same images run in both stacks; the production profile adds the hardening and a proxy in front of two server replicas.</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="Services">
 <table>
-  <thead><tr><th scope="col">Service</th><th scope="col">Image</th><th scope="col">Role</th></tr></thead>
+  <thead><tr><th scope="col">Service</th><th scope="col">What it does</th><th scope="col">Evaluation stack</th><th scope="col">Production profile</th></tr></thead>
   <tbody>
-    <tr><td><code>server</code></td><td>distroless, non-root</td><td>REST API, the signing ceremony, and the web app on port 8080</td></tr>
-    <tr><td><code>worker</code></td><td>distroless, non-root</td><td>Jobs from a PostgreSQL queue: email, reminders and expiry, sealing through keyd and the timestamp authority, webhooks</td></tr>
-    <tr><td><code>keyd</code></td><td>OpenSeal</td><td>Holds the seal key behind PKCS#11; signs only for the worker, over mutual TLS, and answers the platform console's read-only questions on a separate allow list; keeps its own hash-chained log of operations</td></tr>
-    <tr><td><code>postgres</code></td><td><code>postgres:17-alpine</code></td><td>The record and the audit trail; the application role is bound by row-level security and cannot update or delete audit events</td></tr>
-    <tr><td><code>migrate</code></td><td>the server image</td><td>One-shot: migrations as the schema owner, before the server starts</td></tr>
-    <tr><td><code>s3</code></td><td>SeaweedFS</td><td>S3-compatible store for documents, content-addressed and written once</td></tr>
-    <tr><td><code>mailpit</code></td><td><code>axllent/mailpit</code></td><td>Development only: catches all email</td></tr>
-    <tr><td><code>tsa</code></td><td>development tools</td><td>Development only: an RFC 3161 timestamp authority</td></tr>
-    <tr><td><code>pki</code></td><td>development tools</td><td>Development only, first start: the CA, TLS certificates, seal key and random passwords, into a read-only <code>secrets</code> volume</td></tr>
-    <tr><td><code>modeld</code></td><td>OpenSeal</td><td>Optional, Compose profile <code>ml</code>: pretrained models for OCR, template matching and personal-data detection, on an internal network with no secrets but its own TLS identity. The worker is not yet put on its network in this file</td></tr>
-    <tr><td><code>clamav</code></td><td><code>clamav/clamav-debian</code></td><td>Compose profile <code>production</code>: ClamAV, which scans every upload before the server reads or stores it; set <code>OPENSEAL_CLAMD_ADDR=clamav:3310</code> on the server to use it</td></tr>
+    <tr><td><code>server</code></td><td>The REST API, the signing ceremony and the web app, on port 8080</td><td>One</td><td>Two replicas, <code>server</code> and <code>server-2</code></td></tr>
+    <tr><td><code>proxy</code></td><td>HAProxy in front of the replicas; health-checks each at <code>/readyz</code></td><td>—</td><td>Yes, bound to the host's loopback address</td></tr>
+    <tr><td><code>worker</code></td><td>Jobs from a PostgreSQL queue: email, reminders and expiry, sealing through keyd and the timestamp authority, webhooks, daily anchoring and retention</td><td>One</td><td>One (more can run)</td></tr>
+    <tr><td><code>keyd</code></td><td>Holds the seal key behind PKCS#11 and signs only for the worker, over mutual TLS, with its own hash-chained log</td><td>SoftHSM token, generated key</td><td>Your HSM's PKCS#11 library</td></tr>
+    <tr><td><code>migrate</code></td><td>One-shot: every migration, as the schema owner, before the server starts</td><td>Yes</td><td>Yes</td></tr>
+    <tr><td><code>postgres</code></td><td>The record and the audit trail; the application role is bound by row-level security</td><td>Plain, local</td><td>TLS 1.3 only, <code>verify-full</code></td></tr>
+    <tr><td><code>s3</code></td><td>SeaweedFS, an S3-compatible store for documents, written once and addressed by hash</td><td>Plain HTTP inside the stack</td><td>TLS with the internal CA</td></tr>
+    <tr><td><code>pki</code>, <code>tsa</code>, <code>mailpit</code></td><td>Development stand-ins: generated keys and CA, a local timestamp authority, a mail catcher</td><td>Yes</td><td>— (you bring the real ones)</td></tr>
+    <tr><td><code>clamav</code></td><td>Malware scanning of every upload before the server reads it</td><td>Optional (profile <code>production</code>)</td><td>Optional</td></tr>
   </tbody>
 </table>
 </div>
-<p>Every image is pinned by digest. Nothing secret is baked into an image.</p>
 
-<h2 id="configuration">Configuration</h2>
-<p>Everything is configured through environment variables, and every secret can instead be given as a file with <code>NAME_FILE</code>; setting both is an error. The server reads:</p>
-<div class="table-scroll" tabindex="0" role="region" aria-label="Server settings">
+<h2 id="choosing">Which stack</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Comparing the two stacks">
 <table>
-  <thead><tr><th scope="col">Variable</th><th scope="col">What</th></tr></thead>
+  <thead><tr><th scope="col"></th><th scope="col"><code>docker-compose.yml</code> (evaluation)</th><th scope="col"><code>deploy/compose.production.yml</code> (production profile)</th></tr></thead>
   <tbody>
-    <tr><td><code>OPENSEAL_DATABASE_URL</code></td><td>PostgreSQL connection for the application role</td></tr>
-    <tr><td><code>OPENSEAL_MIGRATE_DATABASE_URL</code></td><td>Connection for the schema owner, used by <code>migrate</code></td></tr>
-    <tr><td><code>OPENSEAL_JWT_SIGNING_KEY</code></td><td>The key that signs API access tokens</td></tr>
-    <tr><td><code>OPENSEAL_BLOB_DIR</code> or <code>OPENSEAL_S3_*</code></td><td>Where documents are stored: a directory, or an S3-compatible bucket</td></tr>
-    <tr><td><code>OPENSEAL_PUBLIC_URL</code></td><td>The address recipients and integrators use; must be HTTPS in production</td></tr>
-    <tr><td><code>OPENSEAL_LISTEN</code></td><td>The address and port to listen on</td></tr>
-    <tr><td><code>OPENSEAL_TRUSTED_PROXIES</code></td><td>Proxies whose forwarded client address is believed, for the evidence's IP addresses</td></tr>
-    <tr><td><code>OPENSEAL_GEOIP_DB</code></td><td>Optional GeoIP database for the approximate location in the certificate</td></tr>
-    <tr><td><code>OPENSEAL_WEBAPP_DIR</code></td><td>The web app's files, served at <code>/</code></td></tr>
-    <tr><td><code>OPENSEAL_MFA_KEY</code></td><td>32 random bytes, base64, that seal members' second-factor seeds; back it up with the database</td></tr>
-    <tr><td><code>OPENSEAL_RECIPIENT_IDPS_FILE</code></td><td>Optional: the OpenID Connect providers signers may sign in with; holds client secrets</td></tr>
-    <tr><td><code>OPENSEAL_CLAMD_ADDR</code></td><td>ClamAV's clamd, <code>host:port</code>: every upload is scanned first, malware refused and recorded in the admin log, and uploads refused while clamd cannot answer unless <code>OPENSEAL_CLAMD_FAIL_OPEN=1</code>; unset, nothing is scanned</td></tr>
-    <tr><td><code>OPENSEAL_WEBHOOK_ALLOW</code></td><td>Worker: address ranges webhooks may reach although private (refused by default)</td></tr>
-    <tr><td><code>OPENSEAL_SMS_GATEWAY_URL</code>, <code>OPENSEAL_SMS_GATEWAY_SECRET</code></td><td>Worker: the HTTPS gateway that sends text-message and voice one-time codes; unset, such codes are never sent</td></tr>
+    <tr><th scope="row">Seal key</th><td>Generated on first start, in SoftHSM</td><td>Yours, generated in your HSM; keyd reaches it through PKCS#11</td></tr>
+    <tr><th scope="row">Seals validate in</th><td>Only against the generated root</td><td>Whatever trusts your seal certificate's CA (for example Adobe's AATL)</td></tr>
+    <tr><th scope="row">Timestamps</th><td>A local development TSA</td><td>Your RFC 3161 TSAs</td></tr>
+    <tr><th scope="row">Email</th><td>Caught by Mailpit</td><td>Your SMTP relay, STARTTLS</td></tr>
+    <tr><th scope="row">Secrets</th><td>A generated volume</td><td>Docker secrets from <code>init-secrets.sh</code> and your own files, mounted only where needed</td></tr>
+    <tr><th scope="row">Containers</th><td>Defaults</td><td>Non-root, read-only, no capabilities, resource limits, internal networks, configuration manifests</td></tr>
+    <tr><th scope="row">Restarts</th><td>A short outage</td><td>Rolling, behind <code>proxy</code>, without dropping requests</td></tr>
   </tbody>
 </table>
 </div>
-<p>Each binary's module documentation lists all of its variables (<code>server/casual-sign-server/src/main.rs</code>, <code>-worker</code>, <code>-keyd</code>), and <code>docker-compose.yml</code> sets the ones the stack needs; the optional ones above (second-factor key, identity providers, trusted proxies, GeoIP, the SMS gateway, webhook allow list) are left for you to set. Ports in the Compose file bind to <code>127.0.0.1</code>; <code>OPENSEAL_HTTP_PORT</code> and <code>OPENSEAL_MAIL_PORT</code> move them.</p>
 
-<h2 id="production-checklist">Production checklist</h2>
-<div class="table-scroll" tabindex="0" role="region" aria-label="Production checklist">
-<table>
-  <thead><tr><th scope="col">Area</th><th scope="col">Do</th></tr></thead>
-  <tbody>
-    <tr><td>Signing key</td><td>A document-signing certificate from a CA your relying parties trust (for example an AATL member, or a qualified seal certificate for eIDAS), with its key generated in your HSM; configure keyd with PKCS#11. Never a file key.</td></tr>
-    <tr><td>Timestamps</td><td>At least two RFC 3161 timestamp authorities with a service level (qualified, if you need eIDAS qualified time). Key custodians add and change them in the platform console, two people per change</td></tr>
-    <tr><td>Email</td><td>A sending domain with SPF, DKIM and DMARC (<code>p=quarantine</code> or stricter); an SMTP relay or provider; bounce handling</td></tr>
-    <tr><td>Malware scanning</td><td>Run the <code>clamav</code> service (profile <code>production</code>) and set <code>OPENSEAL_CLAMD_ADDR</code>; keep fail-open off; check by uploading the EICAR test file, which must be refused</td></tr>
-    <tr><td>Database</td><td>PostgreSQL 15 or later, encrypted, with point-in-time recovery; a separate role for migrations</td></tr>
-    <tr><td>Object store</td><td>S3-compatible, with versioning and encryption; Object Lock in compliance mode for regulated tenants</td></tr>
-    <tr><td>Edge</td><td>TLS 1.2 or later (1.3 preferred), HSTS, and a web application firewall if you have one</td></tr>
-    <tr><td>Trust</td><td>Your organization's roots for verification; the EU trusted list if you verify EU signatures</td></tr>
-    <tr><td>Consumer disclosure</td><td>Have counsel review the electronic records disclosure for your jurisdictions before sending to consumers</td></tr>
-    <tr><td>Observability</td><td>Alert on seal failures, timestamp failover, email bounce rate and job backlog</td></tr>
-    <tr><td>Retention</td><td>Decide retention before go-live and record it in your records schedule</td></tr>
-  </tbody>
-</table>
-</div>
+<h2 id="images">Images</h2>
+<p>Every OpenSeal release publishes three images to GitHub Container Registry, <code>ghcr.io/casualoffice/openseal-server</code>, <code>-worker</code> and <code>-keyd</code>, for <code>linux/amd64</code>. Each digest is signed with keyless cosign by the release workflow and carries an SBOM and build provenance, so you can check exactly what you run before you run it: see <a href="deploy-production.html#images">Use the signed images</a>. Third-party images (PostgreSQL, SeaweedFS, HAProxy, ClamAV, Mailpit) are pinned by digest in the Compose files. You can also build every image from source with <code>docker compose build</code>.</p>
 
 <h2 id="platform-console">Platform console</h2>
-<p><code>casual-sign-console</code> is a separate program for the people who run a deployment: health, organizations, approvals, keys and certificates, timestamp authorities, plans and usage limits, operators and the operator log. Operators sign in with a password and an authenticator code. It is not yet a Compose service: build it with <code>cargo build --release -p casual-sign-console</code>, create the first operator with <code>casual-sign-console bootstrap-operator</code>, and run <code>casual-sign-console serve</code>, which listens on <code>127.0.0.1:8090</code> and refuses to start if its operator log does not verify. The full list of its settings is in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/65-RUNNING-IT.md">docs/65</a>.</p>
+<p><code>casual-sign-console</code> is a separate program for the people who run a deployment: health, organizations, approvals, keys and certificates, timestamp authorities, plans and usage limits, operators and the operator log. It is not yet a Compose service or a release image: build it with <code>cargo build --release -p casual-sign-console</code>, create the first operator with <code>casual-sign-console bootstrap-operator</code>, and run <code>casual-sign-console serve</code>, which listens on <code>127.0.0.1:8090</code> and refuses to start if its operator log does not verify. Its settings are in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/65-RUNNING-IT.md">docs/65</a>.</p>
 
-<h2 id="upgrades">Upgrades</h2>
-<p>Migrations are forward-only and numbered. They are designed to stay compatible for one release, so old and new nodes can run side by side during a rolling deploy. Do not skip a minor version without reading its release notes.</p>
+<h2 id="kubernetes">Kubernetes and high availability</h2>
+<p>A Helm chart and a multi-node reference are planned (<code>VS-20</code>). Until then, the production profile is the tested reference: the same images, environment variables and secret files carry over to any orchestrator.</p>
 
-<h2 id="backups">Backups</h2>
-<p>Back up PostgreSQL and the object store together: the database holds the record and the audit chain, the store holds the documents they point to. The <code>secrets</code> volume of a development stack holds its keys; a production seal key lives in the HSM and is backed up the HSM's way.</p>
-
-    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="administration.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Administration</span></a><a class="pn pn-next" href="api.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">API reference</span></a></nav>
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="administration.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Administration</span></a><a class="pn pn-next" href="deploy-compose.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">Deploy with Docker Compose</span></a></nav>
   </article>
-  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#the-services">The services</a></li><li><a href="#configuration">Configuration</a></li><li><a href="#production-checklist">Production checklist</a></li><li><a href="#platform-console">Platform console</a></li><li><a href="#upgrades">Upgrades</a></li><li><a href="#backups">Backups</a></li></ul></nav>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#services">The services</a></li><li><a href="#choosing">Which stack</a></li><li><a href="#images">Images</a></li><li><a href="#platform-console">Platform console</a></li><li><a href="#kubernetes">Kubernetes and high availability</a></li></ul></nav>
 </div>
 </main>
 <footer class="site-footer">
@@ -140,7 +117,7 @@
       <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
     </div>
     <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#product">Overview</a></li><li><a href="../app/app.html#/signin">Try the demo</a></li><li><a href="../verify.html">Verify a PDF</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
-    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/self-hosting.html">Self-hosting</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="../docs/deploy-production.html">Production deployment</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li></ul></div>
     <div class="foot-col"><h2>Trust</h2><ul><li><a href="../docs/security.html">Security and evidence</a></li><li><a href="../docs/verifying.html">Verifying a document</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../docs/architecture.html">Architecture</a></li></ul></div>
     <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../docs/contributing.html">Contributing</a></li><li><a href="../brand.html">Brand and attribution</a></li></ul></div>
   </div>

@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Bulk send API | OpenSeal</title>
+<meta name="description" content="OpenSeal API reference: Bulk send. 5 operations with parameters, request bodies, examples in curl, TypeScript and Python, responses and errors.">
+<meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Bulk send API | OpenSeal">
+<meta property="og:description" content="OpenSeal API reference: Bulk send. 5 operations with parameters, request bodies, examples in curl, TypeScript and Python, responses and errors.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/ui/geist-1.3.1-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="120" height="24">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="120" height="24">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#product">Product</a><a href="../verify.html">Verify</a><a href="../docs/index.html">Docs</a><a href="../docs/api.html" aria-current="page">API</a><a href="../roadmap.html">Roadmap</a><a href="../changelog.html">Changelog</a><a href="../download.html">Download</a></nav>
+    <div class="header-actions">
+      <button type="button" class="search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="search-open__label">Search</span><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="header-gh" href="https://github.com/CasualOffice/openseal">GitHub</a>
+      <a class="btn btn-strong btn-sm header-cta" href="../app/app.html#/signin">Try the demo</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#product">Product</a><a href="../verify.html">Verify</a><a href="../docs/index.html">Docs</a><a href="../docs/api.html" aria-current="page">API</a><a href="../roadmap.html">Roadmap</a><a href="../changelog.html">Changelog</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a class="menu-cta" href="../app/app.html#/signin">Try the demo<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="api-main">
+<div class="api-shell">
+  <aside class="api-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>API menu</summary><nav class="api-nav" aria-label="API reference (menu)"><ul class="api-nav__top"><li><a href="api.html">Overview</a></li><li><a href="api.html#authentication">Authentication</a></li><li><a href="api.html#errors">Errors</a></li><li><a href="api.html#pagination">Pagination</a></li><li><a href="webhooks.html">Webhooks guide</a></li></ul><h2>Core resources</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-envelopes.html"><span>Envelopes</span><span class="api-nav__count">16<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-recipients.html"><span>Recipients</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-fields.html"><span>Fields</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-documents.html"><span>Documents</span><span class="api-nav__count">13<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-evidence.html"><span>Audit and evidence</span><span class="api-nav__count">3<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-templates.html"><span>Templates</span><span class="api-nav__count">23<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-bulk-sends.html" aria-current="page"><span>Bulk send</span><span class="api-nav__count">5<span class="sr-only"> operations</span></span></a><ul class="api-nav__ops"><li><a href="#op-listbulksends" data-op="op-listbulksends" title="List bulk sends"><span class="verb verb-get verb--sm">GET</span><span class="api-nav__name">List bulk sends</span></a></li><li><a href="#op-createbulksend" data-op="op-createbulksend" title="Create bulk send"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Create bulk send</span></a></li><li><a href="#op-getbulksend" data-op="op-getbulksend" title="Get bulk send"><span class="verb verb-get verb--sm">GET</span><span class="api-nav__name">Get bulk send</span></a></li><li><a href="#op-sendbulksendrows" data-op="op-sendbulksendrows" title="Send bulk send rows"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Send bulk send rows</span></a></li><li><a href="#op-cancelbulksend" data-op="op-cancelbulksend" title="Cancel bulk send"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Cancel bulk send</span></a></li></ul></li><li><a class="api-nav__grp" href="api-folders.html"><span>Folders</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-contacts.html"><span>Contacts</span><span class="api-nav__count">1<span class="sr-only"> operations</span></span></a></li></ul><h2>Integrations</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-webhooks.html"><span>Webhooks</span><span class="api-nav__count">8<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-api-clients.html"><span>API clients</span><span class="api-nav__count">4<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-oauth.html"><span>OAuth</span><span class="api-nav__count">8<span class="sr-only"> operations</span></span></a></li></ul><h2>Administration</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-users.html"><span>Users</span><span class="api-nav__count">12<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-groups.html"><span>Groups</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-permission-profiles.html"><span>Permission profiles</span><span class="api-nav__count">5<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-account.html"><span>Account settings</span><span class="api-nav__count">4<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-ersd.html"><span>Electronic disclosure</span><span class="api-nav__count">2<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-retention.html"><span>Retention and legal hold</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-admin-events.html"><span>Admin audit log</span><span class="api-nav__count">1<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-organizations.html"><span>Organizations</span><span class="api-nav__count">12<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-auth.html"><span>Sessions and sign-in</span><span class="api-nav__count">23<span class="sr-only"> operations</span></span></a></li></ul><h2>Not public API</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-ceremony.html"><span>Signing ceremony</span><span class="api-nav__count">24<span class="sr-only"> operations</span></span></a></li></ul><h2>Reference</h2><ul class="api-nav__top"><li><a href="api-objects.html">Objects</a></li><li><a href="openapi.yaml">OpenAPI document</a></li></ul></nav></details>
+    <nav class="api-nav api-nav--wide" aria-label="API reference"><ul class="api-nav__top"><li><a href="api.html">Overview</a></li><li><a href="api.html#authentication">Authentication</a></li><li><a href="api.html#errors">Errors</a></li><li><a href="api.html#pagination">Pagination</a></li><li><a href="webhooks.html">Webhooks guide</a></li></ul><h2>Core resources</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-envelopes.html"><span>Envelopes</span><span class="api-nav__count">16<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-recipients.html"><span>Recipients</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-fields.html"><span>Fields</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-documents.html"><span>Documents</span><span class="api-nav__count">13<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-evidence.html"><span>Audit and evidence</span><span class="api-nav__count">3<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-templates.html"><span>Templates</span><span class="api-nav__count">23<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-bulk-sends.html" aria-current="page"><span>Bulk send</span><span class="api-nav__count">5<span class="sr-only"> operations</span></span></a><ul class="api-nav__ops"><li><a href="#op-listbulksends" data-op="op-listbulksends" title="List bulk sends"><span class="verb verb-get verb--sm">GET</span><span class="api-nav__name">List bulk sends</span></a></li><li><a href="#op-createbulksend" data-op="op-createbulksend" title="Create bulk send"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Create bulk send</span></a></li><li><a href="#op-getbulksend" data-op="op-getbulksend" title="Get bulk send"><span class="verb verb-get verb--sm">GET</span><span class="api-nav__name">Get bulk send</span></a></li><li><a href="#op-sendbulksendrows" data-op="op-sendbulksendrows" title="Send bulk send rows"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Send bulk send rows</span></a></li><li><a href="#op-cancelbulksend" data-op="op-cancelbulksend" title="Cancel bulk send"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Cancel bulk send</span></a></li></ul></li><li><a class="api-nav__grp" href="api-folders.html"><span>Folders</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-contacts.html"><span>Contacts</span><span class="api-nav__count">1<span class="sr-only"> operations</span></span></a></li></ul><h2>Integrations</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-webhooks.html"><span>Webhooks</span><span class="api-nav__count">8<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-api-clients.html"><span>API clients</span><span class="api-nav__count">4<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-oauth.html"><span>OAuth</span><span class="api-nav__count">8<span class="sr-only"> operations</span></span></a></li></ul><h2>Administration</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-users.html"><span>Users</span><span class="api-nav__count">12<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-groups.html"><span>Groups</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-permission-profiles.html"><span>Permission profiles</span><span class="api-nav__count">5<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-account.html"><span>Account settings</span><span class="api-nav__count">4<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-ersd.html"><span>Electronic disclosure</span><span class="api-nav__count">2<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-retention.html"><span>Retention and legal hold</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-admin-events.html"><span>Admin audit log</span><span class="api-nav__count">1<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-organizations.html"><span>Organizations</span><span class="api-nav__count">12<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-auth.html"><span>Sessions and sign-in</span><span class="api-nav__count">23<span class="sr-only"> operations</span></span></a></li></ul><h2>Not public API</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-ceremony.html"><span>Signing ceremony</span><span class="api-nav__count">24<span class="sr-only"> operations</span></span></a></li></ul><h2>Reference</h2><ul class="api-nav__top"><li><a href="api-objects.html">Objects</a></li><li><a href="openapi.yaml">OpenAPI document</a></li></ul></nav>
+  </aside>
+  <div class="api-body">
+    <nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="api.html">API reference</a></li><li aria-current="page">Bulk send</li></ol></nav>
+<header class="api-head">
+  <div class="api-head__text">
+    <p class="api-kicker">Core resources</p>
+    <h1>Bulk send</h1>
+    <p class="lede">One template sent to a list of people, one envelope each: check the list, then send it in batches.</p>
+    
+  </div>
+  <div class="api-head__endpoints" data-nosearch>
+    <div class="codebox codebox--list"><div class="codebox__bar"><span class="codebox__title">Endpoints</span></div><ul class="endpoint-list"><li><a href="#op-listbulksends"><span class="verb verb-get verb--sm">GET</span><code>/api/v1/bulk-sends</code></a></li><li><a href="#op-createbulksend"><span class="verb verb-post verb--sm">POST</span><code>/api/v1/bulk-sends</code></a></li><li><a href="#op-getbulksend"><span class="verb verb-get verb--sm">GET</span><code>/api/v1/bulk-sends/{id}</code></a></li><li><a href="#op-sendbulksendrows"><span class="verb verb-post verb--sm">POST</span><code>/api/v1/bulk-sends/{id}/send</code></a></li><li><a href="#op-cancelbulksend"><span class="verb verb-post verb--sm">POST</span><code>/api/v1/bulk-sends/{id}/cancel</code></a></li></ul></div>
+  </div>
+</header><section class="api-op" aria-labelledby="op-listbulksends"><div class="api-op__doc"><h2 class="api-op__title" id="op-listbulksends"><a class="anchor-link" href="#op-listbulksends">List bulk sends</a></h2><p class="api-endpoint"><span class="verb verb-get">GET</span><code>/api/v1/bulk-sends</code></p><p class="api-op__sum">The caller&#x27;s bulk sends, newest first, without rows (every member&#x27;s for an administrator or a member who sees every envelope)</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>envelopes.read</code> · OAuth scope <a href="api.html#scopes"><code>envelopes:read</code></a></span></p><h3 class="api-h" data-nosearch>Query parameters</h3><ul class="params"><li class="param" id="op-listbulksends-query-limit"><div class="param__head"><a class="param__name" href="#op-listbulksends-query-limit"><code>limit</code></a><span class="param__type">integer</span></div><p class="param__meta">minimum 1 · maximum 100 · Default <code>50</code></p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">200</span> with <code>application/json</code>.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-get">GET</span>/api/v1/bulk-sends</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-listbulksends-tab-curl" data-lang="curl" aria-controls="op-listbulksends-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-listbulksends-tab-typescript" data-lang="typescript" aria-controls="op-listbulksends-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-listbulksends-tab-python" data-lang="python" aria-controls="op-listbulksends-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-listbulksends-curl" role="tabpanel" aria-labelledby="op-listbulksends-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl https://sign.example.com/api/v1/bulk-sends?limit=20 \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot;</code></pre></div><div class="code-panel" id="op-listbulksends-typescript" role="tabpanel" aria-labelledby="op-listbulksends-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const data = await os.listBulkSends({
+  limit: 20,
+});</code></pre></div><div class="code-panel" id="op-listbulksends-python" role="tabpanel" aria-labelledby="op-listbulksends-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+data = client.list_bulk_sends(
+    limit=20,
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">200</span></div><pre><code>{
+  &quot;items&quot;: [
+    {
+      &quot;id&quot;: &quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+      &quot;name&quot;: &quot;November renewals&quot;,
+      &quot;template_id&quot;: &quot;01935cde-0f12-798f-841f-7d1c8b907a36&quot;,
+      &quot;sender_user_id&quot;: &quot;01934e90-2366-76cd-8713-26baacdbd84e&quot;,
+      &quot;status&quot;: &quot;queued&quot;,
+      &quot;row_count&quot;: 1,
+      &quot;counts&quot;: {
+        &quot;pending&quot;: 1,
+        &quot;sent&quot;: 1,
+        &quot;failed&quot;: 1,
+        &quot;cancelled&quot;: 1
+      },
+      &quot;created_at&quot;: &quot;2026-11-20T09:30:00Z&quot;,
+      &quot;finished_at&quot;: &quot;2026-11-20T09:30:00Z&quot;
+    }
+  ]
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of List bulk sends"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>envelopes.read</code></td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><section class="api-op" aria-labelledby="op-createbulksend"><div class="api-op__doc"><h2 class="api-op__title" id="op-createbulksend"><a class="anchor-link" href="#op-createbulksend">Create bulk send</a></h2><p class="api-endpoint"><span class="verb verb-post">POST</span><code>/api/v1/bulk-sends</code></p><p class="api-op__sum">Check a list of recipient sets against a template, and make a bulk send of it</p><p class="api-op__desc">The list is CSV text (a header, then one row per envelope) or JSON rows; its columns are two per template role, in role order: <code>&lt;role&gt;::name</code> and <code>&lt;role&gt;::email</code>, matched ignoring case and surrounding spaces. A header that does not fit the template is 422 (<code>CS-BLK-0004</code> missing columns at <code>/columns</code>, <code>CS-BLK-0005</code> an unknown or repeated column at <code>/columns/{i}</code>); no row, more than 1000, or CSV that cannot be read is 422 <code>CS-BLK-0007</code>. Each row is checked: <code>CS-BLK-0001</code> a missing value, <code>CS-BLK-0002</code> an email that cannot be one, <code>CS-BLK-0003</code> a name over 255 characters or with control characters, <code>CS-BLK-0006</code> more values than columns. A row with a problem is stored <code>failed</code> and never sent. With <code>validate_only</code> nothing is stored: the answer is 200 with each row&#x27;s check. Send the batch with <code>POST …/send</code>. Also needs <code>envelopes:write</code> and <code>envelopes:send</code>, as <code>POST /envelopes</code> with <code>status: sent</code> does. A line with no value in any cell is skipped.</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>bulk.send</code> · OAuth scope <a href="api.html#scopes"><code>bulk:send</code></a></span></p><h3 class="api-h" data-nosearch>Request body</h3><p class="api-ctype">Content type <code>application/json</code> · required</p><ul class="params"><li class="param" id="op-createbulksend-body-template_id"><div class="param__head"><a class="param__name" href="#op-createbulksend-body-template_id"><code>template_id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">A template of the caller&#x27;s account with a document and a role</p></li><li class="param" id="op-createbulksend-body-name"><div class="param__head"><a class="param__name" href="#op-createbulksend-body-name"><code>name</code></a><span class="param__type">string</span></div><p class="param__desc">Defaults to the template&#x27;s name</p><p class="param__meta">at most 255 characters</p></li><li class="param" id="op-createbulksend-body-csv"><div class="param__head"><a class="param__name" href="#op-createbulksend-body-csv"><code>csv</code></a><span class="param__type">string</span></div><p class="param__desc">The list as CSV text; exactly one of csv and rows</p></li><li class="param" id="op-createbulksend-body-rows"><div class="param__head"><a class="param__name" href="#op-createbulksend-body-rows"><code>rows</code></a><span class="param__type">array of object</span></div><p class="param__meta">at most 1000 items</p></li><li class="param" id="op-createbulksend-body-validate_only"><div class="param__head"><a class="param__name" href="#op-createbulksend-body-validate_only"><code>validate_only</code></a><span class="param__type">boolean</span></div><p class="param__meta">Default <code>false</code></p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">200</span> validate_only: each row&#x27;s check; nothing stored with a <a href="api-objects.html#schema-bulksendcheck">BulkSendCheck</a> object.</p><h3 class="api-h" data-nosearch>Limits</h3><ul class="api-limits"><li>Bulk send list (<code>POST /bulk-sends</code>, <code>UXW-04</code>): rows; values; rows sent per <code>…/send</code> call: 1–1,000 in the 1 MiB body (CSV or JSON); name 1–255 characters without control characters, email 3–320 bytes with one <code>@</code> and no spaces; 10</li></ul></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-post">POST</span>/api/v1/bulk-sends</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-createbulksend-tab-curl" data-lang="curl" aria-controls="op-createbulksend-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-createbulksend-tab-typescript" data-lang="typescript" aria-controls="op-createbulksend-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-createbulksend-tab-python" data-lang="python" aria-controls="op-createbulksend-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-createbulksend-curl" role="tabpanel" aria-labelledby="op-createbulksend-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl -X POST https://sign.example.com/api/v1/bulk-sends \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{
+  &quot;template_id&quot;: &quot;01935cde-0f12-798f-841f-7d1c8b907a36&quot;,
+  &quot;name&quot;: &quot;November renewals&quot;,
+  &quot;csv&quot;: &quot;name,email\nExample Signer,signer@example.com\n&quot;,
+  &quot;rows&quot;: [
+    {
+      &quot;key&quot;: &quot;Example Corp&quot;
+    }
+  ],
+  &quot;validate_only&quot;: false
+}&#x27;</code></pre></div><div class="code-panel" id="op-createbulksend-typescript" role="tabpanel" aria-labelledby="op-createbulksend-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const result = await os.createBulkSend({
+  body: {
+    &quot;template_id&quot;: &quot;01935cde-0f12-798f-841f-7d1c8b907a36&quot;,
+    &quot;name&quot;: &quot;November renewals&quot;,
+    &quot;csv&quot;: &quot;name,email\nExample Signer,signer@example.com\n&quot;,
+    &quot;rows&quot;: [
+      {
+        &quot;key&quot;: &quot;Example Corp&quot;
+      }
+    ],
+    &quot;validate_only&quot;: false
+  },
+});</code></pre></div><div class="code-panel" id="op-createbulksend-python" role="tabpanel" aria-labelledby="op-createbulksend-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+result = client.create_bulk_send(
+    body={
+        &quot;template_id&quot;: &quot;01935cde-0f12-798f-841f-7d1c8b907a36&quot;,
+        &quot;name&quot;: &quot;November renewals&quot;,
+        &quot;csv&quot;: &#x27;name,email\nExample Signer,signer@example.com\n&#x27;,
+        &quot;rows&quot;: [
+            {
+                &quot;key&quot;: &quot;Example Corp&quot;,
+            },
+        ],
+        &quot;validate_only&quot;: False,
+    },
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">200</span></div><pre><code>{
+  &quot;columns&quot;: [
+    &quot;example&quot;
+  ],
+  &quot;row_count&quot;: 1,
+  &quot;valid&quot;: 1,
+  &quot;rows&quot;: [
+    {
+      &quot;row&quot;: 1,
+      &quot;status&quot;: &quot;sent&quot;,
+      &quot;envelope_id&quot;: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+      &quot;error_code&quot;: &quot;example&quot;,
+      &quot;recipients&quot;: [
+        {
+          &quot;role&quot;: &quot;signer&quot;,
+          &quot;name&quot;: &quot;November renewals&quot;,
+          &quot;email&quot;: &quot;signer@example.com&quot;
+        }
+      ],
+      &quot;problems&quot;: [
+        {
+          &quot;column&quot;: &quot;example&quot;,
+          &quot;code&quot;: &quot;123456&quot;
+        }
+      ]
+    }
+  ]
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of Create bulk send"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>bulk.send</code></td></tr><tr><td><span class="status-pill status-pill--4xx">413</span></td><td><a href="api.html#cs-api-0006"><code>CS-API-0006</code></a></td><td>The request body is over its limit</td></tr><tr><td><span class="status-pill status-pill--4xx">415</span></td><td><a href="api.html#cs-api-0007"><code>CS-API-0007</code></a></td><td>The body is not <code>application/json</code></td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><section class="api-op" aria-labelledby="op-getbulksend"><div class="api-op__doc"><h2 class="api-op__title" id="op-getbulksend"><a class="anchor-link" href="#op-getbulksend">Get bulk send</a></h2><p class="api-endpoint"><span class="verb verb-get">GET</span><code>/api/v1/bulk-sends/{id}</code></p><p class="api-op__sum">A bulk send: its progress counts and every row</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>envelopes.read</code> · OAuth scope <a href="api.html#scopes"><code>envelopes:read</code></a></span></p><h3 class="api-h" data-nosearch>Path parameters</h3><ul class="params"><li class="param" id="op-getbulksend-path-id"><div class="param__head"><a class="param__name" href="#op-getbulksend-path-id"><code>id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">A bulk send the caller may see (another member&#x27;s or account&#x27;s is 404)</p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">200</span> with a <a href="api-objects.html#schema-bulksendwithrows">BulkSendWithRows</a> object.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-get">GET</span>/api/v1/bulk-sends/{id}</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-getbulksend-tab-curl" data-lang="curl" aria-controls="op-getbulksend-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-getbulksend-tab-typescript" data-lang="typescript" aria-controls="op-getbulksend-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-getbulksend-tab-python" data-lang="python" aria-controls="op-getbulksend-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-getbulksend-curl" role="tabpanel" aria-labelledby="op-getbulksend-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl https://sign.example.com/api/v1/bulk-sends/0193bf83-48b4-7107-8daa-acf154ae780e \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot;</code></pre></div><div class="code-panel" id="op-getbulksend-typescript" role="tabpanel" aria-labelledby="op-getbulksend-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const data = await os.getBulkSend({
+  id: &quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+});</code></pre></div><div class="code-panel" id="op-getbulksend-python" role="tabpanel" aria-labelledby="op-getbulksend-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+data = client.get_bulk_send(
+    id=&quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">200</span></div><pre><code>{
+  &quot;id&quot;: &quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+  &quot;name&quot;: &quot;November renewals&quot;,
+  &quot;template_id&quot;: &quot;01935cde-0f12-798f-841f-7d1c8b907a36&quot;,
+  &quot;sender_user_id&quot;: &quot;01934e90-2366-76cd-8713-26baacdbd84e&quot;,
+  &quot;status&quot;: &quot;queued&quot;,
+  &quot;row_count&quot;: 1,
+  &quot;counts&quot;: {
+    &quot;pending&quot;: 1,
+    &quot;sent&quot;: 1,
+    &quot;failed&quot;: 1,
+    &quot;cancelled&quot;: 1
+  },
+  &quot;created_at&quot;: &quot;2026-11-20T09:30:00Z&quot;,
+  &quot;finished_at&quot;: &quot;2026-11-20T09:30:00Z&quot;,
+  &quot;rows&quot;: [
+    {
+      &quot;row&quot;: 1,
+      &quot;status&quot;: &quot;sent&quot;,
+      &quot;envelope_id&quot;: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+      &quot;error_code&quot;: &quot;example&quot;,
+      &quot;recipients&quot;: [
+        {
+          &quot;role&quot;: &quot;signer&quot;,
+          &quot;name&quot;: &quot;November renewals&quot;,
+          &quot;email&quot;: &quot;signer@example.com&quot;
+        }
+      ],
+      &quot;problems&quot;: [
+        {
+          &quot;column&quot;: &quot;example&quot;,
+          &quot;code&quot;: &quot;123456&quot;
+        }
+      ]
+    }
+  ]
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of Get bulk send"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>envelopes.read</code></td></tr><tr><td><span class="status-pill status-pill--4xx">404</span></td><td><a href="api.html#cs-api-0002"><code>CS-API-0002</code></a></td><td>No such object, or one of another account (answered alike)</td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><section class="api-op" aria-labelledby="op-sendbulksendrows"><div class="api-op__doc"><h2 class="api-op__title" id="op-sendbulksendrows"><a class="anchor-link" href="#op-sendbulksendrows">Send bulk send rows</a></h2><p class="api-endpoint"><span class="verb verb-post">POST</span><code>/api/v1/bulk-sends/{id}/send</code></p><p class="api-op__sum">Send the next pending rows, at most 10, one envelope each; repeat until none is pending</p><p class="api-op__desc">Each row is made and sent as <code>POST /envelopes</code> makes and sends one, in its own transaction; a row the server refuses is <code>failed</code> with the refusal&#x27;s code and the others go on. Once no row is pending the bulk send is <code>completed</code>. Only its sender sends it (403 otherwise). Also needs <code>envelopes:write</code> and <code>envelopes:send</code>.</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>bulk.send</code> · OAuth scope <a href="api.html#scopes"><code>bulk:send</code></a></span></p><h3 class="api-h" data-nosearch>Path parameters</h3><ul class="params"><li class="param" id="op-sendbulksendrows-path-id"><div class="param__head"><a class="param__name" href="#op-sendbulksendrows-path-id"><code>id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">One of the caller&#x27;s own bulk sends</p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">200</span> with a <a href="api-objects.html#schema-bulksendwithrows">BulkSendWithRows</a> object.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-post">POST</span>/api/v1/bulk-sends/{id}/send</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-sendbulksendrows-tab-curl" data-lang="curl" aria-controls="op-sendbulksendrows-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-sendbulksendrows-tab-typescript" data-lang="typescript" aria-controls="op-sendbulksendrows-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-sendbulksendrows-tab-python" data-lang="python" aria-controls="op-sendbulksendrows-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-sendbulksendrows-curl" role="tabpanel" aria-labelledby="op-sendbulksendrows-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl -X POST https://sign.example.com/api/v1/bulk-sends/0193bf83-48b4-7107-8daa-acf154ae780e/send \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot;</code></pre></div><div class="code-panel" id="op-sendbulksendrows-typescript" role="tabpanel" aria-labelledby="op-sendbulksendrows-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const result = await os.sendBulkSendRows({
+  id: &quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+});</code></pre></div><div class="code-panel" id="op-sendbulksendrows-python" role="tabpanel" aria-labelledby="op-sendbulksendrows-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+result = client.send_bulk_send_rows(
+    id=&quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">200</span></div><pre><code>{
+  &quot;id&quot;: &quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+  &quot;name&quot;: &quot;November renewals&quot;,
+  &quot;template_id&quot;: &quot;01935cde-0f12-798f-841f-7d1c8b907a36&quot;,
+  &quot;sender_user_id&quot;: &quot;01934e90-2366-76cd-8713-26baacdbd84e&quot;,
+  &quot;status&quot;: &quot;queued&quot;,
+  &quot;row_count&quot;: 1,
+  &quot;counts&quot;: {
+    &quot;pending&quot;: 1,
+    &quot;sent&quot;: 1,
+    &quot;failed&quot;: 1,
+    &quot;cancelled&quot;: 1
+  },
+  &quot;created_at&quot;: &quot;2026-11-20T09:30:00Z&quot;,
+  &quot;finished_at&quot;: &quot;2026-11-20T09:30:00Z&quot;,
+  &quot;rows&quot;: [
+    {
+      &quot;row&quot;: 1,
+      &quot;status&quot;: &quot;sent&quot;,
+      &quot;envelope_id&quot;: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+      &quot;error_code&quot;: &quot;example&quot;,
+      &quot;recipients&quot;: [
+        {
+          &quot;role&quot;: &quot;signer&quot;,
+          &quot;name&quot;: &quot;November renewals&quot;,
+          &quot;email&quot;: &quot;signer@example.com&quot;
+        }
+      ],
+      &quot;problems&quot;: [
+        {
+          &quot;column&quot;: &quot;example&quot;,
+          &quot;code&quot;: &quot;123456&quot;
+        }
+      ]
+    }
+  ]
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of Send bulk send rows"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>bulk.send</code></td></tr><tr><td><span class="status-pill status-pill--4xx">404</span></td><td><a href="api.html#cs-api-0002"><code>CS-API-0002</code></a></td><td>No such object, or one of another account (answered alike)</td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><section class="api-op" aria-labelledby="op-cancelbulksend"><div class="api-op__doc"><h2 class="api-op__title" id="op-cancelbulksend"><a class="anchor-link" href="#op-cancelbulksend">Cancel bulk send</a></h2><p class="api-endpoint"><span class="verb verb-post">POST</span><code>/api/v1/bulk-sends/{id}/cancel</code></p><p class="api-op__sum">Cancel a bulk send: its pending rows are not sent; sent envelopes stay (409 CS-WF-0001 once finished)</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>bulk.send</code> · OAuth scope <a href="api.html#scopes"><code>bulk:send</code></a></span></p><h3 class="api-h" data-nosearch>Path parameters</h3><ul class="params"><li class="param" id="op-cancelbulksend-path-id"><div class="param__head"><a class="param__name" href="#op-cancelbulksend-path-id"><code>id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">A bulk send of the caller&#x27;s (or, for an administrator, any)</p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">200</span> with a <a href="api-objects.html#schema-bulksendwithrows">BulkSendWithRows</a> object.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-post">POST</span>/api/v1/bulk-sends/{id}/cancel</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-cancelbulksend-tab-curl" data-lang="curl" aria-controls="op-cancelbulksend-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-cancelbulksend-tab-typescript" data-lang="typescript" aria-controls="op-cancelbulksend-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-cancelbulksend-tab-python" data-lang="python" aria-controls="op-cancelbulksend-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-cancelbulksend-curl" role="tabpanel" aria-labelledby="op-cancelbulksend-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl -X POST https://sign.example.com/api/v1/bulk-sends/0193bf83-48b4-7107-8daa-acf154ae780e/cancel \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot;</code></pre></div><div class="code-panel" id="op-cancelbulksend-typescript" role="tabpanel" aria-labelledby="op-cancelbulksend-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const result = await os.cancelBulkSend({
+  id: &quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+});</code></pre></div><div class="code-panel" id="op-cancelbulksend-python" role="tabpanel" aria-labelledby="op-cancelbulksend-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+result = client.cancel_bulk_send(
+    id=&quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">200</span></div><pre><code>{
+  &quot;id&quot;: &quot;0193bf83-48b4-7107-8daa-acf154ae780e&quot;,
+  &quot;name&quot;: &quot;November renewals&quot;,
+  &quot;template_id&quot;: &quot;01935cde-0f12-798f-841f-7d1c8b907a36&quot;,
+  &quot;sender_user_id&quot;: &quot;01934e90-2366-76cd-8713-26baacdbd84e&quot;,
+  &quot;status&quot;: &quot;queued&quot;,
+  &quot;row_count&quot;: 1,
+  &quot;counts&quot;: {
+    &quot;pending&quot;: 1,
+    &quot;sent&quot;: 1,
+    &quot;failed&quot;: 1,
+    &quot;cancelled&quot;: 1
+  },
+  &quot;created_at&quot;: &quot;2026-11-20T09:30:00Z&quot;,
+  &quot;finished_at&quot;: &quot;2026-11-20T09:30:00Z&quot;,
+  &quot;rows&quot;: [
+    {
+      &quot;row&quot;: 1,
+      &quot;status&quot;: &quot;sent&quot;,
+      &quot;envelope_id&quot;: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+      &quot;error_code&quot;: &quot;example&quot;,
+      &quot;recipients&quot;: [
+        {
+          &quot;role&quot;: &quot;signer&quot;,
+          &quot;name&quot;: &quot;November renewals&quot;,
+          &quot;email&quot;: &quot;signer@example.com&quot;
+        }
+      ],
+      &quot;problems&quot;: [
+        {
+          &quot;column&quot;: &quot;example&quot;,
+          &quot;code&quot;: &quot;123456&quot;
+        }
+      ]
+    }
+  ]
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of Cancel bulk send"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>bulk.send</code></td></tr><tr><td><span class="status-pill status-pill--4xx">404</span></td><td><a href="api.html#cs-api-0002"><code>CS-API-0002</code></a></td><td>No such object, or one of another account (answered alike)</td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><nav class="prevnext api-prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="api-templates.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Templates</span></a><a class="pn pn-next" href="api-folders.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">Folders</span></a></nav>
+  </div>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#product">Overview</a></li><li><a href="../app/app.html#/signin">Try the demo</a></li><li><a href="../verify.html">Verify a PDF</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="../docs/deploy-production.html">Production deployment</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li></ul></div>
+    <div class="foot-col"><h2>Trust</h2><ul><li><a href="../docs/security.html">Security and evidence</a></li><li><a href="../docs/verifying.html">Verifying a document</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../docs/architecture.html">Architecture</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../docs/contributing.html">Contributing</a></li><li><a href="../brand.html">Brand and attribution</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p><p>Pre-release software: v0.1.0 is for evaluation, not yet for production agreements.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

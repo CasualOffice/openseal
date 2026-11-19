@@ -3,9 +3,35 @@
   <url><loc>https://seal.casualoffice.org/brand.html</loc></url>
   <url><loc>https://seal.casualoffice.org/changelog.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/administration.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-account.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-admin-events.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-api-clients.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-auth.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-bulk-sends.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-ceremony.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-contacts.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-documents.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-envelopes.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-ersd.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-evidence.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-fields.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-folders.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-groups.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-oauth.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-objects.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-organizations.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-permission-profiles.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-recipients.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-retention.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-templates.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-users.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-webhooks.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/architecture.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/configuration.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/contributing.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/deploy-compose.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/deploy-production.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/faq.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/first-envelope.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/getting-started.html</loc></url>
@@ -14,6 +40,7 @@
   <url><loc>https://seal.casualoffice.org/docs/self-hosting.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/signing.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/templates.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/troubleshooting.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/verifying.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/webhooks.html</loc></url>
   <url><loc>https://seal.casualoffice.org/download.html</loc></url>

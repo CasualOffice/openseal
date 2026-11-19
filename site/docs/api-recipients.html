@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Recipients API | OpenSeal</title>
+<meta name="description" content="OpenSeal API reference: Recipients. 6 operations with parameters, request bodies, examples in curl, TypeScript and Python, responses and errors.">
+<meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Recipients API | OpenSeal">
+<meta property="og:description" content="OpenSeal API reference: Recipients. 6 operations with parameters, request bodies, examples in curl, TypeScript and Python, responses and errors.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/ui/geist-1.3.1-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="120" height="24">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="120" height="24">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#product">Product</a><a href="../verify.html">Verify</a><a href="../docs/index.html">Docs</a><a href="../docs/api.html" aria-current="page">API</a><a href="../roadmap.html">Roadmap</a><a href="../changelog.html">Changelog</a><a href="../download.html">Download</a></nav>
+    <div class="header-actions">
+      <button type="button" class="search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="search-open__label">Search</span><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="header-gh" href="https://github.com/CasualOffice/openseal">GitHub</a>
+      <a class="btn btn-strong btn-sm header-cta" href="../app/app.html#/signin">Try the demo</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#product">Product</a><a href="../verify.html">Verify</a><a href="../docs/index.html">Docs</a><a href="../docs/api.html" aria-current="page">API</a><a href="../roadmap.html">Roadmap</a><a href="../changelog.html">Changelog</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a class="menu-cta" href="../app/app.html#/signin">Try the demo<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="api-main">
+<div class="api-shell">
+  <aside class="api-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>API menu</summary><nav class="api-nav" aria-label="API reference (menu)"><ul class="api-nav__top"><li><a href="api.html">Overview</a></li><li><a href="api.html#authentication">Authentication</a></li><li><a href="api.html#errors">Errors</a></li><li><a href="api.html#pagination">Pagination</a></li><li><a href="webhooks.html">Webhooks guide</a></li></ul><h2>Core resources</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-envelopes.html"><span>Envelopes</span><span class="api-nav__count">16<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-recipients.html" aria-current="page"><span>Recipients</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a><ul class="api-nav__ops"><li><a href="#op-listrecipients" data-op="op-listrecipients" title="List recipients"><span class="verb verb-get verb--sm">GET</span><span class="api-nav__name">List recipients</span></a></li><li><a href="#op-addrecipients" data-op="op-addrecipients" title="Add recipients"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Add recipients</span></a></li><li><a href="#op-getrecipient" data-op="op-getrecipient" title="Get recipient"><span class="verb verb-get verb--sm">GET</span><span class="api-nav__name">Get recipient</span></a></li><li><a href="#op-patchrecipient" data-op="op-patchrecipient" title="Update recipient"><span class="verb verb-patch verb--sm">PATCH</span><span class="api-nav__name">Update recipient</span></a></li><li><a href="#op-deleterecipient" data-op="op-deleterecipient" title="Delete recipient"><span class="verb verb-delete verb--sm">DELETE</span><span class="api-nav__name">Delete recipient</span></a></li><li><a href="#op-hostinpersonsigner" data-op="op-hostinpersonsigner" title="Host an in-person signer"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Host an in-person signer</span></a></li></ul></li><li><a class="api-nav__grp" href="api-fields.html"><span>Fields</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-documents.html"><span>Documents</span><span class="api-nav__count">13<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-evidence.html"><span>Audit and evidence</span><span class="api-nav__count">3<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-templates.html"><span>Templates</span><span class="api-nav__count">23<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-bulk-sends.html"><span>Bulk send</span><span class="api-nav__count">5<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-folders.html"><span>Folders</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-contacts.html"><span>Contacts</span><span class="api-nav__count">1<span class="sr-only"> operations</span></span></a></li></ul><h2>Integrations</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-webhooks.html"><span>Webhooks</span><span class="api-nav__count">8<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-api-clients.html"><span>API clients</span><span class="api-nav__count">4<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-oauth.html"><span>OAuth</span><span class="api-nav__count">8<span class="sr-only"> operations</span></span></a></li></ul><h2>Administration</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-users.html"><span>Users</span><span class="api-nav__count">12<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-groups.html"><span>Groups</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-permission-profiles.html"><span>Permission profiles</span><span class="api-nav__count">5<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-account.html"><span>Account settings</span><span class="api-nav__count">4<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-ersd.html"><span>Electronic disclosure</span><span class="api-nav__count">2<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-retention.html"><span>Retention and legal hold</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-admin-events.html"><span>Admin audit log</span><span class="api-nav__count">1<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-organizations.html"><span>Organizations</span><span class="api-nav__count">12<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-auth.html"><span>Sessions and sign-in</span><span class="api-nav__count">23<span class="sr-only"> operations</span></span></a></li></ul><h2>Not public API</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-ceremony.html"><span>Signing ceremony</span><span class="api-nav__count">24<span class="sr-only"> operations</span></span></a></li></ul><h2>Reference</h2><ul class="api-nav__top"><li><a href="api-objects.html">Objects</a></li><li><a href="openapi.yaml">OpenAPI document</a></li></ul></nav></details>
+    <nav class="api-nav api-nav--wide" aria-label="API reference"><ul class="api-nav__top"><li><a href="api.html">Overview</a></li><li><a href="api.html#authentication">Authentication</a></li><li><a href="api.html#errors">Errors</a></li><li><a href="api.html#pagination">Pagination</a></li><li><a href="webhooks.html">Webhooks guide</a></li></ul><h2>Core resources</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-envelopes.html"><span>Envelopes</span><span class="api-nav__count">16<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-recipients.html" aria-current="page"><span>Recipients</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a><ul class="api-nav__ops"><li><a href="#op-listrecipients" data-op="op-listrecipients" title="List recipients"><span class="verb verb-get verb--sm">GET</span><span class="api-nav__name">List recipients</span></a></li><li><a href="#op-addrecipients" data-op="op-addrecipients" title="Add recipients"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Add recipients</span></a></li><li><a href="#op-getrecipient" data-op="op-getrecipient" title="Get recipient"><span class="verb verb-get verb--sm">GET</span><span class="api-nav__name">Get recipient</span></a></li><li><a href="#op-patchrecipient" data-op="op-patchrecipient" title="Update recipient"><span class="verb verb-patch verb--sm">PATCH</span><span class="api-nav__name">Update recipient</span></a></li><li><a href="#op-deleterecipient" data-op="op-deleterecipient" title="Delete recipient"><span class="verb verb-delete verb--sm">DELETE</span><span class="api-nav__name">Delete recipient</span></a></li><li><a href="#op-hostinpersonsigner" data-op="op-hostinpersonsigner" title="Host an in-person signer"><span class="verb verb-post verb--sm">POST</span><span class="api-nav__name">Host an in-person signer</span></a></li></ul></li><li><a class="api-nav__grp" href="api-fields.html"><span>Fields</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-documents.html"><span>Documents</span><span class="api-nav__count">13<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-evidence.html"><span>Audit and evidence</span><span class="api-nav__count">3<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-templates.html"><span>Templates</span><span class="api-nav__count">23<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-bulk-sends.html"><span>Bulk send</span><span class="api-nav__count">5<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-folders.html"><span>Folders</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-contacts.html"><span>Contacts</span><span class="api-nav__count">1<span class="sr-only"> operations</span></span></a></li></ul><h2>Integrations</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-webhooks.html"><span>Webhooks</span><span class="api-nav__count">8<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-api-clients.html"><span>API clients</span><span class="api-nav__count">4<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-oauth.html"><span>OAuth</span><span class="api-nav__count">8<span class="sr-only"> operations</span></span></a></li></ul><h2>Administration</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-users.html"><span>Users</span><span class="api-nav__count">12<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-groups.html"><span>Groups</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-permission-profiles.html"><span>Permission profiles</span><span class="api-nav__count">5<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-account.html"><span>Account settings</span><span class="api-nav__count">4<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-ersd.html"><span>Electronic disclosure</span><span class="api-nav__count">2<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-retention.html"><span>Retention and legal hold</span><span class="api-nav__count">6<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-admin-events.html"><span>Admin audit log</span><span class="api-nav__count">1<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-organizations.html"><span>Organizations</span><span class="api-nav__count">12<span class="sr-only"> operations</span></span></a></li><li><a class="api-nav__grp" href="api-auth.html"><span>Sessions and sign-in</span><span class="api-nav__count">23<span class="sr-only"> operations</span></span></a></li></ul><h2>Not public API</h2><ul class="api-nav__groups"><li><a class="api-nav__grp" href="api-ceremony.html"><span>Signing ceremony</span><span class="api-nav__count">24<span class="sr-only"> operations</span></span></a></li></ul><h2>Reference</h2><ul class="api-nav__top"><li><a href="api-objects.html">Objects</a></li><li><a href="openapi.yaml">OpenAPI document</a></li></ul></nav>
+  </aside>
+  <div class="api-body">
+    <nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li><a href="api.html">API reference</a></li><li aria-current="page">Recipients</li></ol></nav>
+<header class="api-head">
+  <div class="api-head__text">
+    <p class="api-kicker">Core resources</p>
+    <h1>Recipients</h1>
+    <p class="lede">The people (and roles) an envelope routes to: signers, approvers, viewers, copies and the other recipient types, each with a routing order and the authentication they must pass.</p>
+    
+  </div>
+  <div class="api-head__endpoints" data-nosearch>
+    <div class="codebox codebox--list"><div class="codebox__bar"><span class="codebox__title">Endpoints</span></div><ul class="endpoint-list"><li><a href="#op-listrecipients"><span class="verb verb-get verb--sm">GET</span><code>/api/v1/envelopes/{id}/recipients</code></a></li><li><a href="#op-addrecipients"><span class="verb verb-post verb--sm">POST</span><code>/api/v1/envelopes/{id}/recipients</code></a></li><li><a href="#op-getrecipient"><span class="verb verb-get verb--sm">GET</span><code>/api/v1/envelopes/{id}/recipients/{r}</code></a></li><li><a href="#op-patchrecipient"><span class="verb verb-patch verb--sm">PATCH</span><code>/api/v1/envelopes/{id}/recipients/{r}</code></a></li><li><a href="#op-deleterecipient"><span class="verb verb-delete verb--sm">DELETE</span><code>/api/v1/envelopes/{id}/recipients/{r}</code></a></li><li><a href="#op-hostinpersonsigner"><span class="verb verb-post verb--sm">POST</span><code>/api/v1/envelopes/{id}/recipients/{r}/host</code></a></li></ul></div>
+  </div>
+</header><section class="api-op" aria-labelledby="op-listrecipients"><div class="api-op__doc"><h2 class="api-op__title" id="op-listrecipients"><a class="anchor-link" href="#op-listrecipients">List recipients</a></h2><p class="api-endpoint"><span class="verb verb-get">GET</span><code>/api/v1/envelopes/{id}/recipients</code></p><p class="api-op__sum">Recipients</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>envelopes.read</code> · OAuth scope <a href="api.html#scopes"><code>envelopes:read</code></a></span></p><h3 class="api-h" data-nosearch>Path parameters</h3><ul class="params"><li class="param" id="op-listrecipients-path-id"><div class="param__head"><a class="param__name" href="#op-listrecipients-path-id"><code>id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Object id (UUIDv7)</p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">200</span> with a <a href="api-objects.html#schema-recipientlist">RecipientList</a> object.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-get">GET</span>/api/v1/envelopes/{id}/recipients</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-listrecipients-tab-curl" data-lang="curl" aria-controls="op-listrecipients-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-listrecipients-tab-typescript" data-lang="typescript" aria-controls="op-listrecipients-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-listrecipients-tab-python" data-lang="python" aria-controls="op-listrecipients-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-listrecipients-curl" role="tabpanel" aria-labelledby="op-listrecipients-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl https://sign.example.com/api/v1/envelopes/01934c50-3ca6-7776-81e5-c4aaecfe9962/recipients \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot;</code></pre></div><div class="code-panel" id="op-listrecipients-typescript" role="tabpanel" aria-labelledby="op-listrecipients-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const data = await os.listRecipients({
+  id: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+});</code></pre></div><div class="code-panel" id="op-listrecipients-python" role="tabpanel" aria-labelledby="op-listrecipients-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+data = client.list_recipients(
+    id=&quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">200</span></div><pre><code>{
+  &quot;items&quot;: [
+    {
+      &quot;id&quot;: &quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+      &quot;type&quot;: &quot;signer&quot;,
+      &quot;routing_order&quot;: 1,
+      &quot;name&quot;: &quot;Example Signer&quot;,
+      &quot;email&quot;: &quot;signer@example.com&quot;,
+      &quot;status&quot;: &quot;sent&quot;,
+      &quot;delivery&quot;: &quot;email&quot;,
+      &quot;auth&quot;: [
+        &quot;email_link&quot;
+      ],
+      &quot;embedded_client_user_id&quot;: &quot;0193aaed-76bb-7dc3-89d6-a55fae533f82&quot;,
+      &quot;excluded_documents&quot;: [
+        &quot;example&quot;
+      ],
+      &quot;route_delay_hours&quot;: 1,
+      &quot;held_until&quot;: &quot;2026-11-20T09:30:00Z&quot;
+    }
+  ]
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of List recipients"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>envelopes.read</code></td></tr><tr><td><span class="status-pill status-pill--4xx">404</span></td><td><a href="api.html#cs-api-0002"><code>CS-API-0002</code></a></td><td>No such object, or one of another account (answered alike)</td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><section class="api-op" aria-labelledby="op-addrecipients"><div class="api-op__doc"><h2 class="api-op__title" id="op-addrecipients"><a class="anchor-link" href="#op-addrecipients">Add recipients</a></h2><p class="api-endpoint"><span class="verb verb-post">POST</span><code>/api/v1/envelopes/{id}/recipients</code></p><p class="api-op__sum">Add one recipient, or {items: [...]}</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>envelopes.write</code> · OAuth scope <a href="api.html#scopes"><code>envelopes:write</code></a></span></p><h3 class="api-h" data-nosearch>Path parameters</h3><ul class="params"><li class="param" id="op-addrecipients-path-id"><div class="param__head"><a class="param__name" href="#op-addrecipients-path-id"><code>id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Object id (UUIDv7)</p></li></ul><h3 class="api-h" data-nosearch>Headers</h3><ul class="params"><li class="param" id="op-addrecipients-header-idempotency-key"><div class="param__head"><a class="param__name" href="#op-addrecipients-header-idempotency-key"><code>Idempotency-Key</code></a><span class="param__type">string</span></div><p class="param__desc">Up to 255 printable ASCII characters; a replay within 24 hours returns the first response.</p><p class="param__meta">at most 255 characters</p></li></ul><h3 class="api-h" data-nosearch>Request body</h3><p class="api-ctype">Content type <code>application/json</code> · required</p><p class="param__meta"><a href="api-objects.html#schema-recipientcreate">RecipientCreate</a></p><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">201</span> with a <a href="api-objects.html#schema-recipientlist">RecipientList</a> object.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-post">POST</span>/api/v1/envelopes/{id}/recipients</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-addrecipients-tab-curl" data-lang="curl" aria-controls="op-addrecipients-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-addrecipients-tab-typescript" data-lang="typescript" aria-controls="op-addrecipients-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-addrecipients-tab-python" data-lang="python" aria-controls="op-addrecipients-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-addrecipients-curl" role="tabpanel" aria-labelledby="op-addrecipients-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl -X POST https://sign.example.com/api/v1/envelopes/01934c50-3ca6-7776-81e5-c4aaecfe9962/recipients \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot; \
+  -H &#x27;Idempotency-Key: order-1042&#x27; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{
+  &quot;ref&quot;: &quot;example&quot;,
+  &quot;type&quot;: &quot;signer&quot;,
+  &quot;name&quot;: &quot;Example Signer&quot;,
+  &quot;email&quot;: &quot;signer@example.com&quot;,
+  &quot;phone&quot;: &quot;+15555550100&quot;,
+  &quot;routing_order&quot;: 1,
+  &quot;delivery&quot;: &quot;email&quot;,
+  &quot;auth&quot;: [
+    &quot;email_link&quot;
+  ],
+  &quot;access_code&quot;: &quot;example&quot;,
+  &quot;embedded_client_user_id&quot;: &quot;0193aaed-76bb-7dc3-89d6-a55fae533f82&quot;,
+  &quot;time_zone_offset_minutes&quot;: 1,
+  &quot;date_format&quot;: &quot;example&quot;,
+  &quot;excluded_documents&quot;: [
+    &quot;example&quot;
+  ],
+  &quot;route_delay_hours&quot;: 0
+}&#x27;</code></pre></div><div class="code-panel" id="op-addrecipients-typescript" role="tabpanel" aria-labelledby="op-addrecipients-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const result = await os.addRecipients({
+  id: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+  idempotencyKey: &quot;order-1042&quot;,
+  body: {
+    &quot;ref&quot;: &quot;example&quot;,
+    &quot;type&quot;: &quot;signer&quot;,
+    &quot;name&quot;: &quot;Example Signer&quot;,
+    &quot;email&quot;: &quot;signer@example.com&quot;,
+    &quot;phone&quot;: &quot;+15555550100&quot;,
+    &quot;routing_order&quot;: 1,
+    &quot;delivery&quot;: &quot;email&quot;,
+    &quot;auth&quot;: [
+      &quot;email_link&quot;
+    ],
+    &quot;access_code&quot;: &quot;example&quot;,
+    &quot;embedded_client_user_id&quot;: &quot;0193aaed-76bb-7dc3-89d6-a55fae533f82&quot;,
+    &quot;time_zone_offset_minutes&quot;: 1,
+    &quot;date_format&quot;: &quot;example&quot;,
+    &quot;excluded_documents&quot;: [
+      &quot;example&quot;
+    ],
+    &quot;route_delay_hours&quot;: 0
+  },
+});</code></pre></div><div class="code-panel" id="op-addrecipients-python" role="tabpanel" aria-labelledby="op-addrecipients-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+result = client.add_recipients(
+    id=&quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+    idempotency_key=&quot;order-1042&quot;,
+    body={
+        &quot;ref&quot;: &quot;example&quot;,
+        &quot;type&quot;: &quot;signer&quot;,
+        &quot;name&quot;: &quot;Example Signer&quot;,
+        &quot;email&quot;: &quot;signer@example.com&quot;,
+        &quot;phone&quot;: &quot;+15555550100&quot;,
+        &quot;routing_order&quot;: 1,
+        &quot;delivery&quot;: &quot;email&quot;,
+        &quot;auth&quot;: [
+            &quot;email_link&quot;,
+        ],
+        &quot;access_code&quot;: &quot;example&quot;,
+        &quot;embedded_client_user_id&quot;: &quot;0193aaed-76bb-7dc3-89d6-a55fae533f82&quot;,
+        &quot;time_zone_offset_minutes&quot;: 1,
+        &quot;date_format&quot;: &quot;example&quot;,
+        &quot;excluded_documents&quot;: [
+            &quot;example&quot;,
+        ],
+        &quot;route_delay_hours&quot;: 0,
+    },
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">201</span></div><pre><code>{
+  &quot;items&quot;: [
+    {
+      &quot;id&quot;: &quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+      &quot;type&quot;: &quot;signer&quot;,
+      &quot;routing_order&quot;: 1,
+      &quot;name&quot;: &quot;Example Signer&quot;,
+      &quot;email&quot;: &quot;signer@example.com&quot;,
+      &quot;status&quot;: &quot;sent&quot;,
+      &quot;delivery&quot;: &quot;email&quot;,
+      &quot;auth&quot;: [
+        &quot;email_link&quot;
+      ],
+      &quot;embedded_client_user_id&quot;: &quot;0193aaed-76bb-7dc3-89d6-a55fae533f82&quot;,
+      &quot;excluded_documents&quot;: [
+        &quot;example&quot;
+      ],
+      &quot;route_delay_hours&quot;: 1,
+      &quot;held_until&quot;: &quot;2026-11-20T09:30:00Z&quot;
+    }
+  ]
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of Add recipients"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>envelopes.write</code></td></tr><tr><td><span class="status-pill status-pill--4xx">404</span></td><td><a href="api.html#cs-api-0002"><code>CS-API-0002</code></a></td><td>No such object, or one of another account (answered alike)</td></tr><tr><td><span class="status-pill status-pill--4xx">409</span></td><td><a href="api.html#cs-api-0004"><code>CS-API-0004</code></a></td><td>The idempotency key was used with a different body (<code>CS-API-0011</code> while the first is still running)</td></tr><tr><td><span class="status-pill status-pill--4xx">413</span></td><td><a href="api.html#cs-api-0006"><code>CS-API-0006</code></a></td><td>The request body is over its limit</td></tr><tr><td><span class="status-pill status-pill--4xx">415</span></td><td><a href="api.html#cs-api-0007"><code>CS-API-0007</code></a></td><td>The body is not <code>application/json</code></td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><section class="api-op" aria-labelledby="op-getrecipient"><div class="api-op__doc"><h2 class="api-op__title" id="op-getrecipient"><a class="anchor-link" href="#op-getrecipient">Get recipient</a></h2><p class="api-endpoint"><span class="verb verb-get">GET</span><code>/api/v1/envelopes/{id}/recipients/{r}</code></p><p class="api-op__sum">A recipient</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>envelopes.read</code> · OAuth scope <a href="api.html#scopes"><code>envelopes:read</code></a></span></p><h3 class="api-h" data-nosearch>Path parameters</h3><ul class="params"><li class="param" id="op-getrecipient-path-id"><div class="param__head"><a class="param__name" href="#op-getrecipient-path-id"><code>id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Object id (UUIDv7)</p></li><li class="param" id="op-getrecipient-path-r"><div class="param__head"><a class="param__name" href="#op-getrecipient-path-r"><code>r</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Recipient id</p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">200</span> with a <a href="api-objects.html#schema-recipient">Recipient</a> object.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-get">GET</span>/api/v1/envelopes/{id}/recipients/{r}</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-getrecipient-tab-curl" data-lang="curl" aria-controls="op-getrecipient-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-getrecipient-tab-typescript" data-lang="typescript" aria-controls="op-getrecipient-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-getrecipient-tab-python" data-lang="python" aria-controls="op-getrecipient-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-getrecipient-curl" role="tabpanel" aria-labelledby="op-getrecipient-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl https://sign.example.com/api/v1/envelopes/01934c50-3ca6-7776-81e5-c4aaecfe9962/recipients/0193665d-0698-7dbc-88fb-95afc25c3a4d \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot;</code></pre></div><div class="code-panel" id="op-getrecipient-typescript" role="tabpanel" aria-labelledby="op-getrecipient-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const data = await os.getRecipient({
+  id: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+  r: &quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+});</code></pre></div><div class="code-panel" id="op-getrecipient-python" role="tabpanel" aria-labelledby="op-getrecipient-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+data = client.get_recipient(
+    id=&quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+    r=&quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">200</span></div><pre><code>{
+  &quot;id&quot;: &quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+  &quot;type&quot;: &quot;signer&quot;,
+  &quot;routing_order&quot;: 1,
+  &quot;name&quot;: &quot;Example Signer&quot;,
+  &quot;email&quot;: &quot;signer@example.com&quot;,
+  &quot;status&quot;: &quot;sent&quot;,
+  &quot;delivery&quot;: &quot;email&quot;,
+  &quot;auth&quot;: [
+    &quot;email_link&quot;
+  ],
+  &quot;embedded_client_user_id&quot;: &quot;0193aaed-76bb-7dc3-89d6-a55fae533f82&quot;,
+  &quot;excluded_documents&quot;: [
+    &quot;example&quot;
+  ],
+  &quot;route_delay_hours&quot;: 1,
+  &quot;held_until&quot;: &quot;2026-11-20T09:30:00Z&quot;
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of Get recipient"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>envelopes.read</code></td></tr><tr><td><span class="status-pill status-pill--4xx">404</span></td><td><a href="api.html#cs-api-0002"><code>CS-API-0002</code></a></td><td>No such object, or one of another account (answered alike)</td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><section class="api-op" aria-labelledby="op-patchrecipient"><div class="api-op__doc"><h2 class="api-op__title" id="op-patchrecipient"><a class="anchor-link" href="#op-patchrecipient">Update recipient</a></h2><p class="api-endpoint"><span class="verb verb-patch">PATCH</span><code>/api/v1/envelopes/{id}/recipients/{r}</code></p><p class="api-op__sum">Change a recipient (If-Match required)</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>envelopes.write</code> · OAuth scope <a href="api.html#scopes"><code>envelopes:write</code></a></span></p><h3 class="api-h" data-nosearch>Path parameters</h3><ul class="params"><li class="param" id="op-patchrecipient-path-id"><div class="param__head"><a class="param__name" href="#op-patchrecipient-path-id"><code>id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Object id (UUIDv7)</p></li><li class="param" id="op-patchrecipient-path-r"><div class="param__head"><a class="param__name" href="#op-patchrecipient-path-r"><code>r</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Recipient id</p></li></ul><h3 class="api-h" data-nosearch>Headers</h3><ul class="params"><li class="param" id="op-patchrecipient-header-if-match"><div class="param__head"><a class="param__name" href="#op-patchrecipient-header-if-match"><code>If-Match</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">The envelope&#x27;s <code>ETag</code> as read (<code>&quot;v&lt;version&gt;&quot;</code>); a stale one is <code>412 CS-WF-0002</code>, none is <code>428 CS-API-0008</code>.</p></li></ul><h3 class="api-h" data-nosearch>Request body</h3><p class="api-ctype">Content type <code>application/json</code> · required</p><ul class="params"><li class="param" id="op-patchrecipient-body-name"><div class="param__head"><a class="param__name" href="#op-patchrecipient-body-name"><code>name</code></a><span class="param__type">string</span></div></li><li class="param" id="op-patchrecipient-body-email"><div class="param__head"><a class="param__name" href="#op-patchrecipient-body-email"><code>email</code></a><span class="param__type">string</span></div></li><li class="param" id="op-patchrecipient-body-routing_order"><div class="param__head"><a class="param__name" href="#op-patchrecipient-body-routing_order"><code>routing_order</code></a><span class="param__type">integer</span></div></li><li class="param" id="op-patchrecipient-body-type"><div class="param__head"><a class="param__name" href="#op-patchrecipient-body-type"><code>type</code></a><span class="param__type">string</span></div><p class="param__desc">A new type, on a draft only; a correction keeps the type and is refused <code>409</code>.</p><p class="param__meta">One of <code>signer</code>, <code>in_person_signer</code>, <code>approver</code>, <code>viewer</code>, <code>cc</code>, <code>editor</code>, <code>intermediary</code>, <code>agent</code>, <code>witness</code>, <code>seal</code>, <code>notary</code></p></li><li class="param" id="op-patchrecipient-body-auth"><div class="param__head"><a class="param__name" href="#op-patchrecipient-body-auth"><code>auth</code></a><span class="param__type">array of string</span></div></li><li class="param" id="op-patchrecipient-body-access_code"><div class="param__head"><a class="param__name" href="#op-patchrecipient-body-access_code"><code>access_code</code></a><span class="param__type">string</span></div><p class="param__desc">A new access code, stored only as Argon2id. Needed when <code>auth</code> gains <code>access_code</code>; refused when the resulting <code>auth</code> lacks it. Removing <code>access_code</code> from <code>auth</code> deletes the stored code. Draft or correcting envelopes only.</p><p class="param__meta">at most 255 characters</p></li><li class="param" id="op-patchrecipient-body-excluded_documents"><div class="param__head"><a class="param__name" href="#op-patchrecipient-body-excluded_documents"><code>excluded_documents</code></a><span class="param__type">array of string</span></div><p class="param__desc">Document ids hidden from this recipient; <code>[]</code> shows every document</p></li><li class="param" id="op-patchrecipient-body-route_delay_hours"><div class="param__head"><a class="param__name" href="#op-patchrecipient-body-route_delay_hours"><code>route_delay_hours</code></a><span class="param__type">integer</span></div><p class="param__desc">Delayed routing: hours to wait once their turn comes; <code>0</code> invites at once</p><p class="param__meta">minimum 0 · maximum 65535</p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">200</span> with a <a href="api-objects.html#schema-recipient">Recipient</a> object.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-patch">PATCH</span>/api/v1/envelopes/{id}/recipients/{r}</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-patchrecipient-tab-curl" data-lang="curl" aria-controls="op-patchrecipient-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-patchrecipient-tab-typescript" data-lang="typescript" aria-controls="op-patchrecipient-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-patchrecipient-tab-python" data-lang="python" aria-controls="op-patchrecipient-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-patchrecipient-curl" role="tabpanel" aria-labelledby="op-patchrecipient-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl -X PATCH https://sign.example.com/api/v1/envelopes/01934c50-3ca6-7776-81e5-c4aaecfe9962/recipients/0193665d-0698-7dbc-88fb-95afc25c3a4d \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot; \
+  -H &#x27;If-Match: &quot;v3&quot;&#x27; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{
+  &quot;name&quot;: &quot;Example Signer&quot;,
+  &quot;email&quot;: &quot;signer@example.com&quot;,
+  &quot;routing_order&quot;: 1,
+  &quot;type&quot;: &quot;signer&quot;,
+  &quot;auth&quot;: [
+    &quot;email_link&quot;
+  ],
+  &quot;access_code&quot;: &quot;example&quot;,
+  &quot;excluded_documents&quot;: [
+    &quot;example&quot;
+  ],
+  &quot;route_delay_hours&quot;: 1
+}&#x27;</code></pre></div><div class="code-panel" id="op-patchrecipient-typescript" role="tabpanel" aria-labelledby="op-patchrecipient-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const result = await os.patchRecipient({
+  id: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+  r: &quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+  ifMatch: &#x27;&quot;v3&quot;&#x27;,
+  body: {
+    &quot;name&quot;: &quot;Example Signer&quot;,
+    &quot;email&quot;: &quot;signer@example.com&quot;,
+    &quot;routing_order&quot;: 1,
+    &quot;type&quot;: &quot;signer&quot;,
+    &quot;auth&quot;: [
+      &quot;email_link&quot;
+    ],
+    &quot;access_code&quot;: &quot;example&quot;,
+    &quot;excluded_documents&quot;: [
+      &quot;example&quot;
+    ],
+    &quot;route_delay_hours&quot;: 1
+  },
+});</code></pre></div><div class="code-panel" id="op-patchrecipient-python" role="tabpanel" aria-labelledby="op-patchrecipient-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+result = client.patch_recipient(
+    id=&quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+    r=&quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+    if_match=&quot;\&quot;v3\&quot;&quot;,
+    body={
+        &quot;name&quot;: &quot;Example Signer&quot;,
+        &quot;email&quot;: &quot;signer@example.com&quot;,
+        &quot;routing_order&quot;: 1,
+        &quot;type&quot;: &quot;signer&quot;,
+        &quot;auth&quot;: [
+            &quot;email_link&quot;,
+        ],
+        &quot;access_code&quot;: &quot;example&quot;,
+        &quot;excluded_documents&quot;: [
+            &quot;example&quot;,
+        ],
+        &quot;route_delay_hours&quot;: 1,
+    },
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">200</span></div><pre><code>{
+  &quot;id&quot;: &quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+  &quot;type&quot;: &quot;signer&quot;,
+  &quot;routing_order&quot;: 1,
+  &quot;name&quot;: &quot;Example Signer&quot;,
+  &quot;email&quot;: &quot;signer@example.com&quot;,
+  &quot;status&quot;: &quot;sent&quot;,
+  &quot;delivery&quot;: &quot;email&quot;,
+  &quot;auth&quot;: [
+    &quot;email_link&quot;
+  ],
+  &quot;embedded_client_user_id&quot;: &quot;0193aaed-76bb-7dc3-89d6-a55fae533f82&quot;,
+  &quot;excluded_documents&quot;: [
+    &quot;example&quot;
+  ],
+  &quot;route_delay_hours&quot;: 1,
+  &quot;held_until&quot;: &quot;2026-11-20T09:30:00Z&quot;
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of Update recipient"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>envelopes.write</code></td></tr><tr><td><span class="status-pill status-pill--4xx">404</span></td><td><a href="api.html#cs-api-0002"><code>CS-API-0002</code></a></td><td>No such object, or one of another account (answered alike)</td></tr><tr><td><span class="status-pill status-pill--4xx">412</span></td><td><a href="api.html#cs-wf-0002"><code>CS-WF-0002</code></a></td><td>The <code>If-Match</code> version is stale: read the object again</td></tr><tr><td><span class="status-pill status-pill--4xx">428</span></td><td><a href="api.html#cs-api-0008"><code>CS-API-0008</code></a></td><td><code>If-Match</code> is required and absent</td></tr><tr><td><span class="status-pill status-pill--4xx">413</span></td><td><a href="api.html#cs-api-0006"><code>CS-API-0006</code></a></td><td>The request body is over its limit</td></tr><tr><td><span class="status-pill status-pill--4xx">415</span></td><td><a href="api.html#cs-api-0007"><code>CS-API-0007</code></a></td><td>The body is not <code>application/json</code></td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><section class="api-op" aria-labelledby="op-deleterecipient"><div class="api-op__doc"><h2 class="api-op__title" id="op-deleterecipient"><a class="anchor-link" href="#op-deleterecipient">Delete recipient</a></h2><p class="api-endpoint"><span class="verb verb-delete">DELETE</span><code>/api/v1/envelopes/{id}/recipients/{r}</code></p><p class="api-op__sum">Remove a recipient (If-Match required)</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>envelopes.write</code> · OAuth scope <a href="api.html#scopes"><code>envelopes:write</code></a></span></p><h3 class="api-h" data-nosearch>Path parameters</h3><ul class="params"><li class="param" id="op-deleterecipient-path-id"><div class="param__head"><a class="param__name" href="#op-deleterecipient-path-id"><code>id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Object id (UUIDv7)</p></li><li class="param" id="op-deleterecipient-path-r"><div class="param__head"><a class="param__name" href="#op-deleterecipient-path-r"><code>r</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Recipient id</p></li></ul><h3 class="api-h" data-nosearch>Headers</h3><ul class="params"><li class="param" id="op-deleterecipient-header-if-match"><div class="param__head"><a class="param__name" href="#op-deleterecipient-header-if-match"><code>If-Match</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">The envelope&#x27;s <code>ETag</code> as read (<code>&quot;v&lt;version&gt;&quot;</code>); a stale one is <code>412 CS-WF-0002</code>, none is <code>428 CS-API-0008</code>.</p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">204</span> Done with no body.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-delete">DELETE</span>/api/v1/envelopes/{id}/recipients/{r}</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-deleterecipient-tab-curl" data-lang="curl" aria-controls="op-deleterecipient-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-deleterecipient-tab-typescript" data-lang="typescript" aria-controls="op-deleterecipient-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-deleterecipient-tab-python" data-lang="python" aria-controls="op-deleterecipient-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-deleterecipient-curl" role="tabpanel" aria-labelledby="op-deleterecipient-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl -X DELETE https://sign.example.com/api/v1/envelopes/01934c50-3ca6-7776-81e5-c4aaecfe9962/recipients/0193665d-0698-7dbc-88fb-95afc25c3a4d \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot; \
+  -H &#x27;If-Match: &quot;v3&quot;&#x27;</code></pre></div><div class="code-panel" id="op-deleterecipient-typescript" role="tabpanel" aria-labelledby="op-deleterecipient-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const result = await os.deleteRecipient({
+  id: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+  r: &quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+  ifMatch: &#x27;&quot;v3&quot;&#x27;,
+});</code></pre></div><div class="code-panel" id="op-deleterecipient-python" role="tabpanel" aria-labelledby="op-deleterecipient-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+result = client.delete_recipient(
+    id=&quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+    r=&quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+    if_match=&quot;\&quot;v3\&quot;&quot;,
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">204</span></div><p class="codebox__note">No body.</p></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of Delete recipient"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>envelopes.write</code></td></tr><tr><td><span class="status-pill status-pill--4xx">404</span></td><td><a href="api.html#cs-api-0002"><code>CS-API-0002</code></a></td><td>No such object, or one of another account (answered alike)</td></tr><tr><td><span class="status-pill status-pill--4xx">412</span></td><td><a href="api.html#cs-wf-0002"><code>CS-WF-0002</code></a></td><td>The <code>If-Match</code> version is stale: read the object again</td></tr><tr><td><span class="status-pill status-pill--4xx">428</span></td><td><a href="api.html#cs-api-0008"><code>CS-API-0008</code></a></td><td><code>If-Match</code> is required and absent</td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><section class="api-op" aria-labelledby="op-hostinpersonsigner"><div class="api-op__doc"><h2 class="api-op__title" id="op-hostinpersonsigner"><a class="anchor-link" href="#op-hostinpersonsigner">Host an in-person signer</a></h2><p class="api-endpoint"><span class="verb verb-post">POST</span><code>/api/v1/envelopes/{id}/recipients/{r}/host</code></p><p class="api-op__sum">Host an in-person signer: records recipient.in_person_hosted and returns a one-hour signing link that acts as the caller hosting the signer</p><p class="api-auth"><span class="api-auth__k">Auth</span><span>API key or OAuth access token (<code>Authorization: Bearer</code>), or a staff session</span></p><p class="api-auth"><span class="api-auth__k">Permission</span><span><code>envelopes.send</code> · OAuth scope <a href="api.html#scopes"><code>envelopes:send</code></a></span></p><h3 class="api-h" data-nosearch>Path parameters</h3><ul class="params"><li class="param" id="op-hostinpersonsigner-path-id"><div class="param__head"><a class="param__name" href="#op-hostinpersonsigner-path-id"><code>id</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Object id (UUIDv7)</p></li><li class="param" id="op-hostinpersonsigner-path-r"><div class="param__head"><a class="param__name" href="#op-hostinpersonsigner-path-r"><code>r</code></a><span class="param__type">string</span><span class="param__req">Required</span></div><p class="param__desc">Recipient id</p></li></ul><h3 class="api-h" data-nosearch>Headers</h3><ul class="params"><li class="param" id="op-hostinpersonsigner-header-idempotency-key"><div class="param__head"><a class="param__name" href="#op-hostinpersonsigner-header-idempotency-key"><code>Idempotency-Key</code></a><span class="param__type">string</span></div><p class="param__desc">Up to 255 printable ASCII characters; a replay within 24 hours returns the first response.</p><p class="param__meta">at most 255 characters</p></li></ul><h3 class="api-h" data-nosearch>Returns</h3><p><span class="status-pill status-pill--2xx">201</span> with a <a href="api-objects.html#schema-signingview">SigningView</a> object.</p></div><div class="api-op__code" data-nosearch><div class="codebox" data-langs><div class="codebox__bar"><span class="codebox__title"><span class="verb verb-post">POST</span>/api/v1/envelopes/{id}/recipients/{r}/host</span><div class="code-tabs" role="tablist" aria-label="Language"><button type="button" role="tab" class="code-tab" id="op-hostinpersonsigner-tab-curl" data-lang="curl" aria-controls="op-hostinpersonsigner-curl" aria-selected="true">curl</button><button type="button" role="tab" class="code-tab" id="op-hostinpersonsigner-tab-typescript" data-lang="typescript" aria-controls="op-hostinpersonsigner-typescript" aria-selected="false" tabindex="-1">TypeScript</button><button type="button" role="tab" class="code-tab" id="op-hostinpersonsigner-tab-python" data-lang="python" aria-controls="op-hostinpersonsigner-python" aria-selected="false" tabindex="-1">Python</button></div></div><div class="code-panel is-active" id="op-hostinpersonsigner-curl" role="tabpanel" aria-labelledby="op-hostinpersonsigner-tab-curl" data-lang="curl"><p class="code-panel__label">curl</p><pre><code>curl -X POST https://sign.example.com/api/v1/envelopes/01934c50-3ca6-7776-81e5-c4aaecfe9962/recipients/0193665d-0698-7dbc-88fb-95afc25c3a4d/host \
+  -H &quot;Authorization: Bearer $OPENSEAL_API_KEY&quot; \
+  -H &#x27;Idempotency-Key: order-1042&#x27;</code></pre></div><div class="code-panel" id="op-hostinpersonsigner-typescript" role="tabpanel" aria-labelledby="op-hostinpersonsigner-tab-typescript" data-lang="typescript"><p class="code-panel__label">TypeScript</p><pre><code>import { OpenSeal } from &quot;@openseal/sdk&quot;;
+
+const os = new OpenSeal({ baseUrl: &quot;https://sign.example.com&quot;, apiKey: process.env.OPENSEAL_API_KEY });
+const result = await os.hostInPersonSigner({
+  id: &quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+  r: &quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+  idempotencyKey: &quot;order-1042&quot;,
+});</code></pre></div><div class="code-panel" id="op-hostinpersonsigner-python" role="tabpanel" aria-labelledby="op-hostinpersonsigner-tab-python" data-lang="python"><p class="code-panel__label">Python</p><pre><code>import os
+from openseal import OpenSeal
+
+client = OpenSeal(&quot;https://sign.example.com&quot;, api_key=os.environ[&quot;OPENSEAL_API_KEY&quot;])
+result = client.host_in_person_signer(
+    id=&quot;01934c50-3ca6-7776-81e5-c4aaecfe9962&quot;,
+    r=&quot;0193665d-0698-7dbc-88fb-95afc25c3a4d&quot;,
+    idempotency_key=&quot;order-1042&quot;,
+)</code></pre></div></div><div class="codebox codebox--response"><div class="codebox__bar"><span class="codebox__title">Response</span><span class="status-pill status-pill--2xx">201</span></div><pre><code>{
+  &quot;url&quot;: &quot;https://app.example.com/openseal/callback&quot;,
+  &quot;expires_at&quot;: &quot;2026-12-20T09:30:00Z&quot;
+}</code></pre></div><details class="errbox"><summary>Errors this can answer</summary><div class="table-scroll" tabindex="0" role="region" aria-label="Errors of Host an in-person signer"><table><thead><tr><th scope="col">Status</th><th scope="col">Code</th><th scope="col">When</th></tr></thead><tbody><tr><td><span class="status-pill status-pill--4xx">400 / 422</span></td><td><a href="api.html#cs-api-0001"><code>CS-API-0001</code></a></td><td>Malformed request: a parameter or member is missing, unknown or out of range; <code>errors[]</code> points at it</td></tr><tr><td><span class="status-pill status-pill--4xx">401</span></td><td><a href="api.html#cs-auth-0001"><code>CS-AUTH-0001</code></a></td><td>No credential, or one that is expired or revoked (<code>CS-AUTH-0002</code>)</td></tr><tr><td><span class="status-pill status-pill--4xx">403</span></td><td><a href="api.html#cs-auth-0006"><code>CS-AUTH-0006</code></a></td><td>The credential lacks <code>envelopes.send</code></td></tr><tr><td><span class="status-pill status-pill--4xx">404</span></td><td><a href="api.html#cs-api-0002"><code>CS-API-0002</code></a></td><td>No such object, or one of another account (answered alike)</td></tr><tr><td><span class="status-pill status-pill--4xx">409</span></td><td><a href="api.html#cs-api-0004"><code>CS-API-0004</code></a></td><td>The idempotency key was used with a different body (<code>CS-API-0011</code> while the first is still running)</td></tr><tr><td><span class="status-pill status-pill--4xx">429</span></td><td><a href="api.html#cs-api-0003"><code>CS-API-0003</code></a></td><td>Rate limited: wait for <code>Retry-After</code> seconds</td></tr></tbody></table></div><p class="errbox__note">Every error is an RFC 9457 problem with a stable <code>code</code> and a <code>request_id</code>; see <a href="api.html#errors">Errors</a>.</p></details></div></section><nav class="prevnext api-prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="api-envelopes.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Envelopes</span></a><a class="pn pn-next" href="api-fields.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">Fields</span></a></nav>
+  </div>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#product">Overview</a></li><li><a href="../app/app.html#/signin">Try the demo</a></li><li><a href="../verify.html">Verify a PDF</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="../docs/deploy-production.html">Production deployment</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li></ul></div>
+    <div class="foot-col"><h2>Trust</h2><ul><li><a href="../docs/security.html">Security and evidence</a></li><li><a href="../docs/verifying.html">Verifying a document</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../docs/architecture.html">Architecture</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../docs/contributing.html">Contributing</a></li><li><a href="../brand.html">Brand and attribution</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p><p>Pre-release software: v0.1.0 is for evaluation, not yet for production agreements.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

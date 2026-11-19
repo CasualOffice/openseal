@@ -80,6 +80,7 @@ by saying so.
 | 69 | 2026-11-20 | Chose, from options: sandbox accounts follow model (a), DocuSign's: a permanently marked sandbox workspace, sealed with a separate test key whose certificate says it is not for agreements, a banner on every page and email, not metered, keys prefixed `osk_test_`. Written as ADR-041, Accepted; built end to end in slice 8 | `VS-08D`, ADR-041, [76](76-SLICE-8-EVIDENCE.md) |
 | 70 | 2026-11-20 | SDK publishing: "Not now." The TypeScript and Python SDKs stay in the repository with no release step yet; slice 8 closes on the SDKs built and tested in the repository; M4's "SDKs released as beta" item stays open with its own row | `VS-08E`, `VS-08J`, [76](76-SLICE-8-EVIDENCE.md), docs/06 M4 |
 | 71 | 2026-11-20 | Approved adding the SDK drift check (`tools/build-sdks.py --check`) to CI's `checks` job | `VS-08E`, `.github/workflows/ci.yml` |
+| 72 | 2026-11-20 | "The docs are not how API docs appear to be… have you seen any API docs of any site… and deployment docs": rebuild the website's API reference and deployment documentation to the standard of Stripe, DocuSign, GitHub and Twilio developer docs (site and docs only, no product code) | `SITE-12`, `tools/build-api-docs.py`, `site/_src/docs/` |
 
 ## Inherited working rules
 

@@ -65,7 +65,7 @@ python3 -I tools/serve-webapp.py
       <h2>Deploying for real</h2>
       <p>The Compose stack is for evaluation and development: it makes its own keys and certificate authority. A production deployment needs a trusted document-signing certificate in an HSM, real timestamp authorities, a sending domain for email, and the rest of the checklist.</p>
     </div>
-    <div class="cta-row"><a class="btn btn-secondary" href="docs/self-hosting.html">Production checklist<span class="btn-icon">{{icon:arrow-right:16}}</span></a></div>
+    <div class="cta-row"><a class="btn btn-secondary" href="docs/deploy-production.html">Production deployment guide<span class="btn-icon">{{icon:arrow-right:16}}</span></a></div>
   </div>
   <ul class="facts">
     <li data-claim><span class="cell-icon">{{icon:package}}</span><strong>Release images</strong><span>v0.1.0's images were built from the tag with pinned base images, and each is signed with an SBOM and a provenance attestation. The Compose stack around them generates development keys; production keys and certificates are yours to supply.</span>{{claim:deployment|your keys, certificates and timestamp authorities}}</li>

@@ -1,0 +1,100 @@
+<!--meta {"title": "Troubleshooting", "description": "Common OpenSeal deployment failures and how to fix them: ports, services that will not start, keyd unreachable or refusing, timestamp authorities, email, envelopes stuck completing, and what the logs show."} -->
+<h1>Troubleshooting</h1>
+<p class="lede">What commonly goes wrong when deploying OpenSeal, what the logs show for it, and how to fix it. Every service writes one JSON object per line, so most answers start with a <code>grep</code>.</p>
+
+<h2 id="first-look">First look</h2>
+<pre><code>docker compose ps                                    # which service is not healthy, or restarting
+docker compose logs --tail 50 SERVICE                # its last lines
+docker compose logs | grep '"event":"start_failed"'  # why a service would not start</code></pre>
+<p>On the production profile add <code>-f deploy/compose.production.yml</code> (and the release's <code>compose.release.yml</code>) to every command. A service that does not start writes one <code>start_failed</code> line with the setting that failed in <code>error</code> and, when there is one, the error code in <code>code</code>:</p>
+<pre><code>{"ts":"2026-11-20T09:30:00Z","level":"ERROR","service":"worker","event":"start_failed","error":"…","code":"CS-KEY-0013"}</code></pre>
+<p>Error codes are listed in the <a href="https://github.com/CasualOffice/openseal/blob/main/docs/20-ERROR-CODE-REGISTRY.md">error code registry</a>. Logs never contain names, email addresses, client addresses, tokens or document text, so they are safe to share when you ask for help; still check before you paste.</p>
+
+<h2 id="ports">The port is already in use</h2>
+<p><strong>Symptom:</strong> <code>docker compose up</code> fails with <code>Bind for 127.0.0.1:8080 failed: port is already allocated</code> (or 8025 for Mailpit).</p>
+<p><strong>Fix:</strong> stop what holds the port, or move OpenSeal's: <code>OPENSEAL_HTTP_PORT=8081 docker compose up -d --wait</code> (<code>OPENSEAL_MAIL_PORT</code> for Mailpit). The evaluation stack's public URL follows <code>OPENSEAL_HTTP_PORT</code>, so links in emails stay right. Ports bind to <code>127.0.0.1</code> only; to reach the stack from another machine, put a TLS proxy in front.</p>
+
+<h2 id="wait-timeout">docker compose up --wait never finishes</h2>
+<p><strong>Look at</strong> <code>docker compose ps</code>: the service still <code>starting</code> or <code>unhealthy</code> is the cause, and its dependants wait for it.</p>
+<ul>
+  <li><code>migrate</code> <code>exited (1)</code>: the database was not reachable, or a migration failed. Its log names the migration. A restore target must be empty before <code>migrate</code> ever runs.</li>
+  <li><code>server</code> unhealthy: read its <code>start_failed</code> line. The usual causes are a missing <code>OPENSEAL_MFA_KEY</code> outside development, an <code>http://</code> public URL without the development switch, or a malformed key.</li>
+  <li><code>clamav</code> starting: it loads its signatures for up to a few minutes after a start and needs about 1 GB of memory.</li>
+  <li>Production profile: <code>keyd</code> or <code>worker</code> restarting with <code>CS-KEY-0014</code>: the manifests are not recorded yet, or a setting changed. See <a href="#manifest">below</a>.</li>
+</ul>
+
+<h2 id="required-variable">Compose says a variable is required</h2>
+<p><strong>Symptom:</strong> <code>required variable OPENSEAL_PUBLIC_URL is missing a value: set OPENSEAL_PUBLIC_URL (https)</code>.</p>
+<p><strong>Fix:</strong> the production profile refuses to render until every required variable is set. The <a href="configuration.html#production-profile">configuration reference</a> lists them; set them in your environment or an <code>--env-file</code>.</p>
+
+<h2 id="manifest">keyd or the worker refuses to start: CS-KEY-0014</h2>
+<p><strong>Log:</strong> <code>start_failed</code> with <code>"code":"CS-KEY-0014"</code> naming a setting, and a <code>security_configuration</code> line whose <code>manifest</code> is not <code>matches</code>.</p>
+<p><strong>Cause:</strong> a security setting differs from the recorded manifest, is set but not listed, or is listed but not set. <code>init-secrets.sh</code> leaves both manifests empty, so this is expected until you record them. After a change you did not intend, find what changed first.</p>
+<p><strong>Fix:</strong> after an approved change, record the manifests again and restart:</p>
+<pre><code>docker compose $F run --rm --no-deps keyd config-manifest | sudo tee "$OPENSEAL_SECRETS_DIR/keyd-config-manifest" &gt; /dev/null
+docker compose $F run --rm --no-deps worker config-manifest | sudo tee "$OPENSEAL_SECRETS_DIR/worker-config-manifest" &gt; /dev/null</code></pre>
+
+<h2 id="keyd-unreachable">keyd is unreachable: CS-KEY-0011</h2>
+<p><strong>Log:</strong> the worker logs <code>keyd_unavailable</code> at start, and later <code>transport.backend_failed</code> with <code>CS-KEY-0011</code>; envelopes wait in <code>completing</code>; a <code>seal_failed</code> alert repeats.</p>
+<p><strong>Cause:</strong> keyd is stopped, still starting, or not on the worker's network (connection refused, reset or timed out, or the name does not resolve). This is treated as an outage: the worker keeps running every other job and retries the seal every 60 seconds.</p>
+<p><strong>Fix:</strong> bring keyd back (<code>docker compose ps keyd</code>, then its log). The next seal attempt completes the envelope; nothing needs to be re-sent.</p>
+
+<h2 id="keyd-refuses">keyd refuses the worker: CS-KEY-0013, CS-KEY-0001</h2>
+<p><strong>Log:</strong> the worker stops at start with <code>start_failed</code> and <code>CS-KEY-0013</code> (the TLS handshake was refused), or <code>CS-KEY-0001</code> (keyd answered, but the caller is not on its allow list); keyd logs <code>transport.caller_refused</code> with <code>reason</code> <code>handshake</code> or <code>not_allowed</code> and the certificate's fingerprint.</p>
+<p><strong>Cause:</strong> a configuration error, not an outage: <code>OPENSEAL_KEYD_CA</code> is not the CA keyd's certificate chains to, <code>OPENSEAL_KEYD_SERVER_NAME</code> is not the name in keyd's certificate, or the worker's client certificate is untrusted, expired or missing from <code>keyd-allow-list</code>.</p>
+<p><strong>Fix:</strong> compare the fingerprint keyd logged with <code>keyd-allow-list</code>; check the certificates' dates with <code>openssl x509 -noout -dates -in worker-client-chain.pem</code>. After rotating an identity, record the manifests and restart keyd, then the worker.</p>
+
+<h2 id="keyd-hsm">keyd cannot use the HSM: CS-KEY-0003, CS-KEY-0006</h2>
+<p><strong>Log:</strong> keyd's <code>start_failed</code> with <code>CS-KEY-0003</code> (the HSM is unavailable, the PIN was refused, or a PKCS#11 call failed) or <code>CS-KEY-0006</code> (no usable certificate, the key not found or ambiguous in the token, or the key does not match the certificate).</p>
+<p><strong>Fix:</strong> check that <code>OPENSEAL_PKCS11_MODULE</code> is inside <code>OPENSEAL_PKCS11_DIR</code> and loads in a slim Linux container, that the token label and key label are exact, that <code>keyd-pkcs11-pin</code> holds the PIN with no trailing newline your HSM rejects, that a network HSM is reachable from keyd's network, and that <code>seal-chain.pem</code> starts with the certificate of that key.</p>
+
+<h2 id="seal-token">Seals fail with CS-KEY-0015</h2>
+<p><strong>Log:</strong> keyd records <code>CS-KEY-0015</code>; the worker logs <code>transport.backend_failed</code> with that code and retries every 60 seconds.</p>
+<p><strong>Cause:</strong> keyd holds a seal token key and the database has none, a different one, or a clock more than five minutes from keyd's.</p>
+<p><strong>Fix:</strong> write the same key to <code>keyd-seal-token-key</code> and <code>migrate-seal-token-key</code>, run <code>docker compose $F run --rm migrate</code> (it installs the key), restart keyd, and keep both hosts' clocks on NTP.</p>
+
+<h2 id="tsa">The timestamp authority fails: CS-WRK-0018, CS-SEAL-0005</h2>
+<p><strong>Log:</strong> <code>transport.backend_failed</code> with <code>"backend":"tsa"</code>, the TSA's <code>index</code> in your list and a <code>reason</code>: <code>connect</code>, <code>tls</code>, <code>timeout</code>, <code>status</code>, <code>answer</code> or <code>address_refused</code> (the URL is never logged). The worker tries the next TSA in the list; when none answers, the seal fails and is retried.</p>
+<ul>
+  <li><code>connect</code>, <code>timeout</code>: the worker cannot reach it. On the production profile only the worker has a route out, through the <code>egress</code> network; check your firewall.</li>
+  <li><code>tls</code>: the TSA's HTTPS certificate does not verify.</li>
+  <li><code>answer</code> or <code>CS-SEAL-0005</code>: the token is not usable. A TSA whose tokens identify its certificate with ESSCertID v1 (SHA-1), such as FreeTSA, is refused.</li>
+  <li>The seal is made but fails its own check: <code>trust-anchors.pem</code> lacks the TSA's root or the seal certificate's root. Add both.</li>
+</ul>
+<p>Test a TSA before using it: <code>OPENSEAL_INTEROP_NETWORK=1 python3 tools/interop/interop.py check --tsa-url URL --tsa-root ROOT.pem</code>.</p>
+
+<h2 id="email">Emails are not delivered</h2>
+<ul>
+  <li><strong>Evaluation stack:</strong> nothing leaves the machine; every email is in Mailpit at <a href="http://localhost:8025">http://localhost:8025</a>.</li>
+  <li><strong>Worker log shows SMTP errors:</strong> check <code>OPENSEAL_SMTP_HOST</code>, <code>OPENSEAL_SMTP_PORT</code> (587 for STARTTLS), the user and the <code>smtp-password</code> file. The profile sets <code>OPENSEAL_SMTP_SECURITY=starttls</code>, so the relay must offer STARTTLS.</li>
+  <li><strong>Accepted by the relay but not received:</strong> look at SPF, DKIM and DMARC for the <code>OPENSEAL_MAIL_FROM</code> domain, and at the relay's bounce reports. A bounced invitation shows on the envelope's recipient.</li>
+  <li><strong>Text-message or voice codes fail with CS-WRK-0013:</strong> no SMS gateway is configured (<code>OPENSEAL_SMS_GATEWAY_URL</code>).</li>
+</ul>
+
+<h2 id="completing">An envelope stays in completing</h2>
+<p>Every signer has finished, but the envelope has not reached <code>completed</code>. The seal job is waiting on something; nothing sealed is served until it completes.</p>
+<ul>
+  <li>A <code>seal_failed</code> alert with <code>CS-SEAL-0001</code> or <code>CS-KEY-*</code>: keyd, see above. The job retries every 60 seconds.</li>
+  <li>Retries with <code>CS-BLOB-0001</code>: the object store refuses writes.</li>
+  <li><code>CS-WRK-0020</code>: a sandbox workspace's envelope, and no sandbox key is configured.</li>
+  <li>A <code>job_dead</code> alert: the job gave up on a failure no retry cures. Fix the cause, then queue it again as in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/65-RUNNING-IT.md">docs/65 §Failure recovery</a>; a seal already stored is read back, never made twice.</li>
+</ul>
+
+<h2 id="uploads">Uploads are refused</h2>
+<ul>
+  <li><code>413 CS-API-0006</code>: over the size limit (50 MiB a document; 70 MiB request body). At your edge proxy, allow bodies up to 280 MB.</li>
+  <li><code>422 CS-PDF-*</code>: the PDF could not be admitted (encrypted without a password, too many pages, malformed); the code says which.</li>
+  <li><code>422 CS-SCAN-0001</code>: ClamAV found malware; recorded in the admin log as <code>upload.malware_refused</code>.</li>
+  <li><code>503 CS-SCAN-0002</code>: ClamAV could not answer (starting, unreachable, timed out). Wait for it to be healthy.</li>
+</ul>
+
+<h2 id="sign-in">Signing in fails</h2>
+<ul>
+  <li><strong>Evaluation stack in a browser on another machine:</strong> the stack sends cookies over plain HTTP for <code>localhost</code> only. Use <code>http://localhost:8080</code> on the same machine.</li>
+  <li><strong>OAuth access tokens answer <code>401 CS-AUTH-0002</code> after a restart:</strong> the token signing key changed. Swapping it straight away invalidates every token it signed; rotate it with the previous key mounted (<a href="deploy-production.html#rotations">Rotations</a>). Likewise never replace <code>OPENSEAL_MFA_KEY</code> or the password pepper without their runbooks.</li>
+  <li><strong>The proxy's address is recorded instead of the client's:</strong> <code>OPENSEAL_TRUSTED_PROXIES</code> does not cover the <code>edge</code> network, or your edge does not send <code>X-Forwarded-For</code>.</li>
+  <li><strong>429 CS-API-0003:</strong> rate limited; ten sign-in attempts a minute per name. Wait for <code>Retry-After</code>.</li>
+</ul>
+
+<h2 id="get-help">Getting help</h2>
+<p>Open an issue on <a href="https://github.com/CasualOffice/openseal/issues">GitHub</a> with the release, which stack, the <code>start_failed</code> or failing lines and the request id (<code>X-Request-Id</code>) of a failing API call. Report security problems privately, as the <a href="../security.html">security policy</a> says.</p>

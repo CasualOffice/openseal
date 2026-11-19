@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Production deployment | OpenSeal</title>
+<meta name="description" content="Deploy OpenSeal with the hardened production profile, step by step: host, DNS and TLS, secrets, the seal key in an HSM, timestamps, email, database and storage, signed images, backups, upgrades, monitoring, rotations and the production checklist.">
+<meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Production deployment | OpenSeal">
+<meta property="og:description" content="Deploy OpenSeal with the hardened production profile, step by step: host, DNS and TLS, secrets, the seal key in an HSM, timestamps, email, database and storage, signed images, backups, upgrades, monitoring, rotations and the production checklist.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/ui/geist-1.3.1-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="120" height="24">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="120" height="24">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#product">Product</a><a href="../verify.html">Verify</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../changelog.html">Changelog</a><a href="../download.html">Download</a></nav>
+    <div class="header-actions">
+      <button type="button" class="search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="search-open__label">Search</span><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="header-gh" href="https://github.com/CasualOffice/openseal">GitHub</a>
+      <a class="btn btn-strong btn-sm header-cta" href="../app/app.html#/signin">Try the demo</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#product">Product</a><a href="../verify.html">Verify</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../changelog.html">Changelog</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a class="menu-cta" href="../app/app.html#/signin">Try the demo<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="docs-main">
+<div class="wrap docs-layout">
+  <aside class="docs-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Get started</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li><li><a href="first-envelope.html">Sending your first envelope</a></li></ul><h2>Guides</h2><ul><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li><li><a href="webhooks.html">Webhooks</a></li><li><a href="administration.html">Administration</a></li></ul><h2>Deploy</h2><ul><li><a href="self-hosting.html">Deployment overview</a></li><li><a href="deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="deploy-production.html" aria-current="page">Production deployment</a></li><li><a href="configuration.html">Configuration reference</a></li><li><a href="troubleshooting.html">Troubleshooting</a></li></ul><h2>API reference</h2><ul><li><a href="api.html">API overview</a></li><li class="docs-nav__sub"><a href="api-envelopes.html">Envelopes</a></li><li class="docs-nav__sub"><a href="api-recipients.html">Recipients</a></li><li class="docs-nav__sub"><a href="api-documents.html">Documents</a></li><li class="docs-nav__sub"><a href="api-templates.html">Templates</a></li><li class="docs-nav__sub"><a href="api-webhooks.html">Webhooks</a></li><li class="docs-nav__sub"><a href="api-objects.html">Objects</a></li></ul><h2>Reference</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li><li><a href="contributing.html">Contributing</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li><li><a href="first-envelope.html">Sending your first envelope</a></li></ul><h2>Guides</h2><ul><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li><li><a href="webhooks.html">Webhooks</a></li><li><a href="administration.html">Administration</a></li></ul><h2>Deploy</h2><ul><li><a href="self-hosting.html">Deployment overview</a></li><li><a href="deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="deploy-production.html" aria-current="page">Production deployment</a></li><li><a href="configuration.html">Configuration reference</a></li><li><a href="troubleshooting.html">Troubleshooting</a></li></ul><h2>API reference</h2><ul><li><a href="api.html">API overview</a></li><li class="docs-nav__sub"><a href="api-envelopes.html">Envelopes</a></li><li class="docs-nav__sub"><a href="api-recipients.html">Recipients</a></li><li class="docs-nav__sub"><a href="api-documents.html">Documents</a></li><li class="docs-nav__sub"><a href="api-templates.html">Templates</a></li><li class="docs-nav__sub"><a href="api-webhooks.html">Webhooks</a></li><li class="docs-nav__sub"><a href="api-objects.html">Objects</a></li></ul><h2>Reference</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li><li><a href="contributing.html">Contributing</a></li></ul></nav>
+  </aside>
+  <article class="docs-article prose">
+    <nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li>Deploy</li><li aria-current="page">Production deployment</li></ol></nav>
+<h1>Production deployment</h1>
+<p class="lede">The hardened production profile, <code>deploy/compose.production.yml</code>, step by step: from an empty Linux host to a running deployment that seals with your own key, with backups, monitoring and a plan for rotating every secret.</p>
+
+<div class="callout warn"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg><div><p><strong>Pre-release.</strong> v0.1.0 is for evaluation and for rehearsing this deployment, not yet for production agreements. Following these steps does not make signatures legally valid or a deployment compliant with any regulation: that depends on your certificates, your processes and your counsel (see the <a href="#checklist">checklist</a>).</p></div></div>
+
+<div class="callout"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg><div><p>Every command and file on this page comes from the repository at the release tag: the profile, <code>deploy/production/</code> and the checks are versioned with the images. Run them from a checkout of the same tag you deploy. The full runbooks behind each step are in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/65-RUNNING-IT.md">docs/65, Running it</a>.</p></div></div>
+
+<h2 id="what-you-get">What the profile gives you</h2>
+<ul>
+  <li><strong>Hardened containers.</strong> Every service runs as a named non-root user with a read-only root file system, every capability dropped, <code>no-new-privileges</code>, memory, CPU and process limits, no core dumps, bounded logs and a health check. <code>tools/check-deploy.py</code> checks each of these rules over the rendered file on every CI run.</li>
+  <li><strong>Secrets as files.</strong> Docker secrets under <code>/run/secrets/</code>, each mounted only into the services that read it; never environment values.</li>
+  <li><strong>TLS between services.</strong> PostgreSQL serves TLS 1.3 only and clients verify it (<code>sslmode=verify-full</code>); the object store serves TLS from an internal CA; keyd is mutual TLS.</li>
+  <li><strong>Isolated networks.</strong> The database, object store and keyd sit on internal networks with no route out; only the worker reaches the internet (SMTP, timestamp authorities, webhooks).</li>
+  <li><strong>Configuration integrity.</strong> keyd and the worker refuse to start when their security settings differ from a recorded manifest.</li>
+  <li><strong>Zero-downtime restarts.</strong> Two server replicas behind HAProxy, which takes a draining replica out of rotation before it stops.</li>
+</ul>
+
+<h2 id="host">1. Prepare the host</h2>
+<ul>
+  <li>A Linux host on x86-64 with Docker Engine and Compose v2. The images are built for <code>linux/amd64</code>; arm64 hosts run them under emulation or build from source.</li>
+  <li>Memory for the profile's limits, which add up to about 13 GB (PostgreSQL 2 GB, object store 2 GB, two server replicas 2 GB each, worker 4 GB, keyd 512 MB, proxy 256 MB), plus the operating system. Disk for PostgreSQL and the documents, with room to grow.</li>
+  <li>Root on the host, to write the secret files with the right owners.</li>
+  <li>Outbound network for the worker: your SMTP relay, your timestamp authorities, webhook receivers. keyd needs a route to your HSM if it is a network HSM.</li>
+  <li><code>openssl</code> (to generate secrets), <code>git</code>, and for verifying images <code>cosign</code> 3 and the GitHub CLI.</li>
+</ul>
+<pre><code>git clone https://github.com/CasualOffice/openseal /srv/openseal/src
+cd /srv/openseal/src
+git checkout v0.1.0</code></pre>
+
+<h2 id="dns-tls">2. DNS and TLS</h2>
+<p>Choose the address people and integrations will use, for example <code>https://sign.example.com</code>, and point its DNS at your edge. TLS to browsers terminates at your own edge proxy or load balancer (TLS 1.2 or later, 1.3 preferred, with HSTS), which forwards to the <code>proxy</code> service on the host's loopback address, port <code>8080</code> (<code>OPENSEAL_HTTP_PORT</code> moves it). The server refuses to start with an <code>http://</code> public URL.</p>
+<p>The edge must pass the client's address in <code>X-Forwarded-For</code> (or <code>Forwarded</code>): it goes into the evidence. An example for nginx, to adapt to your edge:</p>
+<pre><code>server {
+    listen 443 ssl;
+    http2 on;
+    server_name sign.example.com;
+    ssl_certificate     /etc/ssl/sign.example.com/fullchain.pem;
+    ssl_certificate_key /etc/ssl/sign.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    client_max_body_size 280m;          # one-call envelope create: up to 270 MiB
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
+    }
+}</code></pre>
+<p>Do not log request paths at the edge: signing links carry bearer tokens in their paths. The profile's own proxy logs no request.</p>
+
+<h2 id="secrets">3. Generate the secrets</h2>
+<p>Run <code>init-secrets.sh</code> once, as root, with an empty directory. It writes the deployment's internal TLS (a private CA, and certificates for PostgreSQL, the object store, keyd and the worker), random passwords, the database URLs, the object store identities, the token signing key, the second-factor key, the password pepper, keyd's allow list and keyd's seal token key, each owned by the one container user that reads it and readable by no one else.</p>
+<pre><code>sudo deploy/production/init-secrets.sh /srv/openseal/secrets</code></pre>
+<pre><code>init-secrets: wrote /srv/openseal/secrets
+init-secrets: move /srv/openseal/secrets/offline/internal-ca.key off this host now
+init-secrets: still to add: seal-chain.pem keyd-pkcs11-pin (owner 10001, 0400), trust-anchors.pem, smtp-password (owner 65532, 0400); then record the manifests</code></pre>
+<p>Move <code>offline/internal-ca.key</code> to offline storage now; you need it again only to issue a rotated service identity. The internal CA only authenticates the services to each other: never use it for signing documents.</p>
+<p>Then add the four files only you have:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Secret files you add">
+<table>
+  <thead><tr><th scope="col">File</th><th scope="col">What</th><th scope="col">Owner and mode</th></tr></thead>
+  <tbody>
+    <tr><td><code>seal-chain.pem</code></td><td>Your seal certificate and its intermediates (step 4)</td><td><code>10001</code>, <code>0400</code></td></tr>
+    <tr><td><code>keyd-pkcs11-pin</code></td><td>The HSM user PIN for the seal key's token</td><td><code>10001</code>, <code>0400</code></td></tr>
+    <tr><td><code>trust-anchors.pem</code></td><td>The root of your seal certificate <em>and</em> the root of every timestamp authority you use (step 5)</td><td>readable by <code>65532</code></td></tr>
+    <tr><td><code>smtp-password</code></td><td>Your SMTP relay's password (step 6)</td><td><code>65532</code>, <code>0400</code></td></tr>
+  </tbody>
+</table>
+</div>
+<pre><code>cd /srv/openseal/secrets
+sudo install -o 10001 -g 10001 -m 0400 ~/seal/seal-chain.pem seal-chain.pem
+sudo sh -c 'umask 077; cat &gt; keyd-pkcs11-pin'          # type the PIN, then Ctrl-D
+sudo chown 10001:10001 keyd-pkcs11-pin
+sudo install -o 65532 -g 65532 -m 0444 ~/seal/trust-anchors.pem trust-anchors.pem
+sudo sh -c 'umask 077; cat &gt; smtp-password'            # type the password, then Ctrl-D
+sudo chown 65532:65532 smtp-password</code></pre>
+<p><strong>How the services read secrets.</strong> Every secret setting has a file form: <code>NAME_FILE</code> names a file holding the value, and the profile uses only that form, pointing at <code>/run/secrets/&lt;name&gt;</code> (for example <code>OPENSEAL_DATABASE_URL_FILE=/run/secrets/database-url</code>). Setting both <code>NAME</code> and <code>NAME_FILE</code> is an error (<code>CS-KEY-0005</code>), so a stray environment value can never override the file. <code>docker inspect</code> shows only paths. The <a href="configuration.html">configuration reference</a> marks every secret.</p>
+
+<h2 id="seal-key">4. The seal key in your HSM</h2>
+<p>The seal is the signature OpenSeal applies to every completed document. Its key never leaves your HSM: keyd signs with it through PKCS#11 and only for the worker, over mutual TLS, recording every signature in its own hash-chained log.</p>
+<ol class="steps">
+  <li><p><strong>Generate the key in the HSM</strong> with your vendor's tools (an EC P-256 or RSA key), and give it a label.</p></li>
+  <li><p><strong>Obtain a document-signing certificate</strong> for it from a CA your relying parties trust: for example a member of Adobe's Approved Trust List, so PDF readers show the seal as valid, or a qualified seal certificate where you need eIDAS qualified seals. Put the certificate and its intermediates, leaf first, in <code>seal-chain.pem</code>.</p></li>
+  <li><p><strong>Tell the profile where the library and key are.</strong> The directory holding your vendor's PKCS#11 library is mounted read-only into keyd at the same path:</p>
+<pre><code>export OPENSEAL_PKCS11_DIR=/opt/hsm
+export OPENSEAL_PKCS11_MODULE=/opt/hsm/lib/libvendor-pkcs11.so
+export OPENSEAL_PKCS11_TOKEN=openseal
+export OPENSEAL_PKCS11_KEY_LABEL=openseal-seal-2026
+export OPENSEAL_SEAL_NAME="Example Corp"            # the signer name readers show
+export OPENSEAL_SEAL_REASON="Sealed on completion"   # the default</code></pre></li>
+  <li><p><strong>A network HSM</strong> needs keyd on a network that routes to the HSM alone. Add it as an external network for keyd only, in an override file beside the profile:</p>
+<pre><code># compose.hsm.yml: docker compose -f deploy/compose.production.yml -f compose.hsm.yml …
+services:
+  keyd:
+    networks: [signing, hsm]
+networks:
+  hsm: {external: true, name: hsm-net}</code></pre></li>
+</ol>
+<p>Never use a key file in production: keyd refuses one unless <code>OPENSEAL_DEV_INSECURE_KEY=1</code>, and <code>tools/check-deploy.py</code> refuses that switch. Sandbox workspaces need a second key whose certificate says it is not for agreements (<code>OPENSEAL_KEYD_SANDBOX_*</code>); without it their envelopes wait unsealed and the operator is alerted.</p>
+
+<h2 id="tsa">5. Timestamp authorities</h2>
+<p>Every seal carries an RFC 3161 timestamp. List at least two authorities with a service level, tried in order (qualified ones if you need eIDAS qualified time):</p>
+<pre><code>export OPENSEAL_TSA_URLS=https://tsa-1.example.net/,https://tsa-2.example.net/</code></pre>
+<p><code>trust-anchors.pem</code> must hold the root of each TSA as well as the root of your seal certificate: CAs and TSAs hand out certificates only up to their issuing CA, and the long-term seal profiles take the root from these anchors when they collect revocation data. Once the platform console is in use, key custodians manage the TSA list there, two people per change; the worker then reads it from the database and uses <code>OPENSEAL_TSA_URLS</code> only while none is configured.</p>
+<p>Rehearse with your production TSA before going live: <code>OPENSEAL_INTEROP_NETWORK=1 python3 tools/interop/interop.py check --tsa-url URL --tsa-root ROOT.pem</code>. DigiCert's TSA passed on 2026-11-14. A TSA whose tokens use ESSCertID v1 (SHA-1), such as FreeTSA, is refused with <code>CS-SEAL-0005</code>.</p>
+
+<h2 id="email">6. Email</h2>
+<p>The worker sends invitations, reminders and completions through your SMTP relay over STARTTLS (fixed in the profile):</p>
+<pre><code>export OPENSEAL_MAIL_FROM=no-reply@sign.example.com
+export OPENSEAL_MAIL_FROM_NAME="Example Corp Signatures"
+export OPENSEAL_MAIL_DOMAIN=sign.example.com
+export OPENSEAL_ABUSE=abuse@example.com          # named in every email
+export OPENSEAL_SMTP_HOST=smtp.example.net
+export OPENSEAL_SMTP_PORT=587
+export OPENSEAL_SMTP_USER=openseal               # the password is the smtp-password file</code></pre>
+<p>Publish SPF, DKIM and DMARC (<code>p=quarantine</code> or stricter) for the sending domain, and handle bounces. Text-message and voice codes need an HTTPS gateway you run or rent (<code>OPENSEAL_SMS_GATEWAY_URL</code>, <code>OPENSEAL_SMS_GATEWAY_SECRET</code>); unset, they are never sent.</p>
+
+<h2 id="database-storage">7. PostgreSQL and object storage</h2>
+<p>The profile runs PostgreSQL 17 and a SeaweedFS object store on internal networks, both over TLS from the internal CA, with their data in the <code>postgres</code> and <code>s3</code> volumes. Put those volumes on encrypted disks. The application connects as a role bound by row-level security that cannot update or delete audit events; migrations run as the schema owner, separately.</p>
+<ul>
+  <li><strong>Database:</strong> keep point-in-time recovery (WAL archiving) as well as the backups of <a href="#backups">step 11</a>. For a managed PostgreSQL (15 or later), point the <code>database-url</code> and <code>migrate-database-url</code> files at it with <code>sslmode=verify-full</code>.</li>
+  <li><strong>Documents:</strong> blobs are content-addressed and written once. On a managed S3-compatible store, turn on versioning and encryption, and Object Lock in compliance mode for regulated tenants; set <code>OPENSEAL_S3_ENDPOINT</code>, <code>OPENSEAL_S3_BUCKET</code>, <code>OPENSEAL_S3_REGION</code> and, for AWS, <code>OPENSEAL_S3_VIRTUAL_HOST=1</code> on the server and the worker.</li>
+</ul>
+
+<h2 id="images">8. Use the signed images</h2>
+<p>Each release publishes <code>ghcr.io/casualoffice/openseal-server</code>, <code>-worker</code> and <code>-keyd</code>. Every image digest is signed with keyless cosign by the repository's release workflow at the release tag (recorded in the public Rekor log) and has a GitHub build provenance attestation; the release's assets are listed in <code>SHA256SUMS</code>, which is signed the same way. Verify all of it before you run anything:</p>
+<pre><code>V=v0.1.0
+REPO=CasualOffice/openseal
+gh release download "$V" -R "$REPO" -D "openseal-$V"; cd "openseal-$V"
+ID="https://github.com/$REPO/.github/workflows/release.yml@refs/tags/$V"
+ISSUER=https://token.actions.githubusercontent.com
+
+# 1. The checksum list was signed by this repository's release workflow at this tag; every asset matches it.
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+  --certificate-identity "$ID" --certificate-oidc-issuer "$ISSUER"
+sha256sum -c SHA256SUMS                       # macOS: shasum -a 256 -c SHA256SUMS
+
+# 2. Each image digest is signed by the same identity and has build provenance from this repository.
+for ref in $(jq -r '.images[] | "\(.repository)@\(.digest)"' images.json); do
+  cosign verify "$ref" --certificate-identity "$ID" --certificate-oidc-issuer "$ISSUER" &gt; /dev/null &amp;&amp; echo "signed: $ref"
+  gh attestation verify "oci://$ref" -R "$REPO" --signer-workflow "$REPO/.github/workflows/release.yml"
+done</code></pre>
+<p>The identity is exact: <code>https://github.com/CasualOffice/openseal/.github/workflows/release.yml@refs/tags/v0.1.0</code>, issued by <code>https://token.actions.githubusercontent.com</code>. A signature from any other workflow, branch or repository fails. To accept any release tag, use <code>--certificate-identity-regexp '^https://github\.com/CasualOffice/openseal/\.github/workflows/release\.yml@refs/tags/v'</code> instead. If the packages are not public yet, <code>docker login ghcr.io</code> with a GitHub account that can read them first.</p>
+<p>The release's <code>compose.release.yml</code> pins <code>keyd</code>, <code>migrate</code>, <code>server</code> and <code>worker</code> to <code>repository:tag@sha256:…</code>, so Docker pulls by digest and a moved tag changes nothing; <code>openseal-release.env</code> sets <code>OPENSEAL_IMAGE_PREFIX</code> and <code>OPENSEAL_VERSION</code>. Check the merged profile against the hardening rules:</p>
+<pre><code>cd /srv/openseal/src
+F="-f deploy/compose.production.yml -f openseal-v0.1.0/compose.release.yml --env-file openseal-v0.1.0/openseal-release.env"
+docker compose $F config --format json --no-interpolate &gt; merged.json
+python3 -I tools/check-deploy.py --json merged.json</code></pre>
+
+<h2 id="configure">9. Set the remaining variables and record the manifests</h2>
+<p>Besides the variables of steps 4 to 6, the profile requires these (Compose names any that is missing):</p>
+<pre><code>export OPENSEAL_SECRETS_DIR=/srv/openseal/secrets
+export OPENSEAL_PUBLIC_URL=https://sign.example.com
+export OPENSEAL_TRUSTED_PROXIES=172.16.0.0/12      # narrowed below</code></pre>
+<p><code>OPENSEAL_TRUSTED_PROXIES</code> must cover the <code>edge</code> network, from which <code>proxy</code> forwards. Docker picks its subnet when the stack is first created; start with Docker's default bridge range as above, then narrow it to the subnet <code>docker network inspect openseal-production_edge</code> reports and restart the replicas one at a time. Every variable is in the <a href="configuration.html#production-profile">configuration reference</a>.</p>
+<p>keyd and the worker refuse to start (<code>CS-KEY-0014</code>) until their security settings match a recorded manifest; <code>init-secrets.sh</code> leaves both manifests empty on purpose. Record them from the configuration you just set, into the secrets directory:</p>
+<pre><code>docker compose $F run --rm --no-deps keyd config-manifest | sudo tee "$OPENSEAL_SECRETS_DIR/keyd-config-manifest" &gt; /dev/null
+docker compose $F run --rm --no-deps worker config-manifest | sudo tee "$OPENSEAL_SECRETS_DIR/worker-config-manifest" &gt; /dev/null</code></pre>
+<p>A manifest holds digests of the settings (certificates, allow lists, the PKCS#11 library's bytes, the TSA list, the public URL, …), never a PIN, key or password. Record it again after every approved change; a change that was not recorded stops the daemon at its next start, naming the setting.</p>
+
+<h2 id="start">10. Start, create the first administrator, and check</h2>
+<pre><code>docker compose $F up -d --wait</code></pre>
+<p><code>migrate</code> runs first and exits; then the server replicas, keyd, the worker and the proxy start and report healthy. Create the first administrator (once; refused as soon as an organization exists):</p>
+<pre><code>docker compose $F exec -e OPENSEAL_ADMIN_PASSWORD='a long passphrase of your own' server \
+    casual-sign-server bootstrap "Example Workspace" admin@example.com "Example Admin"</code></pre>
+<p>Then check each layer:</p>
+<pre><code>docker compose $F ps                                        # every service healthy; migrate exited 0
+curl -fsS https://sign.example.com/.well-known/jwks.json    # through your edge
+docker compose $F exec proxy wget -q -S -O /dev/null http://server:9090/readyz     # HTTP/1.1 204
+docker compose $F exec proxy wget -q -S -O /dev/null http://server-2:9090/readyz   # HTTP/1.1 204
+docker compose $F logs keyd worker | grep -E '"event":"(security_configuration|start_failed)"'</code></pre>
+<p>Each daemon logs one <code>security_configuration</code> line with <code>"manifest":"matches"</code>, and no <code>start_failed</code>. Finally, send an envelope to yourself, sign it, and verify the sealed PDF on the <a href="../verify.html">Verify page</a> with your seal certificate's root as the trusted certificate; it should also show as valid in a PDF reader that trusts your CA. Upload the EICAR test file if you run malware scanning: it must be refused (<code>CS-SCAN-0001</code>).</p>
+
+<h2 id="backups">11. Backups and the restore drill</h2>
+<p>A backup is one consistent snapshot of the database, every document blob and keyd's operation log, encrypted to a recipient certificate (CMS, AES-256-GCM) and signed with a separate Ed25519 key. It never holds a private key: the seal key stays in the HSM (back it up the HSM's way), and the token, second-factor and pepper keys live in your secret store.</p>
+<pre><code># Once: two key pairs, separate from every platform key.
+python3 -I tools/backup/openseal_backup.py keygen backup-keys
+#   backup-recipient.pem  the backup host: encrypts (public)
+#   backup-signing.key    the backup host only: signs manifests (mode 0600)
+#   backup-signing.pub    everyone who checks or restores backups
+#   backup-recipient.key  offline, with the people who restore: the only key that decrypts</code></pre>
+<p>Take backups on a schedule (hourly with <code>--keep 48</code>, for example) and copy each to off-site, write-once storage. The tool's <code>--compose-project</code> mode runs inside the evaluation stack's containers and is what the drill exercises. On the production profile, whose database and object store sit on internal networks with no published port, run it with <code>--direct</code> from a host or container that can reach them (attached to the <code>data</code> network), with the PostgreSQL client tools, <code>casual-sign-server</code> and <code>casual-sign-keyd</code>; the database comes from <code>OPENSEAL_BACKUP_DATABASE_URL_FILE</code> (the schema owner), the store from the server's own <code>OPENSEAL_S3_*</code> variables, keyd's log from <code>--keyd-oplog</code>. A ready-made backup service for the profile is not built yet (<code>HRD-17</code>).</p>
+<pre><code>python3 -I tools/backup/openseal_backup.py create --direct --out /backups \
+    --recipient backup-keys/backup-recipient.pem --signing-key backup-keys/backup-signing.key \
+    --keyd-oplog /path/to/keyd/oplog --keep 48
+python3 -I tools/backup/openseal_backup.py verify /backups/openseal-backup-20261120T020000Z \
+    --verify-key backup-keys/backup-signing.pub</code></pre>
+<p>A restore goes only into a fresh install (an empty database and a keyd that has not started), checks the signature and every file, loads everything in one transaction, then runs <code>verify-evidence</code> over every audit chain and blob. Rehearse it: the repository's drill, <code>tools/backup/drill.sh</code>, backs up a stack, destroys it, restores it into a fresh one and checks that the sealed PDF is byte-identical and the audit chains begin with the same hashes; CI runs it on every push to <code>main</code>. Run a restore drill on your own hardware too, including the HSM's own backup, and time it. The targets are an RPO of the backup interval (5 minutes with point-in-time recovery) and an RTO of 4 hours, which is a target, not yet measured at production size.</p>
+
+<h2 id="upgrades">12. Upgrades</h2>
+<p>Migrations are forward-only and designed to stay compatible for one release, so old and new replicas can run side by side. Read the release notes, and do not skip a minor version. Verify the new release as in step 8, then run its migrations and recreate the replicas one at a time:</p>
+<pre><code>F="-f deploy/compose.production.yml -f openseal-v0.2.0/compose.release.yml --env-file openseal-v0.2.0/openseal-release.env"
+git checkout v0.2.0
+docker compose $F run --rm migrate
+docker compose $F up -d --no-deps --wait server       # drains, restarts, healthy again
+docker compose $F up -d --no-deps --wait server-2
+docker compose $F up -d --no-deps --wait keyd worker proxy</code></pre>
+<p>Record the manifests again first if the release changes a security setting; keyd and the worker refuse to start on one that does not match. Take a backup before every upgrade.</p>
+
+<h2 id="monitoring">13. Monitoring and health</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Health endpoints and checks">
+<table>
+  <thead><tr><th scope="col">What</th><th scope="col">Where</th><th scope="col">Answers</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET /livez</code></td><td>Each server replica's ops listener, port 9090 (<code>OPENSEAL_OPS_LISTEN</code>), never published</td><td><code>204</code> while the process runs</td></tr>
+    <tr><td><code>GET /readyz</code></td><td>Same</td><td><code>204</code>; <code>503</code> while draining or while the database does not answer. HAProxy checks it every second and takes a replica out after two failures</td></tr>
+    <tr><td>Container health</td><td><code>docker compose ps</code></td><td>Each service's own check: the server's <code>healthcheck</code> command, the worker's heartbeat file (at most 30 seconds old while its database answers), keyd's TLS port</td></tr>
+    <tr><td>Public</td><td><code>GET /.well-known/jwks.json</code></td><td><code>200</code> through your edge: a cheap external probe</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Logs.</strong> The server, worker and keyd write one JSON object per line to standard error, never with a name, an email address, a client address, a token or document text. Ship them off the host with the log-forwarding override (syslog over mutual TLS):</p>
+<pre><code>OPENSEAL_SYSLOG_ADDRESS=tcp+tls://logs.example.internal:6514 \
+OPENSEAL_SYSLOG_CA=/etc/openseal/syslog/ca.pem \
+OPENSEAL_SYSLOG_CERT=/etc/openseal/syslog/client.pem \
+OPENSEAL_SYSLOG_KEY=/etc/openseal/syslog/client.key \
+docker compose $F -f deploy/compose.log-forwarding.yml up -d</code></pre>
+<p>Set <code>OPENSEAL_LOG_PSEUDONYM_KEY</code> so the same client gets the same pseudonym across restarts. Alert on:</p>
+<ul>
+  <li><code>start_failed</code> (any service; its <code>code</code> says why), <code>seal_failed</code> and <code>job_dead</code> (worker);</li>
+  <li><code>transport.backend_failed</code>: keyd or a timestamp authority not answering;</li>
+  <li><code>abnormal_activity</code> and <code>alert.abnormal_activity</code>: bursts of failed sign-ins, denials, mass downloads or voids;</li>
+  <li><code>auth.lockout</code>, <code>auth.mfa</code> with <code>reason: reused</code>, <code>transport.caller_refused</code>;</li>
+  <li><code>development_token_key</code>, <code>development_file_key</code> or <code>seal_token_not_enforced</code>, which must never appear in production;</li>
+  <li>the collector receiving nothing from a service for five minutes, email bounce rate and job backlog.</li>
+</ul>
+<p>OpenTelemetry traces and metrics are not built yet (<code>CON-11</code>).</p>
+
+<h2 id="rotations">14. Rotations</h2>
+<p>Every secret can be rotated while signers keep working; each runbook is exercised by a named test. In outline:</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Rotations">
+<table>
+  <thead><tr><th scope="col">Secret</th><th scope="col">How, in outline</th><th scope="col">Downtime</th></tr></thead>
+  <tbody>
+    <tr><td>Database login</td><td>Create a second login in <code>openseal_app</code>; rewrite <code>database-url</code> in place (<code>cat new &gt; database-url</code>); the services reread it every 30 seconds; retire the old login</td><td>None</td></tr>
+    <tr><td>Object store credentials</td><td>Add a second identity to <code>s3-identities.json</code> and <code>kill -s SIGHUP s3</code>; rewrite the key files; rolling restart of the replicas, restart the worker; remove the old identity</td><td>None</td></tr>
+    <tr><td>API token signing key</td><td>Mount the new key as <code>OPENSEAL_JWT_PREVIOUS_KEY_FILE</code>, rolling restart; swap current and previous, rolling restart; after an hour remove the previous one</td><td>None with two replicas</td></tr>
+    <tr><td>Second-factor key</td><td>The same two-step swap with <code>OPENSEAL_MFA_PREVIOUS_KEY_FILE</code>, then <code>casual-sign-server mfa-reseal</code></td><td>None with two replicas</td></tr>
+    <tr><td>Password pepper</td><td>Mount the current one as <code>OPENSEAL_PASSWORD_PEPPER_PREVIOUS_FILE</code> and the new one as current; hashes are remade at each user's next sign-in</td><td>None</td></tr>
+    <tr><td>keyd and worker identities</td><td>Issue a new worker certificate from the internal CA, add its fingerprint to <code>keyd-allow-list</code>, record the manifests and restart keyd, then switch the worker</td><td>Sealing pauses for a keyd restart; jobs retry</td></tr>
+    <tr><td>Seal key</td><td>Serve the next key beside the current one (<code>OPENSEAL_SEAL_NEXT_ALIAS</code>, <code>OPENSEAL_PKCS11_NEXT_KEY_LABEL</code>); key custodians approve the switch in the console; then make it the only key and record both manifests</td><td>None for signers</td></tr>
+    <tr><td>keyd seal token key</td><td>Write new 32 bytes to both <code>keyd-seal-token-key</code> and <code>migrate-seal-token-key</code>; run <code>migrate</code>; restart keyd</td><td>Seals between the steps retry 60 s later</td></tr>
+    <tr><td>Webhook secrets</td><td>Add the new secret's reference to the subscription (up to four sign each delivery); remove the old once receivers switched</td><td>None</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Restart replicas one at a time: <code>docker compose $F restart server</code>, wait until it is healthy and five seconds more (the drain period), then <code>server-2</code>. The exact commands and the tests behind each runbook are in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/65-RUNNING-IT.md">docs/65 §Rotation</a>.</p>
+
+<h2 id="checklist">15. Production checklist</h2>
+<p>Before you rely on a deployment, confirm each line. The ones about certificates, disclosures and retention are decisions only you and your counsel can make.</p>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Production checklist">
+<table>
+  <thead><tr><th scope="col">Area</th><th scope="col">Do</th></tr></thead>
+  <tbody>
+    <tr><td>Signing key</td><td>A document-signing certificate from a CA your relying parties trust (an AATL member, or a qualified seal certificate for eIDAS), its key generated in your HSM; keyd configured with PKCS#11; never a file key</td></tr>
+    <tr><td>Timestamps</td><td>At least two RFC 3161 TSAs with a service level (qualified if you need eIDAS qualified time); rehearsed with <code>tools/interop/interop.py</code></td></tr>
+    <tr><td>Trust</td><td><code>trust-anchors.pem</code> holds the root of the seal certificate and of every TSA</td></tr>
+    <tr><td>Anchoring</td><td>Daily anchoring of audit chain heads is on by default; to make anchors public, set <code>OPENSEAL_ANCHOR_LOG</code> and publish that file where you cannot quietly rewrite it</td></tr>
+    <tr><td>Email</td><td>SPF, DKIM and DMARC (<code>p=quarantine</code> or stricter) on the sending domain; bounce handling</td></tr>
+    <tr><td>Malware scanning</td><td>The <code>clamav</code> service and <code>OPENSEAL_CLAMD_ADDR</code>; fail-open off; checked with the EICAR file</td></tr>
+    <tr><td>Database</td><td>PostgreSQL 15 or later, encrypted, point-in-time recovery, scheduled encrypted backups and a restore drill on your hardware</td></tr>
+    <tr><td>Object store</td><td>Versioning and encryption on; Object Lock in compliance mode for regulated tenants</td></tr>
+    <tr><td>Edge</td><td>TLS 1.2 or later (1.3 preferred), HSTS, a web application firewall if you have one; <code>OPENSEAL_PUBLIC_URL</code> is HTTPS; request paths not logged</td></tr>
+    <tr><td>Images</td><td>Signatures and provenance verified (step 8); the profile pinned by digest; <code>tools/check-deploy.py</code> passes over the merged file</td></tr>
+    <tr><td>Observability</td><td>Logs shipped off the host; alerts on the events of step 13</td></tr>
+    <tr><td>Consumer disclosure</td><td>Counsel has reviewed the electronic records disclosure for your jurisdictions before you send to consumers</td></tr>
+    <tr><td>Retention</td><td>Retention rules set before go-live and recorded in your records schedule</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Something not working? See <a href="troubleshooting.html">Troubleshooting</a>.</p>
+
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="deploy-compose.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Deploy with Docker Compose</span></a><a class="pn pn-next" href="configuration.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">Configuration reference</span></a></nav>
+  </article>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#what-you-get">What the profile gives you</a></li><li><a href="#host">1. Prepare the host</a></li><li><a href="#dns-tls">2. DNS and TLS</a></li><li><a href="#secrets">3. Generate the secrets</a></li><li><a href="#seal-key">4. The seal key in your HSM</a></li><li><a href="#tsa">5. Timestamp authorities</a></li><li><a href="#email">6. Email</a></li><li><a href="#database-storage">7. PostgreSQL and object storage</a></li><li><a href="#images">8. Use the signed images</a></li><li><a href="#configure">9. Set the remaining variables and record the manifests</a></li><li><a href="#start">10. Start, create the first administrator, and check</a></li><li><a href="#backups">11. Backups and the restore drill</a></li><li><a href="#upgrades">12. Upgrades</a></li><li><a href="#monitoring">13. Monitoring and health</a></li><li><a href="#rotations">14. Rotations</a></li><li><a href="#checklist">15. Production checklist</a></li></ul></nav>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#product">Overview</a></li><li><a href="../app/app.html#/signin">Try the demo</a></li><li><a href="../verify.html">Verify a PDF</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="../docs/deploy-production.html">Production deployment</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li></ul></div>
+    <div class="foot-col"><h2>Trust</h2><ul><li><a href="../docs/security.html">Security and evidence</a></li><li><a href="../docs/verifying.html">Verifying a document</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../docs/architecture.html">Architecture</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../docs/contributing.html">Contributing</a></li><li><a href="../brand.html">Brand and attribution</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p><p>Pre-release software: v0.1.0 is for evaluation, not yet for production agreements.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

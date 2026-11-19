@@ -582,8 +582,8 @@ All configuration through environment variables; every secret also accepted as `
 (`server/casual-sign-server/src/main.rs`, `-worker`, `-keyd`); `docker-compose.yml` sets the ones the stack needs and leaves the optional ones unset
 (`OPENSEAL_RECIPIENT_IDPS_FILE`,
 `OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, the SMS gateway, the model service, `OPENSEAL_WEBHOOK_ALLOW` and
-`OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, checked 2026-11-13, `DOC-008`; `OPENSEAL_CLAMD_ADDR` is passed through empty unless set, `ASVS-11`). A list
-generated from the code into this page is still to come. The server's: `OPENSEAL_DATABASE_URL`,
+`OPENSEAL_KEYD_ADMIN_ALLOW_LIST`, checked 2026-11-13, `DOC-008`; `OPENSEAL_CLAMD_ADDR` is passed through empty unless set, `ASVS-11`). The website's
+configuration reference (`site/docs/configuration.html`, `SITE-12`) is generated from those module docs and the production profile by `tools/site_config.py`. The server's: `OPENSEAL_DATABASE_URL`,
 `OPENSEAL_JWT_SIGNING_KEY`, `OPENSEAL_BLOB_DIR` or `OPENSEAL_S3_*`, `OPENSEAL_PUBLIC_URL`, `OPENSEAL_LISTEN`,
 `OPENSEAL_TRUSTED_PROXIES`, `OPENSEAL_GEOIP_DB`, `OPENSEAL_WEBAPP_DIR`, `OPENSEAL_RECIPIENT_IDPS_FILE`,
 `OPENSEAL_JWT_PREVIOUS_KEY` (during a rotation), `OPENSEAL_S3_CA` (also the worker's), `OPENSEAL_SECRET_RELOAD_SECONDS`
