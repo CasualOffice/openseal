@@ -1,0 +1,34 @@
+# OpenSeal
+
+> Open-source (Apache-2.0) electronic-signature platform: send PDFs for signature, sign in the browser, seal with PAdES, and verify offline. Self-hostable with Docker Compose. Pre-release; designed to support ESIGN and eIDAS simple and advanced electronic signatures, not certified.
+
+## Site
+
+- [Brand and attribution | OpenSeal](https://seal.casualoffice.org/brand.html): OpenSeal logos to download, how to credit OpenSeal with Powered by OpenSeal, what the Apache-2.0 licence requires, and ready-made snippets.
+- [Changelog | OpenSeal](https://seal.casualoffice.org/changelog.html): What changed in OpenSeal, by date.
+- [Download and deploy | OpenSeal](https://seal.casualoffice.org/download.html): Ways to run OpenSeal v0.0.1, the first pre-release: the Docker Compose stack, the web app in demo mode, the openseal command line and the offline verifier.
+- [OpenSeal: open-source e-signatures](https://seal.casualoffice.org/): OpenSeal is an Apache-2.0 signing and verification engine you embed (a Rust engine, a WebAssembly verifier, an API and SDK), with a complete e-signature web app built on it: send, sign, self-host, and verify every sealed PDF offline.
+- [Roadmap | OpenSeal](https://seal.casualoffice.org/roadmap.html): What OpenSeal has built, what is in progress, Release 1, and the slices that follow.
+- [Security policy | OpenSeal](https://seal.casualoffice.org/security.html): How to report a vulnerability in OpenSeal privately, what to include, what counts as critical, and which versions are supported.
+- [Verify a sealed PDF | OpenSeal](https://seal.casualoffice.org/verify.html): Check a sealed PDF in your browser with OpenSeal's verifier compiled to WebAssembly: integrity, certificate trust, timestamp and revisions. The file is not uploaded.
+
+## Documentation
+
+- [Administration | OpenSeal](https://seal.casualoffice.org/docs/administration.html): Manage OpenSeal users and invitations, groups and permission profiles, sign-in security, API keys, OAuth clients and webhooks, the admin audit log, and account settings and branding.
+- [API reference | OpenSeal](https://seal.casualoffice.org/docs/api.html): Every operation of the OpenSeal REST API (178 operations), with parameters, bodies and schemas.
+- [Architecture overview | OpenSeal](https://seal.casualoffice.org/docs/architecture.html): OpenSeal's shape: a deterministic Rust engine for PDFs, seals and evidence, hosted by a server of record with a worker and a key daemon, and a web app on the public API.
+- [Contributing | OpenSeal](https://seal.casualoffice.org/docs/contributing.html): How to build, test and contribute to OpenSeal: the toolchain, the tests, the clean-room rule, commit conventions and where the plan lives.
+- [FAQ | OpenSeal](https://seal.casualoffice.org/docs/faq.html): Frequently asked questions about OpenSeal: status, legal standing, licensing and commercial use, verification, keys, the API, and how it relates to DocuSign, SignNow and AGPL projects.
+- [Sending your first envelope | OpenSeal](https://seal.casualoffice.org/docs/first-envelope.html): Upload a PDF, add recipients in routing order, place fields in the document-first editor, review and send an OpenSeal envelope.
+- [Getting started | OpenSeal](https://seal.casualoffice.org/docs/getting-started.html): Run the whole OpenSeal stack on your machine with Docker Compose, create the first administrator, and send a test envelope.
+- [Documentation | OpenSeal](https://seal.casualoffice.org/docs/index.html): OpenSeal documentation: run it, send and sign, verify, administer, integrate with the API and webhooks, and how the evidence model works.
+- [Security and evidence model | OpenSeal](https://seal.casualoffice.org/docs/security.html): How OpenSeal protects a completed agreement: PAdES seals, trusted timestamps, the hash-chained audit trail, key custody in keyd, hostile-PDF handling, tenancy, and what is still to be reviewed.
+- [Self-hosting and configuration | OpenSeal](https://seal.casualoffice.org/docs/self-hosting.html): OpenSeal's services, configuration through environment variables and _FILE secrets, and the production checklist: keys, timestamps, email, database, storage, edge and retention.
+- [Signing | OpenSeal](https://seal.casualoffice.org/docs/signing.html): What a signer sees in OpenSeal: the emailed link, access code, consent to electronic records, the guided path through fields, adopting a signature, review and finish.
+- [Templates | OpenSeal](https://seal.casualoffice.org/docs/templates.html): Save documents, roles, fields and the email message once as an OpenSeal template, then send envelopes from it by filling in the people.
+- [Verifying a document | OpenSeal](https://seal.casualoffice.org/docs/verifying.html): Check an OpenSeal sealed PDF in the browser, offline, with the openseal command line, or with independent PAdES validators such as pyHanko and EU DSS.
+- [Webhooks | OpenSeal](https://seal.casualoffice.org/docs/webhooks.html): OpenSeal webhooks: subscribing, event types, the payload, Standard Webhooks signatures, verifying them, retries and SSRF protection.
+
+## Optional
+
+- [Source code](https://github.com/CasualOffice/openseal)
