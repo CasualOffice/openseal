@@ -29,6 +29,7 @@ import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
 import { initTheme } from "./theme.js";
 import { illustration } from "./illustrations.js";
+import { EDIT_TYPES, canEditFields, editableFields, ownersOf, ownerName, newField, keyStep, moved, movePatch } from "./editfields.js";
 
 const store = (() => { try { return sessionStorage; } catch { return null; } })();
 const mock = isMockMode();
@@ -662,22 +663,33 @@ async function documents() {
   const rail = h("nav", { class: "os-sign__rail", attrs: { "aria-label": t("prepare.thumbs"), "data-testid": "page-rail" } });
   thumbs = thumbnails(v, rail, { width: 52 });
   const zoomCtl = zoomControls(v, { size: "sm" });
+  // VS-06A: an editor edits fields from the toolbar (and More); while editing, the edit
+  // bar takes the guide's place.
+  const editBtn = canEditFields(view) && !editing
+    ? button(t("sign.edit.start"), { icon: "pencil", size: "sm", command: "signer.edit-fields", onClick: () => run("signer.edit-fields"), attrs: { "data-testid": "edit-fields" } })
+    : null;
   const frame = h("div", { class: "os-signframe" },
     rail,
-    h("div", { class: "os-signframe__centre" }, v.scroller, h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, zoomCtl.el)),
+    h("div", { class: "os-signframe__centre" }, v.scroller, h("div", { class: "os-docbar", attrs: { role: "toolbar", "aria-label": t("doc.toolbar") } }, editBtn, zoomCtl.el), editing ? editBar() : null),
     h("div", { class: "os-signframe__margin", attrs: { "aria-hidden": "true" } }));
+  const keepTop = editing && dv ? dv.scroller.scrollTop : null;
   screen(h("h1", { class: "os-sr-only", text: t("sign.documents-title") }), frame, v.live);
   main.classList.add("is-frame-host");
   dv = v;
   zc = zoomCtl;
   skipTo("#document", t("a11y.skip-doc"));
-  guide.hidden = false;
+  guide.hidden = editing;
   setTools(true);
   buildMenu("open"); // More now offers the field list
   dv.setPages(loaded.flatMap(({ doc: d, pdf }) => pdf.pages.map((pg, i) => ({ key: d.id, n: i + 1, total: pdf.pages.length, name: d.name, width: pg.width, height: pg.height, pdf }))));
+  const editable = editing ? editableFields(view) : [];
   dv.els.forEach(({ el, overlay }, i) => {
     const p = dv.pages[i];
     seenObserver?.observe(el);
+    if (editing) {
+      for (const f of editable.filter((x) => x.document_id === p.key && x.p.page === p.n)) overlay.append(editBox(f, p));
+      return;
+    }
     const mine = fields.filter((f) => f.document_id === p.key && f.p.page === p.n).sort((a, b) => a.p.y - b.p.y || a.p.x - b.p.x);
     for (const f of mine) overlay.append(fieldNode(f, p));
   });
@@ -685,11 +697,12 @@ async function documents() {
   enlarge();
   zc.sync();
   updateGuide();
+  if (keepTop != null) dv.scroller.scrollTop = keepTop;
   // Arrival (UX-06, after DocuSign): the top of page 1, where the document begins, the
   // next field ringed; Start goes there. Coming back (A36): to the next required
   // field, focused, not the top of page 1.
   const first = nextField();
-  if (first && values.size) setTimeout(() => focusField(first.id, false), 50);
+  if (first && values.size && !editing) setTimeout(() => focusField(first.id, false), 50);
   if (opening) {
     await firstPageDrawn(v);
     loader.reach(3);
@@ -697,6 +710,145 @@ async function documents() {
   } else {
     loader.hide(); // back in (Continue signing): the documents were already here
   }
+}
+
+// ---- VS-06A: an editor changes fields during their turn ----------------------------------
+// The pages as in signing, the fields the editor may change drawn as movable boxes
+// (editfields.js says which): drag one, or focus it and use the arrow keys, to move it;
+// Delete removes it; the bar adds a field of a chosen type for themself or a later
+// recipient on the page in view. Each change goes to the server at once and is
+// recorded there (`envelope.corrected`); a refusal is shown and the page redrawn.
+let editing = false;
+
+async function editFields(on = true) {
+  editing = on;
+  closePanel();
+  await documents();
+  if (on) document.getElementById("edit-for")?.focus({ preventScroll: true });
+  else document.querySelector('[data-testid="edit-fields"]')?.focus({ preventScroll: true });
+}
+
+/// Every field the view lists (own, shared and editable), for a new field's free spot.
+function placedOnPage(docId, n) {
+  return [...(view.fields || []), ...(view.editable_fields || [])]
+    .filter((f) => f.document_id === docId)
+    .map((f) => fromWire(f.placement))
+    .filter((p) => p && p.page === n);
+}
+
+/// Take the server's answer, redraw, and put focus on field `focusId` (if any).
+async function afterEdit(next, focusId, said) {
+  view = next;
+  applyRules(next);
+  await documents();
+  const el = focusId && main.querySelector(`.os-efield[data-field-id="${CSS.escape(focusId)}"]`);
+  if (el) { el.scrollIntoView({ block: "nearest" }); el.focus({ preventScroll: true }); }
+  const live = document.getElementById("edit-live");
+  if (live && said) live.textContent = t(said);
+}
+
+function editBar() {
+  const owners = ownersOf(view);
+  const label = (id, text) => h("label", { class: "os-label", attrs: { for: id }, text });
+  const forSel = h("select", { id: "edit-for", class: "os-input os-editbar__select", attrs: { "data-testid": "edit-for" } },
+    ...owners.map((o) => h("option", { value: o.id, text: o.me ? t("sign.edit.me", { name: o.name }) : o.name })));
+  const typeSel = h("select", { id: "edit-type", class: "os-input os-editbar__select", attrs: { "data-testid": "edit-type" } },
+    ...EDIT_TYPES.map((ty) => h("option", { value: ty, text: t(`ftype.${ty}`) })));
+  const add = button(t("sign.edit.add"), { icon: "plus", attrs: { "data-testid": "edit-add" } });
+  const done = button(t("sign.edit.done"), { icon: "check", variant: "primary", attrs: { "data-testid": "edit-done" } });
+  add.addEventListener("click", async () => {
+    const pg = dv?.pages[dv.current];
+    if (!pg) return;
+    const wire = newField({ type: typeSel.value, recipientId: forSel.value, documentId: pg.key, pageNo: pg.n, page: pg, existing: placedOnPage(pg.key, pg.n) });
+    const before = new Set(editableFields(view).map((f) => f.id));
+    try {
+      const next = await busy(add, () => api.ceremony.placeFields(token, [wire], location_));
+      const added = editableFields(next).find((f) => !before.has(f.id));
+      await afterEdit(next, added?.id, "sign.edit.added");
+    } catch (err) { toastError(err); }
+  });
+  done.addEventListener("click", () => editFields(false));
+  return h("div", { class: "os-editbar", attrs: { role: "group", "aria-label": t("sign.edit.toolbar"), "data-testid": "edit-bar" } },
+    h("p", { id: "edit-hint", class: "os-editbar__text os-small", text: t("sign.edit.text") }),
+    h("div", { class: "os-editbar__row" },
+      h("div", { class: "os-editbar__pick" }, label(forSel.id, t("sign.edit.for")), forSel),
+      h("div", { class: "os-editbar__pick" }, label(typeSel.id, t("sign.edit.type")), typeSel),
+      add, done),
+    h("span", { id: "edit-live", class: "os-sr-only", attrs: { "aria-live": "polite" } }));
+}
+
+/// A field the editor may change, as a box on the page: a button named for its type
+/// and recipient, moved by dragging or the arrow keys, removed with Delete.
+function editBox(f, pg) {
+  const type = t(`ftype.${f.type}`);
+  const who = ownerName(view, f.recipient_id) || "";
+  const mine = f.recipient_id === view.recipient?.id;
+  const box = h("button", { type: "button", class: `os-efield os-efield--${f.type}${mine ? " is-mine" : ""}`,
+    attrs: { "data-field-id": f.id, "data-testid": "edit-field", "aria-describedby": "edit-hint" } },
+  h("span", { class: "os-efield__label", text: t("sign.edit.label", { type, who }) }));
+  let r = { ...f.p };
+  placeBox(box, r, pg);
+  let timer = null;
+  const save = async () => {
+    clearTimeout(timer);
+    timer = null;
+    try {
+      const next = await api.ceremony.editField(token, f.id, movePatch(r));
+      view = next;
+      const live = document.getElementById("edit-live");
+      if (live) live.textContent = t("sign.edit.moved");
+    } catch (err) {
+      toastError(err);
+      await afterEdit(view, f.id);
+    }
+  };
+  box.addEventListener("keydown", async (e) => {
+    const step = keyStep(e);
+    if (step) {
+      e.preventDefault();
+      r = moved(r, step[0], step[1], pg);
+      placeBox(box, r, pg);
+      clearTimeout(timer);
+      timer = setTimeout(save, 400);
+      return;
+    }
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      try {
+        const next = await api.ceremony.removeField(token, f.id);
+        const left = editableFields(next);
+        await afterEdit(next, left.find((x) => x.document_id === f.document_id && x.p.page === f.p.page)?.id || left[0]?.id, "sign.edit.removed");
+        if (!left.length) document.getElementById("edit-for")?.focus({ preventScroll: true });
+      } catch (err) { toastError(err); }
+    }
+  });
+  // A drag moves it by the pointer's travel at the view's scale (px per point).
+  box.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || !dv) return;
+    e.preventDefault();
+    box.focus({ preventScroll: true });
+    box.setPointerCapture?.(e.pointerId);
+    const start = { x: e.clientX, y: e.clientY, r };
+    let moving = false;
+    const move = (ev) => {
+      const dx = (ev.clientX - start.x) / dv.scale;
+      const dy = (ev.clientY - start.y) / dv.scale;
+      if (!moving && Math.hypot(dx, dy) < 1) return;
+      moving = true;
+      r = moved(start.r, dx, dy, pg);
+      placeBox(box, r, pg);
+    };
+    const up = () => {
+      box.removeEventListener("pointermove", move);
+      box.removeEventListener("pointerup", up);
+      box.removeEventListener("pointercancel", up);
+      if (moving) save();
+    };
+    box.addEventListener("pointermove", move);
+    box.addEventListener("pointerup", up);
+    box.addEventListener("pointercancel", up);
+  });
+  return box;
 }
 
 /// VS-04D: a field shared with this signer is theirs to change, but only its own
@@ -2072,6 +2224,8 @@ function buildMenu(stage_ = "open") {
   );
   // UX-06: change the adopted signature from anywhere, once there is one.
   if (stage === "open" && adoptions.signature) items.push(item("pencil", t("sign.field.change-signature"), "signer.change-signature", { testId: "menu-change-signature" }));
+  // VS-06A: an editor changes fields during their turn.
+  if (stage === "open" && canEditFields(view) && !editing) items.push(item("pencil", t("sign.edit.start"), "signer.edit-fields", { testId: "menu-edit-fields" }));
   if (stage === "open" && opts.allow_reassign === true) items.push(item("user-plus", t("sign.menu.reassign"), "signer.reassign", { testId: "menu-reassign" }));
   items.push(item("list-ordered", t("sign.menu.history"), "signer.history", { testId: "menu-history" }));
   items.push(help_);
@@ -2098,6 +2252,7 @@ function registerCommands() {
   register("signer.certificate", { label: t("sign.done.certificate"), run: () => downloadCertificate(), enabled: () => view?.envelope?.status === "completed" });
   register("signer.print", { label: t("sign.menu.print"), run: () => downloadCopy(true), enabled: () => stage !== "auth" });
   register("signer.change-signature", { label: t("sign.field.change-signature"), run: () => changeMark("signature"), enabled: () => stage === "open" && !!adoptions.signature });
+  register("signer.edit-fields", { label: t("sign.edit.start"), run: () => editFields(true), enabled: () => stage === "open" && !!dv && canEditFields(view) && !editing });
   register("signer.reassign", { label: t("sign.menu.reassign"), run: reassign, enabled: () => stage === "open" && opts().allow_reassign === true });
   register("signer.history", { label: t("sign.menu.history"), run: history, enabled: () => stage !== "auth" });
   register("signer.help", { label: t("sign.menu.help"), run: help });

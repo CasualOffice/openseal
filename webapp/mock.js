@@ -505,8 +505,16 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       // VS-02, as the server: an agent, intermediary or editor sees the later
       // recipients not yet reached, which `POST /s/{token}/recipients` may name.
       ...(shown && NAMES_LATER.has(rec.type) ? { later_recipients: laterOf(env, rec) } : {}),
+      // VS-06A, as the server: an editor also sees the later recipients' fields, which
+      // `PATCH`/`DELETE /s/{token}/editor/fields/{field}` may change.
+      ...(shown && rec.type === "editor" ? { editable_fields: env.fields.filter((f) => !holds(f, rec.id) && editableField(env, rec, f)) } : {}),
     };
   }
+  /// VS-06A, as the server's `editable_owner`: an editor changes their own fields and
+  /// those of recipients later in the order not yet reached.
+  const editableOwner = (rec, q) => q.id === rec.id || ((q.routing_order || 1) > (rec.routing_order || 1) && q.status === "created");
+  const editableField = (env, rec, f) => !!f.recipient_id && !(rec.excluded_documents || []).includes(f.document_id)
+    && [f.recipient_id, ...(f.shared_with || [])].every((r) => { const q = env.recipients.find((x) => x.id === r); return q && editableOwner(rec, q); });
   const laterOf = (env, rec) => env.recipients
     .filter((q) => (q.routing_order || 1) > (rec.routing_order || 1) && q.status === "created")
     .map((q) => ({ id: q.id, type: q.type, routing_order: q.routing_order || 1, name: q.name || "", email: q.email || "" }));
@@ -3203,6 +3211,50 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       for (const f of env.fields) if (f.recipient_id === rec.id) f.recipient_id = nr.id;
       await audit(env, "recipient.reassigned", { recipient_id: rec.id, to_recipient_id: nr.id, ...(body?.reason ? { reason: String(body.reason) } : {}) }, loc);
       return json(200, view(env, rec, token));
+    }
+    // VS-06A, as the server: an editor adds, moves and removes their own fields and those
+    // of later recipients not yet reached; anyone else, or a reached recipient's field,
+    // is refused (409 CS-WF-0001). Recorded as `envelope.corrected`.
+    if (sub === "editor" && parts[4] === "fields") {
+      if (rec.type !== "editor" || !["sent", "delivered"].includes(rec.status)) fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const refuse = () => fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const check = (f) => { if (!editableField(env, rec, f)) refuse(); };
+      if (!parts[5] && method === "POST") {
+        const list = Array.isArray(body?.fields) ? body.fields : [];
+        if (!list.length || list.length > 100) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/fields", code: "invalid" }]);
+        const before = env.fields.length;
+        const added = [];
+        try {
+          for (const f of list) {
+            const q = env.recipients.find((x) => x.id === f?.recipient_id);
+            if (!q) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/fields/recipient_id", code: "invalid" }]);
+            if (!editableOwner(rec, q)) refuse();
+            added.push(addField(env, f));
+          }
+        } catch (e) { env.fields.length = before; throw e; }
+        await audit(env, "envelope.corrected", { changed: added.map((f) => `fields.${f.id}`) }, loc);
+        return json(201, view(env, rec, token));
+      }
+      const f = env.fields.find((x) => x.id === parts[5] && !(rec.excluded_documents || []).includes(x.document_id));
+      if (!f || parts[6]) fail(404, "CS-API-0002", "Not found");
+      check(f);
+      if (method === "PATCH") {
+        const next = structuredClone(f);
+        const flat = ["page", "x", "y", "width", "height"];
+        const patch = body && typeof body === "object" ? body : {};
+        if (flat.some((k) => k in patch)) next.placement = placementOf({ ...f.placement, ...Object.fromEntries(flat.filter((k) => k in patch).map((k) => [k, patch[k]])) });
+        if (patch.recipient_id) next.recipient_id = patch.recipient_id;
+        setMembers(next, patch);
+        check(next);
+        Object.assign(f, next);
+        await audit(env, "envelope.corrected", { changed: [`fields.${f.id}`] }, loc);
+        return json(200, view(env, rec, token));
+      }
+      if (method === "DELETE") {
+        env.fields.splice(env.fields.indexOf(f), 1);
+        await audit(env, "envelope.corrected", { changed: [`fields.${f.id}`] }, loc);
+        return json(200, view(env, rec, token));
+      }
     }
     // VS-02, as the server's `RecipientEdit`: an agent or intermediary names later
     // recipients not yet reached (names and addresses only); anyone else is refused.

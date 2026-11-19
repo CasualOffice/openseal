@@ -628,6 +628,22 @@ impl Open {
                 .collect();
             o.insert("later_recipients".into(), Value::Array(later));
         }
+        // VS-06A: an editor's view also lists the fields of later recipients they may
+        // move or remove (their own are in `fields`); nobody else's view has it.
+        if let (true, Some(r), Some(o)) = (
+            shown && me.is_some_and(|r| r.spec.rtype == casual_sign_model::RecipientType::Editor),
+            me,
+            v.as_object_mut(),
+        ) {
+            let editable: Vec<Value> = s
+                .fields
+                .0
+                .iter()
+                .filter(|f| !holds(f, &self.recipient) && editable_field(s, r, f))
+                .map(dto::field)
+                .collect();
+            o.insert("editable_fields".into(), Value::Array(editable));
+        }
         v
     }
 
@@ -1911,6 +1927,264 @@ pub(crate) async fn recipients(
             recipient: r,
             changes,
         })
+        .await?;
+        Ok(StatusCode::OK)
+    })
+}
+
+/// Whether editor `me` may change the fields of recipient `owner` (`VS-06A`, docs/24
+/// §3): their own, or a recipient later in the routing order whom routing has not yet
+/// reached. The engine's `check_field_owner` rule, applied first so a refusal names the
+/// recipient (`409 CS-WF-0001`); the engine checks again.
+fn editable_owner(
+    me: &casual_sign_workflow::RecipientState,
+    owner: &casual_sign_workflow::RecipientState,
+) -> bool {
+    owner.id() == me.id()
+        || (owner.spec.routing_order > me.spec.routing_order
+            && owner.status == casual_sign_model::RecipientStatus::Created)
+}
+
+/// Whether editor `me` may move or remove field `f` (`VS-06A`): on a document they see,
+/// with an owner, and every recipient it names (its owner and those it is shared with)
+/// one whose fields they may change.
+fn editable_field(
+    s: &casual_sign_workflow::EnvelopeState,
+    me: &casual_sign_workflow::RecipientState,
+    f: &casual_sign_model::Field,
+) -> bool {
+    f.recipient_id.is_some()
+        && me.spec.sees(&f.document_id)
+        && f.recipient_id
+            .iter()
+            .chain(f.shared_with.iter())
+            .all(|r| s.recipient(r).is_some_and(|q| editable_owner(me, q)))
+}
+
+/// Most fields one `POST /s/{token}/editor/fields` adds (docs/21).
+pub(crate) const MAX_PLACED: usize = 100;
+
+impl Open {
+    /// This link's recipient when they are an editor who may change fields now
+    /// (`VS-06A`): authenticated and consented (SEC-CER-01), else refused before any id
+    /// is looked up; any other type, or an editor no longer acting, is the engine's
+    /// recipient refusal (`409 CS-WF-0001`).
+    fn editor(&self) -> Result<casual_sign_workflow::RecipientState, ApiError> {
+        self.ready()?;
+        let me = self
+            .l
+            .state
+            .recipient(&self.recipient)
+            .ok_or_else(ApiError::expired)?;
+        if me.spec.rtype != casual_sign_model::RecipientType::Editor || !me.status.is_active() {
+            return Err(
+                casual_sign_workflow::WorkflowError::NotAllowedForRecipient {
+                    command: "recipient_edit",
+                    recipient: me.id().clone(),
+                    status: me.status,
+                }
+                .into(),
+            );
+        }
+        Ok(me.clone())
+    }
+
+    /// Refuse a field editor `me` may not hold as written (`VS-06A`): a document hidden
+    /// from them or unknown (`422`), no or an unknown recipient (`422`), a recipient
+    /// whose fields are not theirs to change (`409`, naming that recipient).
+    fn check_placed(
+        &self,
+        me: &casual_sign_workflow::RecipientState,
+        f: &casual_sign_model::Field,
+        at: &str,
+    ) -> Result<(), ApiError> {
+        let s = &self.l.state;
+        if !me.spec.sees(&f.document_id) || s.document(&f.document_id).is_none() {
+            return Err(ApiError::invalid(&format!("{at}/document_id")));
+        }
+        let Some(owner) = &f.recipient_id else {
+            return Err(ApiError::invalid(&format!("{at}/recipient_id")));
+        };
+        for r in std::iter::once(owner).chain(f.shared_with.iter()) {
+            let q = s
+                .recipient(r)
+                .ok_or_else(|| ApiError::invalid(&format!("{at}/recipient_id")))?;
+            if !editable_owner(me, q) {
+                return Err(
+                    casual_sign_workflow::WorkflowError::NotAllowedForRecipient {
+                        command: "recipient_edit",
+                        recipient: q.id().clone(),
+                        status: q.status,
+                    }
+                    .into(),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Field `field` for editor `me` to change: `404` when it does not exist or is on a
+    /// document hidden from them, `409` when it names a recipient whose fields are not
+    /// theirs to change.
+    fn editor_field(
+        &self,
+        me: &casual_sign_workflow::RecipientState,
+        field: &str,
+    ) -> Result<casual_sign_model::Field, ApiError> {
+        let f = self
+            .l
+            .state
+            .fields
+            .0
+            .iter()
+            .find(|f| same_id(&f.id, field) && me.spec.sees(&f.document_id))
+            .ok_or_else(ApiError::not_found)?;
+        self.check_placed(me, f, "")?;
+        Ok(f.clone())
+    }
+
+    /// Run this editor's field changes as the engine's `RecipientEdit`, which records
+    /// `envelope.corrected` with the recipient as actor and checks every change again.
+    async fn edit_fields(
+        &mut self,
+        changes: Vec<casual_sign_workflow::Change>,
+    ) -> Result<(), ApiError> {
+        let r = self.recipient.clone();
+        self.run(Command::RecipientEdit {
+            recipient: r,
+            changes,
+        })
+        .await
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlacedIn {
+    fields: Vec<Value>,
+    #[serde(default)]
+    location: Option<DeviceLocation>,
+}
+
+/// `POST /s/{token}/editor/fields {fields: [field], location?}` (`VS-06A`, DocuSign's "Allow
+/// to edit"): an editor adds fields, each in the API's wire form (`recipient_id`,
+/// `document_id`, `type`, the rectangle), for themself or for a recipient later in the
+/// order whom routing has not reached. Answers `201` with the view, whose `fields` and
+/// `editable_fields` show the result.
+pub(crate) async fn place_fields(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    body: Bytes,
+) -> Response {
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        let me = o.editor()?;
+        let req: PlacedIn = parse(&body)?;
+        o.locate(req.location.as_ref());
+        if req.fields.is_empty() || req.fields.len() > MAX_PLACED {
+            return Err(ApiError::invalid("/fields"));
+        }
+        let mut changes = Vec::with_capacity(req.fields.len());
+        for (i, raw) in req.fields.iter().enumerate() {
+            let at = format!("/fields/{i}");
+            let field = dto::field_from(
+                raw,
+                crate::apply::eid(uuid::Uuid::now_v7())?,
+                |r| Id::new(r).ok(),
+                |d| d.as_str().and_then(|s| Id::new(s).ok()),
+                &at,
+            )?;
+            o.check_placed(&me, &field, &at)?;
+            changes.push(casual_sign_workflow::Change::AddField {
+                field: casual_sign_audit::Personal(field),
+            });
+        }
+        o.edit_fields(changes).await?;
+        Ok(StatusCode::CREATED)
+    })
+}
+
+/// `PATCH /s/{token}/editor/fields/{field}` (`VS-06A`): an editor moves, resizes or changes a
+/// field they may change, as a JSON merge of its wire form (as `PATCH
+/// /envelopes/{id}/fields/{f}`); the recipients it names before and after must all be
+/// ones whose fields they may change.
+pub(crate) async fn edit_field(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path((token, field)): Path<(String, String)>,
+    body: Bytes,
+) -> Response {
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        let me = o.editor()?;
+        let current = o.editor_field(&me, &field)?;
+        let patch: Value = parse(&body)?;
+        let Value::Object(patch) = patch else {
+            return Err(ApiError::invalid(""));
+        };
+        let mut merged = dto::field(&current);
+        if let Value::Object(m) = &mut merged {
+            m.remove("id");
+            // The rectangle may be named flat (`x`, `y`, …): each merges into the
+            // placement, so a move need not repeat the page and size.
+            let mut placement = match m.remove("placement") {
+                Some(Value::Object(p)) => p,
+                _ => serde_json::Map::new(),
+            };
+            for (k, val) in patch {
+                match k.as_str() {
+                    "id" => return Err(ApiError::invalid("/id")),
+                    "page" | "x" | "y" | "width" | "height" => {
+                        placement.insert(k, val);
+                    }
+                    "placement" => match val {
+                        Value::Object(p) => placement.extend(p),
+                        _ => return Err(ApiError::invalid("/placement")),
+                    },
+                    _ if val.is_null() => {
+                        m.remove(&k);
+                    }
+                    _ => {
+                        m.insert(k, val);
+                    }
+                }
+            }
+            m.extend(placement);
+        }
+        let next = dto::field_from(
+            &merged,
+            current.id.clone(),
+            |r| Id::new(r).ok(),
+            |d| d.as_str().and_then(|s| Id::new(s).ok()),
+            "",
+        )?;
+        o.check_placed(&me, &next, "")?;
+        o.edit_fields(vec![casual_sign_workflow::Change::UpdateField {
+            field: casual_sign_audit::Personal(next),
+        }])
+        .await?;
+        Ok(StatusCode::OK)
+    })
+}
+
+/// `DELETE /s/{token}/editor/fields/{field}` (`VS-06A`): an editor removes a field they may
+/// change. `application/json` like every ceremony write; the body may be empty.
+pub(crate) async fn remove_field(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path((token, field)): Path<(String, String)>,
+) -> Response {
+    ceremony!(st, token, headers, ip, method, false, |o| {
+        let me = o.editor()?;
+        let current = o.editor_field(&me, &field)?;
+        o.edit_fields(vec![casual_sign_workflow::Change::RemoveField {
+            id: current.id,
+        }])
         .await?;
         Ok(StatusCode::OK)
     })

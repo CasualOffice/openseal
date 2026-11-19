@@ -1,0 +1,71 @@
+// An editor changing fields during their turn (VS-06A, DocuSign's "Allow to edit";
+// docs/24 §3): which fields they may move or remove, for whom they may add one, and the
+// wire bodies `POST /s/{token}/editor/fields` and `PATCH …/editor/fields/{field}` take.
+// The server decides (ceremony.rs `editable_owner`); this only shapes what the page
+// offers, from the view's `fields`, `editable_fields` and `later_recipients`.
+//
+// Pure: no DOM, so `tests/editfields.test.mjs` runs it under Node.
+
+import { placeAt, freeSpot, nudge, toWire, fromWire, formatPoints, requiredByDefault, DEFAULT_SIZE } from "./geometry.js";
+
+/// The field types an editor places on the signing page, in menu order: the common
+/// ones (the full palette is the sender's editor).
+export const EDIT_TYPES = ["signature", "initials", "date_signed", "name", "text", "checkbox", "date"];
+
+/// Whether this view's recipient may change fields now: an editor whose view lists the
+/// later recipients' fields (the server adds the member only for an authenticated editor).
+export function canEditFields(view) {
+  return view?.recipient?.type === "editor" && Array.isArray(view?.editable_fields);
+}
+
+/// The fields an editor may move or remove: their own (in `fields`), then the later
+/// recipients' (`editable_fields`), each with its placement in numbers as `p`; a field
+/// without a readable placement is left out.
+export function editableFields(view) {
+  const me = view?.recipient?.id;
+  const own = (view?.fields || []).filter((f) => f.recipient_id === me);
+  return [...own, ...(view?.editable_fields || [])]
+    .map((f) => ({ ...f, p: fromWire(f.placement) }))
+    .filter((f) => f.p);
+}
+
+/// For whom an editor may add a field: themself first, then each later recipient not
+/// yet reached, `{id, name, me}`.
+export function ownersOf(view) {
+  const r = view?.recipient;
+  if (!r) return [];
+  return [{ id: r.id, name: r.name || "", me: true }, ...(view.later_recipients || []).map((q) => ({ id: q.id, name: q.name || "", me: false }))];
+}
+
+/// The name of field owner `id` as `ownersOf` knows it, else "".
+export function ownerName(view, id) {
+  return ownersOf(view).find((o) => o.id === id)?.name || "";
+}
+
+/// The new field's wire body: `type` for recipient `recipientId` on page `page` of
+/// document `documentId`, placed at the page's centre (`page` `{width, height}` in
+/// points) clear of `existing` rectangles on that page.
+export function newField({ type, recipientId, documentId, pageNo, page, existing = [] }) {
+  const size = DEFAULT_SIZE[type] || DEFAULT_SIZE.text;
+  const start = placeAt(type, page.width / 2, page.height / 3, page);
+  const r = freeSpot(existing, size, page, start.x + size.width / 2, start.y + size.height / 2);
+  return { recipient_id: recipientId, document_id: documentId, type, required: requiredByDefault(type), ...toWire(pageNo, r) };
+}
+
+/// The step an arrow key moves a field, in points: 1, or 10 with Shift; null for any
+/// other key.
+export function keyStep({ key, shiftKey = false }) {
+  const n = shiftKey ? 10 : 1;
+  const steps = { ArrowLeft: [-n, 0], ArrowRight: [n, 0], ArrowUp: [0, -n], ArrowDown: [0, n] };
+  return steps[key] || null;
+}
+
+/// Rectangle `r` moved by (dx, dy) points, kept on `page`.
+export function moved(r, dx, dy, page) {
+  return { ...r, ...nudge(r, dx, dy, page) };
+}
+
+/// The `PATCH` body for a field now at `r` (only where it is; the size is unchanged).
+export function movePatch(r) {
+  return { x: formatPoints(r.x), y: formatPoints(r.y) };
+}

@@ -824,6 +824,16 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// `[{id, name?, email?}]`, ids from the view's `later_recipients`.
       nameRecipients: (token, recipients, location) =>
         data(request("POST", `${S(token)}/recipients`, { body: withLocation({ recipients }, location), ceremony: true })),
+      /// VS-06A: an editor adds fields (the API's wire form: recipient_id, document_id,
+      /// type, page, x, y, width, height) for themself or a later recipient not yet
+      /// reached; moves or changes one (a merge, `x`/`y`/… flat); removes one. Each
+      /// answers the view, whose `editable_fields` lists the later recipients' fields.
+      placeFields: (token, fields, location) =>
+        data(request("POST", `${S(token)}/editor/fields`, { body: withLocation({ fields }, location), ceremony: true })),
+      editField: (token, field, patch) =>
+        data(request("PATCH", `${S(token)}/editor/fields/${encodeURIComponent(field)}`, { body: patch, ceremony: true })),
+      removeField: (token, field) =>
+        data(request("DELETE", `${S(token)}/editor/fields/${encodeURIComponent(field)}`, { body: {}, ceremony: true })),
       /// WEB-06: attach a file (PDF, PNG or JPEG) to an attachment field.
       attach: (token, field, bytes) =>
         data(request("PUT", `${S(token)}/fields/${encodeURIComponent(field)}/attachment`, { body: { content_base64: toBase64(bytes) }, ceremony: true })),
