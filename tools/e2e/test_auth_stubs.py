@@ -238,6 +238,78 @@ class OidcProvider(unittest.TestCase):
         self.assertNotIn(b"<script>", page)
 
 
+HOOK_SECRET = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw"
+
+
+class WebhookReceiver(unittest.TestCase):
+    """The slice 8 receiver (VS-08C): checks each delivery's Standard Webhooks signature as
+    a receiver must, records it, and answers with the status the reader sets."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.TemporaryDirectory()
+        d = pathlib.Path(cls.dir.name)
+        make_root(d)
+        chain, key = st.issue_tls(d, "localhost", d)
+        cls.receiver, cls.reader = st.hooks_servers(("127.0.0.1", 0), ("127.0.0.1", 0), chain, key, HOOK_SECRET)
+        start(cls.receiver)
+        start(cls.reader)
+        cls.tls = ssl.create_default_context(cafile=str(d / "ca.pem"))
+
+    @classmethod
+    def tearDownClass(cls):
+        for s in (cls.receiver, cls.reader):
+            s.shutdown()
+            s.server_close()
+        cls.dir.cleanup()
+
+    def deliver(self, msg_id, ts, body, sig):
+        c = http.client.HTTPSConnection("127.0.0.1", self.receiver.server_address[1], context=self.tls, timeout=5)
+        c.request("POST", "/hook", body=body, headers={"Content-Type": "application/json", "webhook-id": msg_id,
+                                                       "webhook-timestamp": ts, "webhook-signature": sig})
+        r = c.getresponse()
+        r.read()
+        c.close()
+        return r.status
+
+    def reader_call(self, method, path):
+        c = http.client.HTTPConnection("127.0.0.1", self.reader.server_address[1], timeout=5)
+        c.request(method, path)
+        r = c.getresponse()
+        out = json.loads(r.read())
+        c.close()
+        return r.status, out
+
+    def test_the_standard_webhooks_example_verifies(self):
+        key = st.webhook_key(HOOK_SECRET)
+        body = b'{"test": 2432232314}'
+        good = "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="
+        self.assertTrue(st.webhook_verified(key, "msg_p5jXN8AQM9LWM0D4loKWxJek", "1614265330", body, good))
+        self.assertTrue(st.webhook_verified(key, "msg_p5jXN8AQM9LWM0D4loKWxJek", "1614265330", body, f"v1,AAAA {good}"))
+        self.assertFalse(st.webhook_verified(key, "msg_p5jXN8AQM9LWM0D4loKWxJek", "1614265331", body, good))
+        with self.assertRaises(ValueError):
+            st.webhook_key("MfKQ9r8")
+
+    def test_deliveries_are_recorded_with_their_check_and_answered_as_set(self):
+        body = json.dumps({"id": "e1", "type": "envelope.sent", "data": {"envelope_id": "env-1"}}).encode()
+        key = st.webhook_key(HOOK_SECRET)
+        sig = "v1," + base64.b64encode(hmac_sha256(key, b"msg-1.1700000000." + body)).decode()
+        self.assertEqual(self.deliver("msg-1", "1700000000", body, sig), 200)
+        self.assertEqual(self.deliver("msg-2", "1700000000", body, "v1,AAAA"), 200)
+        self.assertEqual(self.reader_call("POST", "/answer?status=500")[0], 200)
+        self.assertEqual(self.deliver("msg-3", "1700000000", body, sig), 500)
+        self.assertEqual(self.reader_call("POST", "/answer?status=200")[0], 200)
+        _, got = self.reader_call("GET", "/deliveries?type=envelope.sent&envelope=env-1")
+        self.assertEqual([(d["id"], d["verified"], d["answered"]) for d in got["deliveries"]],
+                         [("msg-3", False, 500), ("msg-2", False, 200), ("msg-1", True, 200)])
+        self.assertEqual(self.reader_call("POST", "/answer?status=abc")[0], 400)
+
+
+def hmac_sha256(key: bytes, data: bytes) -> bytes:
+    import hmac
+    return hmac.new(key, data, hashlib.sha256).digest()
+
+
 class Overlay(unittest.TestCase):
     def test_only_the_e2e_overlay_names_the_stubs(self):
         overlay = (HERE / "compose.e2e.yml").read_text()

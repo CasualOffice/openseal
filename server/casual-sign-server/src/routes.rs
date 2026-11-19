@@ -11,8 +11,8 @@ use axum::routing::{MethodFilter, MethodRouter, on};
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
-    admin, bulk, envelopes as env, factors, folders, groups, mfa, ml, org, privacy, sessions,
-    switch, templates, usetemplates, webhooks,
+    admin, bulk, envelopes as env, factors, folders, groups, mfa, ml, oauth, org, privacy,
+    sessions, switch, templates, usetemplates, webhooks,
 };
 use crate::authz::{Action, Level, OrgAction};
 use crate::ceremony;
@@ -279,6 +279,50 @@ pub fn table() -> Vec<Route> {
         r("POST", "/api/v1/auth/switch", Member, JSON, switch::switch),
         r("POST", "/api/v1/oauth/token", Public, JSON, admin::token),
         r("GET", "/.well-known/jwks.json", Public, JSON, admin::jwks),
+        // OAuth 2.1 acting for a member: authorization code with PKCE, consent, and the
+        // JWT bearer grant's consent (VS-08A, VS-08B).
+        r(
+            "GET",
+            "/.well-known/oauth-authorization-server",
+            Public,
+            JSON,
+            oauth::metadata,
+        ),
+        r(
+            "GET",
+            "/api/v1/oauth/authorize",
+            Public,
+            JSON,
+            oauth::authorize_redirect,
+        ),
+        r(
+            "GET",
+            "/api/v1/oauth/authorize/request",
+            Member,
+            JSON,
+            oauth::authorize_request,
+        ),
+        r(
+            "POST",
+            "/api/v1/oauth/authorize",
+            Member,
+            JSON,
+            oauth::authorize,
+        ),
+        r(
+            "GET",
+            "/api/v1/oauth/consents",
+            Member,
+            JSON,
+            oauth::consents,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/oauth/consents/{id}",
+            Member,
+            JSON,
+            oauth::revoke_consent,
+        ),
         // Account, users, API clients.
         r("GET", "/api/v1/accounts/me", Member, JSON, admin::account),
         r(

@@ -1,0 +1,65 @@
+{
+  "about": "Recorded exchanges the SDK tests replay with no network (VS-08E): each call as the client must send it, and the server's answer as tests/oauth.rs, tests/contract.rs and the worker's webhook tests see it. The webhook case is the Standard Webhooks specification's published example, which the worker's signature test also checks.",
+  "base_url": "https://sign.example.test",
+  "exchanges": [
+    {
+      "name": "create and send an envelope with an API key and an idempotency key",
+      "operation": "createEnvelope",
+      "params": {
+        "idempotencyKey": "order-42",
+        "body": {"subject": "NDA", "status": "sent", "documents": [{"name": "nda.pdf", "content_base64": "JVBERi0xLjcK"}], "recipients": [{"ref": "s", "type": "signer", "name": "Ada", "email": "ada@example.test"}], "fields": [{"recipient": "s", "document": 0, "type": "signature", "page": 1, "x": 72, "y": 600, "width": 180, "height": 40}]}
+      },
+      "credential": "osk_test",
+      "request": {"method": "POST", "url": "https://sign.example.test/api/v1/envelopes", "headers": {"authorization": "Bearer osk_test", "idempotency-key": "order-42", "content-type": "application/json"}},
+      "response": {"status": 201, "headers": {"content-type": "application/json"}, "body": {"id": "0193a0b4-0000-7000-8000-000000000001", "status": "sent", "version": 2}}
+    },
+    {
+      "name": "a path parameter is encoded and the query carries the rest",
+      "operation": "listDeliveries",
+      "params": {"id": "a/b c"},
+      "credential": "osk_test",
+      "request": {"method": "GET", "url": "https://sign.example.test/api/v1/webhooks/a%2Fb%20c/deliveries", "headers": {"authorization": "Bearer osk_test"}},
+      "response": {"status": 200, "headers": {"content-type": "application/json"}, "body": {"items": []}}
+    },
+    {
+      "name": "the envelope list with its cursor",
+      "operation": "listEnvelopes",
+      "params": {"limit": 2, "status": "sent"},
+      "credential": "osk_test",
+      "request": {"method": "GET", "url": "https://sign.example.test/api/v1/envelopes?limit=2&status=sent", "headers": {"authorization": "Bearer osk_test"}},
+      "response": {"status": 200, "headers": {"content-type": "application/json"}, "body": {"items": [], "next_cursor": null}}
+    },
+    {
+      "name": "a refusal is an error with its stable code",
+      "operation": "createEnvelope",
+      "params": {"body": {"subject": "x"}},
+      "credential": "osk_read_only",
+      "request": {"method": "POST", "url": "https://sign.example.test/api/v1/envelopes", "headers": {"authorization": "Bearer osk_read_only"}},
+      "response": {"status": 403, "headers": {"content-type": "application/problem+json"}, "body": {"type": "about:blank", "title": "Insufficient scope or permission", "status": 403, "code": "CS-AUTH-0006", "request_id": "req-1", "detail": "envelopes.write"}},
+      "error": {"code": "CS-AUTH-0006", "status": 403}
+    },
+    {
+      "name": "withdrawing a consent answers nothing",
+      "operation": "revokeConsent",
+      "params": {"id": "0193a0b4-0000-7000-8000-0000000000c1"},
+      "credential": "osk_test",
+      "request": {"method": "DELETE", "url": "https://sign.example.test/api/v1/oauth/consents/0193a0b4-0000-7000-8000-0000000000c1", "headers": {"authorization": "Bearer osk_test"}},
+      "response": {"status": 204, "headers": {}, "body": null}
+    }
+  ],
+  "token": {
+    "name": "the authorization code exchanged with PKCE, client authentication by HTTP Basic",
+    "client_id": "0193a0b4-0000-7000-8000-0000000000a1",
+    "client_secret": "oss_secret",
+    "form": {"grant_type": "authorization_code", "code": "the-code", "redirect_uri": "https://app.example.test/callback", "code_verifier": "a-pkce-verifier-of-forty-three-or-more-characters-0123456789"},
+    "request": {"method": "POST", "url": "https://sign.example.test/api/v1/oauth/token", "headers": {"authorization": "Basic MDE5M2EwYjQtMDAwMC03MDAwLTgwMDAtMDAwMDAwMDAwMGExOm9zc19zZWNyZXQ=", "content-type": "application/x-www-form-urlencoded"}},
+    "response": {"status": 200, "headers": {"content-type": "application/json", "cache-control": "no-store"}, "body": {"access_token": "eyJ.access.token", "token_type": "Bearer", "expires_in": 3600, "scope": "envelopes:read", "refresh_token": "osr_refresh"}},
+    "refused": {"status": 400, "headers": {"content-type": "application/json"}, "body": {"error": "invalid_grant", "error_description": "CS-AUTH-0014"}}
+  },
+  "webhook": {
+    "secret": "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+    "headers": {"webhook-id": "msg_p5jXN8AQM9LWM0D4loKWxJek", "webhook-timestamp": "1614265330", "webhook-signature": "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="},
+    "body": "{\"test\": 2432232314}",
+    "now_ms": 1614265330000
+  }
+}

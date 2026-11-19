@@ -80,10 +80,19 @@ const ctx = {
   },
 };
 
+/// An app's consent request survives signing in (VS-08A): kept for this tab only, and
+/// resumed by signin.js, which takes nothing but `#/authorize?…` back.
+function keepForSignIn(hash) {
+  if (!hash.startsWith("#/authorize?")) return;
+  try { sessionStorage.setItem("openseal.next", hash); } catch { /* private mode: sign in, then follow the app's link again */ }
+}
+
 const ROUTES = [
   [/^#\/signin$/, () => import("./signin.js"), { chrome: false }],
   // The invitation email's link (WEB-06 AD-01): open without a session.
   [/^#\/accept-invite(?:\?.*)?$/, () => import("./acceptinvite.js"), { chrome: false }],
+  // VS-08A: an app's OAuth consent request, handed over by GET /api/v1/oauth/authorize.
+  [/^#\/authorize\?.*$/, () => import("./authorize.js"), { chrome: false }],
   [/^#\/home$/, () => import("./home.js"), { nav: "home" }],
   [/^#\/agreements(?:\?.*)?$/, () => import("./dashboard.js"), { nav: "agreements" }],
   [/^#\/envelopes\/([^/?]+)$/, () => import("./envelope.js"), { nav: "agreements" }],
@@ -367,6 +376,7 @@ async function route(how) {
       // Half signed in (ASVS-01): the password passed, the second factor not yet.
       if (owedFactor(ctx.session)) {
         ctx.session = null;
+        keepForSignIn(hash);
         location.replace(`${location.pathname}${location.search}#/signin`);
         return;
       }
@@ -378,6 +388,7 @@ async function route(how) {
         errorState(freshView(main), err, route);
         return;
       }
+      keepForSignIn(hash);
       location.replace(`${location.pathname}${location.search}#/signin`);
       return;
     }

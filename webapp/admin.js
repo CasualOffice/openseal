@@ -40,7 +40,7 @@ import { register, unregisterPrefix } from "./commands.js";
 import {
   NAV, routeFrom, navHref, SCOPE_GROUPS, PERMISSION_GROUPS, profileChoices, profileValue, eventGroups, parseSecretRefs, expiryState, userState, filterUsers, contrastRatio,
   expiryWarningOf, expiryWarningPatch, MAX_WARNING_DAYS, actorKind, changedKeys, filterAdminEvents, joinCsvPages,
-  orgLocked, SEAL_PROFILES, sealProfileLabel,
+  orgLocked, SEAL_PROFILES, sealProfileLabel, parseRedirectUris, publicKeyProblem,
 } from "./adminmodel.js";
 import { intelligence } from "./adminintel.js";
 import { ersdCard } from "./adminersd.js";
@@ -343,7 +343,7 @@ function account(panel, ctx, part) {
       description: t("admin.branding-lede"),
       build(body) {
         f.name = h("input", { id: "b-name", class: "os-input", value: b.name || "", maxLength: 255, attrs: { autofocus: true } });
-        f.color = h("input", { id: "b-color", class: "os-input os-input--mono", value: b.color || "", maxLength: 7, placeholder: "#b3141f", attrs: { "aria-describedby": "b-color-help b-contrast b-err" } });
+        f.color = h("input", { id: "b-color", class: "os-input os-input--mono", value: b.color || "", maxLength: 7, placeholder: "#b3141f", attrs: { "aria-describedby": "b-color-help b-contrast b-err" } }); // i18n-ignore: a sample colour value, not language
         f.pick = h("input", { id: "b-pick", type: "color", class: "os-colorpick", value: HEX.test(b.color || "") ? b.color.toLowerCase() : "#b3141f", attrs: { "aria-label": t("admin.brand-pick") } });
         f.locked = orgLocked(acct, "branding");
         for (const el of [f.name, f.color, f.pick]) el.disabled = f.locked;
@@ -1227,7 +1227,7 @@ function webhooks(panel, ctx) {
       title: t(editing ? "admin.wh.edit-title" : "admin.wh.new"),
       width: 30,
       build(body) {
-        f.url = h("input", { id: "wh-url", class: "os-input os-input--mono", type: "url", inputMode: "url", autocomplete: "off", maxLength: 2048, placeholder: "https://", value: existing?.url || "", attrs: { autofocus: true, "aria-describedby": "wh-url-help wh-err" } });
+        f.url = h("input", { id: "wh-url", class: "os-input os-input--mono", type: "url", inputMode: "url", autocomplete: "off", maxLength: 2048, placeholder: "https://", value: existing?.url || "", attrs: { autofocus: true, "aria-describedby": "wh-url-help wh-err" } }); // i18n-ignore: the URL scheme the address must start with
         f.refs = editing ? null : h("input", { id: "wh-refs", class: "os-input os-input--mono", autocomplete: "off", maxLength: 300, attrs: { "aria-describedby": "wh-refs-help wh-err" } });
         const events = h("div", { class: "os-admin__events" });
         const chosen = (e) => (editing ? (existing.event_types || []).includes(e) : /^envelope\.(completed|declined|voided)$/.test(e));
@@ -1376,7 +1376,7 @@ function clients(panel, ctx) {
         h("td", {}, h("strong", { text: c.name || "—" }), c.key_prefix ? h("code", { class: "os-muted os-small", text: ` ${c.key_prefix}…` }) : null),
         h("td", {}, c.revoked
           ? h("span", { class: "os-badge os-badge--voided" }, icon("ban", { size: 16 }), h("span", { text: t("admin.revoked") }))
-          : h("span", { text: t(c.kind === "api_key" ? "admin.kind.api_key" : "admin.kind.oauth_app") })),
+          : h("span", { text: t(c.kind === "api_key" ? "admin.kind.api_key" : c.kind === "jwt_integration" ? "admin.kind.jwt_integration" : "admin.kind.oauth_app") })),
         h("td", { class: "os-col-date os-muted os-small", attrs: { "data-label": t("admin.scopes") }, text: (c.scopes || []).join(", ") }),
         created ? h("td", { class: "os-col-date", attrs: { "data-label": t("admin.col.created") } }, when(c.created_at) || "—") : null,
         h("td", { class: "os-col-date", attrs: { "data-label": t("admin.col.expires") } }, expires),
@@ -1399,8 +1399,22 @@ function clients(panel, ctx) {
       width: 30,
       build(body) {
         f.name = h("input", { id: "c-name", class: "os-input", maxLength: 255, autocomplete: "off", attrs: { autofocus: true } });
-        const kind = selectField(t("admin.kind"), [["api_key", t("admin.kind.api_key")], ["oauth_app", t("admin.kind.oauth_app")]], { id: "c-kind" });
+        const kind = selectField(t("admin.kind"), [["api_key", t("admin.kind.api_key")], ["oauth_app", t("admin.kind.oauth_app")], ["jwt_integration", t("admin.kind.jwt_integration")]], { id: "c-kind" });
         f.kind = kind.select;
+        // VS-08A, VS-08B: where consent sends a member back, and a JWT integration's key.
+        f.redirects = h("textarea", { id: "c-redirects", class: "os-input os-textarea os-input--mono", rows: 2, attrs: { "aria-describedby": "c-redirects-d", spellcheck: "false" } });
+        f.key = h("textarea", { id: "c-key", class: "os-input os-textarea os-input--mono", rows: 4, attrs: { "aria-describedby": "c-key-d", spellcheck: "false" } });
+        const redirectsBlock = h("div", { class: "os-field" },
+          h("label", { class: "os-label", attrs: { for: "c-redirects" }, text: t("admin.redirect-uris") }), f.redirects,
+          h("p", { id: "c-redirects-d", class: "os-help", text: t("admin.redirect-uris-help") }));
+        const keyBlock = h("div", { class: "os-field" },
+          h("label", { class: "os-label", attrs: { for: "c-key" }, text: t("admin.public-key") }), f.key,
+          h("p", { id: "c-key-d", class: "os-help", text: t("admin.public-key-help") }));
+        const shown = () => {
+          redirectsBlock.hidden = f.kind.value === "api_key";
+          keyBlock.hidden = f.kind.value !== "jwt_integration";
+        };
+        f.kind.addEventListener("change", shown);
         f.days = h("input", { id: "c-days", class: "os-input", type: "number", min: "1", max: "3650", step: "1", value: "365" });
         const scopes = h("div", { class: "os-admin__scopes" });
         for (const [group, list] of SCOPE_GROUPS) {
@@ -1418,8 +1432,11 @@ function clients(panel, ctx) {
         body.append(
           h("label", { class: "os-label", attrs: { for: "c-name" }, text: t("prepare.name") }), f.name,
           kind.el,
+          redirectsBlock,
+          keyBlock,
           scopes,
           h("label", { class: "os-label", attrs: { for: "c-days" }, text: t("admin.expires-days") }), f.days, f.err);
+        shown();
       },
       actions: [
         { label: t("action.cancel"), value: null },
@@ -1433,7 +1450,24 @@ function clients(panel, ctx) {
             if (!name) { f.err.textContent = t("form.required"); f.name.focus(); return undefined; }
             if (!scopes.length) { f.err.textContent = t("admin.need-scope"); f.scopes[0].focus(); return undefined; }
             if (!(days >= 1 && days <= 3650)) { f.err.textContent = t("admin.need-days"); f.days.focus(); return undefined; }
-            return ctx.api.apiClients.create({ name, kind: f.kind.value, scopes, expires_in_days: days });
+            const body = { name, kind: f.kind.value, scopes, expires_in_days: days };
+            if (body.kind !== "api_key") {
+              const r = parseRedirectUris(f.redirects.value);
+              if (r.error) { f.err.textContent = t(r.error === "many" ? "admin.redirect-uris-many" : "admin.redirect-uris-bad", { n: r.index + 1 }); f.redirects.focus(); return undefined; }
+              body.redirect_uris = r.uris;
+            }
+            if (body.kind === "jwt_integration") {
+              const bad = publicKeyProblem(f.key.value);
+              if (bad) { f.err.textContent = t(`admin.public-key-${bad}`); f.key.focus(); return undefined; }
+              body.public_key = f.key.value.trim();
+            }
+            try {
+              return await ctx.api.apiClients.create(body);
+            } catch (err) {
+              const at = err?.errors?.[0]?.pointer || "";
+              if (at.startsWith("/redirect_uris") || at === "/public_key") { f.err.textContent = t(at === "/public_key" ? "admin.public-key-bad" : "admin.redirect-uris-bad", { n: Number(at.split("/")[2] || 0) + 1 }); return undefined; }
+              throw err;
+            }
           },
         },
       ],

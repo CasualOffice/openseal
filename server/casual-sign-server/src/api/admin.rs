@@ -1023,6 +1023,8 @@ fn client_json(c: &casual_sign_store::repo::api_clients::ApiClient) -> Value {
         "scopes": c.scopes,
         "expires_at": c.expires_at.map(rfc3339),
         "revoked": c.revoked_at.is_some(),
+        "redirect_uris": c.redirect_uris,
+        "has_public_key": c.public_key_pem.is_some(),
     })
 }
 
@@ -1051,10 +1053,19 @@ struct ClientIn {
     owner_user_id: Option<String>,
     #[serde(default)]
     expires_in_days: Option<u32>,
+    /// Where authorization codes may go (an OAuth app or a JWT integration's consent,
+    /// VS-08A): `https://`, or `http://` to the loopback address; at most ten.
+    #[serde(default)]
+    redirect_uris: Vec<String>,
+    /// A JWT integration's public key, PEM (`-----BEGIN PUBLIC KEY-----`, EC P-256 or
+    /// RSA; VS-08B).
+    #[serde(default)]
+    public_key: Option<String>,
 }
 
-/// `POST /api-clients`: a personal API key (`osk_…`) or an OAuth client
-/// (`client_id` + `client_secret`). The secret is in this response only (SEC-A10).
+/// `POST /api-clients`: a personal API key (`osk_…`), an OAuth client (`client_id` +
+/// `client_secret`), or a JWT integration (`client_id`; it signs with its own private
+/// key, so nothing secret is made here). A secret is in this response only (SEC-A10).
 pub(crate) async fn create_client(c: Call, body: Bytes) -> Result<Response, ApiError> {
     let req: ClientIn = parse(&body)?;
     // A new credential: only after a recent re-authentication (ASVS-07).
@@ -1062,8 +1073,26 @@ pub(crate) async fn create_client(c: Call, body: Bytes) -> Result<Response, ApiE
     let kind = match req.kind.as_str() {
         "api_key" => ApiClientKind::ApiKey,
         "oauth_app" => ApiClientKind::OauthApp,
+        "jwt_integration" => ApiClientKind::JwtIntegration,
         _ => return Err(ApiError::invalid("/kind")),
     };
+    if req.redirect_uris.len() > super::oauth::MAX_REDIRECTS
+        || (kind == ApiClientKind::ApiKey && !req.redirect_uris.is_empty())
+    {
+        return Err(ApiError::invalid("/redirect_uris"));
+    }
+    if let Some(i) = req
+        .redirect_uris
+        .iter()
+        .position(|u| !super::oauth::redirect_uri_ok(u))
+    {
+        return Err(ApiError::invalid(&format!("/redirect_uris/{i}")));
+    }
+    match (&req.public_key, kind) {
+        (Some(k), ApiClientKind::JwtIntegration) if super::oauth::public_key_ok(k) => {}
+        (None, ApiClientKind::OauthApp | ApiClientKind::ApiKey) => {}
+        _ => return Err(ApiError::invalid("/public_key")),
+    }
     let name = req.name.trim();
     if name.is_empty() || name.chars().count() > 255 {
         return Err(ApiError::invalid("/name"));
@@ -1099,6 +1128,7 @@ pub(crate) async fn create_client(c: Call, body: Bytes) -> Result<Response, ApiE
     };
     let id = ApiClientId(Uuid::now_v7());
     let secret = random_secret()?;
+    let jwt = kind == ApiClientKind::JwtIntegration;
     let (shown, prefix) = match kind {
         ApiClientKind::ApiKey => {
             let prefix = format!(
@@ -1118,8 +1148,8 @@ pub(crate) async fn create_client(c: Call, body: Bytes) -> Result<Response, ApiE
             kind,
             name: name.to_owned(),
             owner_user_id: Some(owner),
-            key_prefix: Some(prefix),
-            secret_sha256: Some(sha256(shown.as_bytes())),
+            key_prefix: (!jwt).then_some(prefix),
+            secret_sha256: (!jwt).then(|| sha256(shown.as_bytes())),
             scopes: req.scopes.clone(),
             expires_at: req
                 .expires_in_days
@@ -1127,6 +1157,11 @@ pub(crate) async fn create_client(c: Call, body: Bytes) -> Result<Response, ApiE
                 .transpose()?,
         })
         .await?;
+    if kind != ApiClientKind::ApiKey {
+        tx.api_clients()
+            .set_oauth(id, &req.redirect_uris, req.public_key.as_deref())
+            .await?;
+    }
     let stored = tx
         .api_clients()
         .get(id)
@@ -1136,12 +1171,17 @@ pub(crate) async fn create_client(c: Call, body: Bytes) -> Result<Response, ApiE
     let mut out = client_json(&stored);
     if let Value::Object(m) = &mut out {
         match kind {
-            ApiClientKind::ApiKey => m.insert("key".into(), Value::String(shown)),
+            ApiClientKind::ApiKey => {
+                m.insert("key".into(), Value::String(shown));
+            }
+            ApiClientKind::JwtIntegration => {
+                m.insert("client_id".into(), Value::String(id.to_string()));
+            }
             _ => {
                 m.insert("client_id".into(), Value::String(id.to_string()));
-                m.insert("client_secret".into(), Value::String(shown))
+                m.insert("client_secret".into(), Value::String(shown));
             }
-        };
+        }
     }
     let mut r = json(StatusCode::CREATED, &out);
     r.extensions_mut().insert(SecretBearing);
@@ -1182,7 +1222,7 @@ struct LoginIn {
 }
 
 #[allow(clippy::result_large_err)] // The refusal is the response to send.
-fn login_limit(st: &AppState, ip: ClientIp, name: &str) -> Result<(), Response> {
+pub(super) fn login_limit(st: &AppState, ip: ClientIp, name: &str) -> Result<(), Response> {
     let per = st.config().rate.login_per_minute;
     let ipkey = ip.0.map_or_else(|| "none".to_owned(), |i| i.to_string());
     let ipdigest = casual_sign_audit::Hash256(sha256(ipkey.as_bytes())).hex();
@@ -1227,7 +1267,7 @@ pub(crate) async fn login(
 
 /// Who a sign-in step names: the user and account once known, before that a pseudonym
 /// of what was presented (ASVS-08).
-type Identified = Option<(Who, Option<Uuid>)>;
+pub(super) type Identified = Option<(Who, Option<Uuid>)>;
 
 fn identified(
     ev: casual_sign_seclog::SecurityEvent,
@@ -1438,18 +1478,35 @@ pub(crate) async fn session(c: Call) -> Result<Response, ApiError> {
     ))
 }
 
+/// The token endpoint's parameters (RFC 6749 §4, RFC 7523 §2.1): those each grant
+/// reads; any other is ignored, as RFC 6749 §3.2 asks.
 #[derive(Debug, Deserialize)]
-struct TokenIn {
-    grant_type: String,
+pub(super) struct TokenIn {
+    pub(super) grant_type: String,
     #[serde(default)]
-    client_id: Option<String>,
+    pub(super) client_id: Option<String>,
     #[serde(default)]
-    client_secret: Option<String>,
+    pub(super) client_secret: Option<String>,
     #[serde(default)]
-    scope: Option<String>,
+    pub(super) scope: Option<String>,
+    /// `authorization_code`.
+    #[serde(default)]
+    pub(super) code: Option<String>,
+    /// `authorization_code`: the URI the code was issued to.
+    #[serde(default)]
+    pub(super) redirect_uri: Option<String>,
+    /// `authorization_code`: the PKCE verifier.
+    #[serde(default)]
+    pub(super) code_verifier: Option<String>,
+    /// `refresh_token`.
+    #[serde(default)]
+    pub(super) refresh_token: Option<String>,
+    /// The JWT bearer grant's signed assertion.
+    #[serde(default)]
+    pub(super) assertion: Option<String>,
 }
 
-fn oauth_error(status: StatusCode, error: &str, code: &'static str) -> Response {
+pub(super) fn oauth_error(status: StatusCode, error: &str, code: &'static str) -> Response {
     let mut r = json(
         status,
         &json!({ "error": error, "error_description": code }),
@@ -1510,7 +1567,13 @@ async fn token_inner(
     let Some(req) = req else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "CS-API-0001");
     };
-    if req.grant_type != "client_credentials" {
+    if req.grant_type == super::oauth::JWT_BEARER {
+        return super::oauth::jwt_grant(st, ip, &req, who).await;
+    }
+    if !matches!(
+        req.grant_type.as_str(),
+        "client_credentials" | "authorization_code" | "refresh_token"
+    ) {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",
@@ -1555,6 +1618,11 @@ async fn token_inner(
     if c.kind != ApiClientKind::OauthApp {
         return oauth_error(StatusCode::UNAUTHORIZED, "invalid_client", "CS-AUTH-0007");
     }
+    match req.grant_type.as_str() {
+        "authorization_code" => return super::oauth::code_grant(st, tx, &c, account, &req).await,
+        "refresh_token" => return super::oauth::refresh_grant(st, tx, &c, account, &req).await,
+        _ => {}
+    }
     let granted: Vec<String> = match &req.scope {
         Some(s) => {
             let asked: Vec<&str> = s.split(' ').filter(|x| !x.is_empty()).collect();
@@ -1577,6 +1645,8 @@ async fn token_inner(
             .unix_timestamp()
             .saturating_add(i64::try_from(ttl).unwrap_or(3600)),
         jti: Uuid::now_v7().to_string(),
+        usr: None,
+        grt: None,
     };
     let Ok(t) = st.0.jwt.sign(&claims) else {
         return oauth_error(

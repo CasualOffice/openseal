@@ -15,6 +15,7 @@ pub(crate) mod folders;
 pub(crate) mod groups;
 pub(crate) mod mfa;
 pub(crate) mod ml;
+pub(crate) mod oauth;
 pub(crate) mod org;
 pub(crate) mod placing;
 pub(crate) mod privacy;

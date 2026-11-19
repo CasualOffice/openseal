@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE api_clients SET redirect_uris = $3, public_key_pem = $4 WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "TextArray",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d11a62da638d2fd1418d3b381bada64b4c288c5a2ca03d71034e4b90420132e8"
+}

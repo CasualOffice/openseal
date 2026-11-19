@@ -18,6 +18,7 @@ pub mod groups;
 pub mod idempotency;
 pub mod jobs;
 pub mod ml;
+pub mod oauth;
 pub mod privacy;
 pub mod recipients;
 pub mod seal_signatures;
@@ -92,6 +93,11 @@ impl TenantTx {
     /// API clients and keys.
     pub fn api_clients(&mut self) -> api_clients::ApiClients<'_> {
         api_clients::ApiClients { tx: self }
+    }
+
+    /// OAuth consents, authorization codes and refresh tokens (VS-08A).
+    pub fn oauth(&mut self) -> oauth::OAuth<'_> {
+        oauth::OAuth { tx: self }
     }
 
     /// Envelopes.

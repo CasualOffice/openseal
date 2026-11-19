@@ -255,6 +255,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | SigningLink | `signing_links` | resolution only |
 | WebhookSubscription, WebhookDelivery | `webhook_subscriptions`, `webhook_deliveries` | `TenantTx::webhooks` |
 | ApiClient | `api_clients` | `TenantTx::api_clients` |
+| OAuth consent, authorization code, refresh token (`VS-08A`, migration 0048) | `oauth_consents`, `oauth_codes`, `oauth_refresh_tokens` | `TenantTx::oauth`: a member's live consent per client (widened, never narrowed, by a new consent; revoked, never deleted), codes and refresh tokens as SHA-256 only, spent once; `api_clients.redirect_uris` and `public_key_pem` (0002) set by `ApiClients::set_oauth`; a JWT integration's workspace found by `openseal_resolve_jwt_client` (definer) |
 | RetentionPolicy | `retention_rules` (migration 0045; replaced the unused `retention_policies`) | `TenantTx::privacy` (rules, legal holds, the retention job's candidates, tombstones, the record purge, member erasure; `ASVS-16`, `ASVS-18`) |
 | Jobs (ADR-012) | `jobs` | `TenantTx::jobs`; claim through `EntryPoints` |
 

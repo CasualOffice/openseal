@@ -20,14 +20,48 @@
 #
 # The secret and client secret here are test values for this throwaway stack only.
 
+# - `hooks` (slice 8, VS-08C): a webhook receiver (auth_stubs.py `hooks`) reached by the
+#   worker as https://hooks.e2e.test:8443/… (a name with dots, which webhook registration
+#   requires, given as a network alias), with a certificate the development root issues;
+#   the worker trusts that root (SSL_CERT_FILE). Its address is on the Compose network,
+#   which the worker refuses by default (SEC-W01), so this throwaway stack allows the
+#   private ranges Docker uses (OPENSEAL_WEBHOOK_ALLOW); production never sets it. The
+#   worker signs with OPENSEAL_E2E_WEBHOOK_SECRET, the secret reference the spec's
+#   subscription names; the receiver checks each signature with the same value. The
+#   browser spec reads what it received on 127.0.0.1:${OPENSEAL_E2E_HOOKS_PORT:-8027}.
+
 services:
   worker:
     environment:
       OPENSEAL_SMS_GATEWAY_URL: https://sms-gateway:8443/messages
       OPENSEAL_SMS_GATEWAY_SECRET: ci-only-sms-gateway-secret
       SSL_CERT_FILE: /secrets/ca.pem
+      OPENSEAL_WEBHOOK_ALLOW: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+      OPENSEAL_E2E_WEBHOOK_SECRET: whsec_Y2ktb25seS13ZWJob29rLXNpZ25pbmctc2VjcmV0
     depends_on:
       sms-gateway: {condition: service_healthy}
+      hooks: {condition: service_healthy}
+
+  hooks:
+    image: openseal-devtools:dev
+    restart: unless-stopped
+    user: tsa
+    command: ["python3", "-I", "/opt/e2e/auth_stubs.py", "hooks", "--issue-from", "/secrets",
+              "--tls-name", "hooks.e2e.test", "--listen", "0.0.0.0:8443", "--read", "0.0.0.0:8027"]
+    environment:
+      OPENSEAL_E2E_WEBHOOK_SECRET: whsec_Y2ktb25seS13ZWJob29rLXNpZ25pbmctc2VjcmV0
+    networks:
+      default:
+        aliases: [hooks.e2e.test]
+    volumes:
+      - {type: volume, source: secrets, target: /secrets, read_only: true}
+      - ./tools/e2e:/opt/e2e:ro
+    ports: ["127.0.0.1:${OPENSEAL_E2E_HOOKS_PORT:-8027}:8027"]
+    depends_on: {pki: {condition: service_completed_successfully}}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8027/healthz', timeout=2)"]
+      interval: 3s
+      retries: 20
 
   server:
     environment:

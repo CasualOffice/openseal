@@ -109,6 +109,7 @@ export async function openProfile(ctx, { focus = null, onSaved = null } = {}) {
           current.el, next.el),
         factorsSection(ctx),
         sessionsSection(ctx),
+        appsSection(ctx),
         dataSection(ctx));
       if (focus === "notifications") queueMicrotask(() => { checks.completed.input.focus(); notif.scrollIntoView?.({ block: "nearest" }); });
     },
@@ -210,6 +211,54 @@ export function sessionsSection(ctx) {
     const alone = rows.every((r) => r.current);
     note.textContent = alone ? t("sessions.none-other") : "";
     others.hidden = alone;
+  }
+
+  load();
+  return section;
+}
+
+/// The apps the person let act as them (VS-08A, `GET /oauth/consents`): each with what it
+/// may do, and Remove access (`DELETE /oauth/consents/{id}`), which stops it at once.
+export function appsSection(ctx) {
+  const list = h("ul", { class: "os-sessions", attrs: { "data-testid": "apps-list", "aria-labelledby": "profile-h-apps" } });
+  const note = h("p", { class: "os-muted os-small", attrs: { "aria-live": "polite", "data-testid": "apps-note" } });
+  const section = h("section", { class: "os-profile__section", attrs: { "aria-labelledby": "profile-h-apps", "data-testid": "profile-apps" } },
+    h("h3", { id: "profile-h-apps", class: "os-profile__h", text: t("profile.apps") }),
+    h("p", { class: "os-muted os-small", text: t("profile.apps-lede") }),
+    list, note);
+
+  async function remove(k) {
+    try {
+      await ctx.api.oauth.revoke(k.id);
+      toast(t("profile.apps-removed"), "success");
+    } catch (err) { if (!ctx.failed?.(err)) toastError(err); }
+    await load();
+  }
+
+  async function load() {
+    let items;
+    try {
+      items = (await ctx.api.oauth.consents())?.items || [];
+    } catch (err) {
+      if (ctx.failed?.(err)) return;
+      section.hidden = true;
+      return;
+    }
+    clear(list);
+    for (const k of items) {
+      const name = k.client?.name || "—";
+      list.append(h("li", { class: "os-sessions__row", attrs: { "data-testid": "app-row" } },
+        h("div", { class: "os-sessions__who" },
+          h("b", { text: name }),
+          h("span", { class: "os-muted os-small", text: (k.scopes || []).join(", ") }),
+          h("span", { class: "os-muted os-small", text: t("profile.apps-since", { date: fmtDate(k.granted_at) }) })),
+        button(t("profile.apps-remove"), {
+          variant: "subtle", size: "sm",
+          attrs: { "aria-label": t("profile.apps-remove-named", { name }), "data-testid": "app-remove" },
+          onClick: () => remove(k),
+        })));
+    }
+    note.textContent = items.length ? "" : t("profile.apps-empty");
   }
 
   load();

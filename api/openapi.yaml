@@ -283,12 +283,24 @@ components:
     TokenRequest:
       type: object
       required: [grant_type]
-      description: Also accepted as application/x-www-form-urlencoded; client authentication by HTTP Basic or in the body.
+      description: >-
+        Also accepted as application/x-www-form-urlencoded. `client_credentials`,
+        `authorization_code` and `refresh_token` authenticate the OAuth app by HTTP Basic
+        or `client_id` and `client_secret` in the body; the JWT bearer grant
+        (`urn:ietf:params:oauth:grant-type:jwt-bearer`, RFC 7523) authenticates by the
+        `assertion` alone, signed (ES256 or RS256) with the integration's registered key:
+        `iss` its id, `sub` the member, `aud` this server's URL or this endpoint's,
+        `exp` in the future and at most an hour after `iat`, `scope` optional.
       properties:
-        grant_type: {type: string, const: client_credentials}
+        grant_type: {type: string, enum: [client_credentials, authorization_code, refresh_token, 'urn:ietf:params:oauth:grant-type:jwt-bearer']}
         client_id: {type: string}
         client_secret: {type: string}
         scope: {type: string}
+        code: {type: string, description: authorization_code}
+        redirect_uri: {type: string, description: 'authorization_code: the URI the code was issued to'}
+        code_verifier: {type: string, minLength: 43, maxLength: 128, description: 'authorization_code: the PKCE verifier'}
+        refresh_token: {type: string, description: 'refresh_token: rotated on every use; one spent twice revokes its family'}
+        assertion: {type: string, description: 'The JWT bearer grant''s signed assertion'}
     TokenResponse:
       type: object
       properties:
@@ -296,6 +308,31 @@ components:
         token_type: {type: string, const: Bearer}
         expires_in: {type: integer}
         scope: {type: string}
+        refresh_token: {type: string, description: 'authorization_code and refresh_token only (`osr_`), 30 days unused'}
+    AuthorizeRequest:
+      type: object
+      required: [response_type, client_id, redirect_uri, scope, code_challenge, code_challenge_method]
+      additionalProperties: false
+      properties:
+        response_type: {type: string, const: code}
+        client_id: {type: string}
+        redirect_uri: {type: string, description: One of the client's registered redirect URIs, exactly}
+        scope: {type: string, description: Space-separated; each within the client's scopes and the member's own}
+        state: {type: string, maxLength: 512}
+        code_challenge: {type: string, minLength: 43, maxLength: 128}
+        code_challenge_method: {type: string, const: S256}
+        decision: {type: string, enum: [allow, deny], description: '`POST` only'}
+    Consent:
+      type: object
+      properties:
+        id: {type: string}
+        client:
+          type: object
+          properties:
+            id: {type: string}
+            name: {type: string}
+        scopes: {type: array, items: {type: string}}
+        granted_at: {type: string, format: date-time}
     Jwks:
       type: object
       properties:
@@ -474,6 +511,8 @@ components:
         scopes: {type: array, items: {type: string}}
         expires_at: {type: [string, 'null'], format: date-time}
         revoked: {type: boolean}
+        redirect_uris: {type: array, items: {type: string}}
+        has_public_key: {type: boolean, description: A JWT integration's registered key; the key itself is never answered}
     ApiClientList:
       type: object
       properties:
@@ -484,10 +523,16 @@ components:
       additionalProperties: false
       properties:
         name: {type: string, maxLength: 255}
-        kind: {type: string, enum: [api_key, oauth_app]}
+        kind: {type: string, enum: [api_key, oauth_app, jwt_integration]}
         scopes: {type: array, items: {type: string}}
         owner_user_id: {type: string}
         expires_in_days: {type: integer, minimum: 1, maximum: 3650}
+        redirect_uris:
+          type: array
+          maxItems: 10
+          description: "OAuth apps and JWT integrations: where authorization codes go after consent; `https://`, or `http://` to localhost, 127.0.0.1 or [::1]; no fragment (`422` at `/redirect_uris/{i}`)"
+          items: {type: string, maxLength: 2048}
+        public_key: {type: string, maxLength: 8192, description: 'JWT integrations only, and required: a `-----BEGIN PUBLIC KEY-----` PEM, EC P-256 (ES256) or RSA (RS256); a private key is refused (`422` at `/public_key`)'}
     ApiClientCreated:
       allOf:
         - $ref: '#/components/schemas/ApiClient'
@@ -2016,7 +2061,14 @@ paths:
   /api/v1/oauth/token:
     post:
       operationId: token
-      summary: "OAuth 2.1 client-credentials grant"
+      summary: "OAuth 2.1 token endpoint: client credentials, authorization code with PKCE, refresh token, JWT bearer grant (VS-08A, VS-08B)"
+      description: >-
+        RFC 6749 §5.2 errors, with the `CS-*` code as `error_description`:
+        `invalid_client` (`CS-AUTH-0007`), `invalid_grant` (`CS-AUTH-0014`: a code or
+        refresh token unknown, spent, expired or not this client's, a wrong PKCE verifier or
+        redirect URI, an assertion with a bad signature, audience or lifetime;
+        `CS-AUTH-0005`: the member has not consented to the JWT integration),
+        `invalid_scope` (`CS-AUTH-0006`), `unsupported_grant_type`.
       security: []
       x-permission: public
       requestBody:
@@ -2030,6 +2082,112 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/TokenResponse'}
+        default: {$ref: '#/components/responses/Problem'}
+  /.well-known/oauth-authorization-server:
+    get:
+      operationId: oauthMetadata
+      summary: "OAuth authorization server metadata (RFC 8414)"
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {type: object}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/oauth/authorize:
+    get:
+      operationId: authorizeRedirect
+      summary: "Authorization endpoint: hands the request to the web app's consent screen"
+      description: >-
+        `303` to `/app.html#/authorize?<the same query>`; the screen signs the member in
+        if needed, reads the checked request and posts the answer. Nothing is checked or
+        recorded here.
+      security: []
+      x-permission: public
+      responses:
+        '303': {description: To the consent screen}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: authorize
+      summary: "The member's answer to an authorization request (VS-08A)"
+      description: >-
+        A staff session only (`422` at `/credential` otherwise). `allow` records the
+        member's consent (widening a live one) and answers the redirect with a one-time
+        code (ten minutes), `state` and `iss`; `deny` answers it with
+        `error=access_denied`. Refusals are problems at the request's member
+        (`/client_id`, `/redirect_uri`, `/response_type`, `/code_challenge`, `/scope`,
+        `/state`, `/decision`), never a redirect to an unregistered URI.
+      x-permission: ""
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/AuthorizeRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  redirect_to: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/oauth/authorize/request:
+    get:
+      operationId: authorizeRequest
+      summary: "An authorization request, checked, for the consent screen to show"
+      description: >-
+        The query of `GET /oauth/authorize`, checked against the client and the signed-in
+        member as `POST /oauth/authorize` checks it; answers the client's name and the
+        scopes asked.
+      x-permission: ""
+      parameters:
+        - {name: response_type, in: query, required: true, schema: {type: string}}
+        - {name: client_id, in: query, required: true, schema: {type: string}}
+        - {name: redirect_uri, in: query, required: true, schema: {type: string}}
+        - {name: scope, in: query, required: true, schema: {type: string}}
+        - {name: state, in: query, schema: {type: string}}
+        - {name: code_challenge, in: query, required: true, schema: {type: string}}
+        - {name: code_challenge_method, in: query, required: true, schema: {type: string}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client: {type: object, properties: {id: {type: string}, name: {type: string}, kind: {type: string}}}
+                  scopes: {type: array, items: {type: string}}
+                  redirect_uri: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/oauth/consents:
+    get:
+      operationId: listConsents
+      summary: "The apps the caller let act as them (VS-08A)"
+      x-permission: ""
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: '#/components/schemas/Consent'}}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/oauth/consents/{id}:
+    delete:
+      operationId: revokeConsent
+      summary: "Withdraw a consent: its refresh tokens stop at once, its access tokens on their next request"
+      x-permission: ""
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Withdrawn}
         default: {$ref: '#/components/responses/Problem'}
   /.well-known/jwks.json:
     get:

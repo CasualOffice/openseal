@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_refresh_tokens SET revoked_at = $3 WHERE account_id = $1 AND consent_id = $2 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "133b315f0c8b74425f5741f54a3595865dd0173aac7c634377bd2a3cf8b3bc08"
+}

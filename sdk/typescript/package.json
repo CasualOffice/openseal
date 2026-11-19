@@ -1,0 +1,18 @@
+{
+  "name": "@openseal/sdk",
+  "version": "0.1.0-beta.0",
+  "description": "OpenSeal API client: one method per operation of the OpenSeal API, OAuth helpers and webhook verification. ES module, no dependencies.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.js" }
+  },
+  "files": ["index.js", "index.d.ts", "operations.js", "operations.d.ts", "README.md"],
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "test": "node --test test/*.test.mjs"
+  },
+  "publishConfig": { "tag": "beta", "access": "public" }
+}

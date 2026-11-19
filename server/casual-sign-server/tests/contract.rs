@@ -2208,6 +2208,124 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "me",
     )
     .await;
+    // OAuth 2.1 acting for a member (VS-08A): metadata, the authorization endpoint, the
+    // consent screen's two calls, the code exchanged with PKCE, a refresh, the consent
+    // listed and withdrawn. `tests/oauth.rs` covers the refusals and the JWT grant.
+    ok(
+        api.call(
+            "GET",
+            "/.well-known/oauth-authorization-server",
+            &Auth::None,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "oauth metadata",
+    )
+    .await;
+    let app = ok(
+        api.call(
+            "POST",
+            "/api/v1/api-clients",
+            k,
+            Some(json!({"name": "app", "kind": "oauth_app",
+            "scopes": ["envelopes:read"], "redirect_uris": ["https://app.example.test/cb"]})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "oauth app",
+    )
+    .await;
+    let app_id = app["client_id"].as_str().unwrap().to_owned();
+    let verifier = "v".repeat(43);
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+        aws_lc_rs::digest::digest(&aws_lc_rs::digest::SHA256, verifier.as_bytes()),
+    );
+    let q = format!(
+        "response_type=code&client_id={app_id}&redirect_uri=https%3A%2F%2Fapp.example.test%2Fcb&scope=envelopes%3Aread&code_challenge={challenge}&code_challenge_method=S256"
+    );
+    let r = api
+        .call(
+            "GET",
+            &format!("/api/v1/oauth/authorize?{q}"),
+            &Auth::None,
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SEE_OTHER);
+    ok(
+        api.call(
+            "GET",
+            &format!("/api/v1/oauth/authorize/request?{q}"),
+            &s,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "authorize request",
+    )
+    .await;
+    let allowed = ok(
+        api.call("POST", "/api/v1/oauth/authorize", &s, Some(json!({"response_type": "code",
+            "client_id": app_id, "redirect_uri": "https://app.example.test/cb", "scope": "envelopes:read",
+            "code_challenge": challenge, "code_challenge_method": "S256", "decision": "allow"})), &[]).await,
+        StatusCode::OK,
+        "authorize",
+    )
+    .await;
+    let code = allowed["redirect_to"]
+        .as_str()
+        .unwrap()
+        .split("code=")
+        .nth(1)
+        .unwrap()
+        .split('&')
+        .next()
+        .unwrap()
+        .to_owned();
+    let tok = ok(
+        api.call(
+            "POST",
+            "/api/v1/oauth/token",
+            &Auth::None,
+            Some(json!({"grant_type": "authorization_code",
+            "client_id": app_id, "client_secret": app["client_secret"], "code": code,
+            "redirect_uri": "https://app.example.test/cb", "code_verifier": verifier})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "code exchange",
+    )
+    .await;
+    assert!(tok["refresh_token"].is_string());
+    let consents = ok(
+        api.call("GET", "/api/v1/oauth/consents", &s, None, &[])
+            .await,
+        StatusCode::OK,
+        "consents",
+    )
+    .await;
+    ok(
+        api.call(
+            "DELETE",
+            &format!(
+                "/api/v1/oauth/consents/{}",
+                consents["items"][0]["id"].as_str().unwrap()
+            ),
+            &s,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::NO_CONTENT,
+        "consent withdrawn",
+    )
+    .await;
     ok(
         api.call(
             "PATCH",

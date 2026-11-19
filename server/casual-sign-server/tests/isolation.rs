@@ -50,11 +50,34 @@ async fn world(api: &Api, t: &Tenant) -> BTreeMap<&'static str, String> {
             "POST",
             "/api/v1/api-clients",
             k,
-            Some(json!({"name": "c", "kind": "oauth_app", "scopes": ["envelopes:read"]})),
+            Some(
+                json!({"name": "c", "kind": "oauth_app", "scopes": ["envelopes:read"],
+                "redirect_uris": ["https://app.example.test/cb"]}),
+            ),
             &[],
         )
         .await
         .json();
+    // VS-08A: the administrator's consent that the app acts as them.
+    let session = api.login(&t.email, common::harness::PASSWORD).await;
+    let allowed = api
+        .call(
+            "POST",
+            "/api/v1/oauth/authorize",
+            &session,
+            Some(json!({"response_type": "code",
+            "client_id": client["id"], "redirect_uri": "https://app.example.test/cb",
+            "scope": "envelopes:read", "code_challenge": "c".repeat(43),
+            "code_challenge_method": "S256", "decision": "allow"})),
+            &[],
+        )
+        .await;
+    assert_eq!(allowed.status, StatusCode::OK, "{:?}", allowed.json());
+    let consent = api
+        .call("GET", "/api/v1/oauth/consents", &session, None, &[])
+        .await
+        .json()["items"][0]["id"]
+        .clone();
     let template = api
         .call(
             "POST",
@@ -118,6 +141,7 @@ async fn world(api: &Api, t: &Tenant) -> BTreeMap<&'static str, String> {
         ("f", s(&e["fields"][0]["id"])),
         ("user", s(&user["id"])),
         ("client", s(&client["id"])),
+        ("consent", s(&consent)),
         ("template", s(&template["id"])),
         ("webhook", s(&hook["id"])),
         // ORG-03: another organization must not reach this workspace or this user.
@@ -143,6 +167,8 @@ fn fill(path: &str, ids: &BTreeMap<&'static str, String>, envelope: &str) -> Str
         ids["group"].clone()
     } else if path.starts_with("/api/v1/permission-profiles/") {
         ids["profile"].clone()
+    } else if path.starts_with("/api/v1/oauth/consents/") {
+        ids["consent"].clone()
     } else if path.starts_with("/api/v1/bulk-sends/") {
         ids["bulk"].clone()
     } else if path.starts_with("/api/v1/organizations/me/") {

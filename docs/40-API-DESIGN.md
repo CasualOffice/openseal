@@ -239,6 +239,14 @@ members above and `/disclosure` are served (`UXW-34`, As built below); the mock 
 - **Python, Java, C#, Go, PHP, Ruby** clients generated in CI from the same document (slice 8 ships TypeScript and
   Python; the rest follow).
 
+**As built (`VS-08E`).** `sdk/typescript` (`@openseal/sdk`, ES module, no dependencies, `0.1.0-beta.0`) and
+`sdk/python` (`openseal`, standard library only, `0.1.0b0`): a hand-written core reading a table of every public
+operation (`/api/v1` and `/.well-known`; not the ceremony) that `tools/build-sdks.py` generates from
+`api/openapi.yaml` (`--check` in CI's `checks`), so each operation is a method (Python also in snake case); problems
+become `OpenSealError` with the stable code; OAuth helpers (the authorization URL with a fresh PKCE pair, the token
+grants) and Standard Webhooks verification with a five-minute tolerance. Tests run offline against
+`sdk/contract/recorded.json`. Not published: the npm and PyPI accounts are the owner's ([76](76-SLICE-8-EVIDENCE.md)).
+
 ## 8. Compatibility shims
 
 A DocuSign-shaped compatibility endpoint (`/compat/docusign/v2.1/…`, envelopes, recipients, tabs, views, Connect
@@ -312,7 +320,7 @@ JSON, HTTP Basic or body credentials, RFC 6749 errors) and get a one-hour ES256 
 (`OPENSEAL_JWT_SIGNING_KEY`). Every request re-checks the credential: a revoked key or client, an expired token, a
 removed member or a disabled user is refused on its next request. A credential acts as a member and holds at most the
 scopes of that member's permission profile, narrowed by its own. **Not built:** staff OIDC and SAML login (a recipient's OpenID Connect sign-in is built, `RAUTH-01`; the staff TOTP second factor is below, `ASVS-01`, and staff passkeys as a second factor, `CON-13`), passwordless
-WebAuthn sign-in, OAuth authorization code with PKCE, the JWT bearer grant.
+WebAuthn sign-in. The authorization code grant with PKCE and the JWT bearer grant are built (slice 8, §As built (`VS-08A`, `VS-08B`) below).
 
 **Requests.** RFC 9457 problems with `code`, `request_id` (also `X-Request-Id`) and JSON-pointer `errors`; the
 router's own refusals (no route, wrong method, too large) are problems too. `Idempotency-Key` on any guarded `POST`:
@@ -452,6 +460,29 @@ binary's `migrate` and `healthcheck` commands and S3 blob settings are exercised
 | `POST /auth/password-reset {email}` | `UXW-38`. No session. `202 {}` for any well-formed address, so the answer never tells whether it has an account. For a local, enabled user it records a reset (`password_resets`, migration 0023; earlier open resets of the user are revoked) and queues `send_password_reset` in the same statement (no extra round trip for a known address, `UXW-38C`); the worker draws a 256-bit token, stores only its SHA-256 with a one-hour expiry (a retry after a refused email mints a fresh link) and emails `<base_url>/#/reset-password?token=…`. Rate limited as login per address and per client, and at most one email a minute per user |
 | `POST /auth/password-reset/confirm {token, password}` | `UXW-38`. Spends the link once and sets the password; the user's sessions end in every account and their other open resets are revoked, and the user is emailed a notice that the password was reset (`ASVS-04`). An unknown, expired, spent or revoked link is `401 CS-AUTH-0002`, all alike. The web app's page for the link is `UXW-38A` |
 | `GET /auth/providers` | `UXW-39`. No session. `{items: [{id, name, url}]}`, the SSO identity providers sign-in offers: empty until SSO is built (FG-173) |
+
+## As built (`VS-08A`, `VS-08B`: OAuth acting for a member)
+
+An OAuth app or a JWT integration belongs to a workspace and acts only for members of it who consented; the
+client-credentials grant acts as the client's owner as before. Readings chosen (slice 8, [76](76-SLICE-8-EVIDENCE.md)):
+consent is given by a member signed in to the web app (an API key or token cannot consent); a JWT integration's consent
+is given once through the same screen, as DocuSign's consent URL; confidential clients only (the app authenticates at
+the token endpoint with its secret, and PKCE is required as well).
+
+| Endpoint | As built |
+| --- | --- |
+| `POST /api-clients` | `kind: jwt_integration` added; `redirect_uris` (OAuth apps and JWT integrations: at most 10, `https://` or `http://` to `localhost`, `127.0.0.1` or `[::1]`, no fragment or credentials, `422` at `/redirect_uris/{i}`); `public_key` (JWT integrations only, required: a `PUBLIC KEY` PEM, EC P-256 or RSA, at most 8 KiB, `422` at `/public_key`; a private key refused). A JWT integration gets `client_id` and no secret. Each client answers `redirect_uris` and `has_public_key` |
+| `GET /oauth/authorize` | The authorization endpoint: `303` to `/app.html#/authorize?<the query>`, the web app's consent screen, which signs the member in first when needed (the request survives sign-in in the tab's session storage) |
+| `GET /oauth/authorize/request` | The query checked against the client (live, an OAuth app or JWT integration, the redirect URI registered exactly) and the member (each scope within the client's and the member's own): the client's name and the scopes, or `422` at `/client_id`, `/redirect_uri`, `/response_type`, `/code_challenge` (S256 only, 43 to 128 base64url characters), `/scope`, `/state` (512 printable bytes). A staff session only (`/credential`) |
+| `POST /oauth/authorize` | The member's answer (`decision: allow \| deny`), checked as above. `allow` records the consent (`oauth_consents`, one live per client and member, widened by a later consent) and a code (256 bits, SHA-256 at rest, ten minutes, one use, bound to the redirect URI, the challenge and the scopes); both answer `{redirect_to}`: the redirect URI with `code` (or `error=access_denied`), `state` and `iss` (RFC 9207). Errors never redirect |
+| `POST /oauth/token` | `authorization_code` (client authentication, `code`, `redirect_uri`, `code_verifier`): the code is spent before it is checked, so a wrong verifier burns it; answers an access token acting for the member (claims `usr`, `grt`) and a refresh token (`osr_`, 30 days, SHA-256 at rest). `refresh_token`: rotated on every use, optionally narrowed by `scope`; one spent twice revokes its family (OAuth 2.1 §4.3.1). `urn:ietf:params:oauth:grant-type:jwt-bearer` (`assertion`): ES256 or RS256 with the integration's registered key, `iss` its id, `sub` the member, `aud` the public URL or the token endpoint, `exp` in the future and at most an hour after `iat`; the member's live consent covers the scopes asked (the assertion's `scope`, the form's, or the consent's); no refresh token. Refusals: `invalid_grant` with `CS-AUTH-0014`, or `CS-AUTH-0005` when the member has not consented |
+| Every request with such a token | The consent it names is read: revoked, another member's or another client's is `401 CS-AUTH-0002`; the token's scopes are narrowed by the client's, the consent's and the member's profile |
+| `GET /oauth/consents`, `DELETE /oauth/consents/{id}` | The caller's own live consents with the client's name; withdrawing one revokes its refresh tokens at once and its access tokens on their next request; another member's is `404` |
+| `GET /.well-known/oauth-authorization-server` | RFC 8414 metadata: endpoints, `S256`, the grant types, the scopes |
+
+The web app: the consent screen (`authorize.js`), the Admin client form (kinds, redirect URIs, the public key, a private
+key refused before sending), and Connected apps in the profile panel. `server/casual-sign-server/tests/oauth.rs`,
+`webapp/tests/slice8.test.mjs`, `webapp/e2e/api-webhooks.spec.mjs`.
 
 ## As built (`ASVS-01`, staff second factor)
 

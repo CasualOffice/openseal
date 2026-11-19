@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE oauth_codes SET used_at = $3 WHERE account_id = $1 AND code_sha256 = $2 AND used_at IS NULL RETURNING consent_id, redirect_uri, code_challenge, scopes, expires_at",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "consent_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "oauth_codes",
+            "name": "consent_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "redirect_uri",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_codes",
+            "name": "redirect_uri"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "code_challenge",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "oauth_codes",
+            "name": "code_challenge"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "scopes",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "oauth_codes",
+            "name": "scopes"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "oauth_codes",
+            "name": "expires_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "a3b51b762359192fbed6c5977446098e2b1c42cd39c93c7ad894cdc2ff5fd332"
+}

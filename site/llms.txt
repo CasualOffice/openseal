@@ -15,7 +15,7 @@
 ## Documentation
 
 - [Administration | OpenSeal](https://seal.casualoffice.org/docs/administration.html): Manage OpenSeal users and invitations, groups and permission profiles, sign-in security, API keys, OAuth clients and webhooks, the admin audit log, and account settings and branding.
-- [API reference | OpenSeal](https://seal.casualoffice.org/docs/api.html): Every operation of the OpenSeal REST API (178 operations), with parameters, bodies and schemas.
+- [API reference | OpenSeal](https://seal.casualoffice.org/docs/api.html): Every operation of the OpenSeal REST API (194 operations), with parameters, bodies and schemas.
 - [Architecture overview | OpenSeal](https://seal.casualoffice.org/docs/architecture.html): OpenSeal's shape: a deterministic Rust engine for PDFs, seals and evidence, hosted by a server of record with a worker and a key daemon, and a web app on the public API.
 - [Contributing | OpenSeal](https://seal.casualoffice.org/docs/contributing.html): How to build, test and contribute to OpenSeal: the toolchain, the tests, the clean-room rule, commit conventions and where the plan lives.
 - [FAQ | OpenSeal](https://seal.casualoffice.org/docs/faq.html): Frequently asked questions about OpenSeal: status, legal standing, licensing and commercial use, verification, keys, the API, and how it relates to DocuSign, SignNow and AGPL projects.

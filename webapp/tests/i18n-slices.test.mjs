@@ -32,6 +32,8 @@ const SLICE_MODULES = [
   "templates.js", "templatemodel.js", "templatesync.js",
   // every field (slice 4): the editor's field logic and kinds, the mock's rules
   "fieldlogic.js", "geometry.js", "fieldrules.js",
+  // API and webhooks (slice 8): the consent screen, API clients and webhooks in Admin, connected apps
+  "authorize.js", "admin.js", "adminmodel.js", "profile.js",
   // verify
   "verify.js", "verifyview.js", "verifyreport.js", "trail.js",
   // shared components
