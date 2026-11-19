@@ -111,7 +111,7 @@ async fn bytes_of(st: &AppState, sources: &[Source], doc: &Id) -> Result<Vec<u8>
         .iter()
         .find(|(id, _)| id == doc)
         .ok_or_else(ApiError::not_found)?;
-    Ok(st.0.blobs.get(key).await?)
+    st.0.blobs.get(key).await
 }
 
 /// Every field of `raws` with its `anchor` placed: a field without one is kept as it
