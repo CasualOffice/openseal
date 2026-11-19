@@ -334,7 +334,7 @@ jobs:
         run: npm ci && npx playwright install --with-deps chromium webkit
       - working-directory: webapp/e2e
         run: npx playwright test --project=chromium --project=webkit --shard=${{ matrix.shard }}/4
-      - run: docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.pem
+      - run: mkdir -p target/e2e-sealed && docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.pem
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
       - if: hashFiles('target/e2e-sealed/*.pdf') != ''
         run: /tmp/v/bin/python tools/verify-sealed.py target/e2e-sealed
