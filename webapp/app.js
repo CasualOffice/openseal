@@ -650,6 +650,18 @@ function buildWorkspace() {
     ],
   });
   wrap.classList.add("os-ws-wrap");
+  // The workspaces are read once at start; if that read failed, the switcher would open
+  // with no workspaces until a reload. Read them again before the menu opens (seen on
+  // WebKit on the real stack, main run 44628584497).
+  let reading = false;
+  btn.addEventListener("click", async (e) => {
+    if (spaces || reading) return;
+    e.stopImmediatePropagation();
+    reading = true;
+    spaces = await api.workspaces().catch(() => null);
+    btn.click();
+    reading = false;
+  }, { capture: true });
   document.getElementById("ws-slot").replaceWith(wrap);
 }
 

@@ -294,7 +294,12 @@ test.describe("phone", () => {
     const text = page.getByRole("textbox", { name: /Job title/ });
     await text.fill("Engineer");
     await text.press("Tab");
-    await page.getByRole("button", { name: /^Sign: Signature/ }).click();
+    // On a phone the guide scrolls the field into view; a tap during that scroll can miss
+    // (main run 44628584497), so tap until the adopt panel opens, as a person would.
+    await expect(async () => {
+      await page.getByRole("button", { name: /^Sign: Signature/ }).click();
+      await expect(page.getByRole("dialog", { name: /Adopt your signature/ })).toBeVisible({ timeout: 3000 });
+    }).toPass({ timeout: 20_000 });
     await adoptTyped(page);
     // Nothing is left to do, so there is no dead Next in the bottom bar.
     await expect(page.locator("#guide-next")).toBeHidden();
