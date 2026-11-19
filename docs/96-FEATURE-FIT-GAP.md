@@ -188,7 +188,7 @@ instructions 8 and 9).
 | FG-175 | SCIM provisioning | DS | Build | 10 | Designed |
 | FG-176 | Brands (logo, colours, emails, landing pages) | DS, SN | Build | 12 | — |
 | FG-177 | ERSD editing | DS | Build | 5 | Partial: `POST /ersd-versions` publishes and requires a version in one step (`ERSD-01`); the Admin card edits it against the mock; real-stack e2e left (`UXW-12`) |
-| FG-178 | Retention and purge policies | DS | Build | 15 | Designed |
+| FG-178 | Retention and purge policies (built 2026-11-19, `ASVS-18`: rules per data class, legal holds, daily purge, dry run; blob bytes await `HRD-09`) | DS | Build | 15 | Works |
 | FG-179 | Legal hold | — | Build | 15 | — |
 | FG-180 | Data residency (region tags) | DS | Build | 15 | — |
 | FG-181 | BYOK per-tenant keys | — | Build | 15 | — |

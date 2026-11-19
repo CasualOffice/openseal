@@ -1318,3 +1318,15 @@ conflict, so this carries behaviour and the units rule, not the old looks.
   sizes), a sub-pixel rounding guard, PDF points × scale, canvas pixels, measured client rects, and
   IntersectionObserver margins. Icons size from `--os-icon-size` (icons.js sets it from the size asked, 16 = 1rem);
   logos size in CSS; menu offsets are rem (`placeMenu`'s `remPx`); `dom.js` `rootPx()` and `rem()` convert.
+
+## As built: Your data and Retention (ASVS-16, ASVS-18, 2026-11-19)
+
+- **Profile › Your data** (`profile.js` `dataSection`): "Download my data" saves `GET /users/me/export` as
+  `openseal-personal-data.json`; "Delete my account" asks first (a danger confirmation saying what is replaced and that
+  agreements and their trails stay), then calls `DELETE /users/me` (the step-up prompt asks for the password when the
+  last proof is old) and signs the person out; a refusal (`CS-API-0018`) says to hand the role over first.
+- **Admin › Retention** (`adminretention.js`, `retentionmodel.js`; no longer "Soon"): one days field per data class
+  (drafts never sent; declined, voided and expired; completed; ended sessions), empty for kept for ever; Save sends
+  only what changed (`PUT /retention`, a sensitive action); a field that is not whole days 1–36500 is said in place;
+  Preview shows the dry run per class, ended sessions and what legal holds keep. Tests: `tests/retention.test.mjs`,
+  `e2e/privacy.spec.mjs` (chromium, webkit). Legal holds and a purge request are API-only for now (`ASVS-42`).
