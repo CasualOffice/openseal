@@ -23,8 +23,8 @@ import { button, busy, toast, toastError, openDialog, confirmDialog, noServerSta
 import { register, run } from "./commands.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire } from "./geometry.js";
-import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments, actedAs, SSO_KEY, ssoReturn } from "./signfields.js";
-import { adoptDialog } from "./signature.js";
+import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, IMAGED, BUTTONS, isHidden, effectiveValue, computedOf, safeHref, dateFormatOf, DATE_PATTERNS, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments, actedAs, SSO_KEY, ssoReturn } from "./signfields.js";
+import { adoptDialog, imageDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
 import { initTheme } from "./theme.js";
@@ -38,6 +38,13 @@ if (mock) {
   api = createClient({ fetch: createMockFetch({ store }), store });
 } else {
   api = createClient({ baseUrl: document.querySelector('meta[name="openseal-api-base"]')?.content || "", store });
+}
+
+// VS-04C: every ceremony answer is the signing view; when it carries the server's
+// `rules` (hidden, computed, linked values), the page takes them at once.
+for (const k of ["fill", "attach", "adopt"]) {
+  const orig = api.ceremony[k];
+  if (typeof orig === "function") api.ceremony[k] = async (...args) => { const r = await orig(...args); applyRules(r); return r; };
 }
 
 /// The token from `/s/{token}` (or `?t=` when the page is opened as sign.html).
@@ -553,6 +560,20 @@ function consent() {
 
 // ---- Documents and fields -------------------------------------------------------------------
 
+/// Take the server's rules from a ceremony answer (VS-04C): hide and show fields, and
+/// repaint computed and linked ones. The page never decides them itself.
+const rulePaints = new Map();
+function applyRules(r) {
+  if (!r || typeof r !== "object" || !("rules" in r) || !view) return;
+  view.rules = r.rules;
+  for (const node of main.querySelectorAll(".os-sfield")) {
+    const hide = isHidden({ id: node.dataset.fieldId }, view.rules);
+    if (node.hidden !== hide) node.hidden = hide;
+  }
+  for (const paint of rulePaints.values()) paint();
+  updateGuide();
+}
+
 const today = () => new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 const AUTO = {
   date_signed: () => dateText(),
@@ -561,6 +582,10 @@ const AUTO = {
   first_name: () => nameParts(view.recipient?.name).first,
   last_name: () => nameParts(view.recipient?.name).last,
   email: () => view.recipient?.email || "",
+  // VS-04A: the server writes the envelope's id at finish.
+  envelope_id: () => view.envelope?.id || "",
+  // VS-04C: the server's result for a formula field; an error value is said as such.
+  formula: () => "",
 };
 
 /// The date-signed field's words (WEB-18, the canvas): it fills itself in once this
@@ -845,8 +870,8 @@ function reportViewed(doc, set) {
 }
 
 function isDone(f) {
-  if (!fills(f)) return true;
-  return isFilled(f, values.get(f.id));
+  if (!fills(f) || isHidden(f, view?.rules)) return true;
+  return isFilled(f, effectiveValue(f, values.get(f.id), view?.rules));
 }
 
 /// Place a box at `p` (points) on a page of `pg` (points) in percentages: PDF points ×
@@ -871,6 +896,8 @@ function savedChip() {
 function fieldNode(f, pg) {
   const box = h("div", { class: `os-sfield os-sfield--${f.type}${f.required ? " is-required" : ""}`, attrs: { "data-field-id": f.id, "data-field": f.type } });
   placeBox(box, f.p, pg);
+  // VS-04C: a field a condition hides is not shown (nor required) until it holds.
+  if (isHidden(f, view.rules)) box.hidden = true;
   // Phones: a field too small to use is zoomed to a usable size when it is reached by
   // typing into it or tabbing to it, not only through Next (P-05). A tapped field is
   // left alone: zooming under the finger would swallow the tap; a tap opens the
@@ -896,7 +923,14 @@ function fieldNode(f, pg) {
     const shown = fixedText(f);
     box.classList.add("is-auto", "is-fixed");
     hit.remove();
-    box.append(h("span", { class: "os-sfield__auto", attrs: { role: "note", "aria-label": `${label}: ${shown}` }, title: shown, text: shown || label }));
+    const href = f.type === "hyperlink" ? safeHref(shown) : null;
+    if (href) {
+      // VS-04A: a hyperlink opens in a new tab, never with this page as its opener.
+      box.append(h("a", { class: "os-sfield__auto os-sfield__link", href, target: "_blank", rel: "noopener noreferrer", title: href,
+        attrs: { "aria-label": t("sign.link.opens", { label: f.label || href }), "data-testid": "field-link" }, text: f.label || href }));
+    } else {
+      box.append(h("span", { class: "os-sfield__auto", attrs: { role: "note", "aria-label": `${label}: ${shown}` }, title: shown, text: shown || label }));
+    }
   } else if (f.type === "signature" || f.type === "initials") {
     const b = h("button", { type: "button", class: "os-sfield__btn" });
     const paint = () => {
@@ -924,7 +958,8 @@ function fieldNode(f, pg) {
     // A rejected value is said beside the field, not only in a toast (A17).
     const err = h("span", { id: `${id}-err`, class: "os-sfield__err", attrs: { role: "alert" } });
     // A multi-line text box (FG-057) is a text area: Enter types a line break.
-    const input = h(f.format?.multiline ? "textarea" : "input", { id, class: "os-sfield__input", value: values.get(f.id)?.text || "", maxLength: 4000, inputMode: inputModeFor(f), placeholder: label + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}), ...(f.validation?.kind === "email" ? { autocomplete: "email" } : f.validation?.kind === "phone" ? { autocomplete: "tel" } : {}) } });
+    const hint = f.type === "date" ? t("sign.date.placeholder", { label, format: DATE_PATTERNS[dateFormatOf(f)] }) : label;
+    const input = h(f.format?.multiline ? "textarea" : "input", { id, class: "os-sfield__input", value: effectiveValue(f, values.get(f.id), view.rules)?.text || "", maxLength: 4000, inputMode: inputModeFor(f), placeholder: hint + (f.required ? " *" : ""), title: label, attrs: { "aria-label": `${label}${req}`, "aria-describedby": `${id}-err`, ...(f.required ? { "aria-required": "true" } : {}), ...(f.validation?.kind === "email" ? { autocomplete: "email" } : f.validation?.kind === "phone" ? { autocomplete: "tel" } : {}) } });
     // Typing: a problem the field's rule finds is said as soon as the value is left,
     // before the server is asked (it checks again, and at finish).
     const save = async (text) => {
@@ -949,6 +984,12 @@ function fieldNode(f, pg) {
       return ok ? null : err.textContent;
     };
     input.addEventListener("change", () => save(input.value));
+    // VS-04C: a linked field shows the value it mirrors until the signer types their own.
+    rulePaints.set(f.id, () => {
+      if (document.activeElement === input || values.has(f.id)) return;
+      input.value = effectiveValue(f, null, view.rules)?.text || "";
+      box.classList.toggle("is-done", isDone(f));
+    });
     // P-05 (SignNow): on a phone a tap on the small field opens a full-width sheet with
     // a large input; the keyboard path (Tab, Next) types into the field as on desktop.
     let tapped = false;
@@ -996,6 +1037,45 @@ function fieldNode(f, pg) {
     hit.addEventListener("click", () => b.click());
     box.append(b);
     paint();
+  } else if (f.type === "multi_select") {
+    // VS-04A: several of the sender's options, chosen in a panel and saved together.
+    const b = h("button", { type: "button", class: "os-sfield__btn os-sfield__choice", attrs: { "data-testid": "multi-open" } });
+    const paint = () => {
+      const c = values.get(f.id)?.choices || [];
+      const shown = c.length ? c.join(", ") : t("sign.multi.none");
+      b.setAttribute("aria-label", `${c.length ? t("sign.multi.some", { n: c.length }) : t("sign.multi.none")}: ${label}${req}`);
+      b.replaceChildren(h("span", { class: "os-trunc", text: shown }), icon("chevron-down", { size: 16 }));
+      box.classList.toggle("is-done", isDone(f));
+    };
+    b.addEventListener("click", () => multiSheet(f, label, paint));
+    hit.addEventListener("click", () => b.click());
+    box.append(b);
+    paint();
+  } else if (IMAGED[f.type]) {
+    // VS-04A: a stamp (an image) or a drawing, adopted as what it is, for this field.
+    const b = h("button", { type: "button", class: "os-sfield__btn", attrs: { "data-testid": `${f.type}-field` } });
+    const paint = () => {
+      const v = values.get(f.id);
+      const shown = v?.signature ? t("sign.signed") : t(f.type === "stamp" ? "sign.stamp.here" : "sign.draw.here");
+      b.setAttribute("aria-label", `${shown}: ${label}${req}`);
+      const img = imageOf.get(f.id);
+      b.replaceChildren(...(img ? [h("img", { src: img, alt: t("sign.signed-alt", { what: label }) })]
+        : [icon(f.type === "stamp" ? "stamp" : "pen-line", { size: 16 }), h("span", { text: shown })]));
+      box.classList.toggle("is-done", isDone(f));
+    };
+    b.addEventListener("click", () => imageField(f, label, paint));
+    hit.addEventListener("click", () => b.click());
+    box.append(b);
+    paint();
+  } else if (BUTTONS.has(f.type)) {
+    // VS-04A: DocuSign's Approve and Decline tabs: Approve finishes (after review),
+    // Decline declines, each by the ceremony's own step.
+    hit.remove();
+    const approve = f.type === "approve";
+    const b = h("button", { type: "button", class: `os-sfield__btn os-sfield__act${approve ? "" : " is-danger"}`, attrs: { "data-testid": `${f.type}-field`, "aria-label": `${t(approve ? "sign.approve" : "sign.decline-field")}: ${label}` } },
+      icon(approve ? "circle-check" : "circle-x", { size: 16 }), h("span", { text: t(approve ? "sign.approve" : "sign.decline-field") }));
+    b.addEventListener("click", () => (approve ? finish() : decline()));
+    box.append(b);
   } else if (f.type === "attachment") {
     const file = h("input", { type: "file", accept: "application/pdf,image/png,image/jpeg", class: "os-sr-only", tabIndex: -1, attrs: { "aria-hidden": "true" } });
     const b = h("button", { type: "button", class: "os-sfield__btn" });
@@ -1019,6 +1099,15 @@ function fieldNode(f, pg) {
     const shown = h("span", { class: "os-sfield__auto" });
     // The date signed fills itself in once a mark is placed (WEB-18); repainted then.
     const paint = () => {
+      if (f.type === "formula") {
+        const c = computedOf(f, view.rules);
+        const text = c?.text ?? (c ? t("sign.formula.error") : t("sign.formula.pending"));
+        shown.textContent = text;
+        shown.title = text;
+        shown.setAttribute("aria-label", `${label}: ${text}`);
+        box.classList.toggle("is-pending", !c?.text);
+        return;
+      }
       const text = AUTO[f.type]?.() || label;
       shown.textContent = text;
       shown.title = text;
@@ -1026,6 +1115,7 @@ function fieldNode(f, pg) {
       box.classList.toggle("is-pending", f.type === "date_signed" && !signedAny());
     };
     autoPaints.set(f.id, paint);
+    if (f.type === "formula") rulePaints.set(f.id, paint);
     paint();
     box.append(shown);
   }
@@ -1126,6 +1216,65 @@ function choiceSheet(f, label, paint) {
       },
     ],
   });
+}
+
+/// A multi-select's options in a panel (VS-04A): any number ticked, saved together as
+/// `{choices}` in the field's order.
+function multiSheet(f, label, paint) {
+  const current = new Set(values.get(f.id)?.choices || []);
+  return openPanel({
+    id: "multi",
+    title: label,
+    className: "os-choicesheet",
+    build(body) {
+      const group = h("div", { class: "os-checks", attrs: { role: "group", "aria-label": label } });
+      for (const [i, o] of (f.options || []).entries()) {
+        const id = `multi-${f.id}-${i}`;
+        const c = h("input", { type: "checkbox", id, value: o, checked: current.has(o) });
+        c.addEventListener("change", () => { if (c.checked) current.add(o); else current.delete(o); });
+        group.append(h("label", { class: "os-check os-radio--lg", attrs: { for: id } }, c, h("span", { text: o })));
+      }
+      body.append(group);
+    },
+    actions: [
+      { label: t("action.cancel"), value: null },
+      {
+        label: t("sign.multi.save"),
+        variant: "primary",
+        attrs: { "data-testid": "multi-save" },
+        onClick: async () => {
+          const v = { choices: (f.options || []).filter((o) => current.has(o)) };
+          try {
+            await api.ceremony.fill(token, f.id, v);
+            values.set(f.id, v);
+            savedChip();
+          } catch (err) { toastError(err); return undefined; }
+          paint();
+          updateGuide();
+          return true;
+        },
+      },
+    ],
+  });
+}
+
+/// A stamp or drawing field (VS-04A): the image is made, adopted with `mark` = the
+/// field's kind (its own audit event), and put in this field only.
+const imageOf = new Map();
+async function imageField(f, label, paint) {
+  const res = await imageDialog({ kind: f.type, label });
+  if (!res) return;
+  try {
+    const r = await api.ceremony.adopt(token, f.type, IMAGED[f.type], res.base64, location_);
+    if (!r?.adoption_id) throw new ApiError({ status: 0, code: "CS-API-0010", title: t("sign.no-adoption-id") });
+    const v = { signature: r.adoption_id };
+    await api.ceremony.fill(token, f.id, v);
+    values.set(f.id, v);
+    imageOf.set(f.id, res.dataUrl);
+    savedChip();
+  } catch (err) { toastError(err); }
+  paint();
+  updateGuide();
 }
 
 /// Attach a file to an attachment field (`PUT /s/{token}/fields/{field}/attachment`):

@@ -4,16 +4,24 @@
 // authority: it checks every fill and again at finish; this only says the problem early,
 // in the same terms. Pure functions, for tests.
 
-/// Types a recipient fills when the sender has not locked them.
-export const FILLABLE = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
+/// Types a recipient fills when the sender has not locked them: every engine kind
+/// that takes input but payment (slice 13; VS-04A).
+export const FILLABLE = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment",
+  "date", "email_address", "phone", "ssn", "zip", "multi_select", "stamp", "drawing"]);
 /// Typed as text: a value `{text}`.
-export const TYPED = new Set(["text", "company", "title", "number"]);
+export const TYPED = new Set(["text", "company", "title", "number", "date", "email_address", "phone", "ssn", "zip"]);
+/// An image the signer adopts for this kind of field (VS-04A), by how it is made; the
+/// server records it under the field's own kind (`mark: stamp | drawing`).
+export const IMAGED = Object.freeze({ stamp: "upload", drawing: "draw" });
+/// Buttons that act for the signer: approve finishes, decline declines (DocuSign's
+/// Approve and Decline tabs; VS-04A).
+export const BUTTONS = new Set(["approve", "decline"]);
 /// Chosen from the sender's options: a value `{choice}`.
 export const CHOSEN = new Set(["radio_group", "dropdown"]);
 
 /// Read-only or sender-locked: shown with the sender's value, never changed here.
 export function isFixed(f) {
-  return f?.type === "note" || f?.read_only === true || f?.locked === true;
+  return f?.type === "note" || f?.type === "hyperlink" || f?.read_only === true || f?.locked === true;
 }
 
 /// Whether the recipient fills field `f`.
@@ -27,8 +35,105 @@ export function isFilled(f, v) {
   if (f.type === "checkbox") return v.checked === true || !f.required;
   if (TYPED.has(f.type)) return typeof v.text === "string" && v.text.trim() !== "";
   if (CHOSEN.has(f.type)) return typeof v.choice === "string" && v.choice !== "";
+  if (f.type === "multi_select") return Array.isArray(v.choices) && v.choices.length > 0;
   if (f.type === "attachment") return typeof v.attachment === "string" && v.attachment !== "";
   return !!v.signature;
+}
+
+// ---- The server's rules on the page (VS-04C) -------------------------------------------
+// The signing view carries `rules`, the server's own evaluation of this recipient's
+// fields (casual-sign-fields `evaluate_envelope`, as at finish and sealing): `hidden`
+// ids, `computed` formula results (`{ok}` or `{error}`), and `values` a field will be
+// sealed with where it is not the one stored (a linked field's). The page applies them;
+// it never decides them.
+
+/// Whether `rules` hide field `f` (a hidden field is neither shown nor required).
+export function isHidden(f, rules) {
+  return Array.isArray(rules?.hidden) && rules.hidden.includes(f?.id);
+}
+
+/// The value field `f` is sealed with: what this signer gave, else what the rules say
+/// it mirrors (a linked field), else null.
+export function effectiveValue(f, given, rules) {
+  return given || rules?.values?.[f?.id] || null;
+}
+
+/// A formula field's result as shown: `{text}`, or `{error}` with the error value's
+/// name, or null while the server has none.
+export function computedOf(f, rules) {
+  const c = rules?.computed?.[f?.id];
+  if (!c) return null;
+  if (typeof c.ok === "string") return { text: c.ok };
+  return { error: String(c.error || "") };
+}
+
+/// A hyperlink's address when a page may open it: `http:` or `https:` only, so a
+/// `javascript:` or `data:` value is shown as text and never followed.
+export function safeHref(text) {
+  try {
+    const u = new URL(String(text || "").trim());
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch { return null; }
+}
+
+/// The engine's date formats (casual-sign-model `DateFormat`) as the pattern a signer
+/// types, for the placeholder and the message.
+export const DATE_PATTERNS = Object.freeze({ yyyy_mm_dd: "YYYY-MM-DD", mm_dd_yyyy: "MM/DD/YYYY", dd_mm_yyyy: "DD/MM/YYYY", dd_mm_yyyy_dot: "DD.MM.YYYY", d_mmm_yyyy: "D MMM YYYY" });
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+
+/// The format a date field's value is read in, as the engine's `date_format`: its date
+/// rule's, else its display format's, else ISO.
+export function dateFormatOf(f) {
+  if (f?.validation?.kind === "date" && DATE_PATTERNS[f.validation.format]) return f.validation.format;
+  if (DATE_PATTERNS[f?.format?.date_format]) return f.format.date_format;
+  return "yyyy_mm_dd";
+}
+
+/// Whether `text` is a real calendar date in `format`, as the engine's `parse_date`.
+export function isDate(text, format = "yyyy_mm_dd") {
+  const s = String(text).trim();
+  const fixed = (x, n) => (x.length === n && /^[0-9]+$/.test(x) ? Number(x) : NaN);
+  const short = (x) => (/^[0-9]{1,2}$/.test(x) ? Number(x) : NaN);
+  const sep = { yyyy_mm_dd: "-", mm_dd_yyyy: "/", dd_mm_yyyy: "/", dd_mm_yyyy_dot: ".", d_mmm_yyyy: " " }[format];
+  if (!sep) return false;
+  const a = s.split(sep);
+  if (a.length !== 3) return false;
+  let y; let m; let d;
+  if (format === "yyyy_mm_dd") [y, m, d] = [fixed(a[0], 4), fixed(a[1], 2), fixed(a[2], 2)];
+  else if (format === "mm_dd_yyyy") [m, d, y] = [short(a[0]), short(a[1]), fixed(a[2], 4)];
+  else if (format === "d_mmm_yyyy") [d, m, y] = [short(a[0]), MONTHS.indexOf(a[1].toLowerCase()) + 1 || NaN, fixed(a[2], 4)];
+  else [d, m, y] = [short(a[0]), short(a[1]), fixed(a[2], 4)];
+  if (![y, m, d].every(Number.isInteger) || y < 1 || m < 1 || m > 12 || d < 1) return false;
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  return d <= [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+}
+
+/// A US social security number as the engine's `is_ssn`: nine digits, or 3-2-4 with
+/// dashes; the area not 000, 666 or 900 to 999, the group not 00, the serial not 0000.
+export function isSsn(text) {
+  const s = String(text);
+  let plain;
+  if (s.length === 11 && s[3] === "-" && s[6] === "-") plain = s.replaceAll("-", "");
+  else if (s.length === 9) plain = s;
+  else return false;
+  if (!/^[0-9]{9}$/.test(plain)) return false;
+  const area = Number(plain.slice(0, 3));
+  return area !== 0 && area !== 666 && area < 900 && plain.slice(3, 5) !== "00" && plain.slice(5) !== "0000";
+}
+
+/// The rule a field's text is checked against, as the engine's `rule_for`: its own,
+/// else the one its type implies.
+export function ruleFor(f) {
+  if (f?.validation) return f.validation;
+  switch (f?.type) {
+    case "number": return { kind: "number" };
+    case "date": return { kind: "date", format: dateFormatOf(f) };
+    case "email_address": return { kind: "email" };
+    case "phone": return { kind: "phone" };
+    case "ssn": return { kind: "ssn" };
+    case "zip": return { kind: "zip" };
+    default: return null;
+  }
 }
 
 const EMAIL = /^[^\s@]{1,64}@(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
@@ -56,9 +161,28 @@ export function isZip(text) {
 export function checkText(f, text) {
   const s = String(text ?? "");
   if (s === "") return null;
-  const rule = f.validation || (f.type === "number" ? { kind: "number" } : null);
+  const rule = ruleFor(f);
   if (!rule) return null;
+  const problem = checkRule(rule, s);
+  // The sender's own message replaces the default one (docs/22 §6 `validation.message`).
+  if (problem && typeof rule.message === "string" && rule.message) return { key: "sign.check.custom", vars: { message: rule.message } };
+  return problem;
+}
+
+function checkRule(rule, s) {
   switch (rule.kind) {
+    case "ssn": return isSsn(s) ? null : { key: "sign.check.ssn" };
+    case "date": {
+      const format = DATE_PATTERNS[rule.format] ? rule.format : "yyyy_mm_dd";
+      return isDate(s, format) ? null : { key: "sign.check.date", vars: { format: DATE_PATTERNS[format] } };
+    }
+    case "regex": {
+      // The engine matches the whole value with the `regex` crate; a pattern this
+      // browser cannot compile is left to the server, never guessed at.
+      let re = null;
+      try { re = new RegExp(`^(?:${rule.pattern})$`, "u"); } catch { re = null; }
+      return !re || re.test(s) ? null : { key: "sign.check.pattern" };
+    }
     case "email": return EMAIL.test(s) ? null : { key: "sign.check.email" };
     case "phone": return isPhone(s) ? null : { key: "sign.check.phone" };
     case "zip": return isZip(s) ? null : { key: "sign.check.zip" };
@@ -97,7 +221,9 @@ export function fixedText(f) {
 
 /// The input mode a phone keyboard should open with for field `f`.
 export function inputModeFor(f) {
-  const k = f.validation?.kind || (f.type === "number" ? "number" : "");
+  const k = ruleFor(f)?.kind || "";
+  if (k === "ssn") return "numeric";
+  if (k === "date") return dateFormatOf(f) === "d_mmm_yyyy" ? "text" : "numeric";
   if (k === "number") return Number.isInteger(f.validation?.decimals) && f.validation.decimals === 0 ? "numeric" : "decimal";
   if (k === "email") return "email";
   if (k === "phone") return "tel";
@@ -118,7 +244,9 @@ export function nextAction(f, label = "") {
   if (f.type === "initials") return { key: "sign.guide.initial", vars: { n: f.p?.page ?? f.page ?? 1 } };
   if (f.type === "checkbox") return { key: "sign.guide.tick", vars: { label } };
   if (f.type === "attachment") return { key: "sign.guide.attach", vars: { label } };
-  if (CHOSEN.has(f.type)) return { key: "sign.guide.choose", vars: { label } };
+  if (CHOSEN.has(f.type) || f.type === "multi_select") return { key: "sign.guide.choose", vars: { label } };
+  if (f.type === "stamp") return { key: "sign.guide.stamp", vars: { label } };
+  if (f.type === "drawing") return { key: "sign.guide.draw", vars: { label } };
   return { key: "sign.guide.fill", vars: { label } };
 }
 

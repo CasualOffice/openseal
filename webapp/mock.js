@@ -11,6 +11,7 @@
 
 import { makePdf, countPages } from "./mockpdf.js";
 import { checkText } from "./signfields.js";
+import { rulesFor, finishProblems } from "./fieldrules.js";
 import { checkList } from "./bulkmodel.js";
 import { mergeTemplates, roleKey } from "./templatemodel.js";
 
@@ -48,7 +49,9 @@ const ACTING = (r) => r.type !== "cc";
 const SIGNS = new Set(["signer", "in_person_signer", "editor", "witness", "seal", "notary"]);
 /// Who names later recipients in the ceremony (the engine's `edits_recipients`).
 const NAMES_LATER = new Set(["editor", "intermediary", "agent"]);
-const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
+const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment",
+  // VS-04A: every engine kind that takes input but payment.
+  "date", "email_address", "phone", "ssn", "zip", "multi_select", "stamp", "drawing"]);
 const RECIPIENT_TYPES = ["signer", "in_person_signer", "approver", "viewer", "cc", "editor", "intermediary", "agent", "witness", "seal", "notary"];
 const FIELD_TYPES = new Set([
   "signature", "initials", "stamp", "date_signed", "name", "first_name", "last_name", "email", "company", "title",
@@ -392,8 +395,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   const viewedAll = (env, rec) => env.documents.every((d) => (rec.viewed_to_end || []).includes(d.id));
   /// Required input fields of this recipient left empty refuse finishing or approving.
   function checkRequired(env, rec) {
-    const missing = env.fields.filter((f) => f.recipient_id === rec.id && f.required && INPUT_TYPES.has(f.type) && (f.value == null || f.value.text === "" || f.value.choice === "" || f.value.checked === false));
+    // VS-04C: a hidden field is never required; a linked field's mirrored value counts.
+    const rules = rulesFor(env.fields, rec.id);
+    const has = (f) => { const v = f.value || rules.values[f.id]; return !(v == null || v.text === "" || v.choice === "" || v.checked === false || (Array.isArray(v.choices) && !v.choices.length)); };
+    const missing = env.fields.filter((f) => f.recipient_id === rec.id && f.required && INPUT_TYPES.has(f.type) && !rules.hidden.includes(f.id) && !has(f));
     if (missing.length) fail(422, "CS-WF-0004", "Required fields are empty", missing.map((f) => ({ pointer: `/fields/${f.id}`, code: "required" })));
+    const problems = finishProblems(env.fields, rec.id);
+    if (problems.length) fail(422, "CS-FLD-0001", "Field rules refused the value", problems);
   }
   /// A recipient finished their part: routing moves on, and when nobody is left the
   /// envelope completes and is "sealed".
@@ -476,6 +484,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       envelope: { id: env.id, status: env.status, subject: env.subject, message: env.message, signing_options: env.signing_options, documents: shown ? env.documents : [], expires_at: env.expires_at },
       recipient: publicRecipient(rec),
       fields: shown ? env.fields.filter((f) => f.recipient_id === rec.id) : [],
+      // VS-04C, as the server: the rules over every field, named for this recipient's.
+      rules: shown ? rulesFor(env.fields, rec.id) : null,
       capture_location: !!env.signing_options?.capture_location,
       consent_required: { version: disclosure().version, sha256: disclosure().sha256, url: `/s/${encodeURIComponent(token)}/disclosure` },
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
@@ -2881,7 +2891,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       }
     }
     if (sub === "adopt" && method === "POST") {
-      if (!["signature", "initials"].includes(body?.mark) || !["draw", "type", "upload"].includes(body?.method)) fail(400, "CS-API-0001", "Malformed request");
+      if (!["signature", "initials", "stamp", "drawing"].includes(body?.mark) || !["draw", "type", "upload"].includes(body?.method)) fail(400, "CS-API-0001", "Malformed request");
       let bytes;
       try { bytes = unb64(body.image_base64 || ""); } catch { fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/image_base64", code: "base64" }]); }
       const isPng = bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50;
@@ -2914,9 +2924,15 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (f.recipient_id !== rec.id || !INPUT_TYPES.has(f.type) || f.locked || f.read_only) fail(409, "CS-WF-0016", "Field not editable by this recipient");
       const v = body?.value;
       const bad = (code) => fail(422, "CS-WF-0015", "Field value refused", [{ pointer: "/value", code }]);
-      if (f.type === "signature" || f.type === "initials") {
+      if (f.type === "signature" || f.type === "initials" || f.type === "stamp" || f.type === "drawing") {
         const a = v && db.adoptions[v.signature];
         if (!a || a.rid !== rec.id) fail(409, "CS-WF-0013", "Signature or initials not adopted before use");
+        // VS-04A, as the server: a stamp or drawing capture fills only its own kind.
+        const kinds = f.type === "stamp" || f.type === "drawing" ? [f.type] : ["signature", "initials"];
+        if (!kinds.includes(a.mark)) bad("invalid");
+      } else if (f.type === "multi_select") {
+        if (!v || !Array.isArray(v.choices)) bad("wrong_kind");
+        if (!(f.options || []).length || v.choices.some((c) => !(f.options || []).includes(c))) bad("not_an_option");
       } else if (f.type === "checkbox") {
         if (!v || typeof v.checked !== "boolean") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/value", code: "type" }]);
       } else if (f.type === "radio_group" || f.type === "dropdown") {
@@ -2940,6 +2956,16 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (rec.type === "viewer" && !viewedAll(env, rec)) fail(409, "CS-WF-0014", "Viewer has not viewed every document to the end");
       checkRequired(env, rec);
       for (const f of env.fields) if (f.recipient_id === rec.id && f.type === "date_signed") f.value = { text: iso().slice(0, 10) };
+      // As the engine at finish: the envelope's id, computed formulas, mirrored values
+      // and hidden values dropped (VS-04A, VS-04C).
+      const rules = rulesFor(env.fields, rec.id);
+      for (const f of env.fields) {
+        if (f.recipient_id !== rec.id) continue;
+        if (f.type === "envelope_id") f.value = { text: env.id };
+        else if (f.type === "formula" && rules.computed[f.id]?.ok) f.value = { text: rules.computed[f.id].ok };
+        else if (rules.hidden.includes(f.id)) delete f.value;
+        else if (!f.value && rules.values[f.id]) f.value = rules.values[f.id];
+      }
       await complete(env, rec, loc, rec.type === "viewer" ? "viewed" : "signed");
       return json(200, view(env, rec, token));
     }

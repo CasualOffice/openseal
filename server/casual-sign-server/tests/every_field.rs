@@ -81,9 +81,19 @@ impl Signer<'_> {
         self.call(
             "POST",
             "/adopt",
-            Some(json!({"mark": mark, "method": method, "image_base64": b64(&png())})),
+            Some(json!({"mark": mark, "method": method, "image_base64": image_for(mark)})),
         )
         .await
+    }
+}
+
+/// A 1×1 PNG of its own for each mark, so each adoption is a capture of its own (a
+/// capture is named by its image: one image adopted twice is one capture).
+fn image_for(mark: &str) -> String {
+    match mark {
+        "stamp" => "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGM4ISf3HwAEugIEPlcfxwAAAABJRU5ErkJggg==".to_owned(),
+        "drawing" => "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQkzvxHwADZgIEs8pYSgAAAABJRU5ErkJggg==".to_owned(),
+        _ => b64(&png()),
     }
 }
 

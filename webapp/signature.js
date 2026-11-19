@@ -263,6 +263,63 @@ function drawPad(mark, onInk) {
   };
 }
 
+/// A stamp or a drawing for one field (VS-04A, DocuSign's stamp and drawing tabs):
+/// `kind` "stamp" takes a PNG or JPEG image (near-white made transparent, as an uploaded
+/// signature), "drawing" a free-hand drawing on the pad. Answers `{method, dataUrl,
+/// base64}` for `POST /s/{token}/adopt` with `mark` = the kind, or null.
+export function imageDialog({ kind = "drawing", label = "" } = {}) {
+  const stamp = kind === "stamp";
+  let pad = null;
+  let uploaded = null;
+  let err = null;
+  return openDialog({
+    title: stamp ? t("sign.stamp.title") : `${t("sign.draw.title")}: ${label}`,
+    className: "os-adopt",
+    build(body) {
+      err = h("p", { id: "image-err", class: "os-field-error", attrs: { role: "alert", "data-testid": "image-err" } });
+      if (stamp) {
+        const id = "stamp-file";
+        const file = h("input", { id, type: "file", accept: "image/png,image/jpeg", attrs: { "data-testid": "stamp-file" } });
+        const preview = h("img", { class: "os-adopt__preview", hidden: true, alt: "" });
+        file.addEventListener("change", async () => {
+          const f = file.files?.[0];
+          err.textContent = "";
+          if (!f || !/^image\/(png|jpeg)$/.test(f.type) || f.size > MAX_UPLOAD) { err.textContent = t("adopt.bad-image"); return; }
+          try {
+            uploaded = await cleanImage(f);
+            preview.src = uploaded.toDataURL("image/png");
+            preview.alt = t("adopt.upload-preview");
+            preview.hidden = false;
+          } catch { err.textContent = t("adopt.bad-image"); }
+        });
+        body.append(h("label", { class: "os-label", attrs: { for: id }, text: t("sign.stamp.choose") }), file, preview, err);
+      } else {
+        pad = drawPad("signature", () => { err.textContent = ""; });
+        const canvas = pad.el.querySelector("canvas");
+        canvas?.setAttribute("aria-label", t("sign.draw.pad"));
+        canvas?.setAttribute("data-testid", "drawing-pad");
+        body.append(pad.el, err);
+        requestAnimationFrame(() => pad.redraw());
+      }
+    },
+    actions: [
+      { label: t("action.cancel"), value: null, variant: "ghost" },
+      {
+        label: t("sign.adopt.use"),
+        variant: "primary",
+        attrs: { "data-testid": "image-use" },
+        onClick: async () => {
+          const c = stamp ? uploaded : pad?.hasInk() ? pad.toCanvas() : null;
+          if (!c) { err.textContent = t("sign.adopt.empty"); return undefined; }
+          pad?.leaveFull();
+          const dataUrl = c.toDataURL("image/png");
+          return { method: stamp ? "upload" : "draw", dataUrl, base64: dataUrl.slice(dataUrl.indexOf(",") + 1) };
+        },
+      },
+    ],
+  });
+}
+
 async function typedCanvas(text, family) {
   try { await document.fonts.load(`64px "${family}"`, text); } catch { /* falls back to cursive */ } // px-ok: a canvas font
   const c = document.createElement("canvas");
