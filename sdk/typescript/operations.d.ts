@@ -159,6 +159,8 @@ export interface Operations {
   getPermissionProfile(params: { "id": string | number | boolean }): Promise<any>;
   /** A recipient — `GET /api/v1/envelopes/{id}/recipients/{r}` (envelopes.read) */
   getRecipient(params: { "id": string | number | boolean; "r": string | number | boolean }): Promise<any>;
+  /** A workspace report over the envelopes created in a window (VS-06, UXW-25) — `GET /api/v1/reports/{kind}` (reports.read) */
+  getReport(params: { "kind": string | number | boolean; "format"?: string | number | boolean; "from"?: string | number | boolean; "limit"?: string | number | boolean; "sender"?: string | number | boolean; "to"?: string | number | boolean }): Promise<any>;
   /** The account's retention rules (ASVS-18) — `GET /api/v1/retention` (retention.manage) */
   getRetention(params?: Record<string, never>): Promise<any>;
   /** Who the credential is — `GET /api/v1/auth/session` (signing-in) */

@@ -11,7 +11,7 @@ use axum::routing::{MethodFilter, MethodRouter, on};
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
-    admin, bulk, envelopes as env, factors, folders, groups, mfa, ml, oauth, org, privacy,
+    admin, bulk, envelopes as env, factors, folders, groups, mfa, ml, oauth, org, privacy, reports,
     sessions, switch, templates, usetemplates, webhooks,
 };
 use crate::authz::{Action, Level, OrgAction};
@@ -119,7 +119,7 @@ pub fn table() -> Vec<Route> {
     use Access::{Action as A, Member, Org, Public, SigningIn};
     use Action::{
         AdminAuditRead, ApiClientsManage, AuditRead, BulkSend, EnvelopesRead, EnvelopesSend,
-        EnvelopesTransfer, EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage,
+        EnvelopesTransfer, EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage, ReportsRead,
         RetentionManage, SettingsSending, TemplatesRead, TemplatesWrite, UsersInvite, UsersRead,
         UsersRemove, UsersUpdate, WebhooksManage,
     };
@@ -661,6 +661,14 @@ pub fn table() -> Vec<Route> {
             A(ApiClientsManage),
             JSON,
             admin::revoke_client,
+        ),
+        // Workspace reports (VS-06, UXW-25).
+        r(
+            "GET",
+            "/api/v1/reports/{kind}",
+            A(ReportsRead),
+            JSON,
+            reports::report,
         ),
         // Envelopes.
         r("GET", "/api/v1/contacts", er, JSON, env::contacts),

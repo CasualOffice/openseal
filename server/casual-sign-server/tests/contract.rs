@@ -138,6 +138,67 @@ async fn jobs(api: &Api, env: &str) -> Vec<String> {
         .collect()
 }
 
+/// Slice 6 (VS-06): custom fields set, read and searched, the quick views' filters and
+/// the reports, JSON and CSV. Boxed: the contract test's future is already large.
+fn slice6_operations<'a>(
+    api: &'a Api,
+    k: &'a common::harness::Auth,
+    reid: &'a str,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        // VS-06: custom fields set, read and searched; the quick views' filters.
+        let cf = format!("/api/v1/envelopes/{reid}/custom-fields");
+        ok(
+            api.call(
+                "PUT",
+                &cf,
+                k,
+                Some(json!({"items": [{"name": "Deal", "value": "D-7"}]})),
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "set custom fields",
+        )
+        .await;
+        let got = ok(
+            api.call("GET", &cf, k, None, &[]).await,
+            StatusCode::OK,
+            "custom fields",
+        )
+        .await;
+        assert_eq!(got["items"][0]["value"], "D-7");
+        ok(
+            api.call(
+                "GET",
+                "/api/v1/envelopes?custom_field=Deal&custom_value=d-7&auth_failed=false&expires_before=2999-01-01T00:00:00Z",
+                k,
+                None,
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "search custom fields",
+        )
+        .await;
+        // VS-06: the workspace reports.
+        for kind in ["envelopes", "recipients", "usage"] {
+            ok(
+                api.call("GET", &format!("/api/v1/reports/{kind}"), k, None, &[])
+                    .await,
+                StatusCode::OK,
+                "report",
+            )
+            .await;
+        }
+
+        let csv = api
+            .call("GET", "/api/v1/reports/envelopes?format=csv", k, None, &[])
+            .await;
+        assert_eq!(csv.status, StatusCode::OK);
+    })
+}
+
 /// Each personal-data operation once, as the signed-in administrator (who owns the
 /// organization, so may not erase themselves), against ids of no object where one is
 /// named. Boxed: the contract test's future is already large.
@@ -1854,41 +1915,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .await;
         assert_eq!(t["sender_user_id"], to);
     }
-    // VS-06: custom fields set, read and searched; the quick views' filters.
-    let cf = format!("/api/v1/envelopes/{reid}/custom-fields");
-    ok(
-        api.call(
-            "PUT",
-            &cf,
-            k,
-            Some(json!({"items": [{"name": "Deal", "value": "D-7"}]})),
-            &[],
-        )
-        .await,
-        StatusCode::OK,
-        "set custom fields",
-    )
-    .await;
-    let got = ok(
-        api.call("GET", &cf, k, None, &[]).await,
-        StatusCode::OK,
-        "custom fields",
-    )
-    .await;
-    assert_eq!(got["items"][0]["value"], "D-7");
-    ok(
-        api.call(
-            "GET",
-            "/api/v1/envelopes?custom_field=Deal&custom_value=d-7&auth_failed=false&expires_before=2999-01-01T00:00:00Z",
-            k,
-            None,
-            &[],
-        )
-        .await,
-        StatusCode::OK,
-        "search custom fields",
-    )
-    .await;
+    slice6_operations(&api, k, reid).await;
     // The reassigned recipient's link was revoked in the same transaction.
     let revoked = api
         .call("GET", &format!("/s/{tre}"), &Auth::None, None, &hre)

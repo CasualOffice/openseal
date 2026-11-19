@@ -3018,6 +3018,44 @@ paths:
       responses:
         '204': {description: Done}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/reports/{kind}:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        description: "`envelopes` (one row per envelope), `recipients` (one row per recipient) or `usage` (one row per sender); another is `404`"
+        schema: {type: string, enum: [envelopes, recipients, usage]}
+    get:
+      operationId: getReport
+      summary: "A workspace report over the envelopes created in a window (VS-06, UXW-25)"
+      description: >-
+        DocuSign's envelope, recipient and usage reports. Envelopes created in `[from, to)`
+        (any time by default), of `sender` when given, newest first, at most `limit`;
+        `truncated` (or the `x-truncated` header on CSV) says the limit was reached.
+        Envelopes in the Deleted view are left out. `format=csv` answers `text/csv`
+        (RFC 4180, CRLF); a cell a spreadsheet would read as a formula starts with `'`.
+      x-permission: "reports.read"
+      x-level: workspace
+      parameters:
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: sender, in: query, required: false, description: "A user id, or `me`", schema: {type: string}}
+        - {name: format, in: query, required: false, schema: {type: string, enum: [json, csv], default: json}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 10000, default: 10000}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, truncated]
+                properties:
+                  items: {type: array, items: {type: object}}
+                  truncated: {type: boolean}
+            text/csv:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/contacts:
     get:
       operationId: listContacts

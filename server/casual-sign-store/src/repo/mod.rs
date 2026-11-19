@@ -21,6 +21,7 @@ pub mod ml;
 pub mod oauth;
 pub mod privacy;
 pub mod recipients;
+pub mod reports;
 pub mod seal_signatures;
 pub mod sessions;
 pub mod templates;
@@ -98,6 +99,11 @@ impl TenantTx {
     /// OAuth consents, authorization codes and refresh tokens (VS-08A).
     pub fn oauth(&mut self) -> oauth::OAuth<'_> {
         oauth::OAuth { tx: self }
+    }
+
+    /// Workspace reports (`VS-06`).
+    pub fn reports(&mut self) -> reports::Reports<'_> {
+        reports::Reports { tx: self }
     }
 
     /// Envelopes.

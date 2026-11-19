@@ -19,6 +19,7 @@ pub(crate) mod oauth;
 pub(crate) mod org;
 pub(crate) mod placing;
 pub(crate) mod privacy;
+pub(crate) mod reports;
 pub(crate) mod sessions;
 pub(crate) mod switch;
 pub(crate) mod templates;

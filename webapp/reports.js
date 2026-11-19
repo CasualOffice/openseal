@@ -10,8 +10,8 @@
 import { h, clear, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { button, emptyState, skeletonBlock, errorState, selectField } from "./ui/index.js";
-import { statusCounts, medianHours, toCsv, hasTimes, inWindow, csvRows } from "./reportmodel.js";
+import { button, busy, emptyState, skeletonBlock, errorState, selectField, toastError } from "./ui/index.js";
+import { statusCounts, medianHours, toCsv, hasTimes, inWindow, csvRows, windowBounds } from "./reportmodel.js";
 
 const STATUSES = ["draft", "sent", "delivered", "completed", "declined", "voided", "expired"];
 const MAX = 1000;
@@ -136,7 +136,32 @@ export function mount(view, ctx) {
       h("section", { class: "os-card", attrs: { "aria-labelledby": "rep-status-h" } },
         h("h2", { id: "rep-status-h", class: "os-card__title", text: t("reports.by-status") }),
         h("p", { class: "os-muted os-small", text: t("reports.by-status-help") }), bars),
-      truncated ? h("p", { class: "os-muted os-small", attrs: { "data-testid": "report-capped" }, text: t("reports.truncated", { n: rows.length.toLocaleString() }) }) : "");
+      truncated ? h("p", { class: "os-muted os-small", attrs: { "data-testid": "report-capped" }, text: t("reports.truncated", { n: rows.length.toLocaleString() }) }) : "",
+      serverReports());
+  }
+
+  /// The server's reports as CSV (VS-06, UXW-25): every envelope, every recipient, and
+  /// usage by sender, for the period and sender chosen, computed by the server over
+  /// the whole workspace (not only the envelopes loaded here). Held by `reports.read`.
+  function serverReports() {
+    if (!ctx.session?.admin) return "";
+    const status = h("p", { class: "os-muted os-small", attrs: { "aria-live": "polite", "data-testid": "server-report-status" } });
+    const get = (kind) => async (ev) => {
+      await busy(ev.currentTarget, async () => {
+        try {
+          const q = { ...windowBounds(win), ...(sender === "all" ? {} : { sender }) };
+          const { text, truncated: cut } = await ctx.api.reportCsv(kind, q);
+          download(new Blob([text], { type: "text/csv" }), `${kind}-report.csv`);
+          status.textContent = t(cut ? "reports.server-done-capped" : "reports.server-done", { name: t(`reports.server-${kind}`) });
+        } catch (err) { if (!ctx.failed(err)) toastError(err); }
+      });
+    };
+    return h("section", { class: "os-card", attrs: { "aria-labelledby": "rep-server-h", "data-testid": "server-reports" } },
+      h("h2", { id: "rep-server-h", class: "os-card__title", text: t("reports.server-title") }),
+      h("p", { class: "os-muted os-small", text: t("reports.server-help") }),
+      h("div", { class: "os-actions" }, ...["envelopes", "recipients", "usage"].map((k) =>
+        button(t(`reports.server-${k}`), { icon: "download", variant: "secondary", size: "sm", attrs: { "data-testid": `server-report-${k}` }, onClick: get(k) }))),
+      status);
   }
 
   function tile(id, ic, label, value, sample) {

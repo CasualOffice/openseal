@@ -743,6 +743,22 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "getReport": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/reports/{kind}",
+    "path_params": [
+      "kind"
+    ],
+    "query": [
+      "format",
+      "from",
+      "limit",
+      "sender",
+      "to"
+    ]
+  },
   "getRetention": {
     "body": false,
     "body_required": false,

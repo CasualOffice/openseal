@@ -11,6 +11,30 @@ import { createClient, RECIPIENT_TYPES_READY } from "../api.js";
 import { sendSummary, FIELD_TAKERS } from "../people.js";
 import { inView, viewCounts, envelopeActions, VIEWS } from "../managemodel.js";
 import { makePdf } from "../mockpdf.js";
+import { windowBounds } from "../reportmodel.js";
+
+test("the reports answer every envelope, recipient and sender, and their CSV runs no formula", async () => {
+  const c = await client();
+  const env = await c.report("envelopes");
+  const all = (await c.listEnvelopes({ limit: 200 })).items.length;
+  assert.equal(env.items.length, all);
+  const rec = await c.report("recipients");
+  assert.ok(rec.items.length >= all);
+  const usage = await c.report("usage");
+  assert.equal(usage.items.reduce((n, u) => n + u.created, 0), all);
+  const { text } = await c.reportCsv("recipients");
+  assert.ok(text.startsWith("envelope_id,subject,envelope_status,routing_order,name,email,type,status\r\n"));
+  assert.equal((await c.report("envelopes", { to: "2000-01-01T00:00:00Z" })).items.length, 0);
+  await assert.rejects(c.report("secrets"), (e) => e.code === "CS-API-0002");
+});
+
+test("a report's window is the page's: a preset reaches back from now, a custom range is whole days", () => {
+  const now = Date.parse("2026-11-20T12:00:00Z");
+  assert.deepEqual(windowBounds({ range: "all" }, now), {});
+  assert.deepEqual(windowBounds({ range: "7" }, now), { from: "2026-11-13T12:00:00.000Z" });
+  const custom = windowBounds({ range: "custom", from: "2026-11-01", to: "2026-11-02" }, now);
+  assert.equal(Date.parse(custom.to) - Date.parse(custom.from), 2 * 86_400_000);
+});
 
 async function client() {
   const c = createClient({ fetch: createMockFetch() });

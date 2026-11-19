@@ -924,6 +924,58 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     });
   }
 
+  // ---- Reports (VS-06, server api/reports.rs) ---------------------------------------------
+  /// `GET /reports/{envelopes|recipients|usage}` as the server: envelopes created in
+  /// `[from, to)`, of `sender`, newest first, not deleted; JSON or formula-safe CSV.
+  function report(kind, query) {
+    const bad = (k) => fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/query/${k}`, code: "CS-API-0001" }]);
+    const from = query.get("from");
+    const to = query.get("to");
+    if (from && Number.isNaN(Date.parse(from))) bad("from");
+    if (to && Number.isNaN(Date.parse(to))) bad("to");
+    if (from && to && Date.parse(to) <= Date.parse(from)) bad("to");
+    const format = query.get("format") || "json";
+    if (!["json", "csv"].includes(format)) bad("format");
+    const senderQ = query.get("sender");
+    const sender = senderQ === "me" ? "user-demo" : senderQ;
+    const envs = db.envelopes.filter((e) => !e.deleted_at && e.status !== undefined
+      && (!from || Date.parse(e.created_at) >= Date.parse(from)) && (!to || Date.parse(e.created_at) < Date.parse(to))
+      && (!sender || e.sender_user_id === sender))
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    let head;
+    let rows;
+    if (kind === "envelopes") {
+      head = ["envelope_id", "subject", "status", "sender_user_id", "created_at", "sent_at", "completed_at", "voided_at", "expires_at", "recipients"];
+      rows = envs.map((e) => ({ envelope_id: e.id, subject: e.subject, status: e.status, sender_user_id: e.sender_user_id, created_at: e.created_at, sent_at: e.sent_at || null, completed_at: e.status === "completed" ? e.ended_at || null : null, voided_at: e.status === "voided" ? e.ended_at || null : null, expires_at: e.expires_at || null, recipients: (e.recipients || []).length }));
+    } else if (kind === "recipients") {
+      head = ["envelope_id", "subject", "envelope_status", "routing_order", "name", "email", "type", "status"];
+      rows = envs.flatMap((e) => [...(e.recipients || [])].sort((a, b) => a.routing_order - b.routing_order).map((r) => ({ envelope_id: e.id, subject: e.subject, envelope_status: e.status, routing_order: r.routing_order, name: r.name, email: r.email || null, type: r.type, status: r.status })));
+    } else if (kind === "usage") {
+      head = ["sender_user_id", "created", "sent", "completed", "declined", "voided", "expired"];
+      const by = new Map();
+      for (const e of envs) {
+        const u = by.get(e.sender_user_id) || { sender_user_id: e.sender_user_id, created: 0, sent: 0, completed: 0, declined: 0, voided: 0, expired: 0 };
+        u.created++;
+        if (e.status !== "draft") u.sent++;
+        if (["completed", "declined", "voided", "expired"].includes(e.status)) u[e.status]++;
+        by.set(e.sender_user_id, u);
+      }
+      rows = [...by.values()].sort((a, b) => b.created - a.created);
+    } else {
+      fail(404, "CS-API-0002", "Not found");
+    }
+    if (format === "csv") {
+      const cell = (v) => {
+        let s = v == null ? "" : String(v);
+        if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+        return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const text = [head.join(","), ...rows.map((r) => head.map((k) => cell(r[k])).join(","))].join("\r\n") + "\r\n";
+      return new Response(text, { status: 200, headers: { "Content-Type": "text/csv; charset=utf-8" } });
+    }
+    return json(200, { items: rows, truncated: false });
+  }
+
   // ---- Webhooks (docs/40 §4, server api/webhooks.rs) --------------------------------------
   /// The server's registration check (SEC-W01): https://, a host, no credentials, not a
   /// local name or a private, loopback or link-local address.
@@ -1901,6 +1953,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "organizations" && id === "me") return orgRoutes(method, sub, subId, subSub, query, body);
     if (res === "ersd-versions" && !id) return ersdVersions(method, body);
     if (res === "admin-events" && !id && method === "GET") return adminEvents(query);
+    if (res === "reports" && id && !sub && method === "GET") return report(id, query);
     // WEB-06: recipient autocomplete, as the server's GET /contacts.
     if (res === "contacts" && method === "GET") {
       const q = (query.get("q") || "").trim().toLowerCase();

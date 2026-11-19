@@ -256,7 +256,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
         errors: problem.errors,
       });
     }
-    if (raw) return { blob: await res.blob(), etag: res.headers.get("ETag"), next: res.headers.get("X-Next-Cursor") };
+    if (raw) return { blob: await res.blob(), etag: res.headers.get("ETag"), next: res.headers.get("X-Next-Cursor"), truncated: res.headers.get("X-Truncated") === "true" };
     if (res.status === 204) return { data: null, etag: res.headers.get("ETag") };
     const text = await res.text();
     return { data: text ? JSON.parse(text) : null, etag: res.headers.get("ETag") };
@@ -600,6 +600,15 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     adminEvents: ({ cursor, limit, verify } = {}) => data(request("GET", "/api/v1/admin-events", { query: { cursor, limit, verify } })),
     /// The same page as the server's CSV (`seq,at,action,hash,prev,event`): `{text, next}`,
     /// `next` the cursor of the page after it, or null on the last.
+    /// A workspace report (VS-06, `reports.read`): `kind` `envelopes`, `recipients` or
+    /// `usage`, over envelopes created in `[from, to)` of `sender` (an id or "me");
+    /// `{items, truncated}`.
+    report: (kind, { from, to, sender } = {}) => data(request("GET", `/api/v1/reports/${encodeURIComponent(kind)}`, { query: { from, to, sender } })),
+    /// The same report as the server's CSV: `{text, truncated}`.
+    reportCsv: async (kind, { from, to, sender } = {}) => {
+      const r = await request("GET", `/api/v1/reports/${encodeURIComponent(kind)}`, { query: { from, to, sender, format: "csv" }, raw: true, accept: "text/csv, application/problem+json" });
+      return { text: await r.blob.text(), truncated: !!r.truncated };
+    },
     adminEventsCsv: async ({ cursor, limit } = {}) => {
       const r = await request("GET", "/api/v1/admin-events", { query: { cursor, limit, format: "csv" }, raw: true, accept: "text/csv, application/problem+json" });
       return { text: await r.blob.text(), next: r.next == null || r.next === "" ? null : Number(r.next) };

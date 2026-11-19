@@ -746,6 +746,22 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "getReport": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/reports/{kind}",
+        "path_params": [
+            "kind"
+        ],
+        "query": [
+            "format",
+            "from",
+            "limit",
+            "sender",
+            "to"
+        ]
+    },
     "getRetention": {
         "body": False,
         "body_required": False,

@@ -1,0 +1,116 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.id AS envelope_id, e.subject, e.status AS envelope_status, r.name, r.email, r.type AS rtype, r.status, r.routing_order FROM envelopes AS e JOIN recipients AS r ON r.account_id = e.account_id AND r.envelope_id = e.id WHERE e.account_id = $1 AND e.deleted_at IS NULL AND EXISTS (SELECT 1 FROM envelope_states AS s WHERE s.account_id = e.account_id AND s.envelope_id = e.id) AND e.created_at >= $2 AND e.created_at < $3 AND ($4::uuid IS NULL OR e.sender_user_id = $4) ORDER BY e.created_at DESC, e.id DESC, r.routing_order, r.id LIMIT $5",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "envelope_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "envelope_status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "email",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "email"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "rtype",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "type"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "routing_order",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "recipients",
+            "name": "routing_order"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6656fd8bd0a202e83b0d4516a3a70b0a29035ea7ea3ec54bcc0443be4c7dae21"
+}
