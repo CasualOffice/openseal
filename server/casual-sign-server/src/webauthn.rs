@@ -1,4 +1,4 @@
-//! The WebAuthn relying party for staff passkeys (CON-13, ADR-040; W3C Web
+//! The WebAuthn relying party for staff passkeys (CON-13, ADR-039; W3C Web
 //! Authentication Level 2 §7.1 and §7.2).
 //!
 //! What this module checks is the protocol: the client data (type, challenge, origin),
@@ -155,7 +155,9 @@ impl RelyingParty {
             Some(r) => {
                 let r = r.trim().to_ascii_lowercase();
                 let fits = r == host
-                    || (host.ends_with(&r) && host[..host.len() - r.len()].ends_with('.'));
+                    || host
+                        .strip_suffix(r.as_str())
+                        .is_some_and(|rest| rest.ends_with('.'));
                 if r.is_empty() || !fits {
                     return None;
                 }
@@ -189,7 +191,7 @@ impl RelyingParty {
 #[must_use]
 pub fn unb64(s: &str, max: usize) -> Option<Vec<u8>> {
     // Four characters carry three bytes: refuse what cannot fit before decoding it.
-    if s.len() > max.saturating_mul(4) / 3 + 4 {
+    if s.len() > (max.saturating_mul(4) / 3).saturating_add(4) {
         return None;
     }
     let v = URL_SAFE_NO_PAD.decode(s.trim_end_matches('=')).ok()?;

@@ -1,6 +1,6 @@
 //! Staff passkeys (WebAuthn) as a second factor, a person's management of their own
 //! factors, and an administrator's reset of a member's lost factors (CON-13, ASVS-32;
-//! ASVS 2.3.2, 2.5.7; docs/40 §2, ADR-040).
+//! ASVS 2.3.2, 2.5.7; docs/40 §2, ADR-039).
 //!
 //! - `POST /auth/mfa/passkeys/options {purpose}`: a challenge for one ceremony
 //!   (`register`, `verify` at sign-in, `reauthenticate` for step-up), kept on the session

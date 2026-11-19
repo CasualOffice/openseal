@@ -301,7 +301,20 @@ The UX-01 audit's package P2: the app's chrome on phones, and what a DocuSign us
   "Confirm it's you": the password, and the authenticator's code when the person has a second factor, with the
   refusal said beside the field it concerns. On Continue the action is made again by itself, so the person does not
   start over; Cancel leaves it undone. Not asked again for five minutes. Tests: `webapp/tests/sessions.test.mjs`,
-  `webapp/e2e/sessions.spec.mjs` (Chromium and WebKit).
+  `webapp/e2e/sessions.spec.mjs` (Chromium and WebKit). A person with a passkey (`CON-13`) also gets **Continue with
+  passkey**, which opens the browser's own passkey prompt after the password (the only button when they have no
+  authenticator app).
+- **Passkeys and two-step verification** (`passkey.js`, `CON-13`, `ASVS-32`): the sign-in card's second step asks
+  for the passkey first when the person has one (**Use passkey**, the browser's prompt), with "Use your authenticator
+  app instead" and "Use a recovery code instead"; setting up the second step offers **Set up a passkey instead**
+  beside the app, and a person whose factors an administrator reset is told so. The profile panel's **Two-step
+  verification** section lists passkeys (name, added, last used) with Rename and Remove, **Add a passkey**, the
+  authenticator app's state with **Remove authenticator app**, and **Make new recovery codes** (shown once in a
+  dialog); every change but a first factor goes through the step-up prompt. Admin, Users: a member's menu has **Reset
+  two-step verification**, a confirmation that says when to use it and asks how their identity was checked (in person,
+  video call, call-back, manager, identity document). A ceremony the person closes, or a key already registered, is
+  said in words, never as an error code. Tests: `webapp/tests/passkey.test.mjs`, `webapp/e2e/passkeys.spec.mjs`
+  (Chromium's virtual authenticator).
 - **Help menu**: Keyboard shortcuts, Verify a signed PDF, About OpenSeal. The **shortcuts panel** lists every table,
   grouped (Everywhere, with ⌘K for the command menu; Send editor; Placing fields, the editor's single-key tools from
   `preparemodel.TOOL_KEYS`, V and S I D N E O T C, which prepare.js dispatches itself on the Fields step), one row per

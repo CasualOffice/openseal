@@ -588,7 +588,7 @@ mutation of the migration):
   document-analysis switches, `WEB-19`), `ersd.published` (a disclosure version's id, version, language and hash,
   never its text, `ERSD-01`), `organization.created`,
   `organization.admin_added`, `member.added`, `member.removed`, `member.profile_changed`, `member.disabled`,
-  `member.enabled`, `member.renamed`, `member.password_set`, `profile.created`, `profile.changed`, `profile.deleted`,
+  `member.enabled`, `member.renamed`, `member.password_set`, `member.factors_reset` (`ASVS-32`: how the member's identity was proved, and the factors removed), `profile.created`, `profile.changed`, `profile.deleted`,
   `group.created`, `group.renamed`, `group.deleted`, `group.member_added`, `group.member_removed` (`UXW-07`),
   `upload.malware_refused`, `upload.unscanned_refused`, `upload.unscanned_admitted` (a malware scan's refusal or an upload
   admitted unscanned under fail-open: target `kind` and the ids it was for, changes `signature` or `reason`, `sha256`,

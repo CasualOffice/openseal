@@ -496,6 +496,22 @@ confirmed factor only once that session has passed it (`Sessions::reseal_own_tot
 (schema owner only, `Store::reseal_totp_seed` beside `Store::totp_seeds`) does the same per user for
 `casual-sign-server mfa-reseal`.
 
+Migration 0045 (`CON-13`, `ASVS-32`, ADR-039) adds staff passkeys and the lost-factor reset. **`staff_passkeys`**
+(`account_id`, `id`, `user_id`, `credential_id` unique, `public_key` SubjectPublicKeyInfo DER, `algorithm` -7/-8/-257,
+`sign_count`, `name`, `transports`, `backup_eligible`, `created_at`, `last_used_at`) is a tenant table: `account_id`
+is the workspace the passkey was registered in, under RLS with its policy and an index leading with it, and the
+application role may read its own account's rows and write none. A passkey is still the person's factor in every
+workspace, as the TOTP columns are: it is read and changed only through definer functions keyed by the caller's live
+session (`openseal_own_factors`, `openseal_own_passkeys`, `openseal_add_own_passkey`, `openseal_use_own_passkey`
+with the counter check, `openseal_rename_own_passkey`, `openseal_remove_own_passkey`, `openseal_remove_own_totp`,
+`openseal_replace_own_recovery_codes`), and adding a factor beside an existing one needs a session that passed it
+(`openseal_mfa_session_user_passed`; `openseal_begin_own_totp` and `openseal_confirm_own_totp` now ask the same).
+`users.factor_reset_at` (guarded by `users_factor_guard`) marks an administrator's reset
+(`openseal_reset_member_factors`: a member of the current account alone, as `SEC-ID-01`); the resolver then answers
+`mfa_policy` `everyone` for that user, and enrolling any factor clears it. The resolver counts a passkey as enrolled;
+`openseal_use_own_recovery_code` recovers either factor. `staff_sessions` gains `webauthn_challenge`,
+`webauthn_purpose` and `webauthn_challenge_expires_at` (one outstanding ceremony, spent by `Sessions::take_webauthn_challenge`).
+
 ### Designed (ADR-028): tenancy with organizations
 
 The second scope, the organization tables `organizations`, `organization_admins` and `org_permission_sets`, the
