@@ -269,10 +269,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!WEBHOOK_EVENTS.includes(topic)) return;
     for (const w of db.webhooks || []) {
       if (!w.active || !w.event_types.includes(topic) || (w.envelope_id && w.envelope_id !== env.id)) continue;
-      // A receiver at `…/fail-first` answers its first delivery 500 (the slice 8 spec's
+      // A receiver at `…/fail-first` answers its first delivery 500; like the server, the
+      // delivery stays pending with a retry due (the slice 8 spec's
       // stand-in for the real stack's receiver, told to fail), so it can be delivered again.
       const fails = /\/fail-first(?:$|[/?])/.test(w.url) && !(db.deliveries[w.id] || []).length;
-      (db.deliveries[w.id] ||= []).unshift({ id: uid(), event_id: uid(), event_type: topic, status: fails ? "failed" : "delivered", attempts: 1, last_status_code: fails ? 500 : 200 });
+      (db.deliveries[w.id] ||= []).unshift({ id: uid(), event_id: uid(), event_type: topic, status: fails ? "pending" : "delivered", attempts: 1, last_status_code: fails ? 500 : 200 });
     }
   }
 
