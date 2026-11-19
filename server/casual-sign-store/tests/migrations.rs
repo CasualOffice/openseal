@@ -124,8 +124,10 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // tables; 0042 none (ASVS-06: activity columns on `staff_sessions`); 0043 none (HRD-12);
     // 0044 none (ASVS-29: a definer function that re-hashes a password); 0045
     // `retention_rules` (ASVS-18), a tenant table, replacing `retention_policies`, which
-    // nothing ever read or wrote.
-    assert_eq!(tables.len(), 66, "{tables:?}");
+    // nothing ever read or wrote; 0046 `staff_passkeys` (CON-13), a tenant table (the
+    // workspace a passkey was registered in; the person's factor everywhere, through
+    // definer functions only).
+    assert_eq!(tables.len(), 67, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",
         "org_admin_events",

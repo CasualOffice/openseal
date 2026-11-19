@@ -24,7 +24,7 @@ Website and documentation: <https://seal.casualoffice.org>, built from [`site/`]
 published by `.github/workflows/pages.yml`, with an **interactive demo** (the web app in demo mode, no install) and a
 **public verifier** that checks a sealed PDF in your browser without uploading it.
 
-> **Pre-release.** v0.0.1 is for evaluation, not for production agreements. The development stack makes its own CA,
+> **Pre-release.** v0.0.1 (and v0.1.0, prepared) are for evaluation, not for production agreements. The development stack makes its own CA,
 > software HSM and timestamp authority; the external security review, accessibility audit and counsel review are
 > still ahead. Adobe Acrobat Reader reads the long-term seals as valid offline on `main` (`HRD-14`). See [Status](#status).
 
@@ -75,12 +75,13 @@ or try the same demo on the website with nothing installed.
 
 ## Status
 
-Docs are true as of 2026-11-17 (`main` at `900d0b6`, with pull request #18 open on top). **Pre-alpha.** **v0.0.1**,
+Docs are true as of 2026-11-19 (`main` at `584634d`, CI run 44419251440 green on every job). **Pre-alpha.** **v0.0.1**,
 the first pre-release, is [published](https://github.com/CasualOffice/openseal/releases/tag/v0.0.1): usable end to end
 on one machine with Docker Compose, **not for production agreements**. **Phases D, 0, 1 and 2 are closed** (owner,
-2026-11-11 and 2026-11-12) and milestones M0, M1 and M2 are reached. Since 2026-11-13 the owner has paused feature
-expansion (nothing dropped) to harden one deployment end to end and to finish M3, "first signature": slices 1 (send and
-sign), 2 (routing), 5 (authentication and consent) and 7 (verify). Each item's exact state is in
+2026-11-11 and 2026-11-12) and milestones M0 to M3 are reached: **M3, "first signature"**, on 2026-11-19, when the
+owner closed slices 1 (send and sign), 2 (routing), 5 (authentication and consent) and 7 (verify) on `main` run 44419251440.
+**v0.1.0**, the second pre-release, is prepared ([CHANGELOG](CHANGELOG.md)); its tag is pushed once this is on `main`.
+ML, the platform console, and plans and metering stay paused (`Paused` in the tracker) and resume in order. Each item's exact state is in
 [docs/14](docs/14-EXECUTION-TRACKER.md); the M3 evidence, gate item by gate item, is in
 [docs/73](docs/73-M3-SLICE-EVIDENCE.md).
 
@@ -100,27 +101,24 @@ sign), 2 (routing), 5 (authentication and consent) and 7 (verify). Each item's e
   recipient authentication method with an SMS gateway and an OpenID Connect provider stub, with recorded demos
   (`RAUTH-02`; the slice 2 demo `RTE-04` is still to be watched and linked).
 
-**Built, waiting for a green CI run on `main` or for the owner:**
+**Also proven on `main`:** Adobe Acrobat Reader reads the B-LTA seals as valid offline (`HRD-14`, `HRD-03`; acrobat
+run 44024248440); slice 7: the WebAssembly verifier in the browser, B-LT as an account's default seal level, public
+anchoring of audit chain heads with the proof served and checked on Verify (`VS-07`, `FG-158`, ADR-037; run 44419251440);
+every M3 screen's strings extracted (`I18N-01`).
 
-- Adobe Acrobat Reader reads the B-LTA seals as valid offline, LTV enabled (`HRD-14`, `HRD-03`): acrobat run
-  44024248440 on `main`.
-- Public anchoring of audit chain heads (`FG-158`) and slice 7's verify work (`VS-07`): CI run 44023485128 on `main`.
-- Slice 7 on pull request #18: the WebAssembly verifier's browser tests in CI, B-LT as an account's default seal level,
-  an accessibility scan of Verify, its demo, and public anchoring of audit chain heads (`VS-07`, `FG-158`, ADR-037).
-
-No slice is closed; only the owner closes one. [docs/96](docs/96-FEATURE-FIT-GAP.md) counts 50 of 168 features
+Slices 1, 2, 5 and 7 are closed by the owner (2026-11-19); no other slice is. [docs/96](docs/96-FEATURE-FIT-GAP.md) counts 50 of 168 features
 working end to end, 27 in part and 15 with their engine built.
 
 **Pre-release limits.** The development stack makes its own CA, software HSM and timestamp authority, so its seals
 validate only against that CA. Not yet done: the external penetration test (`HRD-05`), the accessibility audit
-(`A11Y-01`), counsel's review of legal claims and the default disclosure (`LEG-02`), published load numbers (`HRD-04`)
-and the rest of production hardening (`HRD-06`). The OWASP ASVS 4.0.3 self-assessment
+(`A11Y-01`), counsel's review of legal claims and the default disclosure (`LEG-02`), and the rest of production
+hardening (`HRD-06`, `HRD-11`, `HRD-12`). The OWASP ASVS 4.0.3 self-assessment
 ([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md)) finds 9 requirements not met and 31 partly met; it is a
 self-assessment, not an audit or a certification. Nothing here states that a signature is legally valid or that
 OpenSeal is compliant or certified ([docs/09](docs/09-LEGAL-AND-COMPLIANCE.md)).
 
-**Next:** M3's remaining gate items (docs/73), the hardening release ([docs/06](docs/06-ROADMAP-AND-DELIVERY.md)
-§Hardening release), then the paused work in order: the verifier as a standalone package (`VER-01`), organizations,
+**Next:** release v0.1.0, the hardening release ([docs/06](docs/06-ROADMAP-AND-DELIVERY.md) §Hardening release),
+then the paused work in order: the verifier as a standalone package (`VER-01`), organizations,
 the platform console, plans and the model service.
 
 | Phase | Exit gate | State |
@@ -130,8 +128,10 @@ the platform console, plans and the model service.
 | 1 — PDF and evidence core | **Closed** (7 of 7) | Every admitted corpus PDF (417 of 417) filled, flattened, sealed and verified by ours, pyHanko and EU DSS; tamper and signature-wrapping fixtures detected by all three; WASM byte-identical to native; 24 h of fuzzing per target with no finding. Signed off 2026-11-11 |
 | 2 — Envelope engine and server | **Closed** (5 of 5) | Workflow engine, persistence, API server, job worker, keyd and the Docker Compose deployment; end-to-end on the stack green in CI; crash tests with real process kills; tenant isolation over every operation; every access and web threat with a test seen red. Signed off 2026-11-12 |
 | Release 1 (v0.0.1) | Published 2026-11-12 | Send and sign with routing, templates, decline and void, access code and email code, sealed PDF and certificate, verify, API and webhooks, single-node Compose. Left in `REL-01`: public container packages and the recorded manual walkthrough |
-| Hardening release | Open (2 of 7) | `HRD-01` and `HRD-02` met on CI; Acrobat (`HRD-03`) waits for its run on `main`; load numbers, the pen test, production hardening and the ASVS "Not met" items left |
-| Slices 1–35 | None closed | Slices 1, 2, 5 and 7 lead to M3; [docs/73](docs/73-M3-SLICE-EVIDENCE.md) lists each gate item and its evidence |
+| Release v0.1.0 | Prepared 2026-11-19 | Hardening and M3 since v0.0.1; the first release through the signed workflow (cosign signatures, SBOMs, provenance, signed `SHA256SUMS`; `REL-04`) |
+| Hardening release | Open (4 of 7) | `HRD-01` to `HRD-04` met on CI (Acrobat Reader reads B-LTA seals valid offline; load numbers published); the pen test, production hardening and the ASVS "Not met" items left |
+| Slices 1, 2, 5, 7 | **Closed** 2026-11-19 | M3 reached; run 44419251440; every gate item and its evidence in [docs/73](docs/73-M3-SLICE-EVIDENCE.md) |
+| Other slices | Not closed | Slices 3, 4, 6, 8 and 9 lead to M4, team beta |
 
 **What the engine does today** (Rust, `crates/`, each part tested against hostile files and real documents):
 

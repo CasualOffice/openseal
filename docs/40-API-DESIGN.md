@@ -310,8 +310,8 @@ JSON, HTTP Basic or body credentials, RFC 6749 errors) and get a one-hour ES256 
 `openseal-api`), verified by `GET /.well-known/jwks.json`; the signing key comes from the secrets crate
 (`OPENSEAL_JWT_SIGNING_KEY`). Every request re-checks the credential: a revoked key or client, an expired token, a
 removed member or a disabled user is refused on its next request. A credential acts as a member and holds at most the
-scopes of that member's permission profile, narrowed by its own. **Not built:** staff OIDC and SAML login (a recipient's OpenID Connect sign-in is built, `RAUTH-01`; the staff TOTP second factor is below, `ASVS-01`), WebAuthn
-(`webauthn-rs` is MPL-2.0, outside `deny.toml`), OAuth authorization code with PKCE, the JWT bearer grant.
+scopes of that member's permission profile, narrowed by its own. **Not built:** staff OIDC and SAML login (a recipient's OpenID Connect sign-in is built, `RAUTH-01`; the staff TOTP second factor is below, `ASVS-01`, and staff passkeys as a second factor, `CON-13`), passwordless
+WebAuthn sign-in, OAuth authorization code with PKCE, the JWT bearer grant.
 
 **Requests.** RFC 9457 problems with `code`, `request_id` (also `X-Request-Id`) and JSON-pointer `errors`; the
 router's own refusals (no route, wrong method, too large) are problems too. `Idempotency-Key` on any guarded `POST`:
@@ -462,7 +462,7 @@ had written `optional` before the default changed keep it, as a recorded decisio
 the server does not start without `OPENSEAL_MFA_KEY` outside development (docs/65; it rotates with
 `OPENSEAL_MFA_PREVIOUS_KEY`, each seed re-sealed under the new key when its user next proves a code or by
 `casual-sign-server mfa-reseal`, `HRD-12`, docs/65 §Rotation); an administrator who loses their
-authenticator signs in with one of their recovery codes (`ASVS-32` adds replacing the factor). A user with a confirmed factor owes it in every session, whatever
+authenticator signs in with one of their recovery codes, or an administrator resets their factors (below, `ASVS-32`). A user with a confirmed factor owes it in every session, whatever
 the policy, so a password reset or a new password does not bypass it. A session that owes a factor reaches only the
 routes marked `x-permission: signing-in` (`GET /auth/session`, `POST /auth/logout` and the three below); every other
 `/api/v1` call is `403 CS-AUTH-0011` with `detail` `verify` or `enrol`. API keys and access tokens are not asked for
@@ -476,9 +476,52 @@ one (they are credentials of their own, made by a member who signed in). `GET /a
 | `POST /auth/mfa/verify {code}` or `{recovery_code}` | Passes the session's factor. A TOTP code is accepted only for a step later than the last accepted one for the user, so a code works once; a recovery code is spent (case, spaces and dashes ignored) and the answer says how many are left. `401 CS-AUTH-0012` for a wrong, replayed or spent code |
 
 All three are staff sessions only (`422 CS-API-0001` for a key or token) and are rate-limited per user at the login
-rate. Not built yet: WebAuthn (`CON-13`), replacing or resetting a
-lost factor and regenerating recovery codes (`ASVS-32`). The web app shows the code step and enrolment on the sign-in
-card (`webapp/signin.js`), with the setup key as text and an `otpauth:` link; a QR code is `ASVS-33`.
+rate. The web app shows the code step and enrolment on the sign-in card (`webapp/signin.js`), with the setup key as
+text and an `otpauth:` link; a QR code is `ASVS-33`.
+
+## As built (`CON-13`, `ASVS-32`, staff passkeys and lost factors)
+
+**Passkeys (ADR-040, Accepted 2026-11-19 (owner instruction 65); ASVS 2.3.2).** A staff user may register WebAuthn passkeys (at most 10) as a second
+factor beside, or instead of, the TOTP authenticator. The server is the relying party: the RP id is the host of
+`OPENSEAL_PUBLIC_URL` (or `OPENSEAL_WEBAUTHN_RP_ID`, the host or a parent domain of it), the one origin accepted is the
+public URL's; a public URL whose host is an IP address has no passkeys (`409 CS-API-0014`). Attestation is `none`;
+algorithms ES256, EdDSA and RS256. Registration reads the key from the browser's `getPublicKey()`
+(SubjectPublicKeyInfo DER), so no CBOR is decoded; every check of WebAuthn Level 2 §7.1/§7.2 that applies is made
+(`casual-sign-server/src/webauthn.rs`), with SHA-256 and signature verification from `aws-lc-rs` (ADR-006). Each
+ceremony's 32-byte challenge is kept on the staff session for five minutes, one at a time, for one purpose
+(`register`, `verify`, `reauthenticate`), and spent by the call that answers it whatever the outcome. A signature
+counter that does not move past the stored one (both zero excepted, for authenticators that keep none) is refused as
+a cloned credential and logged `auth.mfa` with `reason: counter`. Passkeys are the person's factor in every workspace,
+as the TOTP factor is. Passwordless sign-in is not offered: the passkey is a second factor after the password.
+
+| Endpoint | As built |
+| --- | --- |
+| `POST /auth/mfa/passkeys/options {purpose}` | The options for `navigator.credentials.create` (`register`) or `.get` (`verify`, `reauthenticate`), binary members base64url, `Cache-Control: no-store`. `register` beside an existing factor needs a session that passed it and re-authenticated within five minutes (`403 CS-AUTH-0011`, `CS-AUTH-0013`); `verify`/`reauthenticate` without a passkey `409 CS-API-0009` |
+| `POST /auth/mfa/passkeys {name?, credential}` | Registers. As the first factor it is the enrolment a policy asks for: the session passes and ten recovery codes are shown once. `401 CS-AUTH-0012` for a refused registration, `409 CS-API-0009` for a credential already registered or an eleventh |
+| `POST /auth/mfa/verify {passkey}` | The sign-in step with an assertion answering a `verify` challenge |
+| `POST /auth/reauthenticate {password, passkey}` | Step-up with an assertion answering a `reauthenticate` challenge |
+| `GET /auth/mfa/passkeys`; `PATCH`, `DELETE /auth/mfa/passkeys/{id}` | List; rename and remove after a re-authentication. Another person's passkey answers `404` |
+| `DELETE /auth/mfa/totp` | Remove the authenticator app to replace it (`ASVS-32`), after a re-authentication, which proved the current factor |
+| `POST /auth/mfa/recovery-codes` | Ten new recovery codes, replacing the earlier ones, after a re-authentication |
+| `POST /users/{id}/second-factor/reset {identity_verified_by}` | See below |
+
+Removing the last factor clears the recovery codes and the factor every session of the person had passed, so the
+workspace's policy applies at once. `GET /auth/session` answers `factors`: `{totp, passkeys, recovery_codes_left,
+reset_by_admin, passkeys_available}` (null for keys and tokens). Every addition and removal emails the user a notice
+(`passkey_added`, `passkey_removed`, `factor_removed`, `recovery_codes_replaced`).
+
+**Lost factors (ASVS 2.5.7).** There is no self-service path around a lost factor: the person uses a recovery code,
+or an administrator resets them. `POST /users/{id}/second-factor/reset {identity_verified_by}` is for an
+administrator of the workspace or its organization, from a staff session (never a key or token, `403 CS-AUTH-0006`)
+that re-authenticated within five minutes (`403 CS-AUTH-0013`), never for oneself (`422`), and only for a member of
+this workspace alone (`403 CS-API-0015`, as `SEC-ID-01`). `identity_verified_by` records how the person's identity was
+proved out of band: `in_person`, `video_call`, `phone_callback`, `manager_confirmation` or `identity_document`. The
+member's TOTP authenticator, passkeys and recovery codes are removed, their sessions in the workspace end, and their
+next sign-in must enrol a new factor before anything else whatever the policy (`users.factor_reset_at`). The reset is
+an administrative event (`member.factors_reset`, with the proof and what was removed), a security event
+(`auth.mfa_remove`, `by: admin`) and an email to the member (`factors_reset`). The web app offers it in the member's
+menu (Users) with the proof chosen in the confirmation; the profile panel lists, adds, renames and removes passkeys,
+removes the app and makes new recovery codes; sign-in and step-up use the browser's passkey prompt.
 
 ## As built (`ASVS-06`, `ASVS-07`, staff sessions and step-up)
 

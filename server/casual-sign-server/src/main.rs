@@ -16,7 +16,8 @@
 //! | `OPENSEAL_S3_CA` | PEM file of the CA the object store's TLS certificate chains to, besides the platform's roots (a private CA, the production profile) |
 //! | `OPENSEAL_SECRET_RELOAD_SECONDS` | How often the database URL file is read again for a rotated credential (default 30; `0` never; docs/65 §Rotation) |
 //! | `OPENSEAL_WEBAPP_DIR` | The web app's folder (`webapp/`), served at `/` (row WEB-04); none: API only |
-//! | `OPENSEAL_PUBLIC_URL` | Public base URL (links, token issuer) |
+//! | `OPENSEAL_PUBLIC_URL` | Public base URL (links, token issuer; its origin is the one staff passkeys work on, CON-13) |
+//! | `OPENSEAL_WEBAUTHN_RP_ID` | Optional: the WebAuthn RP id of staff passkeys when not the public URL's host; must be that host or a parent domain of it. Passkeys are unavailable when the public URL's host is an IP address |
 //! | `OPENSEAL_LISTEN` | Address to listen on (default `127.0.0.1:8080`) |
 //! | `OPENSEAL_OPS_LISTEN` | Address of the ops listener (`CON-05`): `GET /livez` (`204`) and `GET /readyz` (`204`; `503` while draining or while the database does not answer); never the public port; unset: none |
 //! | `OPENSEAL_DRAIN_SECONDS` | On `SIGINT`, how long to keep serving while `/readyz` answers `503`, before taking no new connections (default 0, at most 300; `HRD-11`: the proxy in front of several replicas moves new requests away first) |
@@ -655,6 +656,17 @@ async fn main() -> ExitCode {
     let mut config = Config::default();
     if let Ok(u) = std::env::var("OPENSEAL_PUBLIC_URL") {
         config.public_url = u.trim_end_matches('/').to_owned();
+    }
+    // Staff passkeys (CON-13): the RP id, when not the public URL's host.
+    if let Ok(r) = std::env::var("OPENSEAL_WEBAUTHN_RP_ID") {
+        if casual_sign_server::webauthn::RelyingParty::from_public_url(&config.public_url, Some(&r))
+            .is_none()
+        {
+            return fail(
+                "OPENSEAL_WEBAUTHN_RP_ID: not the public URL's host or a parent domain of it",
+            );
+        }
+        config.webauthn_rp_id = Some(r);
     }
     if let Ok(list) = std::env::var("OPENSEAL_TRUSTED_PROXIES") {
         for c in list.split(',').filter(|c| !c.trim().is_empty()) {

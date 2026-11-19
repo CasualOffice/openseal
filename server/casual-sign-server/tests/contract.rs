@@ -2351,6 +2351,89 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         "end other sessions",
     )
     .await;
+    // Passkeys and the person's own factors (CON-13, ASVS-32; `tests/passkeys.rs` walks
+    // them through): a passkey added beside the TOTP factor, listed, renamed; new
+    // recovery codes; the TOTP factor, then the passkey, removed; and an administrator's
+    // reset of a member who is not there.
+    let o = ok(
+        api.call(
+            "POST",
+            "/api/v1/auth/mfa/passkeys/options",
+            &s,
+            Some(json!({"purpose": "register"})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "passkey options",
+    )
+    .await;
+    let soft = common::passkey::Soft::new();
+    let pk = ok(
+        api.call(
+            "POST",
+            "/api/v1/auth/mfa/passkeys",
+            &s,
+            Some(soft.register(&o, "Contract key")),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "passkey register",
+    )
+    .await;
+    let pk_path = format!(
+        "/api/v1/auth/mfa/passkeys/{}",
+        pk["passkey"]["id"].as_str().unwrap()
+    );
+    ok(
+        api.call("GET", "/api/v1/auth/mfa/passkeys", &s, None, &[])
+            .await,
+        StatusCode::OK,
+        "passkeys",
+    )
+    .await;
+    ok(
+        api.call("PATCH", &pk_path, &s, Some(json!({"name": "Renamed"})), &[])
+            .await,
+        StatusCode::OK,
+        "passkey rename",
+    )
+    .await;
+    ok(
+        api.call("POST", "/api/v1/auth/mfa/recovery-codes", &s, None, &[])
+            .await,
+        StatusCode::OK,
+        "recovery codes replaced",
+    )
+    .await;
+    ok(
+        api.call("DELETE", "/api/v1/auth/mfa/totp", &s, None, &[])
+            .await,
+        StatusCode::NO_CONTENT,
+        "totp removed",
+    )
+    .await;
+    ok(
+        api.call("DELETE", &pk_path, &s, None, &[]).await,
+        StatusCode::NO_CONTENT,
+        "passkey removed",
+    )
+    .await;
+    ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/users/{}/second-factor/reset", uuid::Uuid::now_v7()),
+            &s,
+            Some(json!({"identity_verified_by": "in_person"})),
+            &[],
+        )
+        .await,
+        // With every factor gone the administrator owes enrolment first (ASVS-31).
+        StatusCode::FORBIDDEN,
+        "factor reset",
+    )
+    .await;
     ok(
         api.call("POST", "/api/v1/auth/logout", &s, None, &[]).await,
         StatusCode::NO_CONTENT,

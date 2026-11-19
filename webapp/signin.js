@@ -10,7 +10,9 @@
 // SSO, slice 3, FG-173); a footer. A session that owes a second factor (ASVS-01, `GET
 // /auth/session` → `second_factor`) goes on to the code step, or to setting one up when
 // the workspace's policy asks for it, before the app opens; both use the same card,
-// fields and buttons as sign-in.
+// fields and buttons as sign-in. A person with a passkey (CON-13) is asked for it first,
+// through the browser's own prompt (passkey.js), with the code and a recovery code as
+// the other ways; setting up offers a passkey beside the authenticator app.
 
 import { h } from "./dom.js";
 import { icon } from "./icons.js";
@@ -19,6 +21,7 @@ import { button, busy } from "./ui/index.js";
 import { errorMessage, isDemoBuild } from "./api.js";
 import { signInErrors, firstInvalid, resetError, usableProviders, signInFailure, owedFactor, factorError, groupSecret } from "./authmodel.js";
 import { authLayout, cardHead, textField, passwordField, setFieldError, alertBox, footerLinks } from "./authview.js";
+import { createPasskey, getPasskey, hasPasskey, canAddPasskey, passkeysSupported, ceremonyError } from "./passkey.js";
 
 export async function mount(view, ctx) {
   const hint = ctx.mock ? (await import("./mock.js")).MOCK : null;
@@ -151,16 +154,68 @@ function codeField(id, recovery) {
   return f;
 }
 
-function verifyFactor(card, ctx, screens, recovery = false) {
+/// The methods the person can pass the step with, from `GET /auth/session` (`factors`):
+/// a passkey when they have one and this browser can use it, the authenticator app when
+/// they have one (or the server did not say), and always a recovery code.
+async function factorMethods(ctx) {
+  let s = null;
+  try { s = await ctx.api.session(); } catch { s = null; }
+  return { passkey: hasPasskey(s) && passkeysSupported(), totp: s?.factors ? !!s.factors.totp : true };
+}
+
+/// The second step: `mode` "passkey", "code" or "recovery"; by default the passkey when
+/// the person has one, else the code (or a recovery code for someone with neither here).
+async function verifyFactor(card, ctx, screens, mode = null) {
+  const methods = await factorMethods(ctx);
+  if (!card.isConnected) return;
+  const m = mode || (methods.passkey ? "passkey" : methods.totp ? "code" : "recovery");
+  if (m === "passkey") { passkeyStep(card, ctx, screens, methods); return; }
+  codeStep(card, ctx, screens, methods, m === "recovery");
+}
+
+/// A link to another way through the step.
+function methodLink(key, command, go) {
+  const b = h("button", { type: "button", class: "os-auth__link", attrs: { "data-os-command": command }, text: t(key) });
+  b.addEventListener("click", go);
+  return b;
+}
+
+function passkeyStep(card, ctx, screens, methods) {
+  card.replaceChildren();
+  const alert = alertBox("mfa-alert");
+  const use = button(t("passkey.use"), { icon: "key-round", variant: "primary", size: "lg", command: "auth.mfa-passkey" });
+  use.classList.add("os-auth__submit");
+  use.addEventListener("click", async () => {
+    alert.hide();
+    try {
+      await busy(use, async () => ctx.api.verifySecondFactor({ passkey: await getPasskey(ctx.api, "verify") }));
+      await afterPassword(ctx, screens);
+    } catch (err) {
+      const k = ceremonyError(err);
+      alert.show(t("signin.invalid-title"), k ? t(k) : err?.code === "CS-AUTH-0012" ? t("passkey.refused") : errorMessage(err));
+      use.focus();
+    }
+  });
+  const row = h("div", { class: "os-auth__row" },
+    methods.totp ? methodLink("mfa.use-code", "auth.mfa-switch-method", () => verifyFactor(card, ctx, screens, "code")) : null,
+    methodLink("mfa.use-recovery", "auth.mfa-use-recovery", () => verifyFactor(card, ctx, screens, "recovery")));
+  card.append(cardHead("signin-title", t("passkey.title"), t("passkey.lede")),
+    h("div", { class: "os-auth__form", attrs: { "data-testid": "mfa-passkey" } }, alert.node, use, row), otherAccount(ctx, screens));
+  use.focus();
+}
+
+function codeStep(card, ctx, screens, methods, recovery) {
   card.replaceChildren();
   const code = codeField("mfa-code", recovery);
   const alert = alertBox("mfa-alert");
-  const swap = h("button", { type: "button", class: "os-auth__link", attrs: { "data-os-command": "auth.mfa-switch-method" }, text: t(recovery ? "mfa.use-code" : "mfa.use-recovery") });
-  swap.addEventListener("click", () => verifyFactor(card, ctx, screens, !recovery));
+  const swap = methods.totp
+    ? methodLink(recovery ? "mfa.use-code" : "mfa.use-recovery", "auth.mfa-switch-method", () => verifyFactor(card, ctx, screens, recovery ? "code" : "recovery"))
+    : null;
   const submit = button(t("mfa.submit"), { variant: "primary", size: "lg", type: "submit", command: "auth.mfa-verify" });
   submit.classList.add("os-auth__submit");
+  const passkey = methods.passkey ? methodLink("mfa.use-passkey", "auth.mfa-use-passkey", () => verifyFactor(card, ctx, screens, "passkey")) : null;
   const form = h("form", { class: "os-auth__form", attrs: { novalidate: true, "aria-labelledby": "signin-title" } },
-    alert.node, code.block, h("div", { class: "os-auth__row" }, swap), submit);
+    alert.node, code.block, h("div", { class: "os-auth__row" }, swap, passkey), submit);
   code.input.addEventListener("input", () => {
     if (code.input.getAttribute("aria-invalid") === "true") { const k = factorError(code.input.value, recovery); setFieldError(code.input, code.error, k ? t(k) : ""); }
   });
@@ -186,6 +241,8 @@ function verifyFactor(card, ctx, screens, recovery = false) {
 
 async function enrolFactor(card, ctx, screens) {
   card.replaceChildren();
+  let session = null;
+  try { session = await ctx.api.session(); } catch { session = null; }
   let seed = null;
   try { seed = await ctx.api.enrolTotp(); } catch (err) {
     card.append(cardHead("signin-title", t("mfa.enrol-title")),
@@ -223,7 +280,30 @@ async function enrolFactor(card, ctx, screens) {
     }
     recoveryCodes(card, ctx, screens, Array.isArray(done?.recovery_codes) ? done.recovery_codes : []);
   });
-  card.append(cardHead("signin-title", t("mfa.enrol-title"), t("mfa.enrol-lede")), form, otherAccount(ctx, screens));
+  // CON-13: a passkey instead of the app, when the server and this browser allow it.
+  let passkey = null;
+  if (canAddPasskey(session)) {
+    const add = button(t("mfa.enrol-passkey"), { icon: "key-round", variant: "secondary", size: "lg", command: "auth.mfa-enrol-passkey" });
+    add.classList.add("os-auth__submit");
+    add.addEventListener("click", async () => {
+      alert.hide();
+      let done = null;
+      try {
+        done = await busy(add, () => createPasskey(ctx.api, t("passkey.default-name")));
+      } catch (err) {
+        const k = ceremonyError(err);
+        alert.show(t("signin.invalid-title"), k ? t(k) : err?.code === "CS-AUTH-0012" ? t("passkey.refused") : errorMessage(err));
+        return;
+      }
+      const codes = Array.isArray(done?.recovery_codes) ? done.recovery_codes : [];
+      if (codes.length) recoveryCodes(card, ctx, screens, codes); else afterPassword(ctx, screens);
+    });
+    passkey = h("div", { class: "os-auth__form", attrs: { "data-testid": "mfa-enrol-passkey" } },
+      h("p", { class: "os-auth__or", text: t("signin.or") }),
+      h("p", { class: "os-muted os-small", text: t("mfa.enrol-passkey-lede") }), add);
+  }
+  const lede = session?.factors?.reset_by_admin ? `${t("mfa.reset-lede")} ${t("mfa.enrol-lede")}` : t("mfa.enrol-lede");
+  card.append(cardHead("signin-title", t("mfa.enrol-title"), lede), form, passkey, otherAccount(ctx, screens));
   code.input.focus();
 }
 

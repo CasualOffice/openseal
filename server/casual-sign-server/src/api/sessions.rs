@@ -128,6 +128,9 @@ struct ReauthIn {
     code: Option<String>,
     #[serde(default)]
     recovery_code: Option<String>,
+    /// A passkey's assertion answering the session's `reauthenticate` challenge (CON-13).
+    #[serde(default)]
+    passkey: Option<super::factors::AssertionIn>,
 }
 
 /// Re-authentication attempts per user per minute: the login limit (docs/21).
@@ -144,18 +147,23 @@ fn limit(c: &Call) -> Result<(), ApiError> {
     }
 }
 
-/// `POST /auth/reauthenticate {password, code? | recovery_code?}`: prove the password
-/// again, and the second factor when the user has one (a TOTP code, single use, or a
-/// recovery code, spent). Answers `{reauthenticated_until}`. `401 CS-AUTH-0007` for a
+/// `POST /auth/reauthenticate {password, code? | recovery_code? | passkey?}`: prove the
+/// password again, and the second factor when the user has one (a TOTP code, single use,
+/// a recovery code, spent, or a passkey's assertion, CON-13). Answers `{reauthenticated_until}`. `401 CS-AUTH-0007` for a
 /// wrong password, `401 CS-AUTH-0012` for a wrong or reused code, `422 CS-API-0001`
 /// (`/code`) when the user has a factor and none was sent.
 pub(crate) async fn reauthenticate(c: Call, body: Bytes) -> Response {
     let mut factor = "password";
-    let r = reauth_inner(&c, &body, &mut factor)
+    let mut reason: Option<&'static str> = None;
+    let r = reauth_inner(&c, &body, &mut factor, &mut reason)
         .await
         .unwrap_or_else(IntoResponse::into_response);
     crate::security::answered(&c.st, Kind::Reauth, &r, |ev| {
-        ev.with("factor", SecValue::Word(factor))
+        let ev = ev.with("factor", SecValue::Word(factor));
+        match reason {
+            Some(w) => ev.with("reason", SecValue::Word(w)),
+            None => ev,
+        }
     });
     r
 }
@@ -164,6 +172,7 @@ async fn reauth_inner(
     c: &Call,
     body: &[u8],
     factor: &mut &'static str,
+    reason: &mut Option<&'static str>,
 ) -> Result<Response, ApiError> {
     let s = session(c)?;
     limit(c)?;
@@ -189,9 +198,19 @@ async fn reauth_inner(
         return Err(ApiError::bad_credentials());
     }
     let own = tx.sessions().own_totp(s, now).await?;
-    if own.as_ref().is_some_and(|o| o.confirmed) {
-        match (req.code, req.recovery_code) {
-            (Some(code), None) => {
+    let has_passkey = tx
+        .sessions()
+        .own_factors(s, now)
+        .await?
+        .is_some_and(|f| f.passkeys > 0);
+    if own.as_ref().is_some_and(|o| o.confirmed) || has_passkey {
+        match (req.code, req.recovery_code, req.passkey) {
+            (None, None, Some(a)) => {
+                *factor = "passkey";
+                super::factors::pass_with_passkey(c, &mut tx, s, "reauthenticate", &a, reason)
+                    .await?;
+            }
+            (Some(code), None, None) => {
                 *factor = "totp";
                 let sealed = own
                     .and_then(|o| o.seed_sealed.map(|x| (o.user_id, x)))
@@ -213,7 +232,7 @@ async fn reauth_inner(
                         .await?;
                 }
             }
-            (None, Some(code)) => {
+            (None, Some(code), None) => {
                 *factor = "recovery_code";
                 let hash = recovery_hash(&code).ok_or_else(ApiError::second_factor_refused)?;
                 tx.sessions()

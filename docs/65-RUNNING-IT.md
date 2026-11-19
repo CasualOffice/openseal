@@ -17,8 +17,10 @@ docker compose logs -f server worker         # what it is doing
 docker compose down -v                       # stop, and discard every volume (data, keys, mail)
 ```
 
-**Released images instead of building:** `OPENSEAL_IMAGE_PREFIX=ghcr.io/casualoffice/openseal OPENSEAL_VERSION=0.0.1 docker compose up -d --wait`
-pulls the published v0.0.1 images (`docker compose pull` first) rather than building from source.
+**Released images instead of building:** `OPENSEAL_IMAGE_PREFIX=ghcr.io/casualoffice/openseal OPENSEAL_VERSION=0.1.0 docker compose up -d --wait`
+pulls that release's published images (`docker compose pull` first) rather than building from source. v0.1.0 is the
+first release built by the signed release workflow below (prepared 2026-11-19, published when its tag runs); v0.0.1's
+images (`OPENSEAL_VERSION=0.0.1`) are the earlier, unsigned pre-release.
 
 `bootstrap` prints the account and administrator ids; run it once (a second run with the same email is refused).
 Ports bind to `127.0.0.1` only: `OPENSEAL_HTTP_PORT` (default 8080) and `OPENSEAL_MAIL_PORT` (default 8025) move them.
@@ -465,6 +467,7 @@ and `client`:
 | `auth.invite_accept` | server | An invitation link spent or refused |
 | `auth.reauthenticate` | server | A re-authentication before a sensitive action (`ASVS-07`): passed or refused (`factor: password`, `totp` or `recovery_code`; the code of the refusal) |
 | `auth.session_end` | server | Other sessions of a staff user ended by them (`ASVS-06`): `scope: one` or `others`, and `count` |
+| `auth.mfa_remove` | server | A staff second factor removed (`ASVS-32`, `CON-13`): `factor` (`passkey`, `totp`, or `all` for an administrator's reset, with `member`) and `by` (`self` or `admin`) |
 | `auth.token` | server | An OAuth client-credentials token issued or refused |
 | `auth.lockout` | server | A recipient locked out by failed authentications, and each later request refused for it (`CS-AUTH-0004`) |
 | `access.unauthenticated`, `access.denied`, `access.rate_limited` | server, console (keyd: denied, rate limited) | Every `401`, `403` and `429`; keyd: an admin operation asked by a signing caller, a signature over the caller's rate |
@@ -589,12 +592,15 @@ generated from the code into this page is still to come. The server's: `OPENSEAL
 a second factor by default, so the server does not start without it outside development, ASVS-31; the development
 stack keeps one in its secrets volume as `mfa-key`; keep it with the database backups, since a seed sealed under a
 lost key cannot be opened and its users can then sign in only with their recovery codes until the factor can be
-replaced, `ASVS-32`), `OPENSEAL_PASSWORD_PEPPER` (optional, 32 random bytes as base64: the pepper staff password
+replaced, or an administrator resets them, `ASVS-32`), `OPENSEAL_PASSWORD_PEPPER` (optional, 32 random bytes as base64: the pepper staff password
 hashes are keyed with, held outside the database, ASVS 2.4.5, `ASVS-29`; the production profile mounts one,
 `password-pepper`, made by `init-secrets.sh`; a hash made before it is re-made under it at the user's next sign-in;
 keep it with the database backups, since no password hashed under a lost pepper verifies and those users must reset
 their passwords), `OPENSEAL_PASSWORD_PEPPER_PREVIOUS` (during its rotation, §Rotation),
-`OPENSEAL_MFA_PREVIOUS_KEY` (during its rotation, §Rotation, `HRD-12`),
+`OPENSEAL_MFA_PREVIOUS_KEY` (during its rotation, §Rotation, `HRD-12`), `OPENSEAL_WEBAUTHN_RP_ID` (optional: the
+WebAuthn RP id of staff passkeys, `CON-13`, when it should be a parent domain of `OPENSEAL_PUBLIC_URL`'s host rather
+than the host itself; passkeys work only on the public URL's origin, are unavailable when its host is an IP address,
+and stop working for every user if the RP id later changes, so choose it once),
 `OPENSEAL_OPS_LISTEN` (the ops listener, `CON-05`: `GET /livez` and `GET /readyz`, `204` or `503`, never the public
 port; unset, none), `OPENSEAL_DRAIN_SECONDS` (on `SIGINT`, seconds to keep serving while `/readyz` answers `503`,
 default 0; the production profile sets 5, `HRD-11`), `OPENSEAL_CLAMD_*` (§Malware
@@ -795,7 +801,8 @@ count into your audit records before then; the artifact holds no backup, no key 
 **Status:** the workflow below is written and linted (`actionlint` with `shellcheck`), its pinning tool is unit-tested,
 and the pinned profile was rendered and passed `tools/check-deploy.py` on a workstation (2026-11-17). It has not yet
 run on a tag: v0.0.1 was built by its first version (images with BuildKit's SBOM and provenance only, no cosign
-signature, no release assets). The first tag after this change is its first real run.
+signature, no release assets). The first tag after this change is its first real run: v0.1.0, prepared 2026-11-19
+(owner instruction 61; `REL-04`).
 
 **What a release is.** `.github/workflows/release.yml` runs on a `v*` tag pushed by the owner, never on an ordinary
 push. For each of `server`, `worker` and `keyd` it builds `deploy/Dockerfile`'s target for `linux/amd64` (base images

@@ -277,10 +277,19 @@ pub enum SecurityNotice {
     PasswordReset,
     /// The password was set through an invitation link.
     PasswordSet,
-    /// A second factor was added.
+    /// A second factor was added (a TOTP authenticator app).
     FactorAdded,
-    /// A second factor was removed.
+    /// A second factor was removed (the TOTP authenticator app, by the user).
     FactorRemoved,
+    /// A passkey was added as a second factor (CON-13).
+    PasskeyAdded,
+    /// A passkey was removed (CON-13).
+    PasskeyRemoved,
+    /// The recovery codes were replaced by new ones (ASVS-32).
+    RecoveryCodesReplaced,
+    /// An administrator reset every second factor after proving the user's identity;
+    /// the user sets up a new one at their next sign-in (ASVS-32, ASVS 2.5.7).
+    FactorsReset,
 }
 
 /// The payload of a [`SEND_SECURITY_NOTICE`] job.

@@ -19,7 +19,8 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
   seal tokens); work still on an open pull request is named as such and never counted as Met. Re-assessed 2026-11-19 for 2.1.8,
   2.4.5, 3.6.1, 12.3.4 and 14.4.2 in the change that builds them (`ASVS-03`, `ASVS-10`, `ASVS-22`, `ASVS-29`), counted
   Met as of its merge; their docs/14 rows stay In progress until CI is green on `main`. Re-assessed 2026-11-19 for 8.3.2
-  (Met) and 8.3.8 (Partly) in the change that builds them (`ASVS-16`, `ASVS-18`), on the same terms. A test is cited only where it exists; where the threat model records a control seen red, its
+  (Met) and 8.3.8 (Partly) in the change that builds them (`ASVS-16`, `ASVS-18`), and for 2.3.2, 2.5.5 to 2.5.7 and
+  2.9.1 to 2.9.3 in the change that builds them (`CON-13`, `ASVS-32`), on the same terms. A test is cited only where it exists; where the threat model records a control seen red, its
   `SEC-*` id is cited. Nothing was penetration-tested and no scanner was run for this document.
 - **Paths.** `-server/src/x.rs` means `server/casual-sign-server/src/x.rs`; likewise `-worker`, `-store`, `-keyd`,
   `-console`, `-modeld`, `-secrets`, `-host` under `server/`. Engine crates are under `crates/`.
@@ -31,22 +32,22 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 | Status | All | L1 | L2 only | L3 only |
 | --- | --- | --- | --- | --- |
-| Met | 220 | 113 | 96 | 11 |
-| Partly | 31 | 8 | 18 | 5 |
-| Not met | 3 | 0 | 2 | 1 |
-| N/A | 24 | 7 | 15 | 2 |
+| Met | 226 | 114 | 101 | 11 |
+| Partly | 30 | 7 | 18 | 5 |
+| Not met | 1 | 0 | 0 | 1 |
+| N/A | 21 | 7 | 12 | 2 |
 | Deleted | 8 | 0 | 0 | 8 |
 | Total | 286 | 128 | 131 | 27 |
 
-The largest gaps: staff authentication beyond TOTP (no WebAuthn, `CON-13`; no way to replace a lost factor, `ASVS-32`;
-TOTP is the default only for administrators since `ASVS-31`), personal-data controls (built 2026-11-19 on a worktree
+The largest gaps: personal-data controls (built 2026-11-19 on a worktree
 branch: export, erasure and retention, `ASVS-16`, `ASVS-18`; left: purged blobs' bytes until `HRD-09`, the operator
 privacy-notice template), unsigned release images (`ASVS-15`), and log shipping shown only as
 configuration (`ASVS-08A`). Built and green on CI on `main` since the first assessment: the security event log
 (`ASVS-08`), anomaly alerting (`ASVS-13`; envelope and bulk sends counted since `ASVS-13A`), the backup and restore drill
 (`ASVS-14`, job `backup-drill`) and the administrators' TOTP default (`ASVS-31`); merged since: staff session idle and
-absolute limits with a session list (`ASVS-06`) and step-up before sensitive actions (`ASVS-07`), Met at the merge and
-green once CI on `main` passes. The evidence core is
+absolute limits with a session list (`ASVS-06`) and step-up before sensitive actions (`ASVS-07`); built on a worktree
+branch 2026-11-19: staff passkeys (`CON-13`, ASVS 2.3.2, 2.9.x) and the audited lost-factor reset (`ASVS-32`, ASVS
+2.5.6, 2.5.7), each Met at its merge and green once CI on `main` passes. The evidence core is
 strong: access control, injection, file handling, the ceremony's link binding and one-time codes, keyd's mTLS and
 operation log, and the append-only hash-chained logs are met, with tests that docs/07 records as seen red.
 
@@ -237,7 +238,7 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
 | 2.3.1 | 1 | All | System-generated initial secrets random and short-lived | Met | Invitation and reset links: 256 random bits, SHA-256 stored, 7 days, single use (docs/40 §2 table, `-worker/tests/user_invite.rs`) | — |
-| 2.3.2 | 2 | All | Enrolment of user-provided authenticators (FIDO/U2F) | Not met | No WebAuthn for staff (`CON-13`) | CON-13, ASVS-01 |
+| 2.3.2 | 2 | All | Enrolment of user-provided authenticators (FIDO/U2F) | Met | Staff register WebAuthn passkeys (FIDO2; attestation `none`), up to 10, as the first factor or beside one only from a session that passed it and re-authenticated (`POST /auth/mfa/passkeys/options`, `/auth/mfa/passkeys`; `-server/src/webauthn.rs`, `api/factors.rs`, migration 0046, ADR-040 Accepted 2026-11-19 (owner instruction 65)). `-server/tests/passkeys.rs` (software authenticator: enrol, sign-in step, step-up, replay, clone counter, origin, RP id, cross-workspace, no bypass of an owed factor) and `webapp/e2e/passkeys.spec.mjs` (Chromium's virtual authenticator against the server), seen red | CON-13 |
 | 2.3.3 | 2 | All | Renewal instructions for time-bound authenticators | N/A | No time-bound authenticators issued to users (API keys expire but are replaced by an administrator) | — |
 
 **V2.4 Credential Storage**
@@ -258,9 +259,9 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 | 2.5.2 | 1 | All | No password hints or secret questions | Met | None exist | — |
 | 2.5.3 | 1 | All | Recovery never reveals the current password | Met | Reset sets a new Argon2id hash (`password_reset_confirm`); old password never stored in clear | — |
 | 2.5.4 | 1 | All | No shared or default accounts | Met | `bootstrap` names the first administrator and requires `OPENSEAL_ADMIN_PASSWORD` (`docker-compose.yml` header, `-server/tests/bootstrap.rs`) | — |
-| 2.5.5 | 1 | All | User notified when an authentication factor changes | Met | Password changes and a TOTP factor added email the user (`-worker/tests/security_notice.rs`, `ASVS-04`); no route removes a factor yet, and `ASVS-32` sends `factor_removed` when one does | ASVS-04 |
-| 2.5.6 | 1 | All | Secure recovery mechanism | Partly | Emailed one-time reset link, 202 for any address, rate-limited (`reset_inner`); a reset does not bypass a staff user's TOTP (every session of an enrolled user owes it, `SecondFactor::of` in `-server/src/auth.rs`), but a lost factor has no recovery path but the recovery codes | ASVS-32 |
-| 2.5.7 | 2 | All | Identity proofing when MFA factors are lost | Not met | Staff TOTP exists (`ASVS-01`); nothing yet resets or replaces a lost factor, so there is no proofing step either | ASVS-32 |
+| 2.5.5 | 1 | All | User notified when an authentication factor changes | Met | Password changes and a TOTP factor added email the user (`-worker/tests/security_notice.rs`, `ASVS-04`); a passkey added or removed, the app removed, new recovery codes and an administrator's reset each queue a notice (`passkey_added`, `passkey_removed`, `factor_removed`, `recovery_codes_replaced`, `factors_reset`; `-server/tests/passkeys.rs` reads the queued jobs) | ASVS-04 |
+| 2.5.6 | 1 | All | Secure recovery mechanism | Met | Emailed one-time reset link, 202 for any address, rate-limited (`reset_inner`); a reset does not bypass a staff user's factor (every session of an enrolled user owes it, `SecondFactor::of` in `-server/src/auth.rs`); a lost factor is recovered by a one-time recovery code or by an administrator's audited reset after identity proofing (2.5.7); the user replaces their own app and recovery codes only after proving the current factor (`-server/tests/passkeys.rs`) | ASVS-32 |
+| 2.5.7 | 2 | All | Identity proofing when MFA factors are lost | Met | No self-service path around a lost factor: `POST /users/{id}/second-factor/reset {identity_verified_by}` only by an administrator, from a staff session re-authenticated within five minutes, for a member of that workspace alone; the administrator records how identity was proved (closed list); the member's factors, recovery codes and sessions end, the next sign-in must enrol whatever the policy; administrative event `member.factors_reset`, security event `auth.mfa_remove`, email `factors_reset` (`-server/tests/passkeys.rs` `an_administrator_resets_a_members_lost_factors_after_proving_their_identity`, seen red without the step-up and without the forced enrolment) | ASVS-32 |
 
 **V2.6 Look-up Secret Verifier**
 
@@ -297,9 +298,9 @@ Existing rows also cited: `CON-10` (seal key rotation), `CON-13` (WebAuthn), `KE
 
 | Req | L | Scope | Requirement (paraphrase) | Status | Evidence checked | Row |
 | --- | --- | --- | --- | --- | --- | --- |
-| 2.9.1 | 2 | All | Cryptographic authenticator keys stored securely | N/A | No cryptographic authenticators for users yet (`CON-13`) | CON-13 |
-| 2.9.2 | 2 | All | Challenge nonce 64+ bits | N/A | As 2.9.1; OIDC `nonce` is 256 random bits (`idp.rs`) | — |
-| 2.9.3 | 2 | All | Approved algorithms for cryptographic authenticators | N/A | As 2.9.1 | — |
+| 2.9.1 | 2 | All | Cryptographic authenticator keys stored securely | Met | Staff passkeys (`CON-13`): the private key never leaves the authenticator; the server keeps only the public key (SPKI) in `staff_passkeys`, written only by definer functions keyed by the owner's session (migration 0046) | — |
+| 2.9.2 | 2 | All | Challenge nonce 64+ bits | Met | WebAuthn challenges are 256 random bits from `aws-lc-rs`, one per session and purpose, five minutes, spent on use (`api/factors.rs`); OIDC `nonce` is 256 random bits (`idp.rs`) | — |
+| 2.9.3 | 2 | All | Approved algorithms for cryptographic authenticators | Met | ES256, EdDSA (Ed25519) and RS256 (2048 to 8192 bits) only, verified by `aws-lc-rs` (ADR-006; `-server/src/webauthn.rs`) | — |
 
 **V2.10 Service Authentication**
 

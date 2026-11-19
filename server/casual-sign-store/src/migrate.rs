@@ -81,6 +81,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(43, "0043_mfa_key_rotation.sql"),
     migration!(44, "0044_password_rehash.sql"),
     migration!(45, "0045_privacy_and_retention.sql"),
+    migration!(46, "0046_staff_passkeys.sql"),
 ];
 
 /// The migration ledger. Also the first statement of migration 0001.

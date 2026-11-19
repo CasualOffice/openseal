@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE staff_sessions SET webauthn_challenge = $3, webauthn_purpose = $4, webauthn_challenge_expires_at = $5 WHERE account_id = $1 AND id = $2 AND revoked_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a3b8f63e9d4e44fdc686848523d0408957be6269dc8b49abee8b8b94659e59d7"
+}

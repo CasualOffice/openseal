@@ -141,6 +141,9 @@ pub struct Config {
     pub ml_bundle: Option<String>,
     /// Abnormal-activity detection thresholds (`ASVS-13`, docs/65 §Logs).
     pub anomaly: crate::anomaly::AnomalyConfig,
+    /// The WebAuthn RP id for staff passkeys (`OPENSEAL_WEBAUTHN_RP_ID`, CON-13): the
+    /// public URL's host or a parent domain of it. `None` (the default): the host.
+    pub webauthn_rp_id: Option<String>,
 }
 
 impl Default for Config {
@@ -159,6 +162,7 @@ impl Default for Config {
             trusted_proxies: Vec::new(),
             ml_bundle: None,
             anomaly: crate::anomaly::AnomalyConfig::default(),
+            webauthn_rp_id: None,
         }
     }
 }
