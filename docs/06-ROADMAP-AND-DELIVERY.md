@@ -56,7 +56,7 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 Docs are true as of 2026-11-19 (`main` at `584634d`, the PR #30 merge; CI run 44419251440 green on every job). **M3,
 "first signature", is reached:** slices 1, 2, 5 and 7 closed on 2026-11-19 under owner instruction 59 on run 44419251440,
-every gate item with its evidence in [73](73-M3-SLICE-EVIDENCE.md). **v0.1.0 is prepared** (§Release 1, v0.1.0;
+every gate item with its evidence in [73](73-M3-SLICE-EVIDENCE.md). **v0.1.0 is published** (2026-11-20) (§Release 1, v0.1.0;
 instruction 61). Since 2026-11-13 feature expansion was paused for the hardening release and M3 (instructions 48, 51,
 54; §Freeze, §Hardening release); the paused rows are `Paused` in docs/14 and resume in order (§Freeze). Proven by CI on `main` (runs 44001061169 and 44018844840): `HRD-01`, `HRD-02`, `HRD-10`,
 `ASVS-08`, `ASVS-13`, `ASVS-14`, `ASVS-31`, keyd seal tokens (`KEYD-02`), slice 5 on the real stack with its demo
@@ -81,7 +81,7 @@ authorities (`CON-03` to `CON-07`, `CON-16`, `CON-17`, `PLAN-02` to `PLAN-04`), 
 | 2 Envelope engine and server | **Closed** 2026-11-12 | Owner, instruction 23; `compose-e2e`, `P2-CRASH`, `P2-THREATS` |
 | Milestones | M0, M1, M2, M3 **reached** | M0–M2: owner, instruction 38; M3 "first signature": 2026-11-19, instruction 59, its slices closed on `main` run 44419251440 (`MS-0`–`MS-3` in [14](14-EXECUTION-TRACKER.md)). Next: M4 team beta |
 | Release 1 / v0.0.1 | **Published** 2026-11-12 | Tagged at `4780d84` after GitHub CI run 43123420112 was green on all 14 jobs; images with SBOM and provenance; pre-release on GitHub. Left in `REL-01`: GHCR packages public, the manual walkthrough in [65](65-RUNNING-IT.md); the boxes below are ticked by `REL-01` from evidence |
-| v0.1.0 | **Prepared** 2026-11-19 | The second pre-release: the hardening work and M3 since v0.0.1, the first through the signed release workflow (cosign, SBOMs, provenance, signed checksums; `REL-04`). Its tag is pushed on the green `main` commit after this merges (owner instruction 61, §v0.1.0 below); still not for production agreements |
+| v0.1.0 | **Published** 2026-11-20 (tag at `f667422`, release run 44615842313) | The second pre-release: the hardening work and M3 since v0.0.1, the first through the signed release workflow (cosign, SBOMs, provenance, signed checksums; `REL-04`). Its tag is pushed on the green `main` commit after this merges (owner instruction 61, §v0.1.0 below); still not for production agreements |
 | Slices 3, 4 | **Closed** 2026-11-20 | Owner, instructions 66 and 68, on `main` run 44610734814 (f667422) green on every job; evidence [74](74-SLICE-3-EVIDENCE.md), [75](75-SLICE-4-EVIDENCE.md) |
 | Slices 1, 2, 5, 7 | **Closed** 2026-11-19 | Owner, instruction 59 ("complete M3"), on `main` run 44419251440 green on every job; the readings of instruction 58 applied (slice 7: B-LT as the account default, anchoring served and shown; `VS-07D`, `VS-07E` after M3). Evidence per gate item: [73](73-M3-SLICE-EVIDENCE.md) |
 | Other slices | Not closed | Release 1's part of slice 3 is built and in browser runs; slices 3, 4, 6, 8 and 9 lead to M4. [96](96-FEATURE-FIT-GAP.md) counts 50 of 168 rows working, 27 in part and 15 with their engine built |

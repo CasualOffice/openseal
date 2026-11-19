@@ -6,7 +6,7 @@
 
 - [Brand and attribution | OpenSeal](https://seal.casualoffice.org/brand.html): OpenSeal logos to download, how to credit OpenSeal with Powered by OpenSeal, what the Apache-2.0 licence requires, and ready-made snippets.
 - [Changelog | OpenSeal](https://seal.casualoffice.org/changelog.html): What changed in OpenSeal, by date.
-- [Download and deploy | OpenSeal](https://seal.casualoffice.org/download.html): Ways to run OpenSeal v0.0.1, the first pre-release: the Docker Compose stack, the web app in demo mode, the openseal command line and the offline verifier.
+- [Download and deploy | OpenSeal](https://seal.casualoffice.org/download.html): Ways to run OpenSeal v0.1.0, the first signed pre-release: the Docker Compose stack, the web app in demo mode, the openseal command line and the offline verifier.
 - [OpenSeal: open-source e-signatures](https://seal.casualoffice.org/): OpenSeal is an Apache-2.0 signing and verification engine you embed (a Rust engine, a WebAssembly verifier, an API and SDK), with a complete e-signature web app built on it: send, sign, self-host, and verify every sealed PDF offline.
 - [Roadmap | OpenSeal](https://seal.casualoffice.org/roadmap.html): What OpenSeal has built, what is in progress, Release 1, and the slices that follow.
 - [Security policy | OpenSeal](https://seal.casualoffice.org/security.html): How to report a vulnerability in OpenSeal privately, what to include, what counts as critical, and which versions are supported.

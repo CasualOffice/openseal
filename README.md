@@ -24,7 +24,7 @@ Website and documentation: <https://seal.casualoffice.org>, built from [`site/`]
 published by `.github/workflows/pages.yml`, with an **interactive demo** (the web app in demo mode, no install) and a
 **public verifier** that checks a sealed PDF in your browser without uploading it.
 
-> **Pre-release.** v0.0.1 (and v0.1.0, prepared) are for evaluation, not for production agreements. The development stack makes its own CA,
+> **Pre-release.** v0.1.0 (2026-11-20) is for evaluation, not for production agreements. The development stack makes its own CA,
 > software HSM and timestamp authority; the external security review, accessibility audit and counsel review are
 > still ahead. Adobe Acrobat Reader reads the long-term seals as valid offline on `main` (`HRD-14`). See [Status](#status).
 
@@ -75,15 +75,17 @@ or try the same demo on the website with nothing installed.
 
 ## Status
 
-Docs are true as of 2026-11-19 (`main` at `584634d`, CI run 44419251440 green on every job). **Pre-alpha.** **v0.0.1**,
-the first pre-release, is [published](https://github.com/CasualOffice/openseal/releases/tag/v0.0.1): usable end to end
-on one machine with Docker Compose, **not for production agreements**. **Phases D, 0, 1 and 2 are closed** (owner,
-2026-11-11 and 2026-11-12) and milestones M0 to M3 are reached: **M3, "first signature"**, on 2026-11-19, when the
-owner closed slices 1 (send and sign), 2 (routing), 5 (authentication and consent) and 7 (verify) on `main` run 44419251440.
-**v0.1.0**, the second pre-release, is prepared ([CHANGELOG](CHANGELOG.md)); its tag is pushed once this is on `main`.
-ML, the platform console, and plans and metering stay paused (`Paused` in the tracker) and resume in order. Each item's exact state is in
-[docs/14](docs/14-EXECUTION-TRACKER.md); the M3 evidence, gate item by gate item, is in
-[docs/73](docs/73-M3-SLICE-EVIDENCE.md).
+Docs are true as of 2026-11-20 (`main` at `f667422`, CI run 44610734814 green on every job). **Pre-alpha.**
+**[v0.1.0](https://github.com/CasualOffice/openseal/releases/tag/v0.1.0)** is published (2026-11-20), the first signed pre-release: server, worker and key-service images on
+GHCR, each signed keyless with Sigstore, with build provenance and an SBOM, and a signed `SHA256SUMS`. It runs end to
+end on one machine with Docker Compose and is **not for production agreements**. **Phases D, 0, 1 and 2 are closed**
+and milestones M0 to M3 are reached (**M3, "first signature"**, 2026-11-19). **Slices closed: 1 (send and sign), 2
+(routing), 3 (templates), 4 (every field), 5 (authentication and consent) and 7 (verify)**, 6 of 35. Slice 8 (API and
+webhooks) is built and in review. Work follows one binding plan, one slice at a time
+([docs/06](docs/06-ROADMAP-AND-DELIVERY.md) §Execution plan). ML, the platform console, and plans and metering stay
+paused (`Paused` in the tracker). Each item's exact state is in [docs/14](docs/14-EXECUTION-TRACKER.md); slice
+evidence is in [docs/73](docs/73-M3-SLICE-EVIDENCE.md), [74](docs/74-SLICE-3-EVIDENCE.md) and
+[75](docs/75-SLICE-4-EVIDENCE.md).
 
 **Proven by a green CI run on `main`** (runs 44001061169 and 44018844840, 2026-11-17, every job green, unless named):
 
@@ -106,20 +108,20 @@ run 44024248440); slice 7: the WebAssembly verifier in the browser, B-LT as an a
 anchoring of audit chain heads with the proof served and checked on Verify (`VS-07`, `FG-158`, ADR-037; run 44419251440);
 every M3 screen's strings extracted (`I18N-01`).
 
-Slices 1, 2, 5 and 7 are closed by the owner (2026-11-19); no other slice is. [docs/96](docs/96-FEATURE-FIT-GAP.md) counts 50 of 168 features
-working end to end, 27 in part and 15 with their engine built.
+Slices 1, 2, 3, 4, 5 and 7 are closed by the owner (2026-11-19 and 2026-11-20). [docs/96](docs/96-FEATURE-FIT-GAP.md) counts 52
+of 168 features working end to end, 42 in part and 5 with their engine built.
 
 **Pre-release limits.** The development stack makes its own CA, software HSM and timestamp authority, so its seals
 validate only against that CA. Not yet done: the external penetration test (`HRD-05`), the accessibility audit
-(`A11Y-01`), counsel's review of legal claims and the default disclosure (`LEG-02`), and the rest of production
-hardening (`HRD-06`, `HRD-11`, `HRD-12`). The OWASP ASVS 4.0.3 self-assessment
-([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md)) finds 9 requirements not met and 31 partly met; it is a
+(`A11Y-01`), counsel's review of legal claims and the default disclosure (`LEG-02`), and a Helm chart. The OWASP
+ASVS 4.0.3 self-assessment ([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md)) finds 1 requirement not met (an L3 item) and
+30 partly met; it is a
 self-assessment, not an audit or a certification. Nothing here states that a signature is legally valid or that
 OpenSeal is compliant or certified ([docs/09](docs/09-LEGAL-AND-COMPLIANCE.md)).
 
-**Next:** release v0.1.0, the hardening release ([docs/06](docs/06-ROADMAP-AND-DELIVERY.md) §Hardening release),
-then the paused work in order: the verifier as a standalone package (`VER-01`), organizations,
-the platform console, plans and the model service.
+**Next**, in the plan's order: slice 8 (API and webhooks: OAuth 2.1, JWT grant, signed webhooks, sandbox workspaces,
+TypeScript and Python SDKs), then 6 (manage and correct) and 9 (embedding) for M4, team beta; then organization admin
+and SSO, bulk send, brand and language, data controls and operations for M5.
 
 | Phase | Exit gate | State |
 | --- | --- | --- |

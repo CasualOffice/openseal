@@ -67,33 +67,12 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of 2026-11-19 (`main` at `584634d`; CI run 44419251440 green on every job).
+Docs are true as of 2026-11-20 (`main` at `f667422`; CI run 44610734814 green on every job).
 
-**Phases D, 0, 1 and 2 are closed** (owner: D and 0 on 2026-11-11, 1 on 2026-11-11 after clean fuzz run 42907980149,
-2 on 2026-11-12), and milestones M0, M1 and M2 are declared reached (instruction 38); **M3 is reached** (slices 1,
-2, 5 and 7 closed 2026-11-19, instruction 59, run 44419251440). **v0.1.0 is prepared** (instruction 61: the main session
-pushes its tag on the green `main` commit after this merges, verifies signatures and SBOMs; the owner then makes the
-GHCR packages public). **v0.0.1, the first
-pre-release, is published** (tag at `4780d84`; `REL-01` keeps the GHCR packages' visibility and the manual
-walkthrough). It is not for production agreements. The repository is public; GitHub CI on `main` is the full check,
-and sessions run only the test that proves their change (docs/04 rule 37). Work not yet on `main` goes on a branch
-with a pull request whose CI must be green before the main session merges it (instructions 53, 56); commits carry no
-Claude attribution or e-mail (instruction 57).
-
-- **Focus:** release v0.1.0, then the hardening release (instruction 48). ML, the platform console, plans and
-  metering rows are `Paused` (instruction 51, `FRZ-01` Done with M3) and resume in order after the release and
-  `VER-01`; nothing dropped. M3's evidence per gate item: [73](docs/73-M3-SLICE-EVIDENCE.md).
-- **Proven on `main` by CI** (runs 44001061169 and 44018844840, every job green): slice 1's outcome on the Compose stack (`VS-01`);
-  failure recovery on the hardened profile (`HRD-01`, `HRD-10`); the real-style CA and TSA validation (`HRD-02`); the
-  backup and restore drill (`ASVS-14`); the security event log (`ASVS-08`); anomaly alerting (`ASVS-13`);
-  administrators' TOTP by default (`ASVS-31`); the site's verifier and demo (`SITE-03` to `SITE-05`); keyd seal tokens (`KEYD-02`, ADR-036); slice 5 on the real
-  stack with its demo (`RAUTH-02`) and slice 2's routing spec there; the slice 1, 2, 5 and 7 demos (run 44023485128) are watched and linked from docs/65 §Demos (2026-11-18).
-- **Also on `main`:** Acrobat Reader reading B-LTA seals valid offline (`HRD-14`, `HRD-03`); slice 7 (WASM
-  verifier, B-LT default, public anchoring served and verified, `FG-158`, ADR-037) and `I18N-01`, green in run 44419251440. `E2E-11` and `E2E-12` are fixed in part or wait on their gate (`E2E-07` to `E2E-09` closed).
-- **Left before production use:** the external penetration test (`HRD-05`), the rest of
-  production hardening (`HRD-06`, `HRD-11`, `HRD-12`), the accessibility audit (`A11Y-01`), counsel's review
-  (`LEG-02`), and the open ASVS findings: 9 requirements Not met and 31 Partly in
-  [67](docs/67-ASVS-SELF-ASSESSMENT.md), a self-assessment, not a certification.
-  [96](docs/96-FEATURE-FIT-GAP.md) counts 50 of 168 rows working end to end, 27 in part and 15 with their engine built.
-- **Exact state per item:** [14](docs/14-EXECUTION-TRACKER.md); phases, milestones and the hardening gate:
-  [06](docs/06-ROADMAP-AND-DELIVERY.md).
+**Phases D, 0, 1 and 2 are closed** and milestones M0 to M3 are reached (M3 on 2026-11-19, instruction 59).
+**Slices 1, 2, 3, 4, 5 and 7 are closed** (instructions 59, 66, 68). **v0.1.0 is published** (2026-11-20, tag at
+`f667422`, release run 44615842313: signed images, provenance, SBOMs, signed `SHA256SUMS`; the owner makes the GHCR
+packages public). Slice 8 is the current slice of the binding Execution plan (docs/06, instruction 62,
+`tools/check-plan.py`). It is not for production agreements. A fix for a red `main` is checked locally and pushed to
+`main` directly; other work goes through one pull request at a time whose CI must be green before it is merged.
+Commits carry no Claude attribution or e-mail (instruction 57).

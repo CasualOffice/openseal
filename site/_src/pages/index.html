@@ -6,7 +6,7 @@
 <section class="hero" aria-labelledby="hero-h">
   <div class="wrap">
     <div class="hero-copy">
-      <a class="release-pill" href="changelog.html"><b>v0.0.1</b><span>First pre-release, for evaluation</span>{{icon:arrow-right:14}}</a>
+      <a class="release-pill" href="changelog.html"><b>v0.1.0</b><span>First signed pre-release, for evaluation</span>{{icon:arrow-right:14}}</a>
       <h1 id="hero-h">Agreements with evidence <span class="soft">anyone can verify offline.</span></h1>
       <p class="lede">OpenSeal is an Apache-2.0 signing and verification engine you embed: a Rust engine, a verifier that runs in the browser, and an API and SDK. On top of it sits a complete e-signature web app, the reference product: send documents, sign on any device, and get back a sealed PDF anyone can check offline, with no account and no server of ours.</p>
       <div class="cta-row">
@@ -83,7 +83,7 @@
     <div class="limits reveal" data-testid="limits">
       <h2 id="limits-h">{{icon:triangle-alert:18}}Pre-release: what it is not yet</h2>
       <ul>
-        <li><strong>Not for production agreements yet.</strong> v0.0.1 is a pre-release for evaluation.</li>
+        <li><strong>Not for production agreements yet.</strong> v0.1.0 is a pre-release for evaluation.</li>
         <li>The Docker Compose stack makes its own certificate authority, software HSM and timestamp authority, so its seals validate only against that development CA.</li>
         <li>Release gates still ahead: an external security and cryptographic review, an accessibility audit, validation in Adobe Acrobat, and a counsel review. The ASVS self-assessment is written and its findings are being closed.</li>
         <li>The backup and restore drill is built; its run on CI is the last step before it counts. A Helm chart and a high-availability reference are not built yet.</li>
@@ -368,7 +368,7 @@ curl https://sign.example.com/api/v1/envelopes \
       <p>More in the <a href="docs/faq.html">documentation FAQ</a>.</p>
     </div>
     <div class="faq reveal reveal-d1">
-      <details><summary>Can I use it for real agreements today?{{icon:chevron-down}}</summary><div><p>Not yet. v0.0.1 is a pre-release for evaluation: the engine is complete and tested, and the server and web app run end to end on Docker Compose, but the development stack makes its own certificate authority, and the release gates (an external security review, an accessibility audit, validation in Adobe Acrobat and a counsel review) are still ahead. The <a href="roadmap.html">roadmap</a> shows what comes next.</p></div></details>
+      <details><summary>Can I use it for real agreements today?{{icon:chevron-down}}</summary><div><p>Not yet. v0.1.0 is a pre-release for evaluation: the engine is complete and tested, and the server and web app run end to end on Docker Compose, but the development stack makes its own certificate authority, and the release gates (an external security review, an accessibility audit, validation in Adobe Acrobat and a counsel review) are still ahead. The <a href="roadmap.html">roadmap</a> shows what comes next.</p></div></details>
       <details><summary>Are the signatures legally binding?{{icon:chevron-down}}</summary><div><p>OpenSeal is designed to support electronic-signature laws such as ESIGN, UETA and eIDAS. Whether a given signature is valid depends on your deployment, its configuration, the jurisdiction and the transaction. Nothing here is legal advice.</p></div></details>
       <details><summary>How do I check a document without your servers?{{icon:chevron-down}}</summary><div><p>Use the <a href="verify.html">Verify page</a> on this site, or the one in any OpenSeal install; the check runs in your browser and the file stays on your machine. The <code>openseal</code> command line runs the same check offline. The seal is standard PAdES, so independent tools such as pyHanko and EU DSS validate it too.</p></div></details>
       <details><summary>Do the models see or learn from my documents?{{icon:chevron-down}}</summary><div><p>The model service runs on your own servers, beside the rest of the stack, and every feature is off until an administrator turns it on. It uses pretrained models only and is designed so that nothing learns from your documents. What it finds is a suggestion; nothing a model says enters the sealed PDF or the audit trail.</p></div></details>

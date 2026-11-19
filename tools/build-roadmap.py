@@ -148,6 +148,8 @@ def release1(secs: dict[str, str]) -> dict:
 
 def slice_outcomes(text: str) -> dict[int, tuple[str, str]]:
     out = {}
+    # Only the slice table under "After Phase 2"; the Execution plan has a numbered table too.
+    text = text.split("## After Phase 2", 1)[-1]
     for line in text.splitlines():
         m = re.match(r"^\|\s*(\d+)\s*\|", line)
         if m:
@@ -327,6 +329,14 @@ def render() -> str:
     ms_kind = "done" if reached else "next"
     tl.append(tl_item(ms_kind, "milestone", "Milestones", pill(ms_kind, ms_label),
                       f'<ul class="tl-items">{ms_items}</ul>'))
+
+    # Slices closed (VS-nn Done), each with its outcome title, so progress is visible by slice.
+    closed = sorted(n for n in outcomes if t.get(f"VS-{n:02d}", ["", "", ""])[2] == "Done")
+    if closed:
+        sl_items = "".join(f'<li>{status_icon("Done")}<span><b>{n}</b> {esc(outcomes[n][0])}</span></li>'
+                           for n in closed)
+        tl.append(tl_item("done", "layers", "Slices closed", pill("done", f"{len(closed)} of {len(outcomes)}"),
+                          f'<ul class="tl-items">{sl_items}</ul>'))
 
     web_sts = [c[2] for _r, c in web]
     w_kind, w_label = group_state(web_sts)
