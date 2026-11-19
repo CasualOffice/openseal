@@ -53,6 +53,7 @@ A task row is the only thing that authorizes work. It has an id, scope, status, 
 | `Open` | Defined, not started | Id, scope, and an acceptance test stated in advance |
 | `In progress` | Being worked | Someone owns it. The files it may touch are known |
 | `Blocked` | Cannot proceed | The blocking id or decision is named |
+| `Paused` | Stopped by an owner instruction, kept and sequenced after; not in progress | The instruction is cited with what ends the pause (owner instruction 51: until M3) |
 | `Done` | Proven | All of Definition of Done below |
 
 Severity: **P0** blocks the phase gate or is a security or evidence defect; **P1** blocks a slice; **P2** everything else.

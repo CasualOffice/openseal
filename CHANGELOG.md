@@ -4,83 +4,132 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
-### Fixed
-- A saved recipient's type changed in the send editor is now kept on save: `PATCH …/recipients/{r}` takes `type`
-  on a draft (`UX-12`).
+## [0.1.0] — 2026-11-19 (pre-release)
 
-### Added
-- Staff sessions end after 30 minutes without activity and 8 hours in all by default, each settable per workspace
-  and tightened by the organization; a person sees where they are signed in and signs out of any or all of those
-  sessions; creating API clients, role and policy changes, webhook destinations and the workspace's security settings
-  need the password (and second factor) again within five minutes (`ASVS-06`, `ASVS-07`, migration 0042).
+The second pre-release. Since v0.0.1, feature work paused for a hardening release (owner instruction 48) and for
+milestone M3, "first signature": a sender prepares and sends from the web app, signers on phones authenticate, consent
+and sign, everyone gets the sealed PDF and certificate, and anyone verifies it offline (slices 1, 2, 5 and 7).
+**Still not for production agreements:** the bundled stack makes its own certificate authority, a software HSM and a
+development timestamp authority; the production profile needs your own CA, HSM and timestamp authority (docs/65). This
+release states nothing about legal validity, compliance or certification; see docs/09.
+
+This is the first release built by the signed release workflow: every image is signed with keyless cosign and has
+SPDX SBOMs and build provenance, and the release carries a CycloneDX SBOM of the Rust workspace, `SHA256SUMS` signed
+with cosign, and a Compose override pinning the production profile to the image digests (`REL-01`; v0.0.1 had none
+of these, `REL-04`). How to check them: docs/65 §Releases.
+
+### Evidence and signing
+- Seals at B-LTA read as valid offline in Adobe Acrobat Reader: the DSS carries a CRL beside each OCSP answer
+  (`HRD-14`), checked on a GitHub Windows runner that opens every file of the interoperability packet in Acrobat
+  Reader and records the signature panel (`HRD-03`).
+- Sealing checked against a real-style CA hierarchy (offline root, issuing CA, served OCSP and CRL) and a production
+  RFC 3161 timestamp authority, with our verifier, pyHanko and EU DSS agreeing (`HRD-02`).
+- An account can make B-LT its default seal level (Admin → Organization), verified end to end with pyHanko (`VS-07`,
+  `FG-154`).
+- Public anchoring of audit chain heads (ADR-037, `FG-158`): a daily per-account RFC 6962 Merkle tree of changed
+  heads with an RFC 3161 token over its root and size, appended to a public log; `openseal anchor verify` proves a head
+  offline, `GET /envelopes/{id}/anchor-proof` serves the proof, and the Verify page checks it in the browser
+  (`VS-07B`).
+- keyd signs only with a short-lived token the database issues for an envelope that still owes a seal (ADR-036,
+  `KEYD-02`), and keyd's operation log is reconciled against the seals recorded (`KEYD-03`, `CON-09`); keyd refuses
+  an expired signing certificate (`CON-08`).
+- Recipient authentication (ADR-033): access code, email, SMS and voice one-time codes through an HTTPS gateway, and
+  sign-in through an OpenID Connect provider the operator lists (`VS-05`, `RAUTH-01`); signers can withdraw consent to
+  electronic records from the signing page (`RAUTH-03`).
+- Routing and recipient types on the real stack: sequential, parallel and mixed order; carbon copies, viewers,
+  approvers and agents acting through their emailed links; decline, void, reminders and expiry (`VS-02`).
+- Every party, the signer included, downloads the sealed PDF and the certificate of completion (`VS-01`).
+- The envelope page's evidence card and the Verify page read the server's `sha256:` audit hashes; both had shown
+  "links do not match" on real envelopes although the evidence itself was right (`S1-10`, `VS-07C`).
+
+### Hardening and operations
+- A production Compose profile (`deploy/compose.production.yml`): non-root, read-only file systems, resource limits,
+  TLS to PostgreSQL and the object store, secrets from files, checked by `tools/check-deploy.py` (`HRD-06`).
+- Failure recovery proven by chaos runs in CI on that profile: the worker paused past its lease or killed mid-seal,
+  keyd stopped, PostgreSQL and the object store killed mid-ceremony and mid-seal; every envelope completes once,
+  sealed once, with its audit chain intact (`HRD-01`, `HRD-10`).
+- Load numbers published from a run on `main` (docs/65 §Load and recovery numbers): about 195 completed envelopes a
+  minute on one runner, seal time p95 2.8 s, and recovery times after the worker, keyd and PostgreSQL fail under load
+  (`HRD-04`).
+- Encrypted, signed backups with a restore drill in CI that verifies the audit chains, admin logs and keyd's operation
+  log after restore (`ASVS-14`).
+- Two server replicas behind HAProxy in the production profile, each with a readiness check, so a restart or a
+  credential rotation drops no request (ADR-038, `HRD-11`); rotation drills for database credentials, the token key,
+  keyd's identity and webhook secrets; staff second-factor keys rotate with a previous key (`HRD-12`).
+- keyd and the worker log the hash of their security configuration and refuse to start on an unexpected change
+  (`ASVS-24`).
+
+### Security (OWASP ASVS)
+- Measured against an ASVS 4.0.3 self-assessment ([docs/67](https://github.com/CasualOffice/openseal/blob/main/docs/67-ASVS-SELF-ASSESSMENT.md); a self-assessment, not a
+  certification).
+- A security event log: one JSON line per event with a closed set of event kinds and pseudonymised principals, shipped
+  by the container runtime, with an optional forwarding profile (ADR-034, `ASVS-08`); abnormal-activity alerts on
+  request, refusal and authentication-failure bursts, mass downloads and voids (`ASVS-13`).
+- Uploads scanned for malware by ClamAV before they are admitted, the verdict recorded in the audit chain (`ASVS-11`).
+- Staff second factor (TOTP with recovery codes) required of administrators by default (`ASVS-01`, `ASVS-31`);
+  breached and common passwords refused (`ASVS-02`); mail to the user when a password or factor changes
+  (`ASVS-04`); a password strength meter on every staff set-password field, advisory only (`ASVS-03`); an optional
+  password pepper held outside the database (`ASVS-29`).
+- Staff sessions end after 30 minutes idle and 8 hours in all by default, settable per workspace and tightened by the
+  organization; a person lists and ends their own sessions; creating API clients, role and policy changes, webhook
+  destinations and security settings need the password (and second factor) again within five minutes (`ASVS-06`,
+  `ASVS-07`).
+- `__Host-` session cookie (`ASVS-05`), JSON-only API bodies against login CSRF (`ASVS-09`), constant-time hash
+  comparison from a vetted library (`ASVS-12`), a last-resort panic layer answering problem details (`ASVS-26`).
+- Signer content and every ceremony write require the recipient's authentication first (`SEC-CER-01`); shared accounts
+  cannot be changed across workspaces (`SEC-ID-01`).
+- Dependency audit exceptions removed: the eight `zip` advisories and `ttf-parser`, by vendoring and trimming the OCR
+  crates (`DEP-06`, `DEP-07`).
+
+### Web app and site
 - A redesigned web app from an audit against DocuSign and SignNow (`UX-01`, all seven packages `UX-02` to `UX-08`):
   - a design system, with destructive actions in a colour distinct from the seal red, and the Inter font bundled;
   - a send editor with click-to-place fields, every field kind the signing page fills with its properties, recipient
     types and per-row options, contacts, a review step, starting from a template, a pages rail and a phone layout;
-  - a reworked signing page;
+  - a reworked signing page that names the sender and the expiry and serves the electronic-records disclosure
+    (`UXW-34`);
   - Home, Agreements and the envelope page with clearer hierarchy, density and access to the evidence;
   - Templates, Reports (sample sizes, custom ranges) and an Admin section rail with webhooks;
   - an app shell that works on phones, with search on every screen, notifications, profile, account and help menus.
-- The signer's page names the sender and the expiry, and serves the electronic-records disclosure
-  (`GET /s/{token}/disclosure`, `UXW-34`).
-- Organizations above workspaces (`ORG-02`, migration 0014): each existing account becomes a workspace in its own
-  organization, with organization owners and an organization scope enforced in the database; server bootstrap makes
-  the first organization; organization routes for owners and administrators (`ORG-03`), switching between workspaces
-  (`ORG-04`), hash-chained admin audit logs per workspace and per organization with JSON and CSV export (`ORG-05`),
-  and a first cut of the organization admin screens (`ORG-06`).
-- `casual-sign-modeld`, the separate process that hosts pretrained models (ADR-029): mutual TLS, a bounded wire
-  protocol, an operation log and a hash-checked model bundle (`ML-09`); OCR of scanned pages (`ML-02`); page hashes
-  and embeddings for template matching (`ML-05`). The worker's analysis jobs call it and the server serves analysis
-  and suggestions (`WEB-19`); the Compose file does not yet put the worker on its network (`ML-09`).
-- GLiNER span extraction and personal-data detection in `casual-sign-modeld`, with fp16 exports matching the
-  reference spans (`ML-07`, `ML-08`). Off by default; nothing a model says enters the evidence.
-- `casual-sign-pii`: personal-data recognisers that find structured identifiers by pattern plus validation (payment
-  cards by Luhn, IBAN mod-97, US SSN, UK NI, Indian PAN and Aadhaar, and others), with a fuzz target (`ML-08`).
-- Inbox, each member's own folders, a Deleted view for envelopes and templates (templates can be restored), and server-side
-  envelope filters and sorts (`UXW-01` to `UXW-03`).
-- Bulk send from a template with a CSV list: per-row errors, a test of the list, sending in steps with progress, and
-  cancel (`POST /bulk-sends`, `UXW-04`).
-- Template sharing with members, groups or the whole workspace; Shared with me and Favourites (`UXW-06`).
-- Groups and custom permission profiles, enforced on the server per request (`UXW-07`); the admin audit log screen
-  (`UXW-09`); a webhooks screen that edits, pauses, tests and redelivers (`UXW-10`, `UXW-31` to `UXW-33`).
-- Hosting an in-person signer (`POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`).
-- Recipient authentication by SMS and voice one-time codes through an HTTPS gateway (`VS-05`) and by sign-in through
-  an OpenID Connect provider the operator lists (`RAUTH-01`, ADR-033 Proposed).
-- The platform console `casual-sign-console`, a separate binary for operators with its own sign-in and mandatory TOTP:
-  health, organizations with two-person suspend and resume, approvals, operators and a hash-chained operator log
-  copied into each organization's log (`CON-02` to `CON-05`, `CON-16`, `CON-17`); the Keys page over keyd's
-  read-only admin interface (`CON-06`); timestamp authorities kept in the database and changed by two key custodians,
-  which the worker seals with (`CON-07`, migration 0034). Not yet a Compose service.
-- Plans with versions, assignments and overrides (`PLAN-02`), metering of envelopes sent, seats, storage and
-  workspaces (`PLAN-03`), and quota enforcement (`PLAN-04`).
-- An OWASP ASVS 4.0.3 self-assessment ([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md), not a certification) and a
-  licence inventory of every crate, vendored component and model ([THIRD-PARTY.md](THIRD-PARTY.md), `LEG-01`).
-- Normalisation of extracted dates, durations and amounts in `casual-sign-fields`, with a fuzz target (`ML-07`).
-- Model manifest and hash-checking fetch script, an offline GLiNER export tool, and synthetic scanned-form fixtures
-  (`ML-01`, `ML-02`, `ML-05`).
+- Organizations above workspaces with organization owners and an organization scope enforced in the database,
+  switching between workspaces, hash-chained admin audit logs with JSON and CSV export, and a first cut of the
+  organization admin screens (`ORG-02` to `ORG-06`).
+- Inbox, each member's own folders, a Deleted view, server-side filters and sorts (`UXW-01` to `UXW-03`); bulk send
+  from a template with a CSV list (`UXW-04`); template sharing (`UXW-06`); groups and custom permission profiles
+  enforced on the server (`UXW-07`); admin audit log and webhooks screens (`UXW-09`, `UXW-10`, `UXW-31` to `UXW-33`);
+  hosting an in-person signer (`UXW-36`).
+- Accessibility (axe, WCAG 2.2 AA rules) and string extraction checked on every screen of slices 1, 2, 5 and 7
+  (`I18N-01`); recorded demos of each slice in CI (docs/65 §Demos).
+- The send editor no longer loses edits made while a save is on its way (`E2E-13`); a recipient's changed type is
+  kept on save (`UX-12`).
+- The website is redesigned in the web app's design language, with Verify as a primary destination that runs the
+  WASM verifier in the browser (your file is not uploaded), an interactive demo in mock mode, and every security claim
+  marked as tested or deployment-dependent (`SITE-01`, `SITE-03`, `SITE-04`, `SITE-05`). The roadmap page is built
+  from the roadmap and tracker, statuses included.
 
-### Changed
-- The website (`site/`) is redesigned in the web app's approved design language (owner instruction 44, `SITE-01`):
-  Geist type, the warm neutral canvas, the seal red only for the primary action, new screenshots of the rebuilt
-  sign-in, Home, command menu, signing ceremony, Verify and platform console, and sections on evidence, document
-  intelligence, the console, self-hosting and the API.
+### API
+- `GET /envelopes/{id}/anchor-proof`; `POST /s/{token}/sso` and `/sso/verify` for recipient sign-in; SMS and voice
+  code delivery; `POST /bulk-sends`; organization routes; `POST /auth/reauthenticate` and the session list
+  (docs/40, `api/openapi.yaml`).
+- Problem details carry stable codes for each new refusal (docs/20).
 
-### Security
-- Security hardening of the signing ceremony and of accounts shared between workspaces.
-- A TOTP second factor for staff accounts with ten one-time recovery codes and an account policy (`ASVS-01`).
-- Passwords on a list of breached and common passwords are refused wherever a password is set (`ASVS-02`), and users
-  are emailed when a password is set, changed or reset or a second factor is added (`ASVS-04`).
+### Built, paused until after M3 (owner instruction 51)
+Merged before the freeze, off by default, and not developed further until M3 closes; nothing is removed:
+- `casual-sign-modeld`, the separate process that hosts pretrained models (ADR-029): OCR of scanned pages, template
+  matching, GLiNER span extraction and personal-data detection; `casual-sign-pii` recognisers. Nothing a model says
+  enters the sealed PDF or the audit trail (`ML-*`, `WEB-19`).
+- The platform console for operators, with mandatory TOTP, two-person changes, the Keys page and timestamp authorities
+  (`CON-*`); plans, metering and quota enforcement (`PLAN-*`). Not yet a Compose service.
 
-### In progress
-- The Compose runs in CI that close most of the rows above; the console as a Compose service (`CON-02`); the editor's
-  model suggestions on the real stack and `compose --profile ml up` (`WEB-18`, `ML-09`); WebAuthn and lost-factor
-  recovery (`CON-13`, `ASVS-32`).
+### Not yet
+SSO and SAML for staff, WebAuthn, payments, B-LTA renewal jobs, Helm and multi-node high availability, the anchor
+proof in a signer's own downloads (`VS-07D`), a per-envelope seal level in the editor (`VS-07E`), linux/arm64 images
+(`REL-02`), an external penetration test (`HRD-05`), and the slices after M3 on the
+[roadmap](https://casualoffice.github.io/openseal/roadmap.html).
 
-### Designed
-- Delegated administration, organization policy, SSO and SCIM for staff, usage export: the rest of ADR-028, accepted
-  ([docs/23](docs/23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)).
-- Pretrained ML models, off by default and never part of the evidence: ADR-029 accepted
-  ([docs/33](docs/33-ML-MODELS.md)).
+### Reporting security issues
+Report vulnerabilities as described in `SECURITY.md`. This is pre-release software; do not use it for agreements you
+need to rely on.
 
 ## [0.0.1] - 2026-11-12 (pre-release)
 

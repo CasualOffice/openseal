@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-platform-store"
-version = "0.0.1"
+version = "0.1.0"
 description = "OpenSeal platform store: the `platform` schema's tables and definer functions, as the console's own database role, with no tenant repository (CON-02, docs/23 §5.2)"
 edition.workspace = true
 license.workspace = true

@@ -17,8 +17,10 @@ docker compose logs -f server worker         # what it is doing
 docker compose down -v                       # stop, and discard every volume (data, keys, mail)
 ```
 
-**Released images instead of building:** `OPENSEAL_IMAGE_PREFIX=ghcr.io/casualoffice/openseal OPENSEAL_VERSION=0.0.1 docker compose up -d --wait`
-pulls the published v0.0.1 images (`docker compose pull` first) rather than building from source.
+**Released images instead of building:** `OPENSEAL_IMAGE_PREFIX=ghcr.io/casualoffice/openseal OPENSEAL_VERSION=0.1.0 docker compose up -d --wait`
+pulls that release's published images (`docker compose pull` first) rather than building from source. v0.1.0 is the
+first release built by the signed release workflow below (prepared 2026-11-19, published when its tag runs); v0.0.1's
+images (`OPENSEAL_VERSION=0.0.1`) are the earlier, unsigned pre-release.
 
 `bootstrap` prints the account and administrator ids; run it once (a second run with the same email is refused).
 Ports bind to `127.0.0.1` only: `OPENSEAL_HTTP_PORT` (default 8080) and `OPENSEAL_MAIL_PORT` (default 8025) move them.
@@ -795,7 +797,8 @@ count into your audit records before then; the artifact holds no backup, no key 
 **Status:** the workflow below is written and linted (`actionlint` with `shellcheck`), its pinning tool is unit-tested,
 and the pinned profile was rendered and passed `tools/check-deploy.py` on a workstation (2026-11-17). It has not yet
 run on a tag: v0.0.1 was built by its first version (images with BuildKit's SBOM and provenance only, no cosign
-signature, no release assets). The first tag after this change is its first real run.
+signature, no release assets). The first tag after this change is its first real run: v0.1.0, prepared 2026-11-19
+(owner instruction 61; `REL-04`).
 
 **What a release is.** `.github/workflows/release.yml` runs on a `v*` tag pushed by the owner, never on an ordinary
 push. For each of `server`, `worker` and `keyd` it builds `deploy/Dockerfile`'s target for `linux/amd64` (base images
