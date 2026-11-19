@@ -986,7 +986,7 @@ function fieldNode(f, pg) {
     input.addEventListener("change", () => save(input.value));
     // VS-04C: a linked field shows the value it mirrors until the signer types their own.
     rulePaints.set(f.id, () => {
-      if (document.activeElement === input || values.has(f.id)) return;
+      if (values.has(f.id) || (document.activeElement === input && input.value)) return;
       input.value = effectiveValue(f, null, view.rules)?.text || "";
       box.classList.toggle("is-done", isDone(f));
     });

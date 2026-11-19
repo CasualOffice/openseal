@@ -1256,6 +1256,13 @@ components:
           description: '`id`, `status`, `subject`, `message`, `signing_options`, `documents`, and `expires_at` (when it expires, or null; UXW-34)'
         recipient: {$ref: '#/components/schemas/Recipient'}
         fields: {type: array, items: {$ref: '#/components/schemas/Field'}}
+        rules:
+          type: [object, 'null']
+          description: 'VS-04C: the server''s own evaluation of this recipient''s fields (casual_sign_fields::evaluate_envelope): hidden (field ids a condition hides), computed (formula field id to {ok} or {error}), values (field id to the value it will be sealed with where not the one stored, a linked field''s). Null until the recipient has authenticated.'
+          properties:
+            hidden: {type: array, items: {type: string}}
+            computed: {type: object}
+            values: {type: object}
         capture_location: {type: boolean, description: 'Whether the page asks the device for its location (GEO-01)'}
         adoption_id: {type: string, description: 'After adopt: the capture a signature or initials field value names ({"signature": "<adoption_id>"})'}
         consent_required:
@@ -1373,7 +1380,7 @@ components:
       type: object
       required: [mark, method, image_base64]
       properties:
-        mark: {type: string, enum: [signature, initials]}
+        mark: {type: string, enum: [signature, initials, stamp, drawing], description: 'A stamp or drawing capture fills only a field of its own kind (VS-04A)'}
         method: {type: string, enum: [draw, type, upload]}
         image_base64: {type: string, description: 'PNG or JPEG, at most 5 MiB'}
         location: {$ref: '#/components/schemas/DeviceLocation'}

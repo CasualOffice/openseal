@@ -380,6 +380,15 @@ jobs:
           path: target/e2e-demo/vs03-*
           if-no-files-found: error
           retention-days: 90
+      # The slice 4 demo (VS-04B): fields.spec.mjs's run recorded (the signer filling every
+      # kind, a condition showing a field, a formula computing, linked fields mirroring).
+      - if: success() && hashFiles('target/e2e-demo/vs04-*') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: slice-4-demo-${{ matrix.shard }}
+          path: target/e2e-demo/vs04-*
+          if-no-files-found: error
+          retention-days: 90
       - if: failure()
         run: mkdir -p target && docker compose logs --no-color > target/compose.log 2>&1
       - if: failure()
