@@ -350,7 +350,7 @@ def render() -> str:
         kind = "done" if state == "Published" else "next"
         link = (f' <a href="{sitelib.REPO}/releases/tag/{esc(version)}">Release notes</a>.'
                 if state == "Published" else "")
-        tl.append(tl_item(kind, "rocket", version, pill(kind, f"{version} {state.lower()}"),
+        tl.append(tl_item(kind, "rocket", f"Release {version}", pill(kind, state),
                           f"<p>{esc(first_sentence(note, 260, '.'))}{link}</p>"))
 
     # Work beside the slices, each with its tracker row's status; paused rows in their own
