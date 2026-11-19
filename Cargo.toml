@@ -78,6 +78,7 @@ panic = "warn"
 clipper2-rust = { path = "server/clipper2-rust" }
 oar-ocr = { path = "third_party/oar-ocr" }
 oar-ocr-core = { path = "third_party/oar-ocr-core" }
+phonenumber = { path = "third_party/phonenumber" }
 
 [profile.release]
 lto = "thin"
