@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-policy"
-version = "0.0.1"
+version = "0.1.0"
 description = "OpenSeal policy: pure resolution of an organization's effective plan (entitlements, quotas, overrides) and plan validation, and of a workspace's effective organization policy (locked and tighten-only keys), with no I/O and no store (ADR-028, docs/23 §3, §5.2, §7)"
 edition.workspace = true
 license.workspace = true

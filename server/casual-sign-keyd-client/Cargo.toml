@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-keyd-client"
-version = "0.0.1"
+version = "0.1.0"
 description = "OpenSeal keyd's wire format and mTLS client, without cryptoki, the file key or the server: what the worker and the console carry (docs/23 §5.2, CON-06, CON-15)"
 edition.workspace = true
 license.workspace = true

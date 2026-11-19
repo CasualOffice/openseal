@@ -1,6 +1,6 @@
 [package]
 name = "casual-sign-seclog"
-version = "0.0.1"
+version = "0.1.0"
 description = "OpenSeal's one JSON log line and its security events (ASVS-08): a closed taxonomy, typed fields that cannot carry free text, keyed pseudonyms for unverified identifiers, written to standard error by the server, worker, keyd, modeld and console for forwarding off the box"
 edition.workspace = true
 license.workspace = true
