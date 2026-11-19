@@ -170,6 +170,8 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-API-0015 | The user is also a member of another account: only they may change their password or name (403, `SEC-ID-01`); from the store's `CS-DB-0009` with SQLSTATE `OS003` |
 | CS-API-0016 | The recipient's identity provider (`sso`, RAUTH-01) could not be reached, or answered neither a token nor a refusal (502); not counted as a failed sign-in |
 | CS-API-0017 | No head of the envelope's audit chain is anchored yet (404, `GET /envelopes/{id}/anchor-proof`, `FG-158`): the envelope exists and may be read; the daily anchor job has not covered it |
+| CS-API-0018 | The member cannot be erased now (409, `ASVS-16`): the workspace's last enabled administrator, or an administrator of the organization; `detail` says which (`last administrator`, `organization administrator`) |
+| CS-API-0019 | The envelope is under legal hold, so it is not purged (409, `POST /envelopes/{id}/purge`, `ASVS-18`) |
 | CS-AUTH-0001 | Not authenticated |
 | CS-AUTH-0002 | Token expired or revoked; a staff session past its idle or absolute limit (`detail` `idle` or `lifetime`, `ASVS-06`) |
 | CS-AUTH-0003 | Recipient authentication failed |

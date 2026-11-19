@@ -122,7 +122,9 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // organization policy); 0040 none in `public` (KEYD-02: the token key is in
     // `openseal_keyd`); 0041 `chain_anchors` and `chain_anchor_leaves` (FG-158), tenant
     // tables; 0042 none (ASVS-06: activity columns on `staff_sessions`); 0043 none (HRD-12);
-    // 0044 none (ASVS-29: a definer function that re-hashes a password).
+    // 0044 none (ASVS-29: a definer function that re-hashes a password); 0045
+    // `retention_rules` (ASVS-18), a tenant table, replacing `retention_policies`, which
+    // nothing ever read or wrote.
     assert_eq!(tables.len(), 66, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",

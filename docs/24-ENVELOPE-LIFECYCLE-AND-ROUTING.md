@@ -273,7 +273,7 @@ objects concerned, never their content.
 | Resend (clears bounce and lock, recorded as `envelope.corrected` with the paths, `WF-04`); remind; reminder timers | Built |
 | Invitation dispatched, reminder dispatched, bounce (`auto_responded`) | Built |
 | `completing` → `completed` only on a verified seal; seal failure retried | Built |
-| Purge (terminal only; personal data scrubbed, hashes kept) | Built |
+| Purge (terminal, or a draft never sent by the system or an administrator for a retention rule or a request, `ASVS-18`; never in flight; personal data scrubbed, hashes kept) | Built |
 | Access events (sender viewed, document, certificate and signer attachment downloaded) | Built |
 | Signer location on recipient actions when `capture_location` is on; refusal recorded, never blocking (GEO-01) | Built (engine, and the server's capture and GeoIP fallback, docs/40 §As built) |
 | Routing: sequential, parallel, mixed; carbon copies complete when reached | Built |
@@ -320,7 +320,7 @@ decision's time. `Cancel` and `RevokeTokens` enqueue nothing. Invitation tokens 
 | (not an effect, `WEB-06`) | `send_user_invitation` | Mint a user invitation's one-time link (hash and 7-day expiry stored, earlier link replaced) and email it; nothing for an invitation accepted or revoked meanwhile; once per job (a job step) | — |
 | `ChargePayment` | `charge_payment` | Through `PaymentGateway`; the only one built refuses (`CS-WRK-0014`, dead-lettered with an alert) until slice 13 | — |
 | `AlertOperator` | `alert_operator` | To the operator's `AlertSink` (a log line by default) | — |
-| `PurgeData`, `DeleteDraft` | `purge_data`, `delete_draft` | Revoke every token of the envelope; blobs stay (write-once, no delete: slice 15) | — |
+| `PurgeData`, `DeleteDraft` | `purge_data`, `delete_draft` | Revoke every token, forget the analysis, record the tombstone, delete the relational records holding personal data or content (`Privacy::purge_records`, `ASVS-18`); the chain stays whole; blob bytes stay for the orphan sweep (`HRD-09`) | — |
 | `Cancel` | none | The engine's own guards: a cancelled timer's `TimerDue` is a no-op, a cancelled seal job is not run (checked before sealing) and its result refused | — |
 
 **Idempotency and crashes.** The claim is the store's `SKIP LOCKED` entry point under a 300 s lease, renewed every

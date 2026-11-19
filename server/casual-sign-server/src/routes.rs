@@ -11,8 +11,8 @@ use axum::routing::{MethodFilter, MethodRouter, on};
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
-    admin, bulk, envelopes as env, folders, groups, mfa, ml, org, sessions, switch, templates,
-    webhooks,
+    admin, bulk, envelopes as env, folders, groups, mfa, ml, org, privacy, sessions, switch,
+    templates, webhooks,
 };
 use crate::authz::{Action, Level, OrgAction};
 use crate::ceremony;
@@ -120,8 +120,8 @@ pub fn table() -> Vec<Route> {
     use Action::{
         AdminAuditRead, ApiClientsManage, AuditRead, BulkSend, EnvelopesRead, EnvelopesSend,
         EnvelopesTransfer, EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage,
-        SettingsSending, TemplatesRead, TemplatesWrite, UsersInvite, UsersRead, UsersRemove,
-        UsersUpdate, WebhooksManage,
+        RetentionManage, SettingsSending, TemplatesRead, TemplatesWrite, UsersInvite, UsersRead,
+        UsersRemove, UsersUpdate, WebhooksManage,
     };
     let er = A(EnvelopesRead);
     let ew = A(EnvelopesWrite);
@@ -275,6 +275,70 @@ pub fn table() -> Vec<Route> {
             admin::admin_events,
         ),
         r("GET", "/api/v1/users/me", Member, JSON, admin::me),
+        // Personal-data controls (ASVS-16, ASVS-18).
+        r(
+            "GET",
+            "/api/v1/users/me/export",
+            Member,
+            JSON,
+            privacy::export,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/users/me",
+            Member,
+            JSON,
+            privacy::erase_me,
+        ),
+        r(
+            "POST",
+            "/api/v1/users/{id}/erase",
+            A(UsersRemove),
+            JSON,
+            privacy::erase_user,
+        ),
+        r(
+            "GET",
+            "/api/v1/retention",
+            A(RetentionManage),
+            JSON,
+            privacy::rules,
+        ),
+        r(
+            "PUT",
+            "/api/v1/retention",
+            A(RetentionManage),
+            JSON,
+            privacy::set_rules,
+        ),
+        r(
+            "GET",
+            "/api/v1/retention/preview",
+            A(RetentionManage),
+            JSON,
+            privacy::preview,
+        ),
+        r(
+            "PUT",
+            "/api/v1/envelopes/{id}/legal-hold",
+            A(RetentionManage),
+            JSON,
+            privacy::set_hold,
+        ),
+        r(
+            "DELETE",
+            "/api/v1/envelopes/{id}/legal-hold",
+            A(RetentionManage),
+            JSON,
+            privacy::release_hold,
+        ),
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/purge",
+            A(RetentionManage),
+            JSON,
+            privacy::purge,
+        ),
         r(
             "PATCH",
             "/api/v1/users/me",

@@ -1,0 +1,49 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT e.id, r.data_class, c.since AS \"since!\"\n               FROM envelopes AS e\n               CROSS JOIN LATERAL (SELECT\n                   CASE WHEN e.status = 'draft' THEN 'draft'\n                        WHEN e.status = 'completed' THEN 'completed'\n                        WHEN e.status IN ('declined', 'voided', 'expired') THEN 'ended' END AS class,\n                   CASE WHEN e.status = 'completed' THEN COALESCE(e.completed_at, e.updated_at)\n                        ELSE e.updated_at END AS since) AS c\n               JOIN retention_rules AS r\n                 ON r.account_id = e.account_id AND r.data_class = c.class\n               JOIN envelope_states AS s\n                 ON s.account_id = e.account_id AND s.envelope_id = e.id\n              WHERE e.account_id = $1 AND e.legal_hold_at IS NULL\n                AND COALESCE((s.state ->> 'purged')::boolean, false) = false\n                AND c.since + make_interval(days => r.keep_days) <= $2\n              ORDER BY c.since, e.id\n              LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "data_class",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "retention_rules",
+            "name": "data_class"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "since!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "692a4286ea6cc5253c8784ef4c211d952d9fd80eafa0c23c4b41979e34b24b52"
+}

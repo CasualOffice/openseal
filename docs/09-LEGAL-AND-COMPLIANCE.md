@@ -86,6 +86,17 @@ Note the tension: **evidence must persist, and data subjects may ask for erasure
 retained under a legal obligation or legitimate interest; the product lets the controller decide per account, and
 never deletes evidence silently.
 
+**As built (`ASVS-16`, `ASVS-18`, 2026-11-19), facts of the design, not legal claims.** A staff member can download
+their own data in a workspace and delete their account there; an administrator can erase a member; an account sets
+retention rules per data class (none by default), places legal holds, and can purge an ended or completed envelope at
+a data subject's request. An erasure replaces the person's name and email and removes their sign-in; a purge deletes
+the envelope's documents and personal data from the database, appends `envelope.purged` and keeps a tombstone. Neither
+alters the audit chain (which records names, emails and addresses as they were when each act happened), the admin
+logs, or a sealed document still retained. Blob bytes of a purged envelope stay in the object store until an orphan
+sweep reclaims them (`HRD-09`). We do not claim that these mechanisms make a deployment compliant with GDPR, UK GDPR,
+CCPA/CPRA, the DPDP Act or any other law, nor that an erasure or purge has any particular legal effect: whether
+retaining evidence is justified, for how long, and what a privacy notice must say is the controller's assessment.
+
 One record is kept by design and cannot be erased: the **admin audit logs** (`ORG-05`, docs/23 §2.5) hold the acting
 administrator's user or API client id and IP address inside each event's hash-chained bytes, in an append-only log, so
 that who changed a workspace's settings, members or permissions stays provable. That IP address is personal data

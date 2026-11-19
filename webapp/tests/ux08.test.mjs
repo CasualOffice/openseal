@@ -16,7 +16,7 @@ const q = (s) => new URLSearchParams(s);
 
 test("the admin nav is the canvas's nine pages in order, the waiting ones included", () => {
   assert.deepEqual(NAV.map((n) => n.id), ["organization", "members", "security", "signing", "branding", "intelligence", "retention", "integrations", "audit"]);
-  assert.deepEqual(NAV.filter((n) => n.ready).map((n) => n.id), ["organization", "members", "branding", "intelligence", "integrations", "audit"]);
+  assert.deepEqual(NAV.filter((n) => n.ready).map((n) => n.id), ["organization", "members", "branding", "intelligence", "retention", "integrations", "audit"]);
   // Every page not built yet names what it waits for, so none is a dead link.
   for (const n of NAV.filter((x) => !x.ready)) assert.ok(n.waits?.length, n.id);
 });

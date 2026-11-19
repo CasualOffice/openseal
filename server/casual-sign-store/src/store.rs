@@ -897,4 +897,27 @@ impl EntryPoints<'_> {
         .map_err(db)?;
         Ok(u32::try_from(n).unwrap_or(0))
     }
+
+    /// Queue the retention job of the UTC day `day` for every account with a retention
+    /// rule (migration 0045, `ASVS-18`). Returns how many were queued; a second call for
+    /// the same day queues none.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn enqueue_retention_jobs(
+        &self,
+        day: time::Date,
+        now: OffsetDateTime,
+    ) -> Result<u32> {
+        let n = sqlx::query_scalar!(
+            r#"SELECT openseal_enqueue_retention_jobs($1, $2) AS "n!""#,
+            day,
+            now
+        )
+        .fetch_one(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(u32::try_from(n).unwrap_or(0))
+    }
 }

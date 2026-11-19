@@ -70,6 +70,7 @@ by saying so.
 | 59 | 2026-11-19 | Chose, from options: record HAProxy (in-profile load balancer in front of two server replicas, `HRD-11`) as an ADR and accept it: ADR-038. Also "complete M3": close slices 1, 2, 5 and 7 once a green `main` run proves their remaining gate items (docs/73). | `HRD-11`, `ADR-038`, `VS-01`, `VS-02`, `VS-05`, `VS-07` |
 | 60 | 2026-11-19 | Approved the password strength meter as built (`ASVS-03`): four bars, "Password strength: …" and up to two pieces of advice under every staff set-password field, advisory only | `ASVS-03` |
 | 62 | 2026-11-19 | "No in-memory plan; I need it written and forced to be followed." The docs/06 Execution plan is binding: one slice at a time, in its order, end to end to closure; nothing outside the current slice starts unless the owner asks; work already started is finished, never abandoned. Enforced by `tools/check-plan.py` (`PLN-01`). |
+| 63 | 2026-11-19 | Chose, from options: accept ADR-039 as built. Erasure pseudonymises the member and deletes sign-in, signatures and sessions; audit events and sealed PDFs keep what they recorded; purge appends `envelope.purged`, legal hold blocks it, and no retention rule is on by default |
 
 ## Inherited working rules
 

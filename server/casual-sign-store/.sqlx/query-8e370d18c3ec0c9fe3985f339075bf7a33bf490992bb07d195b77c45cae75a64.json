@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM recipient_sso_challenges AS o USING recipients AS r WHERE o.account_id = $1 AND r.account_id = o.account_id AND r.id = o.recipient_id AND r.envelope_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8e370d18c3ec0c9fe3985f339075bf7a33bf490992bb07d195b77c45cae75a64"
+}

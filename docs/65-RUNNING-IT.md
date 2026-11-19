@@ -560,6 +560,18 @@ The access log (`event = request`) carries neither principal nor client (`ASVS-1
 of `route = /api/v1/envelopes/{id}/void` with `status = 200` (and of `/api/v1/envelopes/{id}/send` with `200`,
 `/api/v1/bulk-sends` with `201`), and rely on each instance's own rules.
 
+## Retention and erasure (`ASVS-16`, `ASVS-18`)
+
+Nothing is purged until an account administrator sets a retention rule (Admin › Retention, or `PUT /api/v1/retention`).
+A worker with `OPENSEAL_RETENTION=daily` (the default; `off` to stop queuing) queues one `retention_sweep` job per
+account with a rule each UTC day; any worker runs it. Its log line `retention_swept` carries counts per class, the
+sessions deleted and the envelopes skipped (held, or changed meanwhile), never names. A purge deletes database records,
+not blob bytes: until the orphan sweep exists (`HRD-09`) the bytes of purged envelopes stay in the object store,
+unreachable through the API; size the store accordingly. `verify-evidence` and the backup keep working across purges
+(they read only what records name). A member's erasure (`DELETE /api/v1/users/me`, or an administrator's
+`POST /api/v1/users/{id}/erase`) is immediate and cannot be undone; a person in several workspaces is removed by each
+other workspace's administrators first. Operators publish their own privacy notice saying what is kept (docs/09 §5).
+
 ## Configuration
 
 All configuration through environment variables; every secret also accepted as `NAME_FILE` (the sisters'

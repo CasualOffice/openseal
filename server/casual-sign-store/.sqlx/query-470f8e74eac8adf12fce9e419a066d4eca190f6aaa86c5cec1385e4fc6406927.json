@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COALESCE((state ->> 'purged')::boolean, false) AS \"purged!\"\n               FROM envelope_states WHERE account_id = $1 AND envelope_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "purged!",
+        "type_info": "Bool",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "470f8e74eac8adf12fce9e419a066d4eca190f6aaa86c5cec1385e4fc6406927"
+}

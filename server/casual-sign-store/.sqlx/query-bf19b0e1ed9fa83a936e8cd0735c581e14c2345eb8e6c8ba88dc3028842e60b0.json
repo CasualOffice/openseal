@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT legal_hold_at FROM envelopes WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "legal_hold_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "envelopes",
+            "name": "legal_hold_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "bf19b0e1ed9fa83a936e8cd0735c581e14c2345eb8e6c8ba88dc3028842e60b0"
+}
