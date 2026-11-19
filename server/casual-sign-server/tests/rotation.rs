@@ -391,7 +391,7 @@ async fn on_sigint_the_server_drains_then_stops() {
         .env("OPENSEAL_BLOB_DIR", &blobs)
         .env("OPENSEAL_LISTEN", format!("127.0.0.1:{port}"))
         .env("OPENSEAL_OPS_LISTEN", format!("127.0.0.1:{ops_port}"))
-        .env("OPENSEAL_DRAIN_SECONDS", "3")
+        .env("OPENSEAL_DRAIN_SECONDS", "10")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -407,7 +407,8 @@ async fn on_sigint_the_server_drains_then_stops() {
         .status()
         .unwrap();
     assert!(kill.success());
-    let deadline = Instant::now() + Duration::from_secs(2);
+    // Inside the 10 s drain; a loaded CI runner took over 2 s to answer (run on fc39768).
+    let deadline = Instant::now() + Duration::from_secs(8);
     while get(ops_port, "/readyz") != Some(503) {
         assert!(
             Instant::now() < deadline,
@@ -422,14 +423,14 @@ async fn on_sigint_the_server_drains_then_stops() {
             break s;
         }
         assert!(
-            signalled.elapsed() < Duration::from_secs(20),
+            signalled.elapsed() < Duration::from_secs(40),
             "the server did not stop after draining"
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     };
     assert!(status.success(), "{status}");
     assert!(
-        signalled.elapsed() >= Duration::from_secs(3),
+        signalled.elapsed() >= Duration::from_secs(10),
         "stopped after {:?}, before the drain ended",
         signalled.elapsed()
     );

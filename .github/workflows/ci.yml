@@ -272,18 +272,14 @@ jobs:
       - if: matrix.shard == 1
         working-directory: webapp
         run: npm test
-      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('webapp/e2e/package-lock.json') }}
-      # A stalled download once held a shard 25 minutes: each attempt gets 5, three tries.
-      - working-directory: webapp/e2e
-        run: |
-          npm ci
-          for i in 1 2 3; do timeout 300 npx playwright install --with-deps chromium webkit && exit 0; echo "install attempt $i stalled"; done
-          exit 1
-      - working-directory: webapp/e2e
-        run: npx playwright test --shard=${{ matrix.shard }}/8
+      # In the Playwright image, which carries the browsers and their libraries, so no
+      # shard waits on apt (#34: an apt install stalled two shards for 25 minutes).
+      - run: |
+          env | grep -E '^(OPENSEAL_|CI=)' > "$RUNNER_TEMP/e2e.env" || true
+          docker run --rm --ipc=host --env-file "$RUNNER_TEMP/e2e.env" -e GITHUB_WORKSPACE \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE/webapp/e2e" \
+            mcr.microsoft.com/playwright:v1.64.1-noble \
+            sh -c 'command -v python3 >/dev/null || { apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 >/dev/null; }; npm ci && npx playwright test --shard=${{ matrix.shard }}/8; s=$?; chmod -R a+rwX "$GITHUB_WORKSPACE/target" 2>/dev/null; exit $s'
       # The slice 7 demo (VS-07): the Verify page checking a sealed and a tampered PDF,
       # recorded by verify-demo.spec.mjs in Chromium and WebKit, in whichever shard ran it.
       - if: success() && hashFiles('target/e2e-demo/vs07-*') != ''
@@ -338,18 +334,13 @@ jobs:
           echo "casual_sign_wasm_bg.wasm: $type"
           test "$type" = application/wasm
           curl -fsS -o /dev/null "$OPENSEAL_E2E_BASE_URL/vendor/openseal-wasm/casual_sign_wasm.js"
-      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('webapp/e2e/package-lock.json') }}
-      # A stalled download once held a shard 25 minutes: each attempt gets 5, three tries.
-      - working-directory: webapp/e2e
-        run: |
-          npm ci
-          for i in 1 2 3; do timeout 300 npx playwright install --with-deps chromium webkit && exit 0; echo "install attempt $i stalled"; done
-          exit 1
-      - working-directory: webapp/e2e
-        run: npx playwright test --project=chromium --project=webkit --shard=${{ matrix.shard }}/4
+      # In the Playwright image on the host network (#34: apt installs stalled on the runner).
+      - run: |
+          env | grep -E '^(OPENSEAL_|CI=)' > "$RUNNER_TEMP/e2e.env"
+          docker run --rm --network host --ipc=host --env-file "$RUNNER_TEMP/e2e.env" -e GITHUB_WORKSPACE \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" -w "$GITHUB_WORKSPACE/webapp/e2e" \
+            mcr.microsoft.com/playwright:v1.64.1-noble \
+            sh -c 'npm ci && npx playwright test --project=chromium --project=webkit --shard=${{ matrix.shard }}/4; s=$?; chmod -R a+rwX "$GITHUB_WORKSPACE/target" 2>/dev/null; exit $s'
       - run: mkdir -p target/e2e-sealed && docker compose exec -T keyd cat /secrets/ca.pem > target/e2e-sealed/trust-root.pem
       - run: python3 -m venv /tmp/v && /tmp/v/bin/pip install --quiet "pyhanko==0.38.1" cryptography
       - if: hashFiles('target/e2e-sealed/*.pdf') != ''
