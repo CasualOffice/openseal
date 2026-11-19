@@ -29,7 +29,7 @@ import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
 import { initTheme } from "./theme.js";
 import { illustration } from "./illustrations.js";
-import { EDIT_TYPES, canEditFields, editableFields, ownersOf, ownerName, newField, keyStep, moved, movePatch } from "./editfields.js";
+import { EDIT_TYPES, canEditFields, editableFields, ownersOf, ownerName, newField, keyStep, moved, movePatch, LATER_AUTH, laterAuthOf, laterAuthChange } from "./editfields.js";
 
 const store = (() => { try { return sessionStorage; } catch { return null; } })();
 const mock = isMockMode();
@@ -1752,7 +1752,7 @@ function review() {
   // VS-02: an approver approves, a viewer is done once every page was viewed, and an
   // agent or intermediary names the later recipients before finishing.
   const rtype = view.recipient?.type;
-  const names = Array.isArray(view.later_recipients) ? laterForm(view.later_recipients) : null;
+  const names = Array.isArray(view.later_recipients) ? laterForm(view.later_recipients, SETS_AUTH.has(rtype)) : null;
   const back = button(t("sign.review.back"), { icon: "chevron-left", size: "lg" });
   const goLabel = t(rtype === "approver" ? "sign.approve" : "sign.finish");
   const go = button(goLabel, { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish" } });
@@ -2039,13 +2039,35 @@ async function finishLater() {
 /// The agent's form (VS-02): a name and email for each later recipient not yet reached,
 /// built from the reassign panel's rows. `read()` answers the changes (only what was
 /// edited), or null after showing what is missing.
-function laterForm(later) {
+/// VS-06A: who may also set how a later recipient authenticates (the engine's
+/// `allowed_update`): an intermediary and an editor, not an agent.
+const SETS_AUTH = new Set(["intermediary", "editor"]);
+
+function laterForm(later, withAuth = false) {
   const err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
   const rows = later.map((r, i) => {
     const row = (id, label, el) => h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: label }), el);
     const nameIn = h("input", { id: `later-name-${i}`, class: "os-input", autocomplete: "off", maxLength: 255, value: r.name || "", attrs: { required: true, "data-testid": "later-name" } });
     const emailIn = h("input", { id: `later-email-${i}`, class: "os-input", type: "email", autocomplete: "off", maxLength: 320, value: r.email || "", attrs: { required: true, "data-testid": "later-email" } });
-    return { r, nameIn, emailIn, el: h("fieldset", { class: "os-stack" }, h("legend", { class: "os-label", text: t("sign.later-recipients.who", { n: i + 1, type: t(`rtype.${r.type}`) }) }), row(nameIn.id, t("sign.reassign.name"), nameIn), row(emailIn.id, t("sign.reassign.email"), emailIn)) };
+    const parts = [h("legend", { class: "os-label", text: t("sign.later-recipients.who", { n: i + 1, type: t(`rtype.${r.type}`) }) }), row(nameIn.id, t("sign.reassign.name"), nameIn), row(emailIn.id, t("sign.reassign.email"), emailIn)];
+    const x = { r, nameIn, emailIn };
+    if (withAuth) {
+      // VS-06A: how they prove who they are; an access code is typed here and never
+      // shown again (the server keeps only its hash).
+      const now = laterAuthOf(r.auth);
+      x.authSel = h("select", { id: `later-auth-${i}`, class: "os-input", attrs: { "data-testid": "later-auth" } },
+        ...LATER_AUTH.map((m) => h("option", { value: m, text: t(`sign.later-auth.${m}`), selected: m === now })));
+      x.codeIn = h("input", { id: `later-code-${i}`, class: "os-input", type: "password", autocomplete: "new-password", maxLength: 255, attrs: { "data-testid": "later-code" } });
+      x.phoneIn = h("input", { id: `later-phone-${i}`, class: "os-input", type: "tel", autocomplete: "off", maxLength: 32, value: r.phone || "", attrs: { "data-testid": "later-phone" } });
+      x.had = now;
+      const codeRow = row(x.codeIn.id, t(now === "access_code" ? "sign.later-auth.new-code" : "sign.later-auth.code"), x.codeIn);
+      const phoneRow = row(x.phoneIn.id, t("sign.later-auth.phone"), x.phoneIn);
+      const show = () => { codeRow.hidden = x.authSel.value !== "access_code"; phoneRow.hidden = x.authSel.value !== "sms_otp"; };
+      x.authSel.addEventListener("change", show);
+      show();
+      parts.push(row(x.authSel.id, t("sign.later-auth.label"), x.authSel), codeRow, phoneRow);
+    }
+    return { ...x, el: h("fieldset", { class: "os-stack" }, ...parts) };
   });
   const el = h("section", { class: "os-stack", attrs: { "data-testid": "later-recipients" } },
     h("h2", { class: "os-label", text: t("sign.later-recipients.title") }),
@@ -2055,12 +2077,18 @@ function laterForm(later) {
   const read = () => {
     err.textContent = "";
     const out = [];
-    for (const { r, nameIn, emailIn } of rows) {
+    for (const { r, nameIn, emailIn, authSel, codeIn, phoneIn, had } of rows) {
       const name = nameIn.value.trim();
       const email = emailIn.value.trim();
       if (!name) { err.textContent = t("form.required"); nameIn.focus(); return null; }
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = t("sign.reassign.bad-email"); emailIn.focus(); return null; }
-      if (name !== (r.name || "") || email !== (r.email || "")) out.push({ id: r.id, name, email });
+      const change = laterAuthChange({ had, method: authSel?.value ?? had, code: codeIn?.value || "", phone: phoneIn?.value.trim() || "", oldPhone: r.phone || "" });
+      if (change.error) {
+        err.textContent = t(`sign.later-auth.${change.error}`);
+        (change.error === "need-phone" ? phoneIn : codeIn)?.focus();
+        return null;
+      }
+      if (name !== (r.name || "") || email !== (r.email || "") || change.body) out.push({ id: r.id, name, email, ...(change.body || {}) });
     }
     return out;
   };

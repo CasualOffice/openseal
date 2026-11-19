@@ -1369,6 +1369,8 @@ components:
               routing_order: {type: integer}
               name: {type: string}
               email: {type: string}
+              phone: {type: [string, 'null']}
+              auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}, description: 'VS-06A: the methods asked of them; an access code itself is never shown'}
         editable_fields:
           type: array
           description: >-
@@ -1410,6 +1412,12 @@ components:
               id: {type: string, description: 'A recipient in `later_recipients`'}
               name: {type: string, minLength: 1, maxLength: 255}
               email: {type: string, minLength: 3, maxLength: 320}
+              phone: {type: string, description: 'VS-06A: an intermediary or editor sets the number (E.164) a code by SMS or voice call is sent to'}
+              auth:
+                type: array
+                items: {$ref: '#/components/schemas/AuthMethod'}
+                description: 'VS-06A: an intermediary or editor replaces the authentication the recipient must pass (an agent is refused, 403). An emailed code or sso needs an email, sms_otp or voice_otp a phone (422 at /recipients/{i}/auth)'
+              access_code: {type: string, maxLength: 255, description: 'VS-06A: a new access code, stored only as Argon2id and never answered; required when auth gains access_code and none was set, refused without it (422 at /recipients/{i}/access_code); dropping access_code from auth deletes the stored code'}
         location: {$ref: '#/components/schemas/DeviceLocation'}
     CeremonyDisclosure:
       type: object
@@ -5724,7 +5732,9 @@ paths:
         have not been reached yet (the view's `later_recipients`), then finishes with
         `POST /s/{token}/finish`. An intermediary or editor may call it too. Any other
         recipient type is refused (`409`); a recipient of the caller's own order or
-        earlier, or one already reached, is refused by the workflow (`403`). The change is
+        earlier, or one already reached, is refused by the workflow (`403`). An
+        intermediary or editor may also set `phone`, `auth` and an `access_code` (VS-06A;
+        the code stored as Argon2id, never answered). The change is
         recorded as `envelope.corrected` with the recipient as actor. At most 100
         recipients per call.
       security: []

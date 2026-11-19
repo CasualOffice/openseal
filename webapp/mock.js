@@ -517,7 +517,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     && [f.recipient_id, ...(f.shared_with || [])].every((r) => { const q = env.recipients.find((x) => x.id === r); return q && editableOwner(rec, q); });
   const laterOf = (env, rec) => env.recipients
     .filter((q) => (q.routing_order || 1) > (rec.routing_order || 1) && q.status === "created")
-    .map((q) => ({ id: q.id, type: q.type, routing_order: q.routing_order || 1, name: q.name || "", email: q.email || "" }));
+    .map((q) => ({ id: q.id, type: q.type, routing_order: q.routing_order || 1, name: q.name || "", email: q.email || "", phone: q.phone || null, auth: [...(q.auth || [])] }));
   const publicRecipient = (r) => {
     const { access_code, auth_passed, token, otp_open, sso_state, viewed_to_end, hosted, ...rest } = r;
     void access_code; void auth_passed; void token; void otp_open; void sso_state; void viewed_to_end; void hosted;
@@ -3263,17 +3263,33 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const list = Array.isArray(body?.recipients) ? body.recipients : [];
       if (!list.length || list.length > 100) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/recipients", code: "invalid" }]);
       const later = laterOf(env, rec).map((q) => q.id);
+      const bad = (i, k) => fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/${k}`, code: "CS-API-0001" }]);
       for (const [i, n] of list.entries()) {
         const q = env.recipients.find((x) => x.id === n?.id);
         if (!q) fail(404, "CS-API-0002", "Not found");
         if (!later.includes(q.id)) fail(403, "CS-WF-0003", "Not permitted");
-        if (n.name != null && !String(n.name).trim()) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/name`, code: "invalid" }]);
-        if (n.email != null && !/^[^@\s]+@[^@\s]+$/.test(String(n.email).trim())) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/email`, code: "invalid" }]);
+        if (n.name != null && !String(n.name).trim()) bad(i, "name");
+        if (n.email != null && !/^[^@\s]+@[^@\s]+$/.test(String(n.email).trim())) bad(i, "email");
+        // VS-06A, as the server: an intermediary or editor sets the number, the methods
+        // and an access code (kept, never answered); an agent changing the methods is refused.
+        if (n.phone != null && !/^\+[1-9][0-9 .()-]{7,}$/.test(String(n.phone).trim())) bad(i, "phone");
+        const auth = Array.isArray(n.auth) ? n.auth : q.auth || [];
+        if (n.auth != null && rec.type === "agent" && JSON.stringify(n.auth) !== JSON.stringify(q.auth || [])) fail(403, "CS-WF-0003", "Not permitted");
+        const email = n.email != null ? String(n.email).trim() : q.email;
+        const phone = n.phone != null ? String(n.phone).trim() : q.phone;
+        if ((auth.includes("email_otp") || auth.includes("sso")) && !email) bad(i, "auth");
+        if ((auth.includes("sms_otp") || auth.includes("voice_otp")) && !phone) bad(i, "auth");
+        const code = n.access_code ? String(n.access_code) : "";
+        if (code ? !auth.includes("access_code") || code.length > 255 : auth.includes("access_code") && !q.access_code) bad(i, "access_code");
       }
       for (const n of list) {
         const q = env.recipients.find((x) => x.id === n.id);
         if (n.name != null) q.name = String(n.name).trim();
         if (n.email != null) q.email = String(n.email).trim();
+        if (n.phone != null) q.phone = String(n.phone).trim();
+        if (Array.isArray(n.auth)) q.auth = [...n.auth];
+        if (n.access_code) q.access_code = String(n.access_code);
+        else if (!q.auth.includes("access_code")) delete q.access_code;
       }
       await audit(env, "envelope.corrected", { changed: list.map((n) => `recipients.${n.id}`) }, loc);
       return json(200, view(env, rec, token));

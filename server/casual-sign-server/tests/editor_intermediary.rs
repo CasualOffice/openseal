@@ -290,7 +290,11 @@ async fn an_editor_places_and_moves_a_later_signers_fields_then_signs() {
     let editor = invite(&api, &a, &env, &ed).await;
     let (view, bound) = open(&api, &editor).await;
     let h = hdr(&bound);
-    assert_eq!(ids_in(&view, "editable_fields"), std::slice::from_ref(&s2_sig), "{view}");
+    assert_eq!(
+        ids_in(&view, "editable_fields"),
+        std::slice::from_ref(&s2_sig),
+        "{view}"
+    );
 
     // They add a text field for the later signer and move the signer's signature.
     let added = ok(
@@ -428,5 +432,205 @@ async fn an_editor_places_and_moves_a_later_signers_fields_then_signs() {
         .filter(|e| e["type"] == "envelope.corrected" && e["event"]["actor"]["id"] == ed.as_str())
         .collect();
     assert_eq!(corrected.len(), 2, "the add and the move, by the editor");
+    api.db.drop().await;
+}
+
+#[tokio::test]
+async fn an_intermediary_sets_a_later_signers_access_code_and_sms_and_an_agent_may_not() {
+    // VS-06A (DocuSign's "Update recipients"): an intermediary changes how the people
+    // after them authenticate: an access code (stored hashed, never readable back) for
+    // one, a code by SMS for another. The signer must then pass the code they set.
+    let Some(api) = Api::new("intermediary_auth", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let e = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(json!({
+                "subject": "VS-06A intermediary auth", "status": "sent",
+                "documents": [{"name": "w.pdf", "content_base64": b64(&pdf(2))}],
+                "recipients": [
+                    {"ref": "ag", "type": "agent", "name": "Al Agent",
+                        "email": "agent@example.test", "routing_order": 1},
+                    {"ref": "im", "type": "intermediary", "name": "Ian Intermediary",
+                        "email": "intermediary@example.test", "routing_order": 2},
+                    {"ref": "s1", "type": "signer", "name": "Bea Buyer",
+                        "email": "bea@example.test", "routing_order": 3},
+                    {"ref": "s2", "type": "signer", "name": "Cy Seller",
+                        "email": "cy@example.test", "routing_order": 3},
+                ],
+                "fields": [
+                    {"recipient": "s1", "document": 0, "type": "signature", "page": 1,
+                        "x": 72, "y": 100, "width": 180, "height": 40, "required": true},
+                    {"recipient": "s2", "document": 0, "type": "signature", "page": 1,
+                        "x": 72, "y": 300, "width": 180, "height": 40, "required": true},
+                ],
+            })),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create",
+    );
+    let env = e["id"].as_str().unwrap().to_owned();
+    let base = format!("/api/v1/envelopes/{env}");
+    let rid = |i: usize| e["recipients"][i]["id"].as_str().unwrap().to_owned();
+    let (ag, im, s1, s2) = (rid(0), rid(1), rid(2), rid(3));
+    let code = json!({"recipients": [{"id": s1, "auth": ["access_code"], "access_code": "set-by-ian-77"}]});
+
+    // An agent names people; changing their authentication is not theirs (the engine).
+    let agent = invite(&api, &a, &env, &ag).await;
+    let (_, abound) = open(&api, &agent).await;
+    let r = api
+        .call(
+            "POST",
+            &format!("/s/{agent}/recipients"),
+            &Auth::None,
+            Some(code.clone()),
+            &hdr(&abound),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "{:?}", r.json());
+    ok(
+        api.call(
+            "POST",
+            &format!("/s/{agent}/finish"),
+            &Auth::None,
+            Some(json!({})),
+            &hdr(&abound),
+        )
+        .await,
+        StatusCode::OK,
+        "the agent finishes",
+    );
+
+    // The intermediary: a method without its code, or a code by SMS without a number,
+    // is refused; then the access code for one, SMS for the other.
+    let inter = invite(&api, &a, &env, &im).await;
+    let (iview, ibound) = open(&api, &inter).await;
+    let h = hdr(&ibound);
+    assert_eq!(iview["later_recipients"][0]["auth"], json!([]), "{iview}");
+    for (body, pointer) in [
+        (
+            json!({"recipients": [{"id": s1, "auth": ["access_code"]}]}),
+            "/recipients/0/access_code",
+        ),
+        (
+            json!({"recipients": [{"id": s2, "auth": ["sms_otp"]}]}),
+            "/recipients/0/auth",
+        ),
+        (
+            json!({"recipients": [{"id": s1, "access_code": "no-method"}]}),
+            "/recipients/0/access_code",
+        ),
+    ] {
+        let r = api
+            .call(
+                "POST",
+                &format!("/s/{inter}/recipients"),
+                &Auth::None,
+                Some(body),
+                &h,
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{:?}", r.json());
+        assert!(
+            format!("{:?}", r.json()).contains(pointer),
+            "{:?}",
+            r.json()
+        );
+    }
+    let named = ok(
+        api.call(
+            "POST",
+            &format!("/s/{inter}/recipients"),
+            &Auth::None,
+            Some(json!({"recipients": [
+                {"id": s1, "auth": ["access_code"], "access_code": "set-by-ian-77"},
+                {"id": s2, "auth": ["sms_otp"], "phone": "+44 7700 900123"},
+            ]})),
+            &h,
+        )
+        .await,
+        StatusCode::OK,
+        "the intermediary sets their authentication",
+    );
+    let later = named["later_recipients"].as_array().unwrap();
+    let auth_of = |id: &str| later.iter().find(|r| r["id"] == id).unwrap()["auth"].clone();
+    assert_eq!(auth_of(&s1), json!(["access_code"]));
+    assert_eq!(auth_of(&s2), json!(["sms_otp"]));
+    assert!(
+        !named.to_string().contains("set-by-ian-77"),
+        "the code is never answered"
+    );
+    for d in iview["envelope"]["documents"].as_array().unwrap() {
+        let doc = d["id"].as_str().unwrap();
+        ok(
+            api.call(
+                "POST",
+                &format!("/s/{inter}/documents/{doc}/viewed"),
+                &Auth::None,
+                Some(json!({"pages_seen": [1, 2]})),
+                &h,
+            )
+            .await,
+            StatusCode::OK,
+            "viewed",
+        );
+    }
+    ok(
+        api.call(
+            "POST",
+            &format!("/s/{inter}/finish"),
+            &Auth::None,
+            Some(json!({})),
+            &h,
+        )
+        .await,
+        StatusCode::OK,
+        "the intermediary finishes",
+    );
+    let now = ok(
+        api.call("GET", &base, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "get",
+    );
+    assert!(
+        !now.to_string().contains("set-by-ian-77"),
+        "the sender cannot read it either"
+    );
+
+    // The signer must pass the code the intermediary set: a wrong one is refused.
+    let t1 = invite(&api, &a, &env, &s1).await;
+    let (v1, b1) = open(&api, &t1).await;
+    assert_eq!(v1["auth_required"], json!(["access_code"]), "{v1}");
+    let wrong = api
+        .call(
+            "POST",
+            &format!("/s/{t1}/authenticate"),
+            &Auth::None,
+            Some(json!({"method": "access_code", "code": "guess"})),
+            &hdr(&b1),
+        )
+        .await;
+    assert_eq!(wrong.status, StatusCode::FORBIDDEN);
+    ok(
+        api.call(
+            "POST",
+            &format!("/s/{t1}/authenticate"),
+            &Auth::None,
+            Some(json!({"method": "access_code", "code": "set-by-ian-77"})),
+            &hdr(&b1),
+        )
+        .await,
+        StatusCode::OK,
+        "the code the intermediary set",
+    );
+    let t2 = invite(&api, &a, &env, &s2).await;
+    let (v2, _) = open(&api, &t2).await;
+    assert_eq!(v2["auth_required"], json!(["sms_otp"]), "{v2}");
     api.db.drop().await;
 }

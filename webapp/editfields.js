@@ -69,3 +69,28 @@ export function moved(r, dx, dy, page) {
 export function movePatch(r) {
   return { x: formatPoints(r.x), y: formatPoints(r.y) };
 }
+
+/// The ways an intermediary or editor may ask a later recipient to prove who they are,
+/// in menu order (VS-06A; the sender offers the rest): none beyond the emailed link,
+/// an access code, a code by email, a code by text message.
+export const LATER_AUTH = ["none", "access_code", "email_otp", "sms_otp"];
+
+/// The menu's choice for a recipient's methods `auth`: the first one it offers, else
+/// "none" (a method it does not offer is kept unless another is chosen).
+export function laterAuthOf(auth = []) {
+  return LATER_AUTH.find((m) => m !== "none" && auth.includes(m)) || "none";
+}
+
+/// What `POST /s/{token}/recipients` is sent for one recipient's authentication, from
+/// the menu: `{body}` the members to add (none when nothing changed), or `{error}`:
+/// `need-code` (an access code chosen, none set before and none typed), `need-phone`
+/// (a text message without a number in E.164).
+export function laterAuthChange({ had, method, code = "", phone = "", oldPhone = "" }) {
+  if (method === "access_code" && !code && had !== "access_code") return { error: "need-code" };
+  if (method === "sms_otp" && !/^\+[1-9][0-9 .()-]{7,}$/.test(phone)) return { error: "need-phone" };
+  const body = {};
+  if (method !== had) body.auth = method === "none" ? [] : [method];
+  if (method === "access_code" && code) { body.auth = ["access_code"]; body.access_code = code; }
+  if (method === "sms_otp" && phone !== oldPhone) body.phone = phone;
+  return { body: Object.keys(body).length ? body : null };
+}

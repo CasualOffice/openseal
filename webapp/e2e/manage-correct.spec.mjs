@@ -281,6 +281,59 @@ test("VS-06A: an editor adds, moves and removes a later signer's fields during t
   expect(env.fields.filter((f) => f.type === "signature").map((f) => f.recipient_id)).not.toContain(s2);
 });
 
+// VS-06A (DocuSign's "Update recipients"): an intermediary asks the signer after them for
+// an access code they choose; the signer must then enter it. Mock mode and, on the
+// Compose stack, through the links emailed to each.
+test("VS-06A: an intermediary sets the next signer's access code, which the signer must then enter", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 60_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  const code = `ian-${run.slice(-6)}`;
+  const signer = `vs06a-s-${run}@example.com`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  const { id, links } = await sentFor(page, `VS-06A auth ${run}`, [
+    { ref: "im", type: "intermediary", name: "Ian Intermediary", email: `vs06a-im-${run}@example.com`, routing_order: 1 },
+    { ref: "s", type: "signer", name: "Bea Buyer", email: signer, routing_order: 2 },
+  ], ["s"], ["im"]);
+  const started = Date.now();
+  await openSigning(page, links.im);
+  if (await page.locator("#guide-finish").isVisible()) await page.locator("#guide-finish").click();
+  const form = page.getByTestId("later-recipients");
+  await expect(form).toBeVisible();
+  await form.getByLabel("How they confirm who they are").selectOption("access_code");
+  // Without a code the page says so before anything is sent.
+  await page.getByTestId("review-finish").click();
+  await expect(form.getByText("Enter the access code they will be asked for.")).toBeVisible();
+  await expect(form.getByLabel("Access code")).toBeFocused();
+  if (!REAL) {
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expectAccessible(page, `review with the later recipient's authentication (${scheme})`);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  await form.getByLabel("Access code").fill(code);
+  await page.getByTestId("review-finish").click();
+  await expect(page.getByTestId("sign-done")).toBeVisible({ timeout: 20_000 });
+  // The signer is asked for the code the intermediary chose; a wrong one is refused.
+  let link;
+  if (REAL) link = await emailedLink(signer, started);
+  else {
+    await page.goto(app("#/agreements"), { waitUntil: "domcontentloaded" });
+    link = signPage(await inApp(page, async (id) => (await window.__vs06.getEnvelope(id)).envelope.recipients.find((r) => r.type === "signer").mock_token, id));
+  }
+  await page.goto(link, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Enter your access code" })).toBeVisible();
+  await page.getByLabel("Access code").fill("not-the-code");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("alert").or(page.locator(".os-field-error")).first()).toBeVisible();
+  await page.getByLabel("Access code").fill(code);
+  await page.getByRole("button", { name: "Continue" }).click();
+  const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
+  await expect(consent.or(page.locator("#guide-progress")).first()).toBeVisible();
+});
+
 // WEB-07 on the Compose stack: the signer's own history and reassignment, through the
 // signing page's More menu, on an envelope sent with reassignment allowed (its link
 // read from Mailpit). guided-ceremony.spec.mjs covers the same in mock mode.

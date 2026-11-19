@@ -697,6 +697,15 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
   fields; their own are in `fields`). The paths are under `/editor/` so `DELETE /s/{token}/fields/{field}` stays
   free for a signer clearing a value (`UXW-35`, ADR-032). The signing page offers Edit fields (toolbar and More):
   movable boxes, drag or arrow keys (Shift for 10 points), Delete, and an Add field bar (`webapp/editfields.js`).
+- **An intermediary sets a later recipient's authentication** (`VS-06A`, FG-026, DocuSign's "Update
+  recipients"). `POST /s/{token}/recipients` also takes, from an intermediary or editor, `phone` (E.164), `auth`
+  (the methods, replacing theirs) and `access_code` (stored as Argon2id as the sender's codes are, through the same
+  `store_codes`; never answered, to the intermediary or the sender). A code without `access_code` among the methods,
+  the method without a code given now or set before, an emailed code or `sso` without an email, or a code by SMS or
+  voice without a number is `422` at `/recipients/{i}/access_code`, `/auth` or `/phone`; dropping `access_code`
+  deletes the stored code; an agent changing the methods is refused by the engine (`403 CS-WF-0003`).
+  `later_recipients` now carries each one's `phone` and `auth` (never a code). The review step's later-recipient form
+  offers the link only, an access code, an emailed code or a text-message code.
 - Tests: `-server` `tests/manage_views.rs`, `tests/correct_documents.rs`, `tests/editor_intermediary.rs`,
   `tests/reports.rs`; the contract test calls every new operation; `webapp/tests/editfields.test.mjs`;
   `manage-correct.spec.mjs` (`VS-06A`, mock mode and the Compose stack).

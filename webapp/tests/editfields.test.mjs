@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { createMockFetch, MOCK } from "../mock.js";
 import { createClient } from "../api.js";
 import { makePdf } from "../mockpdf.js";
-import { canEditFields, editableFields, ownersOf, newField, keyStep, moved, movePatch } from "../editfields.js";
+import { canEditFields, editableFields, ownersOf, newField, keyStep, moved, movePatch, laterAuthOf, laterAuthChange } from "../editfields.js";
 
 const ME = { id: "ed", type: "editor", name: "Eda" };
 const VIEW = {
@@ -85,4 +85,47 @@ test("the mock, as the server: an editor adds and moves a later signer's field; 
   assert.equal(v.editable_fields.length, 1);
   await ready(c, tokens[1]);
   await assert.rejects(c.ceremony.editField(tokens[1], target.id, { x: "1" }), (e) => e.status === 409);
+});
+
+test("the later recipient's authentication: a method chosen, its code or number asked, nothing sent when unchanged", () => {
+  assert.equal(laterAuthOf([]), "none");
+  assert.equal(laterAuthOf(["kba", "sms_otp"]), "sms_otp");
+  assert.deepEqual(laterAuthChange({ had: "none", method: "none" }), { body: null });
+  assert.deepEqual(laterAuthChange({ had: "none", method: "access_code" }), { error: "need-code" });
+  assert.deepEqual(laterAuthChange({ had: "none", method: "access_code", code: "c-1" }), { body: { auth: ["access_code"], access_code: "c-1" } });
+  assert.deepEqual(laterAuthChange({ had: "access_code", method: "access_code" }), { body: null }, "the code set stays");
+  assert.deepEqual(laterAuthChange({ had: "none", method: "sms_otp", phone: "07700" }), { error: "need-phone" });
+  assert.deepEqual(laterAuthChange({ had: "none", method: "sms_otp", phone: "+44 7700 900123" }), { body: { auth: ["sms_otp"], phone: "+44 7700 900123" } });
+  assert.deepEqual(laterAuthChange({ had: "email_otp", method: "none" }), { body: { auth: [] } });
+});
+
+test("the mock, as the server: an intermediary sets an access code the signer must then pass; an agent may not", async () => {
+  const c = createClient({ fetch: createMockFetch() });
+  await c.login(MOCK.email, MOCK.password);
+  const pdf = Buffer.from(makePdf([{ title: "VS-06A auth" }])).toString("base64");
+  const env = await c.createEnvelope({
+    subject: "VS-06A auth", status: "sent",
+    documents: [{ name: "a.pdf", content_base64: pdf }],
+    recipients: [{ ref: "ag", type: "agent", name: "Al", email: "al@example.com", routing_order: 1 },
+      { ref: "im", type: "intermediary", name: "Ian", email: "ian@example.com", routing_order: 2 },
+      { ref: "s", type: "signer", name: "Bea", email: "bea@example.com", routing_order: 3 }],
+    fields: [{ recipient: "s", document: 0, type: "signature", page: 1, x: 72, y: 100, width: 160, height: 44, required: true }],
+  });
+  const [ag, im, s] = env.recipients;
+  await ready(c, ag.mock_token);
+  await assert.rejects(c.ceremony.nameRecipients(ag.mock_token, [{ id: s.id, auth: ["access_code"], access_code: "x-1" }]), (e) => e.status === 403);
+  await c.ceremony.finish(ag.mock_token);
+  const sent = (await c.getEnvelope(env.id)).envelope;
+  const it = sent.recipients.find((r) => r.id === im.id);
+  await ready(c, it.mock_token);
+  await assert.rejects(c.ceremony.nameRecipients(it.mock_token, [{ id: s.id, auth: ["access_code"] }]), (e) => e.status === 422 && e.errors[0]?.pointer === "/recipients/0/access_code");
+  const v = await c.ceremony.nameRecipients(it.mock_token, [{ id: s.id, auth: ["access_code"], access_code: "set-by-ian" }]);
+  assert.deepEqual(v.later_recipients[0].auth, ["access_code"]);
+  assert.ok(!JSON.stringify(v).includes("set-by-ian"), "never answered");
+  await c.ceremony.finish(it.mock_token);
+  const signer = (await c.getEnvelope(env.id)).envelope.recipients.find((r) => r.id === s.id);
+  await c.ceremony.open(signer.mock_token);
+  await assert.rejects(c.ceremony.authenticate(signer.mock_token, "access_code", "guess"));
+  const ok = await c.ceremony.authenticate(signer.mock_token, "access_code", "set-by-ian");
+  assert.deepEqual(ok.auth_required, []);
 });

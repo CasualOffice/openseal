@@ -623,6 +623,10 @@ impl Open {
                         "id": q.spec.id, "type": q.spec.rtype,
                         "routing_order": q.spec.routing_order,
                         "name": q.spec.name.0, "email": q.spec.email.0,
+                        // VS-06A: what an intermediary or editor may change; an access
+                        // code is never shown, only that one is asked for.
+                        "phone": q.spec.phone.as_ref().map(|p| p.0.clone()),
+                        "auth": q.spec.auth,
                     })
                 })
                 .collect();
@@ -1843,6 +1847,18 @@ struct NamedIn {
     name: Option<String>,
     #[serde(default)]
     email: Option<String>,
+    /// `VS-06A`: an intermediary's or editor's new phone number for the recipient (E.164),
+    /// for a code by SMS or voice call.
+    #[serde(default)]
+    phone: Option<String>,
+    /// `VS-06A`: the authentication the recipient must pass, replacing theirs (an
+    /// intermediary or editor only; the engine refuses an agent).
+    #[serde(default)]
+    auth: Option<Vec<AuthMethod>>,
+    /// `VS-06A`: a new access code, stored only as Argon2id, never readable back; needed
+    /// when `auth` gains `access_code` and none was set.
+    #[serde(default)]
+    access_code: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1891,6 +1907,9 @@ pub(crate) async fn recipients(
             return Err(ApiError::invalid("/recipients"));
         }
         let mut changes = Vec::with_capacity(req.recipients.len());
+        // VS-06A: access codes to store and to drop once the engine has accepted.
+        let mut codes = Vec::new();
+        let mut cleared = Vec::new();
         for (i, n) in req.recipients.iter().enumerate() {
             let at = format!("/recipients/{i}");
             let mut spec =
@@ -1900,6 +1919,7 @@ pub(crate) async fn recipients(
                     .find(|r| same_id(r.id(), &n.id))
                     .map(|r| r.spec.clone())
                     .ok_or_else(ApiError::not_found)?;
+            let had_code = spec.auth.contains(&AuthMethod::AccessCode);
             if let Some(name) = &n.name {
                 let name = name.trim();
                 if name.is_empty() || name.chars().count() > 255 {
@@ -1920,6 +1940,38 @@ pub(crate) async fn recipients(
                         .map_err(|_| ApiError::invalid(&format!("{at}/email")))?,
                 );
             }
+            if let Some(p) = &n.phone {
+                let p = p.trim();
+                if !dto::phone_number(p) {
+                    return Err(ApiError::invalid(&format!("{at}/phone")));
+                }
+                spec.phone = Some(casual_sign_audit::Personal(
+                    casual_sign_model::Text::new(p)
+                        .map_err(|_| ApiError::invalid(&format!("{at}/phone")))?,
+                ));
+            }
+            if let Some(a) = &n.auth {
+                spec.auth.clone_from(a);
+            }
+            check_auth(&spec, &at)?;
+            // The access code follows the methods, as the sender's `PATCH` does: a code
+            // given needs `access_code` among them, the method needs a code given now or
+            // set before, and dropping the method drops the stored code.
+            let wants_code = spec.auth.contains(&AuthMethod::AccessCode);
+            let code = n.access_code.as_deref().filter(|c| !c.is_empty());
+            let refused = match code {
+                Some(c) => !wants_code || c.chars().count() > 255,
+                None => wants_code && !had_code,
+            };
+            if refused {
+                return Err(ApiError::invalid(&format!("{at}/access_code")));
+            }
+            let stored = RecipientId(uid(&spec.id)?);
+            if let Some(c) = code {
+                codes.push((stored, c.to_owned()));
+            } else if had_code && !wants_code {
+                cleared.push(stored);
+            }
             changes.push(casual_sign_workflow::Change::UpdateRecipient { recipient: spec });
         }
         let r = o.recipient.clone();
@@ -1928,6 +1980,10 @@ pub(crate) async fn recipients(
             changes,
         })
         .await?;
+        crate::api::envelopes::store_codes(&mut o.tx, codes).await?;
+        for r in cleared {
+            o.tx.recipients().clear_access_code(r).await?;
+        }
         Ok(StatusCode::OK)
     })
 }
@@ -2188,6 +2244,25 @@ pub(crate) async fn remove_field(
         .await?;
         Ok(StatusCode::OK)
     })
+}
+
+/// Refuse authentication recipient `spec` cannot be sent (`422` at `{at}/auth`), as the
+/// sender's create is: an emailed code or a sign-in needs an address, a code by SMS or
+/// voice call a phone number.
+fn check_auth(spec: &casual_sign_workflow::RecipientSpec, at: &str) -> Result<(), ApiError> {
+    let has = |m| spec.auth.contains(&m);
+    if (has(AuthMethod::EmailOtp) || has(AuthMethod::Sso)) && spec.email.0.as_str().is_empty() {
+        return Err(ApiError::invalid(&format!("{at}/auth")));
+    }
+    if (has(AuthMethod::SmsOtp) || has(AuthMethod::VoiceOtp))
+        && !spec
+            .phone
+            .as_ref()
+            .is_some_and(|p| dto::phone_number(p.0.as_str()))
+    {
+        return Err(ApiError::invalid(&format!("{at}/auth")));
+    }
+    Ok(())
 }
 
 /// Most recipients one `POST /s/{token}/recipients` names (docs/21).
