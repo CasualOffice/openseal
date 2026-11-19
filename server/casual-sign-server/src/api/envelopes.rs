@@ -16,8 +16,8 @@ use casual_sign_model::{EnvelopeStatus as MStatus, Id};
 use casual_sign_sdk::{AdmissionReport, Credentials, NormalizationReport};
 use casual_sign_store::repo::documents::{Document, NewVersion, VersionKind};
 use casual_sign_store::repo::envelopes::{
-    After, AfterKey, DateField, EnvelopeStatus, FolderFilter, ListFilter, Listed, Sort, SortKey,
-    never_expires, status_rank,
+    After, AfterKey, CustomField, DateField, EnvelopeStatus, FolderFilter, ListFilter, Listed,
+    MAX_CUSTOM_FIELDS, Sort, SortKey, never_expires, status_rank,
 };
 use casual_sign_store::repo::recipients::{NewToken, TokenPurpose};
 use casual_sign_store::{
@@ -339,6 +339,14 @@ pub(crate) struct ListQuery {
     deleted: Option<String>,
     /// `me`: the Inbox (UXW-01).
     waiting_for: Option<String>,
+    /// `true`: the Authentication failed quick view (`VS-06`).
+    auth_failed: Option<String>,
+    /// Expiring before this (RFC 3339): the Expiring soon quick view (`VS-06`).
+    expires_before: Option<String>,
+    /// A custom field's exact name (`VS-06`, FG-132).
+    custom_field: Option<String>,
+    /// Text that custom field's value contains; needs `custom_field`.
+    custom_value: Option<String>,
 }
 
 fn parse_date_field(s: &str) -> Option<DateField> {
@@ -540,6 +548,20 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
         Some("me") => true,
         Some(_) => return Err(ApiError::invalid("/query/waiting_for")),
     };
+    let auth_failed = match q.auth_failed.as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err(ApiError::invalid("/query/auth_failed")),
+    };
+    let expires_before = instant(q.expires_before.as_deref(), "/query/expires_before")?;
+    let cf_name = text_param(q.custom_field.as_deref(), "/query/custom_field")?;
+    if cf_name.is_some_and(|n| n.chars().count() > 100) {
+        return Err(ApiError::invalid("/query/custom_field"));
+    }
+    let cf_value = text_param(q.custom_value.as_deref(), "/query/custom_value")?;
+    if cf_value.is_some() && cf_name.is_none() {
+        return Err(ApiError::invalid("/query/custom_value"));
+    }
     // Without `view_all`, the caller's own only: another sender asked for is an empty
     // page, never someone else's envelopes. The Inbox is its own access: envelopes
     // waiting for the caller as a recipient, whoever sent them.
@@ -561,6 +583,9 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
         folder,
         deleted,
         waiting,
+        auth_failed,
+        expires_before,
+        custom_field: cf_name.map(|n| (n, cf_value)),
     };
     let mut tx = c.tx().await?;
     let page = tx
@@ -892,6 +917,82 @@ pub(crate) async fn delete(c: Call, Path(id): Path<String>) -> Result<Response, 
     command(&c, &mut tx, &mut cmds, &mut l, cmd, v).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CustomFieldIn {
+    name: String,
+    value: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CustomFieldsIn {
+    items: Vec<CustomFieldIn>,
+}
+
+fn custom_fields_json(items: &[CustomField]) -> Value {
+    json!({
+        "items": items
+            .iter()
+            .map(|f| json!({ "name": f.name, "value": f.value.get() }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// `GET /envelopes/{id}/custom-fields`: the envelope's custom fields, by name (`VS-06`,
+/// FG-139). Sender metadata, searchable with `GET /envelopes?custom_field=`; never part
+/// of the agreement.
+pub(crate) async fn custom_fields(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let items = tx.envelopes().custom_fields(l.id).await?;
+    Ok(json(StatusCode::OK, &custom_fields_json(&items)))
+}
+
+/// `PUT /envelopes/{id}/custom-fields {items: [{name, value}]}`: replace the envelope's
+/// custom fields (`VS-06`). At most 100; a name is 1 to 100 characters, a value at most
+/// 1,000, neither with control characters, and no name twice (`422` at the first
+/// offender). A purged envelope is `409 CS-API-0009`. Nothing is recorded in the
+/// audit chain: the fields are not part of what any party saw or signed.
+pub(crate) async fn set_custom_fields(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    // Another account's id is 404 before the body is read, whatever it holds.
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let req: CustomFieldsIn = parse(&body)?;
+    if req.items.len() > MAX_CUSTOM_FIELDS {
+        return Err(ApiError::invalid("/items"));
+    }
+    let mut fields: Vec<CustomField> = Vec::with_capacity(req.items.len());
+    for (i, f) in req.items.into_iter().enumerate() {
+        let name = f.name.trim();
+        let n = name.chars().count();
+        if n == 0 || n > 100 || name.chars().any(char::is_control) {
+            return Err(ApiError::invalid(&format!("/items/{i}/name")));
+        }
+        if f.value.chars().count() > 1000 || f.value.chars().any(char::is_control) {
+            return Err(ApiError::invalid(&format!("/items/{i}/value")));
+        }
+        if fields.iter().any(|x| x.name == name) {
+            return Err(ApiError::exists(&format!("/items/{i}/name")));
+        }
+        fields.push(CustomField {
+            name: name.to_owned(),
+            value: Personal(f.value),
+        });
+    }
+    if l.state.purged {
+        return Err(ApiError::not_available("purged"));
+    }
+    tx.envelopes().set_custom_fields(l.id, &fields).await?;
+    tx.commit().await?;
+    Ok(json(StatusCode::OK, &custom_fields_json(&fields)))
 }
 
 /// `POST /envelopes/{id}/send`.

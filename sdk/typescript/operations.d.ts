@@ -137,6 +137,8 @@ export interface Operations {
   getDocumentContent(params: { "id": string | number | boolean; "doc": string | number | boolean; "version"?: string | number | boolean }): Promise<any>;
   /** An envelope with its documents, recipients and fields — `GET /api/v1/envelopes/{id}` (envelopes.read) */
   getEnvelope(params: { "id": string | number | boolean }): Promise<any>;
+  /** The envelope's custom fields, by name (VS-06, FG-139) — `GET /api/v1/envelopes/{id}/custom-fields` (envelopes.read) */
+  getEnvelopeCustomFields(params: { "id": string | number | boolean }): Promise<any>;
   /** Envelope and recipient statuses — `GET /api/v1/envelopes/{id}/status` (envelopes.read) */
   getEnvelopeStatus(params: { "id": string | number | boolean }): Promise<any>;
   /** A field — `GET /api/v1/envelopes/{id}/fields/{f}` (envelopes.read) */
@@ -194,7 +196,7 @@ export interface Operations {
   /** Documents in order — `GET /api/v1/envelopes/{id}/documents` (envelopes.read) */
   listDocuments(params: { "id": string | number | boolean }): Promise<any>;
   /** Envelopes, sorted and filtered, cursor-paginated (WEB-08) — `GET /api/v1/envelopes` (envelopes.read) */
-  listEnvelopes(params?: { "cursor"?: string | number | boolean; "date_field"?: string | number | boolean; "deleted"?: string | number | boolean; "folder"?: string | number | boolean; "from"?: string | number | boolean; "limit"?: string | number | boolean; "order"?: string | number | boolean; "q"?: string | number | boolean; "recipient"?: string | number | boolean; "sender"?: string | number | boolean; "sort"?: string | number | boolean; "status"?: string | number | boolean; "to"?: string | number | boolean; "waiting_for"?: string | number | boolean }): Promise<any>;
+  listEnvelopes(params?: { "auth_failed"?: string | number | boolean; "cursor"?: string | number | boolean; "custom_field"?: string | number | boolean; "custom_value"?: string | number | boolean; "date_field"?: string | number | boolean; "deleted"?: string | number | boolean; "expires_before"?: string | number | boolean; "folder"?: string | number | boolean; "from"?: string | number | boolean; "limit"?: string | number | boolean; "order"?: string | number | boolean; "q"?: string | number | boolean; "recipient"?: string | number | boolean; "sender"?: string | number | boolean; "sort"?: string | number | boolean; "status"?: string | number | boolean; "to"?: string | number | boolean; "waiting_for"?: string | number | boolean }): Promise<any>;
   /** The account's electronic disclosure: the one the workflow policy names, with its text, and the published versions (ERSD-01) — `GET /api/v1/ersd-versions` (ersd.manage) */
   listErsdVersions(params?: Record<string, never>): Promise<any>;
   /** Fields, optionally of one recipient or document — `GET /api/v1/envelopes/{id}/fields` (envelopes.read) */
@@ -321,6 +323,8 @@ export interface Operations {
   sendBulkSendRows(params: { "id": string | number | boolean }): Promise<any>;
   /** Send a draft — `POST /api/v1/envelopes/{id}/send` (envelopes.send) */
   sendEnvelope(params: { "id": string | number | boolean }): Promise<any>;
+  /** Replace the envelope's custom fields (VS-06) — `PUT /api/v1/envelopes/{id}/custom-fields` (envelopes.write) */
+  setEnvelopeCustomFields(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Make the group's members exactly these members of the account — `PUT /api/v1/groups/{id}/members` (groups.manage) */
   setGroupMembers(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Place an envelope under legal hold (ASVS-18) — `PUT /api/v1/envelopes/{id}/legal-hold` (retention.manage) */

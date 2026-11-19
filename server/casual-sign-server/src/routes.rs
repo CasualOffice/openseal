@@ -700,6 +700,21 @@ pub fn table() -> Vec<Route> {
             env::unschedule,
         ),
         r("POST", "/api/v1/envelopes/{id}/void", es, JSON, env::void),
+        // Custom fields: sender metadata, searchable (VS-06, FG-139).
+        r(
+            "GET",
+            "/api/v1/envelopes/{id}/custom-fields",
+            er,
+            JSON,
+            env::custom_fields,
+        ),
+        r(
+            "PUT",
+            "/api/v1/envelopes/{id}/custom-fields",
+            ew,
+            JSON,
+            env::set_custom_fields,
+        ),
         r(
             "POST",
             "/api/v1/envelopes/{id}/transfer",

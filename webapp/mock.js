@@ -872,6 +872,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const waiting = query.get("waiting_for");
     if (waiting != null && waiting !== "me") bad("waiting_for");
     if (waiting) await seedInbox();
+    // VS-06: the Authentication failed view, Expiring soon, custom fields.
+    const authFailedQ = query.get("auth_failed");
+    if (authFailedQ != null && !["true", "false"].includes(authFailedQ)) bad("auth_failed");
+    const authFailed = authFailedQ === "true";
+    const expiresBefore = query.get("expires_before");
+    if (expiresBefore != null && Number.isNaN(Date.parse(expiresBefore))) bad("expires_before");
+    const cfName = (query.get("custom_field") || "").trim();
+    const cfValue = (query.get("custom_value") || "").trim().toLowerCase();
+    if (cfValue && !cfName) bad("custom_value");
+    const failedAuth = (e) => ["sent", "delivered"].includes(e.status)
+      && (e.recipients || []).some((r) => (r.auth_failures || 0) > 0 && ["sent", "delivered"].includes(r.status));
+    const hasCustom = (e) => (e.custom_fields || []).some((f) => f.name === cfName && (!cfValue || has(f.value, cfValue)));
     const dateOf = (e) => (dateField === "updated_at" ? updatedAt(e) : dateField === "completed_at" ? (e.status === "completed" ? e.ended_at : null) : e[dateField]);
     const from = query.get("from");
     const to = query.get("to");
@@ -895,6 +907,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       && (!recipient || (e.recipients || []).some((r) => has(r.name, recipient) || has(r.email, recipient)))
       && (folder == null || (e.folder_id || null) === (folder === "none" ? null : folder))
       && (!waiting || myRecipient(e))
+      && (!authFailed || failedAuth(e))
+      && (!expiresBefore || (!!e.expires_at && e.expires_at < new Date(expiresBefore).toISOString()))
+      && (!cfName || hasCustom(e))
       && inRange(e)).sort(cmp);
     const page = all.slice(start, start + limit);
     return json(200, {
@@ -2023,10 +2038,45 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       await audit(env, "envelope.voided", { reason: body.reason }, { by: "sender" });
       return withEtag(env);
     }
+    // ORG-09 as the server (envelopes.rs transfer): another enabled member of this
+    // workspace becomes the sender; any state but purged; `envelope.transferred`.
+    if (sub === "transfer" && method === "POST") {
+      for (const k of Object.keys(body || {})) if (!["to_user", "to_workspace"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+      if (body?.to_workspace && body.to_workspace !== "acct-demo") fail(422, "CS-ORG-0009", "Envelopes stay in their workspace");
+      const to = db.users.find((u) => u.id === body?.to_user && !u.disabled);
+      if (!to) fail(422, "CS-ORG-0009", "Envelopes stay in their workspace");
+      const from = env.sender_user_id;
+      env.sender_user_id = to.id;
+      env.version++;
+      await audit(env, "envelope.transferred", { from_user: from, to_user: to.id }, { by: "user" });
+      return withEtag(env);
+    }
+    if (sub === "custom-fields" && method === "GET") return json(200, { items: [...(env.custom_fields || [])].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) });
+    if (sub === "custom-fields" && method === "PUT") {
+      const items = body?.items;
+      if (!Array.isArray(items) || items.length > 100) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/items", code: "CS-API-0001" }]);
+      const out = [];
+      items.forEach((f, i) => {
+        const name = typeof f?.name === "string" ? f.name.trim() : "";
+        // eslint-disable-next-line no-control-regex
+        if (!name || name.length > 100 || /[\x00-\x1f\x7f]/.test(name)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/items/${i}/name`, code: "CS-API-0001" }]);
+        // eslint-disable-next-line no-control-regex
+        if (typeof f.value !== "string" || f.value.length > 1000 || /[\x00-\x1f\x7f]/.test(f.value)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/items/${i}/value`, code: "CS-API-0001" }]);
+        if (out.some((x) => x.name === name)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/items/${i}/name`, code: "exists" }]);
+        out.push({ name, value: f.value });
+      });
+      env.custom_fields = out;
+      return json(200, { items: out });
+    }
     if (sub === "resend" && method === "POST") {
       if (!["sent", "delivered"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
       const ids = body?.recipient_ids || env.recipients.filter((r) => ["sent", "delivered"].includes(r.status)).map((r) => r.id);
       for (const rid of ids) await audit(env, "reminder.sent", { recipient_id: rid, channel: "email" }, { by: "sender" });
+      // As the engine (docs/24 §3): a resend clears the recipient's failures and lock.
+      for (const r of env.recipients) if (ids.includes(r.id)) {
+        r.auth_failures = 0;
+        if (r.token) delete db.attempts[r.token];
+      }
       return withEtag(env);
     }
     if (sub === "status" && method === "GET") return json(200, { id: env.id, status: env.status, version: env.version, recipients: env.recipients.map((r) => ({ id: r.id, status: r.status })) });
@@ -2881,6 +2931,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (n >= 5) fail(423, "CS-AUTH-0004", "Locked after too many attempts");
       if (body?.method !== "access_code" || body?.code !== rec.access_code) {
         db.attempts[token] = n + 1;
+        rec.auth_failures = (rec.auth_failures || 0) + 1;
         await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "access_code", attempt: n + 1 });
         fail(401, "CS-AUTH-0003", "Recipient authentication failed");
       }
@@ -2905,6 +2956,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const m = typeof rec.otp_open === "string" ? rec.otp_open : (body?.method || "email_otp");
       if (!rec.auth.includes(m) || !rec.otp_open || (body?.method && body.method !== m) || body?.code !== MOCK.emailCode) {
         db.attempts[token] = n + 1;
+        rec.auth_failures = (rec.auth_failures || 0) + 1;
         await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: m, attempt: n + 1 });
         return json(403, view(env, rec, token));
       }
@@ -2934,6 +2986,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       rec.sso_state = null;
       if (!open || body?.state !== open || body?.code !== MOCK.ssoCode) {
         db.attempts[token] = n + 1;
+        rec.auth_failures = (rec.auth_failures || 0) + 1;
         await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "sso", attempt: n + 1 });
         return json(403, view(env, rec, token));
       }

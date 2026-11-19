@@ -82,7 +82,8 @@ export function mount(view, ctx, _match, params) {
     ready: false,
     capped: false,
     order: "changed",
-    filter: { sender: "", range: "any", from: "", to: "" },
+    filter: { sender: "", range: "any", from: "", to: "", cfName: "", cfValue: "" },
+    cfIds: null, // ids the server's custom field search kept (VS-06), or null when none is asked
     selected: null,
     selecting: false,
     picked: new Set(),
@@ -137,7 +138,7 @@ export function mount(view, ctx, _match, params) {
   });
   displayMenu.querySelector("button").classList.add("os-agr__hbtn");
   const newBtn = h("a", { class: "os-btn os-btn--primary os-btn--sm os-agr__new", href: "#/prepare", attrs: { "data-testid": "agreements-new" } },
-    icon("plus", { size: 16 }), h("span", { class: "os-agr__btnlabel", text: t("agreements.new") }), h("kbd", { class: "os-kbd os-kbd--on-accent", attrs: { "aria-hidden": "true" }, text: "N" }));
+    icon("plus", { size: 16 }), h("span", { class: "os-agr__btnlabel", text: t("agreements.new") }), h("kbd", { class: "os-kbd os-kbd--on-accent", attrs: { "aria-hidden": "true" }, text: "N" })); // i18n-ignore: the shortcut key, hidden from assistive tech
   const head = h("header", { class: "os-agr__head" },
     h("h1", { class: "os-agr__title", text: t("agreements.title") }), tablist,
     h("div", { class: "os-agr__tools" }, searchBtn, filterBtn, displayMenu, newBtn));
@@ -153,11 +154,33 @@ export function mount(view, ctx, _match, params) {
   const custom = h("div", { class: "os-filters__custom", hidden: true },
     h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "flt-from" }, text: t("agreements.filter.from") }), fromIn),
     h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "flt-to" }, text: t("agreements.filter.to") }), toIn));
+  // A custom field (VS-06, FG-132): its name and text its value contains, searched on the
+  // server (`?custom_field=&custom_value=`), the ids it answers kept.
+  const cfNameIn = h("input", { id: "flt-cf-name", class: "os-input os-input--sm", maxLength: 100, autocomplete: "off", attrs: { "data-testid": "filter-cf-name" } });
+  const cfValueIn = h("input", { id: "flt-cf-value", class: "os-input os-input--sm", maxLength: 200, autocomplete: "off", attrs: { "data-testid": "filter-cf-value" } });
+  let cfSeq = 0;
+  async function applyCustom() {
+    f.cfName = cfNameIn.value.trim();
+    f.cfValue = cfValueIn.value.trim();
+    const my = ++cfSeq;
+    if (!f.cfName) { s.cfIds = null; renderList(); return; }
+    try {
+      const page = await ctx.api.listEnvelopes({ limit: 200, custom_field: f.cfName, custom_value: f.cfValue || undefined });
+      if (my !== cfSeq || gone) return;
+      s.cfIds = new Set((page?.items || []).map((x) => x.id));
+    } catch (err) { if (!ctx.failed(err)) toastError(err); return; }
+    renderList();
+  }
+  cfNameIn.addEventListener("change", applyCustom);
+  cfValueIn.addEventListener("change", applyCustom);
+  const cfBox = h("div", { class: "os-filters__custom" },
+    h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "flt-cf-name" }, text: t("agreements.filter.cf-name") }), cfNameIn),
+    h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: "flt-cf-value" }, text: t("agreements.filter.cf-value") }), cfValueIn));
   const clearBtn = button(t("agreements.filter.clear"), { icon: "x", size: "sm", variant: "ghost", onClick: () => clearFilters() });
   const filters = h("div", { id: "agr-filters", class: "os-agr__filters", attrs: { role: "group", "aria-label": t("agreements.filter.title") }, hidden: true },
-    senderSel.el, rangeSel.el, custom, clearBtn, button(t("agreements.filter.apply"), { size: "sm", variant: "subtle", onClick: () => toggleFilters(false) }));
+    senderSel.el, rangeSel.el, custom, cfBox, clearBtn, button(t("agreements.filter.apply"), { size: "sm", variant: "subtle", onClick: () => toggleFilters(false) }));
   filters.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); toggleFilters(false); filterBtn.focus(); } });
-  const filtering = () => !!f.sender || f.range !== "any";
+  const filtering = () => !!f.sender || f.range !== "any" || !!s.cfIds;
 
   const note = h("p", { class: "os-agr__note", attrs: { "data-testid": "agreements-sub", "aria-live": "polite" }, hidden: true });
   const bulk = h("div", { class: "os-bulk os-agr__bulk", attrs: { role: "region", "aria-label": t("agreements.bulk"), "data-testid": "bulk-bar" }, hidden: true });
@@ -227,8 +250,9 @@ export function mount(view, ctx, _match, params) {
     if (open) senderSel.select.focus();
   }
   function clearFilters() {
-    Object.assign(f, { sender: "", range: "any", from: "", to: "" });
+    Object.assign(f, { sender: "", range: "any", from: "", to: "", cfName: "", cfValue: "" });
     senderSel.select.value = ""; rangeSel.select.value = "any"; fromIn.value = ""; toIn.value = ""; custom.hidden = true;
+    cfNameIn.value = ""; cfValueIn.value = ""; s.cfIds = null; cfSeq++;
     renderList();
   }
   function toggleSelect(on = !s.selecting) {
@@ -337,6 +361,7 @@ export function mount(view, ctx, _match, params) {
     const me = ctx.session?.user_id;
     if (f.sender === "me" && r.sender_user_id !== me) return false;
     if (f.sender && f.sender !== "me" && r.sender_user_id !== f.sender) return false;
+    if (s.cfIds && !s.cfIds.has(r.id)) return false;
     return inRange(lastChange(r), f);
   }
   const groups = () => groupRows(s.rows.filter(passesFilter), s.view, s.mine, { order: ORDERS[s.order] });
@@ -359,7 +384,7 @@ export function mount(view, ctx, _match, params) {
     if (s.capped) parts.push(t("agreements.capped", { n: s.rows.length }));
     note.hidden = !parts.length;
     note.textContent = parts.join(" · ");
-    const n = (f.sender ? 1 : 0) + (f.range !== "any" ? 1 : 0);
+    const n = (f.sender ? 1 : 0) + (f.range !== "any" ? 1 : 0) + (s.cfIds ? 1 : 0);
     filterCount.hidden = !n;
     filterCount.textContent = n ? String(n) : "";
     clearBtn.hidden = !filtering();

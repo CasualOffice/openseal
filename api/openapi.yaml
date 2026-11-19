@@ -1009,6 +1009,21 @@ components:
         status: {$ref: '#/components/schemas/EnvelopeStatus'}
         version: {type: integer}
         recipients: {type: array, items: {type: object}}
+    CustomFields:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, value]
+            properties:
+              name: {type: string, minLength: 1, maxLength: 100}
+              value: {type: string, maxLength: 1000}
     TransferRequest:
       type: object
       required: [to_user]
@@ -3118,6 +3133,29 @@ paths:
           required: false
           description: "`me`: the Inbox (UXW-01)."
           schema: {type: string, enum: [me]}
+        - name: auth_failed
+          in: query
+          required: false
+          description: >-
+            `true`: the Authentication failed quick view (VS-06): envelopes in progress in
+            which a recipient is locked out after failed authentication, or failed it and has
+            not passed since. A resend clears it.
+          schema: {type: string, enum: ["true", "false"], default: "false"}
+        - name: expires_before
+          in: query
+          required: false
+          description: "RFC 3339: only envelopes expiring before it, the Expiring soon quick view (VS-06); one that never expires is outside it."
+          schema: {type: string, format: date-time}
+        - name: custom_field
+          in: query
+          required: false
+          description: "Only envelopes with a custom field of exactly this name (VS-06, FG-132)."
+          schema: {type: string, maxLength: 100}
+        - name: custom_value
+          in: query
+          required: false
+          description: "With `custom_field`: text that field's value contains, ignoring case; `%` and `_` match themselves."
+          schema: {type: string, maxLength: 200}
       responses:
         '200':
           description: OK
@@ -3325,6 +3363,50 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/custom-fields:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getEnvelopeCustomFields
+      summary: "The envelope's custom fields, by name (VS-06, FG-139)"
+      description: >-
+        Sender and integrator metadata, searchable with `GET /envelopes?custom_field=`. Not
+        part of the agreement: never shown to a recipient, never in the audit chain, the
+        sealed PDF or the certificate.
+      x-permission: "envelopes.read"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CustomFields'}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      operationId: setEnvelopeCustomFields
+      summary: "Replace the envelope's custom fields (VS-06)"
+      description: >-
+        At most 100; a name is 1 to 100 characters, a value at most 1,000, neither with
+        control characters; a repeated name is `422` with the member code `exists`. A
+        purged envelope is `409 CS-API-0009`. Nothing is recorded in the audit chain.
+      x-permission: "envelopes.write"
+      x-level: workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CustomFields'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CustomFields'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/transfer:
     parameters:

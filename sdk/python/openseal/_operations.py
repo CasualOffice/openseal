@@ -640,6 +640,16 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "getEnvelopeCustomFields": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/envelopes/{id}/custom-fields",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
     "getEnvelopeStatus": {
         "body": False,
         "body_required": False,
@@ -920,9 +930,13 @@ OPERATIONS = {
         "path": "/api/v1/envelopes",
         "path_params": [],
         "query": [
+            "auth_failed",
             "cursor",
+            "custom_field",
+            "custom_value",
             "date_field",
             "deleted",
+            "expires_before",
             "folder",
             "from",
             "limit",
@@ -1531,6 +1545,16 @@ OPERATIONS = {
         "body_required": False,
         "method": "POST",
         "path": "/api/v1/envelopes/{id}/send",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
+    "setEnvelopeCustomFields": {
+        "body": True,
+        "body_required": True,
+        "method": "PUT",
+        "path": "/api/v1/envelopes/{id}/custom-fields",
         "path_params": [
             "id"
         ],

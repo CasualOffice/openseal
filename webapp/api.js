@@ -386,12 +386,15 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// (which date `from`/`to` bound: `updated_at`, the default, `created_at`,
     /// `sent_at`, `completed_at`), `folder` (one of the user's folder ids) and
     /// `deleted: true` (the Deleted view).
-    listEnvelopes: ({ status, cursor, limit = 25, q, sort, order, sender, from, to, recipient, date_field, folder, deleted } = {}) => {
+    /// VS-06: `auth_failed: true` (the Authentication failed quick view), `expires_before`
+    /// (Date or RFC 3339), `custom_field` (a custom field's exact name) with
+    /// `custom_value` (text its value contains).
+    listEnvelopes: ({ status, cursor, limit = 25, q, sort, order, sender, from, to, recipient, date_field, folder, deleted, auth_failed, expires_before, custom_field, custom_value } = {}) => {
       const query = {
         status: Array.isArray(status) ? status.join(",") : status,
         cursor, limit, q, sort, order, sender, from: instantOf(from), to: instantOf(to),
       };
-      for (const [k, v] of Object.entries({ recipient, date_field, folder, deleted: deleted ? "true" : null })) {
+      for (const [k, v] of Object.entries({ recipient, date_field, folder, deleted: deleted ? "true" : null, auth_failed: auth_failed ? "true" : null, expires_before: instantOf(expires_before), custom_field, custom_value: custom_field ? custom_value : null })) {
         if (!blank(v)) query[k] = v;
       }
       return list(query);
@@ -409,6 +412,14 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       return { envelope: r.data, etag: r.etag || etagOf(r.data) };
     },
     createEnvelope: (body) => data(request("POST", "/api/v1/envelopes", { body })),
+    /// The envelope's custom fields `{items: [{name, value}]}` (VS-06, FG-139): sender
+    /// metadata, searchable, never part of the agreement.
+    customFields: (id) => data(request("GET", `${E(id)}/custom-fields`)),
+    /// Pass the envelope to another member of this workspace (ORG-09, ORG-41): answers
+    /// the envelope with its new `sender_user_id`; `envelopes.transfer` on the server.
+    transferEnvelope: (id, etag, toUser) => data(request("POST", `${E(id)}/transfer`, { body: { to_user: toUser }, ifMatch: etag })),
+    /// Replace them; answers them as stored.
+    setCustomFields: (id, items) => data(request("PUT", `${E(id)}/custom-fields`, { body: { items } })),
     patchEnvelope: (id, etag, body) => data(request("PATCH", E(id), { body, ifMatch: etag })),
     deleteEnvelope: (id, etag) => data(request("DELETE", E(id), { ifMatch: etag })),
     /// Bring a deleted envelope back to the lists (`NOT_ON_SERVER.restoreEnvelope`:

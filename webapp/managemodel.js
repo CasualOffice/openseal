@@ -19,12 +19,16 @@ export const SOON_DAYS = 7;
 /// one secondary, the rest in More): `{primary, secondary, more}` as action ids, `more`
 /// in groups with the destructive group last. `cert`: whether the certificate can be
 /// had (a completed one's; an ended one's once the server serves it, UXW-30).
-export function envelopeActions(status, { cert = false } = {}) {
-  if (status === "draft") return { primary: "edit", secondary: null, more: [["copy", "template"], ["delete"]] };
-  if (ACTIVE.has(status)) return { primary: "correct", secondary: "resend", more: [["download-current", "copy", "template", "history"], ["void"]] };
-  if (status === "completed") return { primary: "download", secondary: "certificate", more: [["copy", "template", "history"]] };
-  if (ENDED.has(status)) return { primary: "copy-resend", secondary: "download-ended", more: [[...(cert ? ["certificate"] : []), "template", "history"], ["delete"]] };
-  return { primary: null, secondary: null, more: [["copy", "template"]] };
+export function envelopeActions(status, { cert = false, transfer = false, fields = false } = {}) {
+  // VS-06: custom fields wherever the server keeps them; transfer for a member who
+  // may (the server checks `envelopes.transfer` on every request).
+  const own = [...(fields ? ["fields"] : []), ...(transfer ? ["transfer"] : [])];
+  const tail = own.length ? [own] : [];
+  if (status === "draft") return { primary: "edit", secondary: null, more: [["copy", "template"], ...tail, ["delete"]] };
+  if (ACTIVE.has(status)) return { primary: "correct", secondary: "resend", more: [["download-current", "copy", "template", "history"], ...tail, ["void"]] };
+  if (status === "completed") return { primary: "download", secondary: "certificate", more: [["copy", "template", "history"], ...tail] };
+  if (ENDED.has(status)) return { primary: "copy-resend", secondary: "download-ended", more: [[...(cert ? ["certificate"] : []), "template", "history"], ...tail, ["delete"]] };
+  return { primary: null, secondary: null, more: [["copy", "template"], ...tail] };
 }
 
 /// The Agreements row menu's groups for `status`, separated in the menu and with the
@@ -94,6 +98,8 @@ export const GROUPS = Object.freeze([
 /// sidebar, with `dot` its tone. `groups`: the groups it keeps (none = all);
 /// `statuses`: the envelope statuses it keeps (none = all); `soon`: only those expiring
 /// within `SOON_DAYS`. `inbox`: needs the server's Inbox (hidden where it has none).
+/// `authFailed`: only rows the server's Authentication failed view marked
+/// (`auth_failed`, set by agreementparts.fetchAgreements from `?auth_failed=true`, VS-06).
 /// The last four have no tab: older addresses and Home's "Declined or expired" open them.
 export const VIEWS = Object.freeze([
   { id: "all", tab: true },
@@ -102,6 +108,7 @@ export const VIEWS = Object.freeze([
   { id: "completed", tab: true, nav: true, dot: "done", groups: ["done"] },
   { id: "drafts", tab: true, nav: true, dot: "draft", groups: ["draft"] },
   { id: "expiring", tab: true, nav: true, dot: "draft", groups: ["you", "wait"], soon: true },
+  { id: "authfailed", nav: true, dot: "danger", groups: ["you", "wait"], authFailed: true },
   { id: "action", statuses: ["declined", "expired"] },
   { id: "declined", statuses: ["declined"] },
   { id: "voided", statuses: ["voided"] },
@@ -155,6 +162,7 @@ export function inView(row, id, mine = new Set(), now = Date.now()) {
   if (v.groups && !v.groups.includes(groupOf(row, mine))) return false;
   if (v.statuses && !v.statuses.includes(row.status)) return false;
   if (v.soon && !expiringSoon(row.expires_at, now)) return false;
+  if (v.authFailed && !row.auth_failed) return false;
   return true;
 }
 

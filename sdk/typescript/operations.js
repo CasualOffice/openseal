@@ -637,6 +637,16 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "getEnvelopeCustomFields": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/envelopes/{id}/custom-fields",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
   "getEnvelopeStatus": {
     "body": false,
     "body_required": false,
@@ -917,9 +927,13 @@ export const OPERATIONS = Object.freeze({
     "path": "/api/v1/envelopes",
     "path_params": [],
     "query": [
+      "auth_failed",
       "cursor",
+      "custom_field",
+      "custom_value",
       "date_field",
       "deleted",
+      "expires_before",
       "folder",
       "from",
       "limit",
@@ -1528,6 +1542,16 @@ export const OPERATIONS = Object.freeze({
     "body_required": false,
     "method": "POST",
     "path": "/api/v1/envelopes/{id}/send",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
+  "setEnvelopeCustomFields": {
+    "body": true,
+    "body_required": true,
+    "method": "PUT",
+    "path": "/api/v1/envelopes/{id}/custom-fields",
     "path_params": [
       "id"
     ],

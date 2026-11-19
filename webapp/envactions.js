@@ -469,6 +469,108 @@ export async function correctPanel(ctx, id) {
   return result === "corrected";
 }
 
+/// Edit an envelope's custom fields (VS-06, FG-139): name and value rows, added and
+/// removed, saved whole (`PUT /envelopes/{id}/custom-fields`). Sender metadata,
+/// searchable from Agreements; never shown to a recipient or put in the evidence.
+/// Resolves the fields as stored, or null when cancelled.
+export async function customFieldsPanel(ctx, id) {
+  const { items = [] } = await ctx.api.customFields(id);
+  const rows = [];
+  let list;
+  let err;
+  function addRow(f = { name: "", value: "" }) {
+    const p = `cf-${rows.length}-${Math.random().toString(36).slice(2, 6)}`;
+    const name = h("input", { id: `${p}-name`, class: "os-input", maxLength: 100, autocomplete: "off", value: f.name, attrs: { "data-testid": "cf-name" } });
+    const value = h("input", { id: `${p}-value`, class: "os-input", maxLength: 1000, autocomplete: "off", value: f.value, attrs: { "data-testid": "cf-value" } });
+    const li = h("li", { class: "os-correct__item" });
+    const x = { name, value, li };
+    const remove = button(t("envelope.cf-remove"), { icon: "x", size: "sm", variant: "ghost", attrs: { "aria-label": t("envelope.cf-remove-named", { name: f.name || t("envelope.cf-new") }) }, onClick: () => { li.remove(); rows.splice(rows.indexOf(x), 1); } });
+    li.append(
+      h("div", { class: "os-correct__pair" },
+        h("div", {}, h("label", { class: "os-label", attrs: { for: `${p}-name` }, text: t("envelope.cf-name") }), name),
+        h("div", {}, h("label", { class: "os-label", attrs: { for: `${p}-value` }, text: t("envelope.cf-value") }), value)),
+      h("div", { class: "os-correct__head" }, h("span", { class: "os-spacer" }), remove));
+    rows.push(x);
+    list.append(li);
+    return x;
+  }
+  return openPanel({
+    id: "custom-fields",
+    title: t("envelope.cf-title"),
+    width: 30,
+    build(body) {
+      body.append(h("p", { class: "os-muted", text: t("envelope.cf-lede") }));
+      list = h("ol", { class: "os-correct" });
+      body.append(list);
+      for (const f of items) addRow(f);
+      body.append(h("div", { class: "os-correct__add" }, button(t("envelope.cf-add"), { icon: "plus", size: "sm", attrs: { "data-testid": "cf-add" }, onClick: () => addRow().name.focus() })));
+      err = h("p", { class: "os-field-error", attrs: { "aria-live": "polite", "data-testid": "cf-error" } });
+      body.append(err);
+    },
+    actions: [
+      { label: t("action.cancel"), value: null },
+      {
+        label: t("envelope.cf-save"), variant: "primary", attrs: { "data-testid": "cf-save" },
+        onClick: async () => {
+          err.textContent = "";
+          const out = [];
+          for (const x of rows) {
+            x.name.removeAttribute("aria-invalid");
+            const name = x.name.value.trim();
+            if (!name && !x.value.value) continue;
+            if (!name || out.some((f) => f.name === name)) {
+              x.name.setAttribute("aria-invalid", "true");
+              err.textContent = t(name ? "envelope.cf-repeated" : "envelope.cf-need-name");
+              x.name.focus();
+              return undefined;
+            }
+            out.push({ name, value: x.value.value });
+          }
+          const saved = await ctx.api.setCustomFields(id, out);
+          toast(t("envelope.cf-saved"), "success");
+          return saved.items || out;
+        },
+      },
+    ],
+  });
+}
+
+/// Transfer an envelope to another member of this workspace (ORG-41, VS-06): a panel
+/// listing the workspace's enabled members other than the current owner; the server
+/// records `envelope.transferred` (`POST /envelopes/{id}/transfer`, `envelopes.transfer`).
+/// Resolves the new owner's id, or null.
+export async function transferPanel(ctx, id) {
+  const [{ envelope: e, etag }, users] = await Promise.all([ctx.api.getEnvelope(id), ctx.api.users.list()]);
+  const members = (users.items || []).filter((u) => !u.disabled && !u.disabled_at && u.id !== e.sender_user_id);
+  let pick;
+  let err;
+  return openPanel({
+    id: "transfer",
+    title: t("envelope.transfer-title"),
+    width: 28,
+    build(body) {
+      body.append(h("p", { class: "os-muted", text: t("envelope.transfer-lede") }));
+      if (!members.length) { body.append(h("p", { attrs: { "data-testid": "transfer-none" }, text: t("envelope.transfer-none") })); return; }
+      pick = h("select", { id: "tr-user", class: "os-input os-select", attrs: { "data-testid": "transfer-user" } },
+        members.map((u) => h("option", { value: u.id, text: u.name ? `${u.name} (${u.email})` : u.email })));
+      err = h("p", { class: "os-field-error", attrs: { "aria-live": "polite" } });
+      body.append(h("label", { class: "os-label", attrs: { for: "tr-user" }, text: t("envelope.transfer-to") }), pick, err);
+    },
+    actions: [
+      { label: t("action.cancel"), value: null },
+      ...(members.length ? [{
+        label: t("envelope.transfer-save"), variant: "primary", attrs: { "data-testid": "transfer-save" },
+        onClick: async () => {
+          await ctx.api.transferEnvelope(id, etag, pick.value);
+          const u = members.find((m) => m.id === pick.value);
+          toast(t("envelope.transferred", { name: u?.name || u?.email || "" }), "success");
+          return pick.value;
+        },
+      }] : []),
+    ],
+  });
+}
+
 /// The icon for a status line, for lists.
 export function lineIcon(status) {
   return icon({ draft: "file-pen-line", sent: "hourglass", delivered: "hourglass", completed: "circle-check", declined: "circle-x", voided: "ban", expired: "clock" }[status] || "file-text", { size: 16 });
