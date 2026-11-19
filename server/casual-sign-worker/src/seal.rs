@@ -515,11 +515,16 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
                     image_hash,
                     ..
                 } => {
-                    if let Some(art) = input.captures.get(&image_hash.hex()) {
-                        let which = match mark {
-                            casual_sign_audit::MarkKind::Initials => "initials",
-                            _ => "signature",
-                        };
+                    // The certificate shows the signature and initials adopted; a
+                    // stamp or a drawing is a field's value, never the signer's mark
+                    // (VS-04A).
+                    let which = match mark {
+                        casual_sign_audit::MarkKind::Initials => Some("initials"),
+                        casual_sign_audit::MarkKind::Signature => Some("signature"),
+                        _ => None,
+                    };
+                    if let (Some(which), Some(art)) = (which, input.captures.get(&image_hash.hex()))
+                    {
                         marks.insert(
                             which,
                             Mark {

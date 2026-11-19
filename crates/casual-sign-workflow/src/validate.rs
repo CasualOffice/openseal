@@ -123,6 +123,19 @@ pub(crate) fn violations(
             }
             Some(_) => {}
         }
+        // VS-04D: a shared field's other recipients each sign and may see its document.
+        let mut seen = std::collections::BTreeSet::new();
+        if f.shared_with.iter().any(|q| {
+            !seen.insert(q)
+                || q == rid
+                || !s.recipient(q).is_some_and(|r| {
+                    r.spec.rtype.signs()
+                        && r.spec.sees(&f.document_id)
+                        && field_allowed(r.spec.rtype, f.field_type)
+                })
+        }) {
+            push(Some(&f.id), Problem::SharedWithInvalid);
+        }
         match s.document(&f.document_id) {
             None => push(Some(&f.id), Problem::FieldOnUnknownDocument),
             Some(d) if f.placement.page() > d.spec.pages => {

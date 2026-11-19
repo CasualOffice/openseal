@@ -11,6 +11,7 @@
 
 import { makePdf, countPages } from "./mockpdf.js";
 import { checkText } from "./signfields.js";
+import { rulesFor, finishProblems } from "./fieldrules.js";
 import { checkList } from "./bulkmodel.js";
 import { mergeTemplates, roleKey } from "./templatemodel.js";
 
@@ -48,7 +49,9 @@ const ACTING = (r) => r.type !== "cc";
 const SIGNS = new Set(["signer", "in_person_signer", "editor", "witness", "seal", "notary"]);
 /// Who names later recipients in the ceremony (the engine's `edits_recipients`).
 const NAMES_LATER = new Set(["editor", "intermediary", "agent"]);
-const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
+const INPUT_TYPES = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment",
+  // VS-04A: every engine kind that takes input but payment.
+  "date", "email_address", "phone", "ssn", "zip", "multi_select", "stamp", "drawing"]);
 const RECIPIENT_TYPES = ["signer", "in_person_signer", "approver", "viewer", "cc", "editor", "intermediary", "agent", "witness", "seal", "notary"];
 const FIELD_TYPES = new Set([
   "signature", "initials", "stamp", "date_signed", "name", "first_name", "last_name", "email", "company", "title",
@@ -344,6 +347,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (!env.documents.some((d) => d.id === did)) fail(422, "CS-WF-0008", "Unknown document", [{ pointer: "/document", code: "unknown" }]);
     const field = { id: f.id || uid(), document_id: did, recipient_id: rid, type: fieldType(f.type), placement: placementOf(f) };
     setMembers(field, f);
+    // VS-04D, as the server: shared with other recipients, named as the owner is.
+    const shared = (Array.isArray(f.shared_with) ? f.shared_with : []).map((x) => refs[x] || x);
+    if (shared.length) field.shared_with = shared;
     env.fields.push(field);
     return field;
   }
@@ -389,11 +395,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     return order;
   }
+  /// Whether recipient `rid` fills field `f`: theirs, or shared with them (VS-04D).
+  const holds = (f, rid) => f.recipient_id === rid || (f.shared_with || []).includes(rid);
   const viewedAll = (env, rec) => env.documents.every((d) => (rec.viewed_to_end || []).includes(d.id));
   /// Required input fields of this recipient left empty refuse finishing or approving.
   function checkRequired(env, rec) {
-    const missing = env.fields.filter((f) => f.recipient_id === rec.id && f.required && INPUT_TYPES.has(f.type) && (f.value == null || f.value.text === "" || f.value.choice === "" || f.value.checked === false));
+    // VS-04C: a hidden field is never required; a linked field's mirrored value counts.
+    const rules = rulesFor(env.fields, rec.id);
+    const has = (f) => { const v = f.value || rules.values[f.id]; return !(v == null || v.text === "" || v.choice === "" || v.checked === false || (Array.isArray(v.choices) && !v.choices.length)); };
+    const missing = env.fields.filter((f) => f.recipient_id === rec.id && f.required && INPUT_TYPES.has(f.type) && !rules.hidden.includes(f.id) && !has(f));
     if (missing.length) fail(422, "CS-WF-0004", "Required fields are empty", missing.map((f) => ({ pointer: `/fields/${f.id}`, code: "required" })));
+    const problems = finishProblems(env.fields, rec.id);
+    if (problems.length) fail(422, "CS-FLD-0001", "Field rules refused the value", problems);
   }
   /// A recipient finished their part: routing moves on, and when nobody is left the
   /// envelope completes and is "sealed".
@@ -475,7 +488,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return {
       envelope: { id: env.id, status: env.status, subject: env.subject, message: env.message, signing_options: env.signing_options, documents: shown ? env.documents : [], expires_at: env.expires_at },
       recipient: publicRecipient(rec),
-      fields: shown ? env.fields.filter((f) => f.recipient_id === rec.id) : [],
+      fields: shown ? env.fields.filter((f) => holds(f, rec.id)) : [],
+      // VS-04C, as the server: the rules over every field, named for this recipient's.
+      rules: shown ? rulesFor(env.fields, rec.id) : null,
       capture_location: !!env.signing_options?.capture_location,
       consent_required: { version: disclosure().version, sha256: disclosure().sha256, url: `/s/${encodeURIComponent(token)}/disclosure` },
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
@@ -2043,6 +2058,22 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
             { document_id: d.id, type: "name", page, x: "72", y: "730", width: "180", height: "22", source: "label", cue: "Print name", confidence: 61 },
           );
         }
+        // VS-04E, VS-04F, as the server: the document's own form fields (source
+        // `acroform`) and its text tags (source `tag`), read from what mockpdf.js
+        // writes (not a parser: the real server reads them with the engine).
+        const text = new TextDecoder("latin1").decode(unb64(db.blobs[d.id]));
+        const kind = { Tx: "text", Btn: "checkbox", Sig: "signature" };
+        const pageAt = (at) => Math.max(1, (text.slice(0, at).match(/\/Type \/Page\b(?!s)/g) || []).length + 1);
+        for (const m of text.matchAll(/\/Subtype \/Widget \/FT \/(Tx|Btn|Sig) \/T \(([^)]*)\) \/Rect \[([\d.]+) ([\d.]+) ([\d.]+) ([\d.]+)\]/g)) {
+          const [x1, y1, x2, y2] = m.slice(3, 7).map(Number);
+          items.push({ document_id: d.id, type: kind[m[1]], page: pageAt(m.index), x: String(x1), y: String(792 - y2), width: String(x2 - x1), height: String(y2 - y1), source: "acroform", cue: m[2], confidence: 100 });
+        }
+        let page = 0;
+        for (const m of text.matchAll(/\/Type \/Page\b(?!s)|BT \/F\d+ [\d.]+ Tf ([\d.]+) ([\d.]+) Td \(\{\{([a-z_]+):([A-Za-z0-9_-]+)(?::(req|required))?(?::([^:}]+))?\}\}\) Tj ET/g)) {
+          if (!m[1]) { page++; continue; }
+          const type = { s: "signature", i: "initials", t: "text", d: "date", c: "checkbox", a: "attachment" }[m[3]] || m[3];
+          items.push({ document_id: d.id, type, page: Math.max(1, page), x: m[1], y: String(792 - Number(m[2]) - 11), width: "160", height: "22", source: "tag", cue: m[6] || m[4], confidence: 100 });
+        }
         return json(200, { items, truncated: false });
       }
       if (subSub === "content" && method === "GET") {
@@ -2881,7 +2912,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       }
     }
     if (sub === "adopt" && method === "POST") {
-      if (!["signature", "initials"].includes(body?.mark) || !["draw", "type", "upload"].includes(body?.method)) fail(400, "CS-API-0001", "Malformed request");
+      if (!["signature", "initials", "stamp", "drawing"].includes(body?.mark) || !["draw", "type", "upload"].includes(body?.method)) fail(400, "CS-API-0001", "Malformed request");
       let bytes;
       try { bytes = unb64(body.image_base64 || ""); } catch { fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/image_base64", code: "base64" }]); }
       const isPng = bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50;
@@ -2911,12 +2942,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "fields" && method === "PUT") {
       const f = env.fields.find((x) => x.id === parts[4]);
       if (!f) fail(404, "CS-API-0002", "Not found");
-      if (f.recipient_id !== rec.id || !INPUT_TYPES.has(f.type) || f.locked || f.read_only) fail(409, "CS-WF-0016", "Field not editable by this recipient");
+      if (!holds(f, rec.id) || !INPUT_TYPES.has(f.type) || f.locked || f.read_only) fail(409, "CS-WF-0016", "Field not editable by this recipient");
       const v = body?.value;
       const bad = (code) => fail(422, "CS-WF-0015", "Field value refused", [{ pointer: "/value", code }]);
-      if (f.type === "signature" || f.type === "initials") {
+      if (f.type === "signature" || f.type === "initials" || f.type === "stamp" || f.type === "drawing") {
         const a = v && db.adoptions[v.signature];
         if (!a || a.rid !== rec.id) fail(409, "CS-WF-0013", "Signature or initials not adopted before use");
+        // VS-04A, as the server: a stamp or drawing capture fills only its own kind.
+        const kinds = f.type === "stamp" || f.type === "drawing" ? [f.type] : ["signature", "initials"];
+        if (!kinds.includes(a.mark)) bad("invalid");
+      } else if (f.type === "multi_select") {
+        if (!v || !Array.isArray(v.choices)) bad("wrong_kind");
+        if (!(f.options || []).length || v.choices.some((c) => !(f.options || []).includes(c))) bad("not_an_option");
       } else if (f.type === "checkbox") {
         if (!v || typeof v.checked !== "boolean") fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/value", code: "type" }]);
       } else if (f.type === "radio_group" || f.type === "dropdown") {
@@ -2940,6 +2977,16 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (rec.type === "viewer" && !viewedAll(env, rec)) fail(409, "CS-WF-0014", "Viewer has not viewed every document to the end");
       checkRequired(env, rec);
       for (const f of env.fields) if (f.recipient_id === rec.id && f.type === "date_signed") f.value = { text: iso().slice(0, 10) };
+      // As the engine at finish: the envelope's id, computed formulas, mirrored values
+      // and hidden values dropped (VS-04A, VS-04C).
+      const rules = rulesFor(env.fields, rec.id);
+      for (const f of env.fields) {
+        if (f.recipient_id !== rec.id) continue;
+        if (f.type === "envelope_id") f.value = { text: env.id };
+        else if (f.type === "formula" && rules.computed[f.id]?.ok) f.value = { text: rules.computed[f.id].ok };
+        else if (rules.hidden.includes(f.id)) delete f.value;
+        else if (!f.value && rules.values[f.id]) f.value = rules.values[f.id];
+      }
       await complete(env, rec, loc, rec.type === "viewer" ? "viewed" : "signed");
       return json(200, view(env, rec, token));
     }

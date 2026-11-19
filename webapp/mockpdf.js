@@ -8,7 +8,7 @@ function esc(s) {
   return String(s).replace(/[—–]/g, "-").replace(/[^\x20-\x7e]/g, "?").replace(/[\\()]/g, "\\$&");
 }
 
-/// A PDF with one page per entry: `{title, lines, width = 612, height = 792}`.
+/// A PDF with one page per entry: `{title, lines, width = 612, height = 792, form}`.
 /// Text starts at the top-left margin; a signature line is drawn near the bottom.
 export function makePdf(pages) {
   const objs = [];
@@ -18,6 +18,7 @@ export function makePdf(pages) {
   const font = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   const bold = add("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
   const kids = [];
+  const fields = [];
   for (const p of pages) {
     const w = p.width || 612;
     const hgt = p.height || 792;
@@ -30,9 +31,16 @@ export function makePdf(pages) {
     ops += `0.6 G 1 w 72 150 m 300 150 l S 340 150 m 520 150 l S\n`;
     ops += `BT /F1 9 Tf 72 136 Td (Signature) Tj ET BT /F1 9 Tf 340 136 Td (Date) Tj ET\n`;
     const content = add(`<< /Length ${enc.encode(ops).length} >>\nstream\n${ops}endstream`);
-    kids.push(add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${w} ${hgt}] /Resources << /Font << /F1 ${font} 0 R /F2 ${bold} 0 R >> >> /Contents ${content} 0 R >>`));
+    // VS-04F: the page's own form fields, `{name, type: text | checkbox | signature,
+    // rect: [x1, y1, x2, y2]}` in PDF user space, as AcroForm widgets (no /P: viewers
+    // and the engine find the page through /Annots).
+    const widgets = (p.form || []).map((f) => add(`<< /Type /Annot /Subtype /Widget /FT /${{ checkbox: "Btn", signature: "Sig" }[f.type] || "Tx"} /T (${esc(f.name)}) /Rect [${f.rect.join(" ")}] /F 4 >>`));
+    fields.push(...widgets);
+    const annots = widgets.length ? ` /Annots [${widgets.map((x) => `${x} 0 R`).join(" ")}]` : "";
+    kids.push(add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${w} ${hgt}] /Resources << /Font << /F1 ${font} 0 R /F2 ${bold} 0 R >> >> /Contents ${content} 0 R${annots} >>`));
   }
-  objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesObj} 0 R >>`;
+  const acro = fields.length ? ` /AcroForm << /Fields [${fields.map((x) => `${x} 0 R`).join(" ")}] >>` : "";
+  objs[catalog - 1] = `<< /Type /Catalog /Pages ${pagesObj} 0 R${acro} >>`;
   objs[pagesObj - 1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(" ")}] /Count ${kids.length} >>`;
 
   let out = "%PDF-1.7\n%\xe2\xe3\xcf\xd3\n";

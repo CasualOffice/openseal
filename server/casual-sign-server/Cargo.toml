@@ -19,6 +19,9 @@ casual-sign-model = { path = "../../crates/casual-sign-model" }
 # Admission and normalization of uploads (docs/30 §2, §3).
 casual-sign-sdk = { path = "../../crates/casual-sign-sdk" }
 casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
+# The signing view's rules (VS-04C): the same `evaluate_envelope` the engine runs at
+# finish, so the page shows what the seal will do.
+casual-sign-fields = { path = "../../crates/casual-sign-fields" }
 casual-sign-store = { path = "../casual-sign-store" }
 # The organization policy: validation, locked and tighten-only keys, the effective
 # policy of a workspace (ORG-08, docs/23 §3). Pure, in-tree.
@@ -71,7 +74,6 @@ sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio
 serde_norway = "0.9.42"
 # Reading a served PDF's text in the preview tests (WEB-06).
 casual-sign-pdf = { path = "../../crates/casual-sign-pdf" }
-casual-sign-fields = { path = "../../crates/casual-sign-fields" }
 
 [lints]
 workspace = true

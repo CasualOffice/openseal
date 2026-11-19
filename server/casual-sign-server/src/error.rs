@@ -89,6 +89,15 @@ impl ApiError {
         Self::new(StatusCode::BAD_REQUEST, "CS-API-0001").detail(detail)
     }
 
+    /// An anchor or a text tag that cannot become a placed field (`VS-04E`): `422` with
+    /// the placing error's own code (`CS-FLD-0010`, `CS-FLD-0011`, …) at `pointer`.
+    pub fn placing(pointer: &str, code: &'static str) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, code).fields(vec![FieldProblem {
+            pointer: pointer.into(),
+            code,
+        }])
+    }
+
     /// `CS-API-0001` 422: the request was read and its content is invalid.
     pub fn invalid(pointer: &str) -> Self {
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-API-0001").fields(vec![FieldProblem {
@@ -536,6 +545,18 @@ impl From<WorkflowError> for ApiError {
             _ => StatusCode::CONFLICT,
         };
         let mut out = Self::new(status, code).detail(e.to_string());
+        // VS-04C: each field the rules refused, by id and code, so the signing page
+        // shows the problem on the field (a group's rule, a required field a condition
+        // now shows). Ids only, never a value.
+        if let WorkflowError::Fields { issues } = &e {
+            out.errors = issues
+                .iter()
+                .map(|i| FieldProblem {
+                    pointer: format!("/fields/{}", i.field_id),
+                    code: i.code(),
+                })
+                .collect();
+        }
         if let WorkflowError::Invalid { violations } = &e {
             out.errors = violations
                 .iter()

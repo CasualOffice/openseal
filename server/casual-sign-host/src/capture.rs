@@ -10,8 +10,11 @@
 //! ```json
 //! {"kind":"drawn","strokes":[[[0.0,10.5],[3.2,11.0]]],"color":[0,0,128]}
 //! {"kind":"typed","text":"Ada Lovelace","style":0}
-//! {"kind":"image","image":"<64 hex: the PNG or JPEG's blob key>"}
+//! {"kind":"image","image":"<64 hex: the PNG or JPEG's blob key>","mark":"stamp"}
 //! ```
+//!
+//! `mark` (since `VS-04H`) names what the image was adopted as, so the same image
+//! adopted as a signature and as a stamp is two captures.
 //!
 //! Captures are hostile input: bounded in bytes, strokes and points, and every number
 //! must be finite. The flattener applies its own image and point limits (docs/21).
@@ -69,6 +72,11 @@ enum Doc {
     },
     Image {
         image: String,
+        /// What the image was adopted as (`VS-04H`): one image adopted as a signature
+        /// and as a stamp is then two captures, each its own mark. Absent in captures
+        /// made before.
+        #[serde(default)]
+        mark: Option<String>,
     },
 }
 
@@ -122,8 +130,11 @@ pub fn parse(bytes: &[u8]) -> Result<Parsed> {
             }
             Ok(Parsed::Art(Art::Typed { text, style }))
         }
-        Doc::Image { image } => {
-            if image.len() != 64
+        Doc::Image { image, mark } => {
+            if mark
+                .as_deref()
+                .is_some_and(|m| !matches!(m, "signature" | "initials" | "stamp" | "drawing"))
+                || image.len() != 64
                 || !image
                     .bytes()
                     .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
@@ -182,7 +193,17 @@ mod tests {
         let key = "a".repeat(64);
         assert_eq!(
             parse(format!(r#"{{"kind":"image","image":"{key}"}}"#).as_bytes()).unwrap(),
-            Parsed::Image(key)
+            Parsed::Image(key.clone())
+        );
+        // VS-04H: an image capture may say what it was adopted as; only a known mark.
+        assert_eq!(
+            parse(format!(r#"{{"kind":"image","image":"{key}","mark":"stamp"}}"#).as_bytes())
+                .unwrap(),
+            Parsed::Image(key.clone())
+        );
+        assert!(
+            parse(format!(r#"{{"kind":"image","image":"{key}","mark":"seal"}}"#).as_bytes())
+                .is_err()
         );
         for bad in [
             &br#"{"kind":"drawn","strokes":[]}"#[..],

@@ -204,6 +204,10 @@ pub enum MarkKind {
     Signature,
     /// Initials.
     Initials,
+    /// A stamp (a company or notary seal image), placed only in stamp fields (`VS-04A`).
+    Stamp,
+    /// A free-hand drawing, placed only in drawing fields (`VS-04A`).
+    Drawing,
 }
 
 /// One document's hash in an event.
@@ -441,12 +445,13 @@ pub enum EventData {
         /// Pages seen, 1-based.
         pages_seen: Vec<u32>,
     },
-    /// The recipient adopted a signature or initials (intent, ESIGN §7006(5)).
+    /// The recipient adopted a signature, initials, a stamp or a drawing (intent, ESIGN
+    /// §7006(5)).
     #[serde(rename = "recipient.signature_adopted")]
     RecipientSignatureAdopted {
         /// The recipient.
         recipient_id: Id,
-        /// Signature or initials.
+        /// Signature, initials, stamp or drawing.
         mark: MarkKind,
         /// How it was made.
         method: AdoptionMethod,

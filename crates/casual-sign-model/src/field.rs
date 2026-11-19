@@ -888,6 +888,13 @@ pub struct Field {
     /// Text shown in an empty field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub placeholder: Option<Text>,
+    /// Other recipients who may also fill this field (DocuSign's shared tabs, `FG-074`):
+    /// each change is that recipient's own `recipient.field_completed`, the last value
+    /// is kept, and `required` binds the field's own recipient only. Checked at send
+    /// (`CS-WF-0004`): each one a recipient of the envelope who signs, not the field's
+    /// own, none twice.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared_with: Vec<Id>,
 }
 
 impl Field {
@@ -915,6 +922,7 @@ impl Field {
             allow_custom: false,
             tooltip: None,
             placeholder: None,
+            shared_with: Vec::new(),
         }
     }
 }

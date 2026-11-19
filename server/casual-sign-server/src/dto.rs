@@ -209,6 +209,26 @@ pub(crate) fn field_from(
                     .ok_or_else(|| ApiError::invalid(&format!("{at}/{k}")))?;
                 out.insert("recipient_id".into(), Value::String(r.to_string()));
             }
+            // VS-04D: the other recipients a field is shared with, each named as
+            // `recipient` is (an id, or a `ref` in the same create).
+            "shared_with" => {
+                // At most one per recipient an envelope may have (docs/21).
+                let Value::Array(items) = v else {
+                    return Err(ApiError::invalid(&format!("{at}/{k}")));
+                };
+                if items.len() > casual_sign_workflow::limits::MAX_RECIPIENTS {
+                    return Err(ApiError::invalid(&format!("{at}/{k}")));
+                }
+                let mut ids = Vec::with_capacity(items.len());
+                for (i, x) in items.iter().enumerate() {
+                    let r = x
+                        .as_str()
+                        .and_then(&recipient)
+                        .ok_or_else(|| ApiError::invalid(&format!("{at}/{k}/{i}")))?;
+                    ids.push(Value::String(r.to_string()));
+                }
+                out.insert("shared_with".into(), Value::Array(ids));
+            }
             "document" | "document_id" => {
                 let d = document(v).ok_or_else(|| ApiError::invalid(&format!("{at}/{k}")))?;
                 out.insert("document_id".into(), Value::String(d.to_string()));
@@ -259,6 +279,10 @@ pub(crate) struct EnvelopeCreate {
     pub signing_options: Option<SigningOptions>,
     #[serde(default)]
     pub seal_profile: Option<SealProfile>,
+    /// Place a field at each `{{type:recipient…}}` tag in the documents (`VS-04E`,
+    /// docs/40 §Text tags); the tag's recipient is a recipient's `ref`.
+    #[serde(default)]
+    pub text_tags: bool,
 }
 
 /// Envelope settings a `PATCH` may change while it is a draft.

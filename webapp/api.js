@@ -76,6 +76,8 @@ export const FIELD_TYPES = Object.freeze([
 export const FIELD_TYPES_READY = Object.freeze([
   "signature", "initials", "date_signed", "name", "first_name", "last_name", "email", "company", "title", "text", "number", "checkbox",
   "radio_group", "dropdown", "attachment", "note",
+  // VS-04A: every other kind but payment (slice 13).
+  "date", "email_address", "phone", "ssn", "zip", "multi_select", "formula", "stamp", "drawing", "envelope_id", "hyperlink", "approve", "decline",
 ]);
 
 /// The members of a field the API takes besides its place and owner, as the engine's
@@ -89,7 +91,7 @@ export const FIELD_TYPES_READY = Object.freeze([
 /// multi-selects, `allow_custom` for a dropdown.
 export const FIELD_MEMBERS = Object.freeze([
   "required", "read_only", "locked", "label", "value", "default", "validation", "format", "group", "conditional",
-  "formula", "options", "allow_custom", "tooltip", "placeholder",
+  "formula", "options", "allow_custom", "tooltip", "placeholder", "shared_with",
 ]);
 const PLACE = ["page", "x", "y", "width", "height"];
 

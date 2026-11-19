@@ -147,6 +147,9 @@ one recorded in `envelope.completed`.
 | `formula` | Expression over other labels ([`-fields` formula grammar](30-PDF-PIPELINE.md#formulas)) |
 | `options`, `allow_custom` | Dropdown, radio and multi-select options (500 at most, no repeats); `allow_custom` lets a signer type a value not in a dropdown's list (it does not apply to a multi-select) |
 | `tooltip`, `placeholder` | |
+| `shared_with` | Other recipients who may also fill the field (DocuSign's shared tabs, `VS-04D`), at most 100: each a recipient who signs, sees the field's document and may hold its type, not the field's own, none twice (`CS-WF-0004` at send). Each change is that recipient's `recipient.field_completed`; the last value is sealed; `required` binds the field's own recipient only. Kept in the workflow state's JSON; no column (no migration). Not on template fields |
+
+As built (`VS-04E`): the API takes `anchor` on a field in create and `POST /fields` with the names `text`, `offset_x`, `offset_y`, `units`, `ignore_if_absent`, `case_sensitive`, `whole_word`, `matching` (`first` or `all`, the default), resolved at once against the delivered document into one placed field per match; the stored field has a placement and no anchor.
 
 | Type | Notes |
 | --- | --- |

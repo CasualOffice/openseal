@@ -32,37 +32,56 @@ export const DEFAULT_SIZE = {
   dropdown: { width: 140, height: 22 },
   attachment: { width: 140, height: 30 },
   note: { width: 180, height: 44 },
+  // VS-04A: the rest of the engine's kinds.
+  date: { width: 110, height: 22 },
+  email_address: { width: 190, height: 22 },
+  phone: { width: 140, height: 22 },
+  ssn: { width: 110, height: 22 },
+  zip: { width: 90, height: 22 },
+  multi_select: { width: 160, height: 22 },
+  formula: { width: 110, height: 22 },
+  stamp: { width: 120, height: 60 },
+  drawing: { width: 180, height: 90 },
+  envelope_id: { width: 260, height: 18 },
+  hyperlink: { width: 160, height: 22 },
+  approve: { width: 100, height: 30 },
+  decline: { width: 100, height: 30 },
 };
 
 /// The field types the editor places, in palette order (wire names of casual-sign-model
 /// `FieldType`): every type the ceremony fills or shows and the flattener draws
 /// (api.js `FIELD_TYPES_READY`, UX-05).
-export const FIELD_TYPES = ["signature", "initials", "date_signed", "name", "first_name", "last_name", "email", "company", "title", "text", "number", "checkbox", "radio_group", "dropdown", "attachment", "note"];
+export const FIELD_TYPES = ["signature", "initials", "date_signed", "name", "first_name", "last_name", "email", "company", "title", "text", "number", "checkbox", "radio_group", "dropdown", "attachment", "note",
+  // VS-04A: every other engine kind but payment (slice 13).
+  "date", "email_address", "phone", "ssn", "zip", "multi_select", "formula", "stamp", "drawing", "envelope_id", "hyperlink", "approve", "decline"];
 
 /// The palette's groups (UX-05, as DocuSign's "Standard fields" and SignNow's tool
 /// groups): signing, what the recipient's details fill, and what they type or choose.
 export const FIELD_GROUPS = [
   ["sign", ["signature", "initials", "date_signed"]],
   ["auto", ["name", "first_name", "last_name", "email", "company", "title"]],
-  ["input", ["text", "number", "checkbox", "radio_group", "dropdown", "attachment", "note"]],
+  ["input", ["text", "number", "checkbox", "radio_group", "dropdown", "attachment", "note",
+    "date", "email_address", "phone", "ssn", "zip", "multi_select", "formula", "stamp", "drawing", "envelope_id", "hyperlink", "approve", "decline"]],
 ];
 
 /// Types the recipient fills (signfields.js `FILLABLE`); the others are stamped by the
 /// server, filled from the recipient, or (a note) shown as the sender wrote it.
-const FILLED = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment"]);
+const FILLED = new Set(["signature", "initials", "text", "checkbox", "company", "title", "number", "radio_group", "dropdown", "attachment",
+  "date", "email_address", "phone", "ssn", "zip", "multi_select", "stamp", "drawing"]);
 export function takesInput(type) {
   return FILLED.has(type);
 }
 
 /// Types a new field is required by default (UX-05: DocuSign and SignNow make text and
 /// choices required; a checkbox or an attachment is a choice to make optional or not).
-const REQUIRED_BY_DEFAULT = new Set(["signature", "initials", "text", "company", "title", "number", "radio_group", "dropdown"]);
+const REQUIRED_BY_DEFAULT = new Set(["signature", "initials", "text", "company", "title", "number", "radio_group", "dropdown",
+  "date", "email_address", "phone", "ssn", "zip", "multi_select", "stamp"]);
 export const requiredByDefault = (type) => REQUIRED_BY_DEFAULT.has(type);
 
 /// Types typed as text, which take a sender's value, formatting and validation.
-export const TYPED = new Set(["text", "company", "title", "number"]);
-/// Types that choose from the sender's options.
-export const CHOICE = new Set(["radio_group", "dropdown"]);
+export const TYPED = new Set(["text", "company", "title", "number", "date", "email_address", "phone", "ssn", "zip"]);
+/// Types that choose from the sender's options (a multi-select chooses several; VS-04A).
+export const CHOICE = new Set(["radio_group", "dropdown", "multi_select"]);
 
 /// The engine's `validation` for a preset and its settings (UX-05), or null for none.
 /// `kind`: "" | email | phone | zip | ssn | number | length | regex; `opts`:

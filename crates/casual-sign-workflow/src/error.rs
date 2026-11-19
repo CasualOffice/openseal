@@ -101,6 +101,10 @@ pub enum Problem {
     /// A carbon copy has a routing delay; a copy completes when routing reaches it
     /// (`CS-WF-0004`, `WF-02`).
     RouteDelayOnCopy,
+    /// A field is shared with someone who cannot fill it: not a recipient of the
+    /// envelope, one who does not sign, the field's own recipient, or named twice
+    /// (`CS-WF-0004`, `VS-04D`).
+    SharedWithInvalid,
     /// A field rule failed (`CS-FLD-*`).
     Field(FieldError),
 }

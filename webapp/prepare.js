@@ -32,6 +32,7 @@ import { FIELD_TYPES, TYPED, CHOICE, DEFAULT_SIZE, clampRect, nudge, resize, pla
 import { errorMessage, RECIPIENT_TYPES } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate, FIELD_SETTINGS, blankSetting, settingsOf } from "./templatesync.js";
+import { conditionFrom, groupFrom, formulaFrom, labelsFor, DATE_FORMATS } from "./fieldlogic.js";
 import { suggestionsFrom } from "./detect.js";
 import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from "./guides.js";
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
@@ -46,6 +47,7 @@ import { mlStatus, featureOn, loadSuggestions, acceptSuggestion, dismissSuggesti
 const FIELD_ICON = {
   signature: "signature", initials: "pen-line", date_signed: "calendar", name: "user", email: "at-sign", company: "layers", title: "type", // i18n-ignore: icon names
   text: "text-cursor-input", number: "list-ordered", checkbox: "square-check", radio_group: "circle-dashed", dropdown: "chevron-down", attachment: "paperclip", note: "info", // i18n-ignore: icon names
+  date: "calendar", email_address: "at-sign", zip: "map-pin", multi_select: "list-checks", stamp: "stamp", drawing: "pen-line", hyperlink: "external-link", approve: "circle-check", decline: "circle-x", // i18n-ignore: icon names
 };
 /// The members of a field the editor sets besides its place, owner, `required` and `label`
 /// (UX-05), by their wire names (api.js `FIELD_MEMBERS`); kept on the editor's field as is.
@@ -1551,10 +1553,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       i.addEventListener("change", () => onSet(i.value));
       return h("div", { class: "os-fieldrow" }, h("label", { class: "os-label", attrs: { for: id }, text: t(labelKey) }), i, help ? h("p", { id: `${id}-help`, class: "os-help", text: t(help) }) : null);
     };
-    const check = (id, labelKey, on, onSet) => {
+    const check = (id, labelKey, on, onSet, text = null) => {
       const i = h("input", { id, type: "checkbox", checked: !!on });
       i.addEventListener("change", () => onSet(i.checked));
-      return h("label", { class: "os-check", attrs: { for: id } }, i, h("span", { text: t(labelKey) }));
+      return h("label", { class: "os-check", attrs: { for: id } }, i, h("span", { text: text ?? t(labelKey) }));
     };
     /// A section of the panel (UX-05: General, Formatting, Validation, Options), open by
     /// default, remembered while the editor is open.
@@ -1579,6 +1581,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     behaviour.push(textIn("fp-tooltip", "prepare.tooltip", f.tooltip, (v) => setM("tooltip", v.trim()), { max: 1000 }));
     props.append(h("div", { class: "os-props__group" }, ...behaviour));
     const general = [];
+    if (f.type === "hyperlink") {
+      // VS-04A: the address the signer may open (http or https; the page opens no other).
+      general.push(textIn("fp-url", "prepare.url", f.value?.text, (v) => { setM("value", v.trim() ? { text: v.trim() } : null); setM("read_only", !!v.trim()); }, { help: "prepare.url-help", max: 2000, type: "url" }));
+    }
     if (f.type === "note") {
       // A note is the sender's text, shown to the recipient as written.
       general.push(textIn("fp-note", "prepare.note-text", f.value?.text, (v) => setM("value", v.trim() ? { text: v.trim() } : null), { max: 2000, area: true }));
@@ -1640,6 +1646,68 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (kindNow === "regex") body.push(textIn("fp-pattern", "prepare.pattern", opts.pattern, (x) => apply("pattern", x), { help: "prepare.pattern-help", max: 1000 }));
       if (kindNow) body.push(textIn("fp-vmsg", "prepare.validate-message", opts.message, (x) => apply("message", x.trim()), { max: 500 }));
       props.append(section("validation", ...body));
+    }
+    // VS-04A: the format a date is typed and shown in (the engine's `DateFormat`).
+    if (f.type === "date" || f.type === "date_signed") {
+      const setD = (v) => { const next = { ...(f.format || {}) }; if (v) next.date_format = v; else delete next.date_format; setM("format", Object.keys(next).length ? next : null); };
+      props.append(section("date", selectField(t("prepare.date-format"), [["", t("prepare.fmt-default")], ...DATE_FORMATS.map(([k, s]) => [k, s])], { id: "fp-date-format", value: f.format?.date_format || "", size: "sm", onChange: setD }).el));
+    }
+    // VS-04C: Logic, DocuSign's conditional fields, checkbox groups and formulas. A
+    // condition and a formula name other fields by their data label.
+    {
+      const labels = labelsFor(S.fields, f.key);
+      const logic = [];
+      const c = f.conditional || {};
+      const when = c.when && typeof c.when === "object" ? "value" : c.when || "checked";
+      let condParent = c.parent_label || "";
+      let condWhen = when;
+      let condValue = c.when?.value || "";
+      const applyC = () => setM("conditional", conditionFrom(condParent, condWhen, condValue));
+      logic.push(selectField(t("prepare.show-when"), [["", t("prepare.show-always")], ...labels.map((l) => [l, l])], { id: "fp-cond-parent", value: condParent, size: "sm", attrs: { "data-testid": "cond-parent" }, onChange: (v) => { condParent = v; applyC(); renderProps(); } }).el);
+      if (condParent) {
+        logic.push(selectField(t("prepare.show-is"), [["checked", t("prepare.when-checked")], ["unchecked", t("prepare.when-unchecked")], ["any", t("prepare.when-any")], ["value", t("prepare.when-value")]], { id: "fp-cond-when", value: condWhen, size: "sm", attrs: { "data-testid": "cond-when" }, onChange: (v) => { condWhen = v; applyC(); renderProps(); } }).el);
+        if (condWhen === "value") logic.push(textIn("fp-cond-value", "prepare.when-value-is", condValue, (v) => { condValue = v; applyC(); }, { max: 4000 }));
+      }
+      if (f.type === "checkbox") {
+        const g = f.group || {};
+        const r = g.rule || {};
+        let gid = g.id || "";
+        let gRule = r.rule || "select_at_least";
+        let gN = String(r.min ?? r.max ?? r.count ?? 1);
+        const applyG = () => setM("group", groupFrom(gid, gRule, gN));
+        logic.push(textIn("fp-group", "prepare.group", gid, (v) => { gid = v.trim(); applyG(); renderProps(); }, { help: "prepare.group-help", max: 64 }));
+        if (gid) {
+          logic.push(h("div", { class: "os-geo" },
+            selectField(t("prepare.group-rule"), [["select_at_least", t("prepare.group-at-least")], ["select_at_most", t("prepare.group-at-most")], ["select_exactly", t("prepare.group-exactly")]], { id: "fp-group-rule", value: gRule, size: "sm", onChange: (v) => { gRule = v; applyG(); } }).el,
+            textIn("fp-group-n", "prepare.group-n", gN, (v) => { gN = v; applyG(); }, { type: "number" })));
+        }
+      }
+      if (f.type === "formula") {
+        const fm = f.formula || {};
+        let expr = fm.expression || "";
+        let prec = String(fm.precision ?? 2);
+        const applyF = () => setM("formula", formulaFrom(expr, prec));
+        logic.push(textIn("fp-formula", "prepare.formula", expr, (v) => { expr = v; applyF(); }, { help: "prepare.formula-help", max: 2000, area: true }));
+        logic.push(textIn("fp-precision", "prepare.precision", prec, (v) => { prec = v; applyF(); }, { type: "number" }));
+        if (!f.label) logic.push(h("p", { class: "os-muted os-small", text: t("prepare.formula-label") }));
+      }
+      // VS-04D: DocuSign's shared fields: other signers may fill this one too; the last
+      // value is kept, and only its own recipient must fill it. Envelopes only.
+      const others = TPL || !takesInput(f.type) ? [] : S.recipients.map((r, i) => [r, i]).filter(([r]) => takesFields(r) && r.key !== f.recipientKey);
+      if (others.length) {
+        const box = h("fieldset", { class: "os-fieldset", attrs: { "data-testid": "shared-with" } }, h("legend", { class: "os-label", text: t("prepare.shared-with") }));
+        for (const [r, i] of others) {
+          const id = `fp-share-${r.key}`;
+          box.append(check(id, null, (f.sharedKeys || []).includes(r.key), (v) => {
+            const next = new Set(f.sharedKeys || []);
+            if (v) next.add(r.key); else next.delete(r.key);
+            set("sharedKeys", [...next]);
+          }, displayName(r, i)));
+        }
+        box.append(h("p", { class: "os-help", text: t("prepare.shared-help") }));
+        logic.push(box);
+      }
+      props.append(section("logic", ...logic));
     }
     // Position (canvas: X and Y in points), with the size, open by default (UX-05's
     // Advanced): typed coordinates are clamped to the page.
@@ -1824,7 +1892,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.fields = (env.fields || []).map((f) => {
       const p = fromWire(f.placement);
       if (!p || !dkey.has(f.document_id)) return null;
-      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", ...membersOf(f), server: serverKey(f) };
+      return { key: newKey("f"), id: f.id, docKey: dkey.get(f.document_id), recipientKey: rkey.get(f.recipient_id), type: f.type, page: p.page, x: p.x, y: p.y, width: p.width, height: p.height, required: !!f.required, label: f.label || "", ...membersOf(f), sharedKeys: (f.shared_with || []).map((x) => rkey.get(x)).filter(Boolean), server: serverKey(f) };
     }).filter(Boolean);
     // Keep whom fields are being placed for across a save (the list keeps its order).
     S.active = S.recipients[prevActive]?.key || S.recipients[0]?.key || null;
@@ -1919,13 +1987,18 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const p = (n) => String(n).padStart(2, "0");
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
   }
-  function fieldBody(f, recipientRef, documentRef) {
+  function fieldBody(f, recipientRef, documentRef, refOf = (k) => S.recipients.find((r) => r.key === k)?.id) {
     const body = { recipient: recipientRef, document: documentRef, type: f.type, ...toWire(f.page, f) };
     if (f.required && takesInput(f.type)) body.required = true;
     if (f.label) body.label = f.label;
     Object.assign(body, membersOf(f));
+    // VS-04D: the other recipients the field is shared with, named as its owner is.
+    const shared = sharedWith(f).map(refOf).filter((x) => x != null);
+    if (shared.length) body.shared_with = shared;
     return body;
   }
+  /// The keys of the recipients a field is shared with who still take fields (VS-04D).
+  const sharedWith = (f) => (f.sharedKeys || []).filter((k) => k !== f.recipientKey && S.recipients.some((r) => r.key === k && takesFields(r)));
   const options = () => ({ ...(S.captureLocation ? { capture_location: true } : {}) });
   /// Reminders and expiry as the API takes them; absent members mean "account default".
   const sendOptions = () => ({
@@ -2003,7 +2076,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         ...(S.expiresDays ? { expires_in_days: S.expiresDays } : {}),
         documents: S.docs.map((d) => ({ name: d.name, content_base64: toB64(d.bytes) })),
         recipients: S.recipients.map((r, i) => ({ ref: `r${i}`, ...recipientBody(r) })),
-        fields: S.fields.map((f) => fieldBody(f, `r${S.recipients.findIndex((r) => r.key === f.recipientKey)}`, S.docs.findIndex((d) => d.key === f.docKey))),
+        fields: S.fields.map((f) => fieldBody(f, `r${S.recipients.findIndex((r) => r.key === f.recipientKey)}`, S.docs.findIndex((d) => d.key === f.docKey), (k) => `r${S.recipients.findIndex((r) => r.key === k)}`)),
       };
       const sentDocs = S.docs.slice();
       const sentRecs = S.recipients.slice();
@@ -2047,12 +2120,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       const rid = (k) => S.recipients.find((r) => r.key === k)?.id;
       const did = (k) => S.docs.find((d) => d.key === k)?.id;
       for (const f of S.fields.filter((x) => x.id)) {
-        const now = JSON.stringify({ r: rid(f.recipientKey), p: toWire(f.page, f), q: !!f.required, l: f.label || "", m: membersOf(f) });
+        const now = JSON.stringify({ r: rid(f.recipientKey), p: toWire(f.page, f), q: !!f.required, l: f.label || "", m: membersOf(f), s: sharedWith(f).map(rid) });
         if (now === f.server) continue;
         const body = fieldBody(f, rid(f.recipientKey), did(f.docKey));
         // Every member named: null removes one the sender cleared (a JSON merge, UX-05).
         const members = Object.fromEntries(MEMBERS.map((k) => [k, blankMember(f[k]) ? null : f[k]]));
-        await ctx.api.patchField(S.id, f.id, await etagNow(), { recipient_id: body.recipient, placement: toWire(f.page, f), required: !!body.required, label: f.label || null, ...members });
+        await ctx.api.patchField(S.id, f.id, await etagNow(), { recipient_id: body.recipient, placement: toWire(f.page, f), required: !!body.required, label: f.label || null, ...members, shared_with: body.shared_with || null });
       }
       // A field whose recipient or document was added after their step above waits for the
       // next save (E2E-13).

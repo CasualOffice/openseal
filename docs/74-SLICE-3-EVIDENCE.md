@@ -54,7 +54,7 @@ The outcome is the slice-3 row: "Roles, save as template, use template, composit
 Recommendation: ready to close once a `main` run with this branch is green on every job and `slice-3-demo` has been
 watched.
 
-Owner decision: close / not yet, because …
+Owner decision (2026-11-19, instruction 66): **close on green `main`**: slice 3 closes once `main`'s CI run on `af038fd` (run 44432837346) is green. Decisions 1 and 3 below are answered: template folders are each member's own; template locking (`TSH-04`) is outside slice 3. Status: run 44432837346 finished **red**: job `e2e (3)`, two webkit tests in `prepare-layout.spec.mjs` (`:127` "a clicked field type places its field where the page is clicked…", `:386` "review: a signer without fields is a warning…"); every other job green. The slice-3 rows stay In progress until a `main` run is green.
 
 **Decisions only the owner can make:**
 

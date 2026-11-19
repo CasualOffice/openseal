@@ -16,6 +16,7 @@ pub(crate) mod groups;
 pub(crate) mod mfa;
 pub(crate) mod ml;
 pub(crate) mod org;
+pub(crate) mod placing;
 pub(crate) mod privacy;
 pub(crate) mod sessions;
 pub(crate) mod switch;
