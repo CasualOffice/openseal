@@ -17,7 +17,7 @@ instructions 8 and 9).
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
 | FG-001 | Upload PDF | DS, SN | Build | 1 | Works |
-| FG-002 | Upload Word, Excel, PowerPoint, images (converted) | DS, SN | Build | 6 | Designed |
+| FG-002 | Upload Word, Excel, PowerPoint, images (converted) | DS, SN | Build | 6 | Works for Word (`.docx`, `VS-06C`, ADR-042); Excel and PowerPoint `VS-06F`, images not converted |
 | FG-003 | Import from URL | SN | Build | 8 | — |
 | FG-004 | Import from cloud storage (Drive, OneDrive, Dropbox, Box) | DS | Plugin | 24 | — |
 | FG-005 | Multiple documents per envelope; reorder | DS, SN (groups) | Build | 2 | Designed |

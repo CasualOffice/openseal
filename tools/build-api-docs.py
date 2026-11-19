@@ -30,9 +30,9 @@ GROUPS = {
     "contacts": "Contacts", "reports": "Reports", "webhooks": "Webhooks", "retention": "Retention and legal hold", "s": "Signing ceremony (not public API)",
     "account": "Account settings", "admin-events": "Admin audit log", "ersd-versions": "Electronic disclosure",
     "folders": "Folders", "organizations": "Organizations", "groups": "Groups", "bulk-sends": "Bulk send",
-    "permission-profiles": "Permission profiles",
+    "permission-profiles": "Permission profiles", "conversions": "Conversions",
 }
-ORDER = ["auth", "oauth", ".well-known", "envelopes", "folders", "templates", "groups", "bulk-sends", "contacts", "reports", "webhooks", "users", "permission-profiles", "api-clients",
+ORDER = ["auth", "oauth", ".well-known", "envelopes", "conversions", "folders", "templates", "groups", "bulk-sends", "contacts", "reports", "webhooks", "users", "permission-profiles", "api-clients",
          "accounts", "account", "retention", "ersd-versions", "admin-events", "organizations", "s"]
 
 

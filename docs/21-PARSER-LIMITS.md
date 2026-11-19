@@ -327,6 +327,33 @@ Values marked provisional are re-set from measurement before an exit is claimed.
 | modeld memory | 4 GiB container limit (provisional) | (process restarts) |
 | Model bundle; each file | 2 GiB; 1 GiB (provisional, re-set from the measured int8 exports) | CS-ML-0002 |
 
+## DOCX conversion (`casual-sign-convertd`, ADR-042, `VS-06C`, built)
+
+A Word upload is converted to PDF by the conversion daemon (docs/30 §3, docs/07 `SEC-P13`) and the PDF then meets every
+limit under PDF above. These limits are held by the daemon and the per-job child it starts; the screen rows are checked
+inside the child before the converter reads the archive (`src/screen.rs`). Every row with a fixture has one in
+`fixtures/hostile/docx/` (`generate.py --docx`, own manifest), asserted by `server/casual-sign-convertd/tests/convert.rs`.
+
+| Limit | Default | Code | Fixture |
+| --- | ---: | --- | --- |
+| Upload size | The server's document cap (50 MiB) before anything else; the daemon takes at most 64 MiB | CS-PDF-0001; CS-CNV-0003 (`input`) | none: `wire::tests::a_lying_length_is_refused_before_allocating` |
+| Package kind | A Word document's main part (`…wordprocessingml.document.main+xml`); a template, an encrypted entry or a ZIP that is not a Word package is refused | CS-CNV-0002 | `docx_template.dotx`, `docx_not_word.docx`, `docx_encrypted.docx` |
+| Macros | A macro-enabled content type, or a `vbaProject.bin` or `vbaData.xml` part anywhere: refused, never run or kept | CS-CNV-0004 | `docx_macro.docm`, `docx_vba_part.docx` |
+| Archive entries | 4,096 | CS-CNV-0003 (`entries`) | `docx_entries_4097.docx` |
+| Part size (declared) | 64 MiB | CS-CNV-0003 (`part`) | `docx_part_70mib.docx` |
+| Part size (read) | A part the screen reads is read through its declared size plus one byte; more is malformed | CS-CNV-0001 (`malformed`) | `docx_lying_size.docx` |
+| Expanded size of all parts (declared) | 256 MiB | CS-CNV-0003 (`expanded`) | `docx_expanded_300mib.docx` |
+| Expansion ratio per part | 1:1,000 for a part expanding above 1 MiB | CS-CNV-0003 (`ratio`) | `docx_zip_bomb.docx` |
+| Pages (estimated before rendering) | 5,000: one plus explicit page breaks, page-break-before paragraphs and section breaks in the main part; admission counts the PDF's pages again (`CS-PDF-0007`) | CS-CNV-0003 (`pages`) | `docx_pages_5001.docx` |
+| Main part well-formed | The converter's XML reader; a part that does not parse refuses the document | CS-CNV-0001 (`malformed`) | `docx_malformed_xml.docx` |
+| External references | Counted (`converted.external_references` in the admission report), never fetched: the converter reads the archive only and the daemon's container has no network | — (report) | `docx_external_picture.docx` |
+| Time per job | 60 s wall clock, then the child is killed; `RLIMIT_CPU` 60 s behind it (`OPENSEAL_CONVERTD_JOB_SECONDS`) | CS-CNV-0003 (`time`) | none: `tests/convert.rs` `a_job_over_its_time_is_killed` |
+| Memory per job | `RLIMIT_AS` 2 GiB in the child (Linux; `OPENSEAL_CONVERTD_MEMORY`), and the container's own cap | CS-CNV-0003 (`memory`) | none: `tests/convert.rs` `a_child_over_its_memory_ends_without_an_answer` (Linux only) |
+| Files a job writes | None: `RLIMIT_FSIZE` 0, the converter's font cache off, a read-only root | — | none: the child sets it before reading |
+| Converted PDF | 128 MiB | CS-CNV-0003 (`output`) | none: `wire::tests::a_lying_length_is_refused_before_allocating` |
+| Jobs at once | 2 (`OPENSEAL_CONVERTD_SLOTS`); a request beyond them is refused at once, never queued | CS-CNV-0005 (`busy`) | none: `daemon::tests::slots_are_taken_and_given_back` |
+| The server's wait for one conversion | 90 s (`OPENSEAL_CONVERTD_TIMEOUT`), connecting and moving the bytes included | CS-CNV-0003 (`time`) | none: server `tests/convert.rs` |
+
 ## Bulk and links
 
 | Limit | Default | Code |

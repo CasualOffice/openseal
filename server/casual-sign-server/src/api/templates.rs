@@ -790,9 +790,9 @@ pub(crate) async fn groups(c: Call) -> Result<Response, ApiError> {
 
 // Documents -----------------------------------------------------------------------------
 
-/// `POST /templates/{id}/documents {name, content_base64}`: admitted and normalized as
-/// an envelope's upload is (docs/30 §2, §3); the stored PDF is shared by envelopes made
-/// from the template.
+/// `POST /templates/{id}/documents {name, content_base64}`: a PDF or a Word document
+/// (converted, ADR-042), admitted and normalized as an envelope's upload is (docs/30 §2,
+/// §3); the stored PDF is shared by envelopes made from the template.
 pub(crate) async fn add_document(
     c: Call,
     Path(id): Path<String>,
@@ -821,6 +821,12 @@ pub(crate) async fn add_document(
         &bytes,
     )
     .await?;
+    // A Word document is converted first (ADR-042); a template keeps only the PDF its
+    // envelopes are made from.
+    let bytes = match crate::convert::convert_upload(&c.st, &bytes).await? {
+        Some(converted) => converted.pdf,
+        None => bytes,
+    };
     let engine = c.st.0.engine.clone();
     let delivered = tokio::task::spawn_blocking(move || {
         match engine.prepare(&bytes, &Credentials::default()) {

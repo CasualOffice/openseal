@@ -32,7 +32,9 @@ OPERATIONS = {
         "path_params": [
             "id"
         ],
-        "query": []
+        "query": [
+            "name"
+        ]
     },
     "addFields": {
         "body": True,
@@ -165,6 +167,14 @@ OPERATIONS = {
         "body_required": True,
         "method": "POST",
         "path": "/api/v1/auth/mfa/totp/confirm",
+        "path_params": [],
+        "query": []
+    },
+    "convertDocument": {
+        "body": False,
+        "body_required": False,
+        "method": "POST",
+        "path": "/api/v1/conversions",
         "path_params": [],
         "query": []
     },

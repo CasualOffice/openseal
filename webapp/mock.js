@@ -10,6 +10,8 @@
 // one fake server. Each test or Playwright context starts from the same seed.
 
 import { makePdf, countPages } from "./mockpdf.js";
+
+const DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 import { checkText } from "./signfields.js";
 import { rulesFor, finishProblems } from "./fieldrules.js";
 import { checkList } from "./bulkmodel.js";
@@ -289,13 +291,25 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     db.envelopes.push(env);
     return env;
   }
-  function addDocument(env, name, bytes) {
+  /// The server converts a Word document with convertd (ADR-042); mock mode answers a
+  /// placeholder PDF for any ZIP, so the editor's preview and the upload agree, and
+  /// refuses one naming a VBA project as the server does (CS-CNV-0004).
+  function mockConvert(bytes) {
+    if (!(bytes instanceof Uint8Array) || bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 3 || bytes[3] !== 4) {
+      fail(415, "CS-CNV-0002", "Format not supported");
+    }
+    if (new TextDecoder("latin1").decode(bytes).toLowerCase().includes("vbaproject")) fail(415, "CS-CNV-0004", "Macro-enabled document refused");
+    return makePdf([{ title: "Converted Word document", lines: ["Mock mode: the server converts .docx files to PDF with docxide-pdf.", "This page stands in for the converted document."] }]);
+  }
+  function addDocument(env, name, upload) {
+    const zip = upload instanceof Uint8Array && upload.length >= 4 && upload[0] === 0x50 && upload[1] === 0x4b;
+    const bytes = zip ? mockConvert(upload) : upload;
     if (!(bytes instanceof Uint8Array) || bytes.length < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") {
       fail(422, "CS-PDF-0001", "Not a PDF");
     }
     const id = uid();
     db.blobs[id] = b64(bytes);
-    const doc = { id, name: String(name || "document.pdf").slice(0, 255), pages: countPages(bytes), bytes: bytes.length, upload_sha256: null, delivered_sha256: null, admission_findings: 0, fixed: false };
+    const doc = { id, name: String(name || "document.pdf").slice(0, 255), pages: countPages(bytes), bytes: upload.length, upload_sha256: null, delivered_sha256: null, admission_findings: 0, fixed: false };
     env.documents.push(doc);
     return doc;
   }
@@ -1898,6 +1912,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // As the server's `GET /auth/workspaces`: no sandbox member (the org listing has it).
     const spaces = organization().workspaces.filter((w) => w.member).map(workspaceRow).map(({ sandbox: _s, ...w }) => w);
     const here = db.session.account || "acct-demo";
+    // ADR-042: the editor's preview of a Word document, nothing stored.
+    if (res === "conversions" && !id && method === "POST") {
+      if (headers["content-type"] !== DOCX_MEDIA) fail(415, "CS-API-0007", "Unsupported media type");
+      return pdf(mockConvert(body));
+    }
     if (res === "auth" && id === "workspaces" && method === "GET") {
       return json(200, {
         current: here,
@@ -2484,7 +2503,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!subId && method === "POST") {
         tplIfMatch(tp, headers, false);
         for (const k of Object.keys(body || {})) if (!["name", "content_base64"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
-        const bytes = unb64(body?.content_base64 || "");
+        const upload = unb64(body?.content_base64 || "");
+        // A Word document is converted first, as the server does (ADR-042).
+        const bytes = upload.length >= 4 && upload[0] === 0x50 && upload[1] === 0x4b ? mockConvert(upload) : upload;
         if (bytes.length < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") fail(422, "CS-PDF-0001", "Not a PDF");
         const d = { id: uid(), name: String(body?.name || "document.pdf").slice(0, 255), ord: tp.documents.length, pages: countPages(bytes), sha256: null };
         db.blobs[d.id] = b64(bytes);
@@ -3259,7 +3280,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const headers = {};
     for (const [k, v] of Object.entries(init.headers || {})) headers[k.toLowerCase()] = v;
     let body = null;
-    if (init.body) {
+    if (init.body instanceof Uint8Array) body = init.body; // a file sent as itself (ADR-042)
+    else if (init.body) {
       try { body = JSON.parse(init.body); } catch { return problem({ status: 400, code: "CS-API-0001", title: "Malformed request" }); }
     }
     const parts = url.pathname.split("/");

@@ -648,6 +648,28 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
   short transaction (or none), scans, then opens the transaction that stores, checking access and state again. The
   upload's type signature is checked after the scan.
 
+## As built (`VS-06C`: Word uploads converted, ADR-042)
+
+- **Uploads take PDF and Word (`.docx`).** `POST /envelopes` (each document's `content_base64`), `POST
+  /envelopes/{id}/documents` (JSON, or the file itself as `application/pdf` or
+  `application/vnd.openxmlformats-officedocument.wordprocessingml.document` with `?name=`) and `POST
+  /templates/{id}/documents` recognise a Word document by its bytes (a ZIP archive), scan it as uploaded
+  (`ASVS-11`), convert it through convertd (docs/65 §Word conversion), and admit the PDF as any upload. The
+  answer is the document as before; its `upload_sha256` is the Word document's and its `pages` the PDF's.
+- **The original is the Word document.** `GET /envelopes/{id}/documents/{doc}/content?version=original` answers it
+  with the Word media type; `normalized` and `sealed` are PDFs. The normalized version's admission report adds
+  `converted: {from: "docx", converter, pdf_sha256, external_references}`, and the envelope's chain binds the
+  report's hash. A template keeps only the PDF.
+- **`POST /conversions`** (`envelopes.write`): the file itself as the Word media type; answers the PDF converted and
+  admitted exactly as its upload would be, and stores nothing. The web editor shows it while fields are placed; the
+  upload converts again with the same converter and fonts, so the pages are the same.
+- **Refusals** (docs/20): `415 CS-CNV-0002` (not a Word document, a template, encrypted; `conversion_off` when no
+  converter is configured), `415 CS-CNV-0004` (macros), `422 CS-CNV-0001` (malformed, failed), `422 CS-CNV-0003`
+  (over a limit of docs/21 §DOCX conversion, its name in `detail`), `503 CS-CNV-0005` with `Retry-After: 30`
+  (convertd not reached, busy, or answering outside its protocol). Nothing of a refused upload is stored. As with the
+  scan, no transaction waits on a conversion: each route authorizes in a short transaction, scans and converts,
+  then opens the transaction that stores.
+
 ## As built (`UXW-01`, `UXW-02`, `UXW-03`, `UXW-30`)
 
 | Endpoint | As built |

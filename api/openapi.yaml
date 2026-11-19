@@ -3666,22 +3666,45 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     post:
       operationId: addDocument
-      summary: "Upload a document: admitted and normalized"
+      summary: "Upload a document, a PDF or a Word document (.docx, converted to PDF, ADR-042): admitted and normalized; JSON, or the file itself with ?name="
       x-permission: "envelopes.write"
       x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
+        - {name: name, in: query, required: false, description: "The document's name, when the body is the file itself", schema: {type: string}}
       requestBody:
         required: true
         content:
           application/json:
             schema: {$ref: '#/components/schemas/DocumentUpload'}
+          application/pdf:
+            schema: {type: string, format: binary}
+          application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+            schema: {type: string, format: binary}
       responses:
         '201':
           description: OK
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Document'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/conversions:
+    post:
+      operationId: convertDocument
+      summary: "Convert a Word document (.docx) to PDF and admit it as an upload would be, nothing stored: the editor's preview (ADR-042)"
+      x-permission: "envelopes.write"
+      x-level: workspace
+      requestBody:
+        required: true
+        content:
+          application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+            schema: {type: string, format: binary}
+      responses:
+        '200':
+          description: The admitted PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/documents/{doc}:
     parameters:
@@ -3731,16 +3754,18 @@ paths:
         schema: {type: string}
     get:
       operationId: getDocumentContent
-      summary: "Document bytes: original, normalized or sealed"
+      summary: "Document bytes: original (a converted upload's original is its Word document), normalized or sealed"
       x-permission: "envelopes.read"
       x-level: workspace
       parameters:
         - $ref: '#/components/parameters/version'
       responses:
         '200':
-          description: PDF
+          description: PDF (or, for the original of a converted upload, the Word document)
           content:
             application/pdf:
+              schema: {type: string, format: binary}
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
               schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/documents/{doc}/detect-fields:
@@ -4369,7 +4394,7 @@ paths:
       - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
     post:
       operationId: addTemplateDocument
-      summary: "Add a document {name, content_base64}, admitted and normalized as an upload (WEB-06)"
+      summary: "Add a document {name, content_base64}, a PDF or a Word document (converted, ADR-042), admitted and normalized as an upload (WEB-06)"
       x-permission: "templates.write"
       x-level: workspace
       parameters:

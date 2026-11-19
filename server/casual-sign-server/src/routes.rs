@@ -11,8 +11,8 @@ use axum::routing::{MethodFilter, MethodRouter, on};
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
-    admin, bulk, envelopes as env, factors, folders, groups, mfa, ml, oauth, org, privacy, reports,
-    sessions, switch, templates, usetemplates, webhooks,
+    admin, bulk, conversions, envelopes as env, factors, folders, groups, mfa, ml, oauth, org,
+    privacy, reports, sessions, switch, templates, usetemplates, webhooks,
 };
 use crate::authz::{Action, Level, OrgAction};
 use crate::ceremony;
@@ -793,6 +793,14 @@ pub fn table() -> Vec<Route> {
             UPLOAD,
             env::add_document_route,
         ),
+        // A Word document converted for the editor's preview, nothing stored (ADR-042).
+        r(
+            "POST",
+            "/api/v1/conversions",
+            ew,
+            UPLOAD,
+            conversions::convert,
+        ),
         r(
             "GET",
             "/api/v1/envelopes/{id}/documents/{doc}",
@@ -1391,7 +1399,10 @@ pub fn app(state: AppState) -> Router {
             // only, but for the token endpoint's RFC 6749 form and a raw PDF upload.
             let extra: OtherMedia = match route.path {
                 "/api/v1/oauth/token" => &["application/x-www-form-urlencoded"],
-                "/api/v1/envelopes/{id}/documents" => &["application/pdf"],
+                "/api/v1/envelopes/{id}/documents" => {
+                    &["application/pdf", crate::convert::DOCX_MEDIA_TYPE]
+                }
+                "/api/v1/conversions" => &[crate::convert::DOCX_MEDIA_TYPE],
                 _ => &[],
             };
             h = h.route_layer(from_fn_with_state(extra, json_only));

@@ -9,15 +9,15 @@ export interface Operations {
   acceptInvite(params: { body: unknown }): Promise<any>;
   /** Accept a suggestion — `POST /api/v1/envelopes/{id}/suggestions/{s}/accept` (envelopes.write) */
   acceptSuggestion(params: { "id": string | number | boolean; "s": string | number | boolean }): Promise<any>;
-  /** Upload a document: admitted and normalized — `POST /api/v1/envelopes/{id}/documents` (envelopes.write) */
-  addDocument(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
+  /** Upload a document, a PDF or a Word document (.docx, converted to PDF, ADR-042): admitted and normalized; JSON, or the file itself with ?name= — `POST /api/v1/envelopes/{id}/documents` (envelopes.write) */
+  addDocument(params: { "id": string | number | boolean; "name"?: string | number | boolean; body: unknown }): Promise<any>;
   /** Add one field, or {items: [...]} — `POST /api/v1/envelopes/{id}/fields` (envelopes.write) */
   addFields(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Make a user an owner or admin (`org.admins.manage`, owners only), logged as `organization.admin_added` — `POST /api/v1/organizations/me/admins` (org.admins.manage) */
   addOrgAdmin(params: { body: unknown }): Promise<any>;
   /** Add one recipient, or {items: [...]} — `POST /api/v1/envelopes/{id}/recipients` (envelopes.write) */
   addRecipients(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
-  /** Add a document {name, content_base64}, admitted and normalized as an upload (WEB-06) — `POST /api/v1/templates/{id}/documents` (templates.write) */
+  /** Add a document {name, content_base64}, a PDF or a Word document (converted, ADR-042), admitted and normalized as an upload (WEB-06) — `POST /api/v1/templates/{id}/documents` (templates.write) */
   addTemplateDocument(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Add one field, or {items: [...]}, bound to roles (WEB-06) — `POST /api/v1/templates/{id}/fields` (templates.write) */
   addTemplateFields(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
@@ -39,6 +39,8 @@ export interface Operations {
   confirmPasswordReset(params: { body: unknown }): Promise<any>;
   /** Confirm TOTP enrolment with a first code (ASVS-01) — `POST /api/v1/auth/mfa/totp/confirm` (signing-in) */
   confirmTotp(params: { body: unknown }): Promise<any>;
+  /** Convert a Word document (.docx) to PDF and admit it as an upload would be, nothing stored: the editor's preview (ADR-042) — `POST /api/v1/conversions` (envelopes.write) */
+  convertDocument(params?: Record<string, never>): Promise<any>;
   /** Correct a sent envelope, all changes or none (If-Match required) — `POST /api/v1/envelopes/{id}/correct` (envelopes.send) */
   correctEnvelope(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** New API key or OAuth client; the secret is shown once — `POST /api/v1/api-clients` (api_clients.manage) */
@@ -133,7 +135,7 @@ export interface Operations {
   getCombined(params: { "id": string | number | boolean }): Promise<any>;
   /** A document's metadata — `GET /api/v1/envelopes/{id}/documents/{doc}` (envelopes.read) */
   getDocument(params: { "id": string | number | boolean; "doc": string | number | boolean }): Promise<any>;
-  /** Document bytes: original, normalized or sealed — `GET /api/v1/envelopes/{id}/documents/{doc}/content` (envelopes.read) */
+  /** Document bytes: original (a converted upload's original is its Word document), normalized or sealed — `GET /api/v1/envelopes/{id}/documents/{doc}/content` (envelopes.read) */
   getDocumentContent(params: { "id": string | number | boolean; "doc": string | number | boolean; "version"?: string | number | boolean }): Promise<any>;
   /** An envelope with its documents, recipients and fields — `GET /api/v1/envelopes/{id}` (envelopes.read) */
   getEnvelope(params: { "id": string | number | boolean }): Promise<any>;

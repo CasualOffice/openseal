@@ -29,7 +29,7 @@ import { button, busy, emptyState, toast, toastError, confirmDialog, selectField
 import { openPdf } from "./pdfview.js";
 import { docView, zoomControls, thumbnails } from "./docview.js";
 import { FIELD_TYPES, TYPED, CHOICE, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput, requiredByDefault, validationFrom, optionsFrom } from "./geometry.js";
-import { errorMessage, RECIPIENT_TYPES } from "./api.js";
+import { errorMessage, RECIPIENT_TYPES, UPLOAD_ACCEPT, isPdfBytes, isZipBytes, isUploadFile, docBaseName } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate, FIELD_SETTINGS, blankSetting, settingsOf } from "./templatesync.js";
 import { conditionFrom, groupFrom, formulaFrom, labelsFor, DATE_FORMATS } from "./fieldlogic.js";
@@ -251,7 +251,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     renderFieldsOnly();
   }
   const reviewPanel = h("section", { class: "os-panel os-panel--review", attrs: { "aria-labelledby": "review-h" } });
-  const fileInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "pdf-input" } });
+  const fileInput = h("input", { type: "file", accept: UPLOAD_ACCEPT, multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "pdf-input" } });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; });
   const panes = {
     documents: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, docsPanel),
@@ -914,14 +914,27 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     for (const file of files) {
       if (file.size > MAX_UPLOAD) { toast(t("prepare.too-large", { name: file.name }), "error"); continue; }
       const bytes = new Uint8Array(await file.arrayBuffer());
-      if (String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") { toast(t("prepare.not-pdf", { name: file.name }), "error"); continue; }
+      // A Word document (ADR-042): the server converts it for the pages shown here, and
+      // converts it again when it is uploaded, keeping the .docx as the original.
+      const word = isZipBytes(bytes) && /\.docx$/i.test(file.name);
+      if (!isPdfBytes(bytes) && !word) { toast(t("prepare.not-pdf", { name: file.name }), "error"); continue; }
+      let shown = bytes;
+      if (word) {
+        say(t("prepare.converting", { name: file.name }));
+        try {
+          shown = await ctx.api.convertDocument(bytes);
+        } catch (err) {
+          if (!ctx.failed(err)) toastError(err);
+          continue;
+        }
+      }
       try {
-        const pdf = await openPdf(bytes.slice());
-        const d = { key: newKey("d"), id: null, name: file.name.slice(0, 255), bytes, pages: pdf.pages };
+        const pdf = await openPdf(shown.slice());
+        const d = { key: newKey("d"), id: null, name: file.name.slice(0, 255), bytes, pages: pdf.pages, ...(word ? { converted: true } : {}) };
         pdfs.set(d.key, pdf);
         S.docs.push(d);
         S.dirty = true;
-        const base = file.name.replace(/\.pdf$/i, "");
+        const base = docBaseName(file.name);
         if (!S.subject) { S.subject = (TPL ? base : t("prepare.default-subject", { name: base })).slice(0, 255); subject.value = S.subject; }
         if (TPL && !S.emailSubject) S.emailSubject = t("prepare.default-subject", { name: base }).slice(0, 255);
         say(t("prepare.doc-added", { name: d.name, n: d.pages.length }));
@@ -2600,7 +2613,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (!e.dataTransfer.files?.length) return;
     e.preventDefault();
     stage.classList.remove("is-dropping");
-    addFiles([...e.dataTransfer.files].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name)));
+    addFiles([...e.dataTransfer.files].filter(isUploadFile));
   });
 
   const beforeUnload = (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } };

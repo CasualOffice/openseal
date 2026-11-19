@@ -29,7 +29,9 @@ export const OPERATIONS = Object.freeze({
     "path_params": [
       "id"
     ],
-    "query": []
+    "query": [
+      "name"
+    ]
   },
   "addFields": {
     "body": true,
@@ -162,6 +164,14 @@ export const OPERATIONS = Object.freeze({
     "body_required": true,
     "method": "POST",
     "path": "/api/v1/auth/mfa/totp/confirm",
+    "path_params": [],
+    "query": []
+  },
+  "convertDocument": {
+    "body": false,
+    "body_required": false,
+    "method": "POST",
+    "path": "/api/v1/conversions",
     "path_params": [],
     "query": []
   },

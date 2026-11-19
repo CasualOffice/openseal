@@ -40,6 +40,20 @@ export function errorMessage(err) {
   return err.requestId ? `${base} (${err.code}, ${err.requestId})` : `${base} (${err.code})`;
 }
 
+/// A Word document's media type: uploads take PDF and Word (.docx, ADR-042).
+export const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+/// The file pickers' `accept` for a document upload.
+export const UPLOAD_ACCEPT = `application/pdf,.pdf,${DOCX_TYPE},.docx`;
+/// Whether bytes are a PDF.
+export const isPdfBytes = (b) => b.length >= 5 && String.fromCharCode(...b.subarray(0, 5)) === "%PDF-";
+/// Whether bytes are a ZIP archive, as a Word document is.
+export const isZipBytes = (b) => b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4;
+/// Whether a picked or dropped file is one a document upload takes (by type or name).
+export const isUploadFile = (f) =>
+  f.type === "application/pdf" || /\.pdf$/i.test(f.name) || f.type === DOCX_TYPE || /\.docx$/i.test(f.name);
+/// A document's name without its file extension (`.pdf` or `.docx`).
+export const docBaseName = (name) => String(name || "").replace(/\.(pdf|docx)$/i, "");
+
 const random = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -218,7 +232,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     }
   }
 
-  async function send(method, path, { body, query, ifMatch, raw = false, ceremony = false, signal, accept = null } = {}) {
+  async function send(method, path, { body, bytes, contentType, query, ifMatch, raw = false, ceremony = false, signal, accept = null } = {}) {
     let url = baseUrl + path;
     if (query) {
       const q = new URLSearchParams();
@@ -228,6 +242,8 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     }
     const headers = { Accept: accept || (raw ? "application/pdf, application/problem+json" : "application/json") };
     if (body !== undefined) headers["Content-Type"] = "application/json";
+    // A file sent as itself (a Word document to convert, ADR-042), not as JSON.
+    if (bytes !== undefined) headers["Content-Type"] = contentType || "application/octet-stream";
     if (method !== "GET" && !ceremony && csrf) headers["X-CSRF-Token"] = csrf;
     if (method === "POST") headers["Idempotency-Key"] = random();
     if (ifMatch) headers["If-Match"] = ifMatch;
@@ -236,7 +252,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       res = await fetchImpl(url, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: bytes !== undefined ? bytes : body === undefined ? undefined : JSON.stringify(body),
         credentials: baseUrl ? "include" : "same-origin",
         ...(signal ? { signal } : {}),
       });
@@ -460,6 +476,11 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     documentContent: async (id, doc, version = "normalized") =>
       (await request("GET", `${E(id)}/documents/${encodeURIComponent(doc)}/content`, { raw: true, query: { version } })).blob,
     addDocument: (id, name, bytes) => data(request("POST", `${E(id)}/documents`, { body: { name, content_base64: toBase64(bytes) } })),
+    /// A Word document (.docx) converted to PDF and admitted as its upload would be,
+    /// nothing stored (ADR-042): the editor's preview while fields are placed. Answers
+    /// the PDF's bytes; the upload itself sends the .docx, kept as the original.
+    convertDocument: async (bytes) =>
+      new Uint8Array(await (await request("POST", "/api/v1/conversions", { bytes, contentType: DOCX_TYPE, raw: true })).blob.arrayBuffer()),
     /// Remove a document and its fields: a draft's edit, or a sent envelope's correction
     /// (who finished on it acts again, docs/24 §6).
     deleteDocument: (id, doc, etag) => data(request("DELETE", `${E(id)}/documents/${encodeURIComponent(doc)}`, { ifMatch: etag })),

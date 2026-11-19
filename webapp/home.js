@@ -15,6 +15,7 @@ import { t } from "./i18n.js";
 import { button, emptyState, errorState, toast, skeletonLines } from "./ui/index.js";
 import { illustration } from "./illustrations.js";
 import { handFiles } from "./handoff.js";
+import { UPLOAD_ACCEPT, isUploadFile } from "./api.js";
 import { shortDate } from "./envactions.js";
 import { rowHref } from "./dashboard.js";
 import { viewCounts, groupRows, toneOf } from "./managemodel.js";
@@ -71,9 +72,9 @@ export function mount(view, ctx) {
   const attentionCard = card("attn-h", t("home.attention"), attention, h("a", { class: "os-link", href: "#/agreements" }, h("span", { text: t("home.all-agreements") }), icon("arrow-right", { size: 16 })), "home-attention");
 
   // Quick actions: upload (also a drop target), a template, Verify.
-  const input = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "home-input" } });
+  const input = h("input", { type: "file", accept: UPLOAD_ACCEPT, multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "home-input" } });
   const start = (files) => {
-    const pdfs = [...files].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name));
+    const pdfs = [...files].filter(isUploadFile);
     if (!pdfs.length) { toast(t("home.drop-not-pdf"), "error"); return; }
     handFiles(pdfs);
     ctx.navigate("#/prepare");

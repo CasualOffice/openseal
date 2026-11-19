@@ -26,6 +26,7 @@ mod auth;
 pub mod authz;
 mod call;
 mod ceremony;
+pub mod convert;
 mod crypto;
 mod dto;
 mod error;

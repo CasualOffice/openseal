@@ -4,11 +4,18 @@
     python3 -I fixtures/tools/generate.py            # writes fixtures/hostile/*.pdf
     python3 -I fixtures/tools/generate.py --check    # manifest and docs/21 agree with this script
     python3 -I fixtures/tools/generate.py --ml       # writes only fixtures/hostile/ml/*.pdf
+    python3 -I fixtures/tools/generate.py --docx     # writes only fixtures/hostile/docx/*
 
 The `ml_*` files (`SEC-I02`, docs/33 §4) are for the modeld rasteriser, not the PDF reader:
 they are valid PDFs whose pages are too large or draw too much to rasterise. They have their
 own manifest, `fixtures/hostile/ml/manifest.tsv` (file, docs/21 §ML limit, code, note),
 asserted by `server/casual-sign-modeld/tests/raster.rs`.
+
+The `docx_*` files (`VS-06C`, docs/07 `SEC-P13`, docs/21 §DOCX conversion) are Word uploads for
+the conversion daemon: a valid control and archives that cross one of its limits or carry
+macros or external references. Their manifest is `fixtures/hostile/docx/manifest.tsv` (file,
+docs/21 §DOCX conversion limit, code, note), asserted by
+`server/casual-sign-convertd/tests/convert.rs`.
 
 Standard library only; every file is synthetic and nothing is downloaded. The PDFs are
 not committed (several are tens of megabytes, and zlib's bytes may differ between
@@ -25,7 +32,10 @@ when a PDF limit in docs/21 with a code has no fixture and no stated reason.
 import hashlib
 import pathlib
 import re
+import io
+import struct
 import sys
+import zipfile
 import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -36,6 +46,11 @@ HEADER = b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n"
 MIB = 1 << 20
 OUT_ML = OUT / "ml"
 ML_MANIFEST = OUT_ML / "manifest.tsv"
+OUT_DOCX = OUT / "docx"
+DOCX_MANIFEST = OUT_DOCX / "manifest.tsv"
+# The address the external-picture fixture links to; convertd's test listens there and
+# asserts nothing connects.
+DOCX_EXTERNAL_PORT = 47391
 
 # docs/21 PDF limits that have no fixture file, and why.
 NO_FIXTURE = {
@@ -643,6 +658,216 @@ def ml_builders():
     b["ml_xobject_deep.pdf"] = xobject_deep
     return b
 
+# ---- DOCX (VS-06C): Word uploads for the conversion daemon --------------------------------
+
+W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+DOCX_MAIN = "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"
+DOCX_TEMPLATE = "application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml"
+DOCM_MAIN = "application/vnd.ms-word.document.macroEnabled.main+xml"
+
+
+def docx_types(main=DOCX_MAIN, extra=""):
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            '<Default Extension="xml" ContentType="application/xml"/>'
+            '<Default Extension="png" ContentType="image/png"/>'
+            f'<Override PartName="/word/document.xml" ContentType="{main}"/>{extra}</Types>')
+
+
+DOCX_ROOT_RELS = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                  '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                  '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>'
+                  '</Relationships>')
+
+
+def docx_body(paragraphs):
+    return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            f'<w:document xmlns:w="{W_NS}" xmlns:r="{R_NS}"'
+            ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+            ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+            ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            '<w:body>' + "".join(paragraphs) +
+            '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+            '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+            '</w:sectPr></w:body></w:document>')
+
+
+def para(text, bold=False):
+    rpr = "<w:rPr><w:b/></w:rPr>" if bold else ""
+    return f'<w:p><w:r>{rpr}<w:t xml:space="preserve">{text}</w:t></w:r></w:p>'
+
+
+PAGE_BREAK = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'
+
+
+def docx_zip(parts):
+    """A ZIP of (name, bytes or str) parts, deflated, with a fixed timestamp."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in parts:
+            info = zipfile.ZipInfo(name, date_time=(2026, 11, 20, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(info, data.encode("utf8") if isinstance(data, str) else data)
+    return buf.getvalue()
+
+
+def docx_valid_parts(paragraphs=None):
+    paragraphs = paragraphs or [
+        para("Mutual non-disclosure agreement", bold=True),
+        para("This agreement is made between the parties named below."),
+        PAGE_BREAK,
+        para("Signed by the parties on the date below."),
+    ]
+    return [("[Content_Types].xml", docx_types()), ("_rels/.rels", DOCX_ROOT_RELS),
+            ("word/document.xml", docx_body(paragraphs))]
+
+
+def patch_central(data, edit):
+    """Rewrite each central-directory header of a ZIP through edit(bytearray, offset)."""
+    out = bytearray(data)
+    i = out.find(b"PK\x01\x02")
+    while i >= 0:
+        edit(out, i)
+        i = out.find(b"PK\x01\x02", i + 4)
+    return bytes(out)
+
+
+def docx_builders():
+    """name -> bytes for the conversion daemon's fixtures (VS-06C, SEC-P13)."""
+    b = {}
+    b["docx_valid.docx"] = lambda: docx_zip(docx_valid_parts())
+
+    def macro_docm():
+        parts = docx_valid_parts()
+        parts[0] = ("[Content_Types].xml", docx_types(DOCM_MAIN, '<Override PartName="/word/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/>'))
+        return docx_zip(parts + [("word/vbaProject.bin", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + bytes(504))])
+    b["docx_macro.docm"] = macro_docm
+    b["docx_vba_part.docx"] = lambda: docx_zip(docx_valid_parts() + [("word/vbaProject.bin", bytes(512))])
+    b["docx_template.dotx"] = lambda: docx_zip([("[Content_Types].xml", docx_types(DOCX_TEMPLATE))] + docx_valid_parts()[1:])
+    b["docx_not_word.docx"] = lambda: docx_zip([("readme.txt", "not a Word document")])
+
+    def zip_bomb():
+        # 60 MiB of zeros deflate about 1:1030: one part under the part cap, over the ratio cap.
+        z = zlib.compressobj(9, zlib.DEFLATED, -15)
+        chunk = bytes(1 << 20)
+        raw = b"".join(z.compress(chunk) for _ in range(60)) + z.flush()
+        size = 60 << 20
+        crc = 0
+        for _ in range(60):
+            crc = zlib.crc32(chunk, crc)
+        valid = docx_zip(docx_valid_parts())
+        # Append the bomb as a raw deflated entry by hand: zipfile would deflate it again.
+        name = b"word/media/bomb.bin"
+        local = struct.pack("<4sHHHHHIIIHH", b"PK\x03\x04", 20, 0, 8, 0, 0x5B74, crc, len(raw), size, len(name), 0) + name + raw
+        cd_at = valid.find(b"PK\x01\x02")
+        eocd_at = valid.rfind(b"PK\x05\x06")
+        entries, cd_size, cd_off = struct.unpack("<HII", valid[eocd_at + 10:eocd_at + 20])
+        central = valid[cd_at:eocd_at]
+        new_off = cd_at
+        bomb_central = struct.pack("<4sHHHHHHIIIHHHHHII", b"PK\x01\x02", 20, 20, 0, 8, 0, 0x5B74, crc, len(raw), size, len(name), 0, 0, 0, 0, 0, new_off) + name
+        body = valid[:cd_at] + local
+        cd = central + bomb_central
+        eocd = struct.pack("<4sHHHHIIH", b"PK\x05\x06", 0, 0, entries + 1, entries + 1, len(cd), len(body), 0)
+        return body + cd + eocd
+    b["docx_zip_bomb.docx"] = zip_bomb
+
+    def declared_part():
+        # One part whose central header declares 70 MiB: over the part cap, refused from
+        # the directory before anything is expanded.
+        def edit(out, i):
+            if out[i + 46:i + 46 + 17] == b"word/document.xml":
+                struct.pack_into("<I", out, i + 24, 70 << 20)
+        return patch_central(docx_zip(docx_valid_parts()), edit)
+    b["docx_part_70mib.docx"] = declared_part
+
+    def declared_total():
+        # Five parts each declaring 60 MiB expanded from 1 MiB: each under the part and
+        # ratio caps, 300 MiB together over the total.
+        def edit(out, i):
+            if out[i + 46:i + 46 + 10] == b"customXml/":
+                struct.pack_into("<II", out, i + 20, 1 << 20, 60 << 20)
+        parts = docx_valid_parts() + [(f"customXml/big{i}.xml", "<a/>") for i in range(5)]
+        return patch_central(docx_zip(parts), edit)
+    b["docx_expanded_300mib.docx"] = declared_total
+
+    def lying_size():
+        # The main part declares 10 bytes and expands to more: malformed.
+        def edit(out, i):
+            if out[i + 46:i + 46 + 17] == b"word/document.xml":
+                struct.pack_into("<I", out, i + 24, 10)
+        return patch_central(docx_zip(docx_valid_parts()), edit)
+    b["docx_lying_size.docx"] = lying_size
+
+    def encrypted():
+        def edit(out, i):
+            struct.pack_into("<H", out, i + 8, struct.unpack_from("<H", out, i + 8)[0] | 1)
+        return patch_central(docx_zip(docx_valid_parts()), edit)
+    b["docx_encrypted.docx"] = encrypted
+    b["docx_entries_4097.docx"] = lambda: docx_zip(docx_valid_parts() + [(f"customXml/item{i}.xml", "<a/>") for i in range(4097)])
+    b["docx_pages_5001.docx"] = lambda: docx_zip(docx_valid_parts([para("page")] + [PAGE_BREAK] * 5001))
+
+    def malformed_xml():
+        parts = docx_valid_parts()
+        parts[2] = ("word/document.xml", f'<?xml version="1.0"?><w:document xmlns:w="{W_NS}"><w:body><w:p><w:r><w:t>unclosed')
+        return docx_zip(parts)
+    b["docx_malformed_xml.docx"] = malformed_xml
+
+    def external_picture():
+        url = f"http://127.0.0.1:{DOCX_EXTERNAL_PORT}/pixel.png"
+        drawing = ('<w:p><w:r><w:drawing><wp:inline><wp:extent cx="914400" cy="914400"/><wp:docPr id="1" name="Linked"/>'
+                   '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+                   '<pic:nvPicPr><pic:cNvPr id="1" name="Linked"/><pic:cNvPicPr/></pic:nvPicPr>'
+                   '<pic:blipFill><a:blip r:link="rId9"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+                   '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="914400" cy="914400"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+                   '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>')
+        link = f'<w:p><w:hyperlink r:id="rId10"><w:r><w:t>{url}</w:t></w:r></w:hyperlink></w:p>'
+        rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                f'<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="{url}" TargetMode="External"/>'
+                f'<Relationship Id="rId10" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="{url}" TargetMode="External"/>'
+                '</Relationships>')
+        return docx_zip(docx_valid_parts([para("A linked picture follows."), drawing, link]) + [("word/_rels/document.xml.rels", rels)])
+    b["docx_external_picture.docx"] = external_picture
+    return b
+
+
+def read_docx_manifest():
+    rows = []
+    for line in DOCX_MANIFEST.read_text(encoding="utf8").splitlines()[1:]:
+        if line.strip():
+            rows.append(line.split("\t"))
+    return rows
+
+
+def check_docx():
+    problems = []
+    names = list(docx_builders())
+    rows = read_docx_manifest()
+    listed = [r[0] for r in rows]
+    section = LIMITS_DOC.read_text(encoding="utf8").split("## DOCX conversion", 1)[1].split("\n## ", 1)[0]
+    for r in rows:
+        if len(r) != 4:
+            problems.append(f"docx manifest row has {len(r)} columns, not 4: {r[0]}")
+        elif r[1] != "control" and f"| {r[1]} |" not in section:
+            problems.append(f"{r[0]}: limit {r[1]!r} is not a docs/21 §DOCX conversion row")
+    for n in names:
+        if n not in listed:
+            problems.append(f"{n}: written by the generator, missing from the docx manifest")
+    for n in listed:
+        if n not in names:
+            problems.append(f"{n}: in the docx manifest, not written by the generator")
+    return problems
+
+
+def write_docx():
+    OUT_DOCX.mkdir(parents=True, exist_ok=True)
+    for name, build in docx_builders().items():
+        data = build()
+        (OUT_DOCX / name).write_bytes(data)
+        print(f"docx/{name:24} {len(data):>12,}")
+
 
 def read_ml_manifest():
     rows = []
@@ -701,12 +926,13 @@ def check():
         if len(cells) == 4 and cells[2].startswith("CS-") and cells[0] not in covered and cells[0] not in NO_FIXTURE:
             problems.append(f"docs/21 limit has no fixture and no reason: {cells[0]}")
     problems.extend(check_ml())
+    problems.extend(check_docx())
     if problems:
         print("hostile fixtures out of step (fixtures/tools/generate.py --check):", file=sys.stderr)
         for p in problems:
             print(f"  {p}", file=sys.stderr)
         return 1
-    print(f"hostile fixtures: {len(names)} files and {len(ml_builders())} ml files, manifests and docs/21 agree")
+    print(f"hostile fixtures: {len(names)} files, {len(ml_builders())} ml files and {len(docx_builders())} docx files, manifests and docs/21 agree")
     return 0
 
 
@@ -717,6 +943,9 @@ def main(argv):
         OUT_ML.mkdir(parents=True, exist_ok=True)
         for name, build in ml_builders().items():
             (OUT_ML / name).write_bytes(build())
+        return check()
+    if argv[1:] == ["--docx"]:
+        write_docx()
         return check()
     if len(argv) > 1:
         print(__doc__, file=sys.stderr)
@@ -731,6 +960,7 @@ def main(argv):
         data = build()
         (OUT_ML / name).write_bytes(data)
         print(f"ml/{name:25} {len(data):>12,}")
+    write_docx()
     return check()
 
 

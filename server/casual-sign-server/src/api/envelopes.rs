@@ -152,6 +152,27 @@ pub(crate) fn pages_json(a: &AdmissionReport) -> Value {
     )
 }
 
+/// What happened to an upload before its transaction: the malware scan's note and, for
+/// a Word document, its conversion (ADR-042).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Screened {
+    pub(crate) scan: ScanNote,
+    pub(crate) converted: Option<casual_sign_convertd::Converted>,
+}
+
+/// Scan an upload (ASVS-11) and, when it is a Word document, convert it (ADR-042),
+/// outside any transaction: both can wait up to their timeouts.
+pub(crate) async fn screen_and_convert(
+    c: &Call,
+    kind: UploadKind,
+    target: Vec<(&'static str, String)>,
+    bytes: &[u8],
+) -> Result<Screened, ApiError> {
+    let scan = screen(&c.st, c.uploader(), kind, target, bytes).await?;
+    let converted = crate::convert::convert_upload(&c.st, bytes).await?;
+    Ok(Screened { scan, converted })
+}
+
 /// Admit and normalize an upload (docs/30 §2, §3), store the original and the
 /// delivered bytes, and record the document's rows. Signed input is kept as it is.
 async fn add_document(
@@ -160,8 +181,9 @@ async fn add_document(
     env: EnvelopeId,
     name: &str,
     bytes: Vec<u8>,
-    scan: ScanNote,
+    screened: Screened,
 ) -> Result<DocumentSpec, ApiError> {
+    let Screened { scan, converted } = screened;
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 255 {
         return Err(ApiError::invalid("/name"));
@@ -170,9 +192,14 @@ async fn add_document(
         return Err(ApiError::too_large());
     }
     let engine = st.0.engine.clone();
+    // A Word upload (ADR-042): the converted PDF is what is admitted; the .docx itself
+    // is kept as the original.
+    let conversion = converted.as_ref().map(crate::convert::report_entry);
+    let pdf = converted.map(|c| c.pdf);
     let (original, delivered) = tokio::task::spawn_blocking(move || {
-        let delivered = match engine.prepare(&bytes, &Credentials::default()) {
-            Err(e) if e.code() == "CS-PDF-0014" => engine.keep_signed(&bytes),
+        let admitted = pdf.as_deref().unwrap_or(&bytes);
+        let delivered = match engine.prepare(admitted, &Credentials::default()) {
+            Err(e) if e.code() == "CS-PDF-0014" => engine.keep_signed(admitted),
             other => other,
         };
         (bytes, delivered)
@@ -186,8 +213,12 @@ async fn add_document(
     }
     let original_key = st.0.blobs.put(&original).await?;
     let delivered_key = st.0.blobs.put(&delivered.bytes).await?;
-    let (report, findings) =
+    let (mut report, findings) =
         admission_json(&delivered.admission, delivered.normalization.as_ref(), scan);
+    // Present only for a converted upload, so a PDF's report hashes as it always did.
+    if let (Some(c), Some(o)) = (conversion, report.as_object_mut()) {
+        o.insert("converted".into(), c);
+    }
     let report_hash = Hash256::digest(&serde_json::to_vec(&report).unwrap_or_default());
     let doc = DocumentId(Uuid::now_v7());
     // Storage is checked against the plan under its counter rows' lock (PLAN-04,
@@ -694,15 +725,15 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
             &format!("/documents/{i}/content_base64"),
         )?;
         total = total.saturating_add(b.len());
-        decoded.push((d.name.clone(), b, None));
+        decoded.push((d.name.clone(), b, Screened::default()));
     }
     if total > c.st.config().max_envelope_bytes {
         return Err(ApiError::too_large());
     }
     // Every document is scanned before it is admitted or stored (ASVS-11); the
     // envelope does not exist yet, so the event names no envelope.
-    for (_, b, scan) in &mut decoded {
-        *scan = screen(&c.st, c.uploader(), UploadKind::Document, Vec::new(), b).await?;
+    for (_, b, screened) in &mut decoded {
+        *screened = screen_and_convert(&c, UploadKind::Document, Vec::new(), b).await?;
     }
     let mut tx = c.tx().await?;
     let (env, l) = create_in(&c, &mut tx, &req, decoded, send).await?;
@@ -725,7 +756,7 @@ pub(crate) async fn create_in(
     c: &Call,
     tx: &mut TenantTx,
     req: &EnvelopeCreate,
-    decoded: Vec<(String, Vec<u8>, ScanNote)>,
+    decoded: Vec<(String, Vec<u8>, Screened)>,
     send: bool,
 ) -> Result<(EnvelopeId, Loaded), ApiError> {
     let subject = dto::subject(&req.subject)?;
@@ -749,8 +780,8 @@ pub(crate) async fn create_in(
     let mut doc_ids = Vec::new();
     let mut uploads = Vec::new();
     let mut sources: Vec<super::placing::Source> = Vec::new();
-    for (name, bytes, scan) in decoded {
-        let spec = add_document(&c.st, tx, env, &name, bytes, scan).await?;
+    for (name, bytes, screened) in decoded {
+        let spec = add_document(&c.st, tx, env, &name, bytes, screened).await?;
         doc_ids.push(spec.id.clone());
         sources.push((
             spec.id.clone(),
@@ -1302,11 +1333,14 @@ pub(crate) async fn add_document_route(
     let l = find(&mut tx, &c.p, &id).await?;
     tx.commit().await?;
     let v = expected(&c, false)?;
+    // The document itself as the body: a PDF, or a Word document to convert (ADR-042).
     let pdf = c
         .headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|t| t.starts_with("application/pdf"));
+        .is_some_and(|t| {
+            t.starts_with("application/pdf") || t.starts_with(crate::convert::DOCX_MEDIA_TYPE)
+        });
     let (name, bytes) = if pdf {
         let name = q
             .get("name")
@@ -1323,9 +1357,8 @@ pub(crate) async fn add_document_route(
         (d.name, b)
     };
     within_envelope_limit(&c, &l, bytes.len())?;
-    let scan = screen(
-        &c.st,
-        c.uploader(),
+    let screened = screen_and_convert(
+        &c,
         UploadKind::Document,
         vec![("envelope", l.id.0.to_string())],
         &bytes,
@@ -1335,7 +1368,7 @@ pub(crate) async fn add_document_route(
     let mut tx = c.tx().await?;
     let mut l = find(&mut tx, &c.p, &id).await?;
     within_envelope_limit(&c, &l, bytes.len())?;
-    let spec = add_document(&c.st, &mut tx, l.id, &name, bytes, scan).await?;
+    let spec = add_document(&c.st, &mut tx, l.id, &name, bytes, screened).await?;
     let doc_id = spec.id.clone();
     let upload = (uid(&spec.id)?, spec.delivered_hash.0);
     change(
@@ -1598,11 +1631,15 @@ async fn serve_bytes(
         .await?;
     }
     tx.commit().await?;
+    // The original of a converted upload is the Word document itself (ADR-042).
+    let media = if crate::convert::is_word(&bytes) {
+        crate::convert::DOCX_MEDIA_TYPE
+    } else {
+        "application/pdf"
+    };
     let mut r = (StatusCode::OK, bytes).into_response();
-    r.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/pdf"),
-    );
+    r.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(media));
     r.headers_mut().insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_static("attachment"),

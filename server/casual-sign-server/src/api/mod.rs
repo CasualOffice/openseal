@@ -9,6 +9,7 @@
 
 pub mod admin;
 pub(crate) mod bulk;
+pub(crate) mod conversions;
 pub mod envelopes;
 pub(crate) mod factors;
 pub(crate) mod folders;

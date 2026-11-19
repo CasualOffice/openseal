@@ -1787,7 +1787,7 @@ function receiptRows() {
 /// where the browser's PDF viewer prints it.
 async function downloadCopy(print = false) {
   closeMore();
-  const name = (s) => `${String(s || "document").replace(/\.pdf$/i, "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, 120) || "document"}.pdf`;
+  const name = (s) => `${String(s || "document").replace(/\.(pdf|docx)$/i, "").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, " ").trim().slice(0, 120) || "document"}.pdf`;
   // After finishing, `GET /s/{token}/document?doc=` (the sealed copy once complete,
   // else a preview marked "not signed"); before, the server answers 409 and the copy
   // is the document as delivered, which is what the signer is reading.

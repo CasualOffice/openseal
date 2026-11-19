@@ -247,6 +247,7 @@ pub(crate) struct Inner {
     pub mfa: std::sync::OnceLock<Arc<crate::mfa::MfaKey>>,
     pub pepper: std::sync::OnceLock<Arc<crate::crypto::PasswordPepper>>,
     pub scanner: std::sync::OnceLock<Arc<crate::scan::Scanner>>,
+    pub converter: std::sync::OnceLock<Arc<casual_sign_convertd::Client>>,
     pub security: std::sync::OnceLock<casual_sign_seclog::SecurityLog>,
     pub anomaly: crate::anomaly::Detector,
     pub alerts: std::sync::OnceLock<Arc<dyn crate::anomaly::AlertSink>>,
@@ -282,6 +283,7 @@ impl AppState {
             mfa: std::sync::OnceLock::new(),
             pepper: std::sync::OnceLock::new(),
             scanner: std::sync::OnceLock::new(),
+            converter: std::sync::OnceLock::new(),
             security: std::sync::OnceLock::new(),
             anomaly,
             alerts: std::sync::OnceLock::new(),
@@ -330,6 +332,17 @@ impl AppState {
     /// it, nothing is scanned. Set once; a second call is ignored.
     pub fn set_scanner(&self, scanner: crate::scan::Scanner) {
         let _ = self.0.scanner.set(Arc::new(scanner));
+    }
+
+    /// Convert Word uploads to PDF through the conversion daemon `client` reaches
+    /// (ADR-042, `VS-06C`). Without it, a Word upload is refused `415 CS-CNV-0002`. Set
+    /// once; a second call is ignored.
+    pub fn set_converter(&self, client: casual_sign_convertd::Client) {
+        let _ = self.0.converter.set(Arc::new(client));
+    }
+
+    pub(crate) fn converter(&self) -> Option<&Arc<casual_sign_convertd::Client>> {
+        self.0.converter.get()
     }
 
     pub(crate) fn scanner(&self) -> Option<&Arc<crate::scan::Scanner>> {

@@ -28,6 +28,7 @@ members = [
     "server/casual-sign-keyd-client",
     "server/casual-sign-keyd",
     "server/casual-sign-modeld",
+    "server/casual-sign-convertd",
     "server/casual-sign-host",
     "server/casual-sign-worker",
     "server/casual-sign-server",

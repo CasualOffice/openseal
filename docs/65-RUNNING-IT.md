@@ -194,6 +194,34 @@ deployment, upload the EICAR test file (the 68-byte string from eicar.org) as a 
 `CS-SCAN-0001` and appear in the admin log. The server's tests run the same check against a real clamd when
 `OPENSEAL_TEST_CLAMD_ADDR` names one (`server/casual-sign-server/tests/malware.rs`); CI does not set it yet (`SCAN-04`).
 
+## Word conversion (`convertd`, ADR-042)
+
+Word documents (`.docx`) uploaded to an envelope or a template are converted to PDF by `convertd`, a service of the
+development stack and of the production profile (`VS-06C`). It runs `docxide-pdf` (Apache-2.0) in a fresh child
+process for each document, with no network at all (`network_mode: none`), no secrets, a read-only root, every
+capability dropped, and memory (3 GB), CPU (2) and process (64) limits; each child is further capped at 2 GiB of
+address space and 60 seconds and writes no file (docs/07 `SEC-P13`, docs/21 §DOCX conversion). The server reaches it
+over a Unix socket on the `convertd` volume, which only the server's containers mount. Macro-enabled documents are
+refused; links to pictures or pages outside the document are never fetched. The original `.docx` is kept as the
+document's original version; the converted PDF is what recipients see and sign.
+
+| Variable | Service | Default | Meaning |
+| --- | --- | --- | --- |
+| `OPENSEAL_CONVERTD_SOCKET` | server | unset | The socket (`/run/convertd/convertd.sock` in Compose). Unset: Word uploads are refused (`415 CS-CNV-0002`), and the server warns at start |
+| `OPENSEAL_CONVERTD_TIMEOUT` | server | 90 | Most seconds the server waits for one conversion (1 to 600) |
+| `OPENSEAL_CONVERTD_SOCKET` | convertd | `/run/convertd/convertd.sock` | Where it listens; owner-only permissions |
+| `OPENSEAL_CONVERTD_SLOTS` | convertd | 2 | Conversions at once (1 to 64); more are refused at once (`503 CS-CNV-0005 busy`) |
+| `OPENSEAL_CONVERTD_JOB_SECONDS` | convertd | 60 | Wall-clock and CPU seconds per document (1 to 600) |
+| `OPENSEAL_CONVERTD_MEMORY` | convertd | 2048 | A child's address-space limit in MiB (256 to 16384) |
+| `OPENSEAL_CONVERTD_FONTS` | convertd | unset | A font directory searched before the image's own |
+
+The image ships Debian's Croscore fonts (Arimo, Tinos, Cousine; Apache-2.0), metric-compatible with Arial, Times New
+Roman and Courier New. Word's own fonts (Calibri, Cambria) are not shipped: a document set in them is drawn in the
+Croscore faces, so its lines may break differently from Word's (`VS-06G`). To add fonts you are licensed to use, mount
+a directory read-only into the container and set `OPENSEAL_CONVERTD_FONTS`. Each conversion logs one line with its
+code, reason and milliseconds, never a name or content. To check a deployment, upload a `.docx` as a document: it is
+admitted with the PDF's page count, and `GET …/content?version=original` answers the Word document.
+
 ## Failure recovery
 
 What each failure leaves, and what brings the deployment back (`HRD-01`; tested in

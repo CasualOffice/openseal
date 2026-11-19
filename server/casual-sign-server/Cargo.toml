@@ -19,6 +19,10 @@ casual-sign-model = { path = "../../crates/casual-sign-model" }
 # Admission and normalization of uploads (docs/30 §2, §3).
 casual-sign-sdk = { path = "../../crates/casual-sign-sdk" }
 casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
+# Word uploads converted to PDF (ADR-042, VS-06C): the client and the wire code only,
+# `default-features = false`, so no DOCX parser, image decoder or font code is linked
+# into the server; the conversion runs in convertd's container.
+casual-sign-convertd = { path = "../casual-sign-convertd", default-features = false }
 # The signing view's rules (VS-04C): the same `evaluate_envelope` the engine runs at
 # finish, so the page shows what the seal will do.
 casual-sign-fields = { path = "../../crates/casual-sign-fields" }

@@ -7,7 +7,7 @@
 import { h, fmtDate, fmtShortDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
-import { toBase64, corrections } from "./api.js";
+import { toBase64, corrections, docBaseName } from "./api.js";
 import { added, templateFieldsFrom } from "./templatesync.js";
 import { recipientCorrection } from "./people.js";
 import { DELETABLE, ACTIVE, ENDED } from "./managemodel.js";
@@ -246,7 +246,7 @@ export async function downloadCurrent(ctx, id, env = null) {
   const e = env || (await ctx.api.getEnvelope(id)).envelope;
   const suffix = ENDED.has(e.status) ? e.status : "current";
   for (const d of e.documents || []) {
-    download(await ctx.api.documentContent(id, d.id, "current"), `${(d.name || "document.pdf").replace(/\.pdf$/i, "")}-${suffix}.pdf`);
+    download(await ctx.api.documentContent(id, d.id, "current"), `${docBaseName(d.name || "document")}-${suffix}.pdf`);
   }
 }
 
@@ -266,7 +266,7 @@ export function hasCertificate(ctx, status) {
 export async function downloadSealed(ctx, id, env = null) {
   const e = env || (await ctx.api.getEnvelope(id)).envelope;
   for (const d of e.documents || []) {
-    download(await ctx.api.documentContent(id, d.id, "sealed"), `${(d.name || "document.pdf").replace(/\.pdf$/i, "")}-sealed.pdf`);
+    download(await ctx.api.documentContent(id, d.id, "sealed"), `${docBaseName(d.name || "document")}-sealed.pdf`);
   }
 }
 

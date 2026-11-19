@@ -14,4 +14,10 @@ ignore = [
     # vendored `oar-ocr` and `oar-ocr-core` without `image`/`imageproc` defaults. Pending
     # owner confirmation; removed under DEP-07 once tokenizers drops paste.
     "RUSTSEC-2024-0436",
+    # RUSTSEC-2026-0192 (ttf-parser, unmaintained; no vulnerability): `docxide-pdf`
+    # 0.21.4, the DOCX converter ADR-042 chose (owner instruction 76), reads font metrics
+    # through it. It runs only in convertd's per-job child, in a container with no network
+    # and no secrets, under address-space, CPU and time caps. Removed under DEP-09 once
+    # docxide-pdf moves to `skrifa` (which its `subsetter` already uses).
+    "RUSTSEC-2026-0192",
 ]

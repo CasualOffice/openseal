@@ -199,6 +199,37 @@ fn slice6_operations<'a>(
     })
 }
 
+/// ADR-042 (`VS-06C`): the editor's preview of a Word document, through a fake convertd
+/// (`common::convertd`). Boxed: the contract test's future is already large.
+fn conversion_operations<'a>(
+    api: &'a Api,
+    k: &'a common::harness::Auth,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        api.st
+            .set_converter(common::convertd::fake_converter().await);
+        let r = api
+            .send(
+                "POST",
+                "/api/v1/conversions",
+                k,
+                Body::from(common::convertd::docx()),
+                &[(
+                    "content-type",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )],
+            )
+            .await;
+        assert_eq!(
+            r.status,
+            StatusCode::OK,
+            "convert: {}",
+            String::from_utf8_lossy(&r.body)
+        );
+        assert!(r.body.starts_with(b"%PDF-"));
+    })
+}
+
 /// Each personal-data operation once, as the signed-in administrator (who owns the
 /// organization, so may not erase themselves), against ids of no object where one is
 /// named. Boxed: the contract test's future is already large.
@@ -1916,6 +1947,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         assert_eq!(t["sender_user_id"], to);
     }
     slice6_operations(&api, k, reid).await;
+    conversion_operations(&api, k).await;
     // The reassigned recipient's link was revoked in the same transaction.
     let revoked = api
         .call("GET", &format!("/s/{tre}"), &Auth::None, None, &hre)
