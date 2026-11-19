@@ -752,13 +752,13 @@ a.card:hover { transform: translateY(-2px); color: var(--os-text); box-shadow: 0
 .endpoint-list a:hover { background: rgba(255, 255, 255, 0.05); color: #fafafa; }
 .endpoint-list code { background: none; box-shadow: none; padding: 0; color: inherit; font-size: 0.75rem; overflow-wrap: anywhere; }
 .status-pill { display: inline-flex; align-items: center; gap: 0.375rem; font: 600 0.75rem/1 var(--os-font-mono); padding: 0.25rem 0.5rem; border-radius: 999px; white-space: nowrap; }
-.status-pill::before { content: ""; width: 0.4375rem; height: 0.4375rem; border-radius: 50%; background: currentColor; }
-.status-pill--2xx { color: var(--os-success); background: color-mix(in srgb, var(--os-success) 10%, transparent); }
-.status-pill--3xx { color: var(--os-info); background: color-mix(in srgb, var(--os-info) 10%, transparent); }
-.status-pill--4xx { color: var(--os-warning); background: color-mix(in srgb, var(--os-warning) 10%, transparent); }
-.status-pill--5xx { color: var(--os-danger); background: color-mix(in srgb, var(--os-danger) 10%, transparent); }
-.codebox .status-pill--2xx { color: #86efac; background: rgba(134, 239, 172, 0.1); }
-.codebox .status-pill--3xx { color: #93c5fd; background: rgba(147, 197, 253, 0.1); }
+.status-pill::before { content: ""; width: 0.4375rem; height: 0.4375rem; border-radius: 50%; background: var(--pill); }
+.status-pill--2xx { --pill: var(--os-success); color: var(--os-text); background: color-mix(in srgb, var(--os-success) 10%, transparent); }
+.status-pill--3xx { --pill: var(--os-info); color: var(--os-text); background: color-mix(in srgb, var(--os-info) 10%, transparent); }
+.status-pill--4xx { --pill: var(--os-warning); color: var(--os-text); background: color-mix(in srgb, var(--os-warning) 10%, transparent); }
+.status-pill--5xx { --pill: var(--os-danger); color: var(--os-text); background: color-mix(in srgb, var(--os-danger) 10%, transparent); }
+.codebox .status-pill--2xx { --pill: #86efac; color: #86efac; background: rgba(134, 239, 172, 0.1); }
+.codebox .status-pill--3xx { --pill: #93c5fd; color: #93c5fd; background: rgba(147, 197, 253, 0.1); }
 .errbox { border-radius: var(--r-card); background: var(--os-bg); box-shadow: 0 0 0 1px var(--os-border); }
 .errbox > summary { cursor: pointer; padding: 0.625rem 1rem; font-size: 0.875rem; font-weight: 580; color: var(--os-text); min-height: var(--os-target-touch); display: flex; align-items: center; }
 .errbox .table-scroll { box-shadow: 0 -1px 0 var(--os-border); border-radius: 0; background: transparent; }
