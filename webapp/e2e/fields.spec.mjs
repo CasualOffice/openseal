@@ -242,8 +242,8 @@ test("slice 4 (VS-04E, VS-04F): a PDF's own form fields and its text tags are su
   await placingFor(page, 0);
   await page.getByTestId("detect-fields").click();
   // The form's fields and the tag are among the suggestions, named after themselves.
-  await expect(page.getByRole("button", { name: /Accept suggested Text field/ }).first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByRole("button", { name: /Accept suggested Date field/ })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Accept suggested policy_number field, page 1" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByRole("button", { name: "Accept suggested start_date field, page 1" })).toHaveCount(1);
   await page.getByTestId("accept-all").click();
   await expect(page.getByTestId("ghost")).toHaveCount(0);
   await expect(page.locator('.os-field[data-field="date"]')).toHaveCount(1);
