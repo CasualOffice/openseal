@@ -204,6 +204,8 @@ async fn every_field_kind_is_filled_checked_adopted_and_drawn() {
     let stamp = stamp["adoption_id"].as_str().unwrap().to_owned();
     let sketch = ok(s.adopt("drawing", "draw").await, StatusCode::OK, "drawing");
     let sketch = sketch["adoption_id"].as_str().unwrap().to_owned();
+    // With a signature adopted too, the stamp's capture is still not a signature.
+    let sig = ok(s.adopt("signature", "draw").await, StatusCode::OK, "adopt");
     let r = s
         .put(&f("signature"), json!({"signature": stamp.clone()}))
         .await;
@@ -240,7 +242,6 @@ async fn every_field_kind_is_filled_checked_adopted_and_drawn() {
         StatusCode::OK,
         "viewed",
     );
-    let sig = ok(s.adopt("signature", "draw").await, StatusCode::OK, "adopt");
     let done = ok(
         s.call(
             "POST",
