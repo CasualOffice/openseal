@@ -22,7 +22,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from tracker_rows import ID_ROW, TRACKER, cells  # noqa: E402
 
 SEPARATOR = re.compile(r"^\|[\s:|-]+\|\s*$")
-STATUS = {"Open", "In progress", "Blocked", "Done"}
+STATUS = {"Open", "In progress", "Blocked", "Paused", "Done"}
 
 
 def check(root):
