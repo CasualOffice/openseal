@@ -39,6 +39,15 @@ export const SHELL = {
 
   // ASVS-06: the person's own sessions, in the profile panel.
   "sessions.title": "Where you're signed in",
+  "privacy.title": "Your data",
+  "privacy.text": "Download what this workspace holds about you, or delete your account here. Signed agreements and their audit trails are evidence: they are kept unchanged, under the workspace's retention rules.",
+  "privacy.export": "Download my data",
+  "privacy.exported": "Your data was downloaded.",
+  "privacy.erase": "Delete my account",
+  "privacy.erase-title": "Delete your account?",
+  "privacy.erase-text": "Your name and email are replaced, your sign-in, saved signature and sessions here are removed, and you are signed out. Agreements you sent and their audit trails stay with the workspace unchanged. This cannot be undone.",
+  "privacy.erase-confirm": "Delete my account",
+  "privacy.erased": "Your account was deleted.",
   "sessions.text": "Sessions end after a period without activity, and after a set time even when in use. Sign out of any you do not recognise.",
   "sessions.this": "This browser",
   "sessions.unknown-client": "Unknown browser",

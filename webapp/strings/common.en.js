@@ -71,6 +71,8 @@ export const COMMON = {
   "error.CS-AUTH-0011": "Finish signing in with your second factor first.",
   "error.CS-AUTH-0012": "That code is not right, or it was already used.",
   "error.CS-AUTH-0013": "Confirm your password to do this.",
+  "error.CS-API-0018": "This account cannot be deleted while it is the workspace's last administrator or an organization administrator. Hand the role over first.",
+  "error.CS-API-0019": "This envelope is under legal hold. Release the hold first.",
   "error.CS-AUTH-0009": "This signing link is open in another browser. Open it from your email on this device.",
   "error.CS-WF-0001": "That is not possible in the envelope's current state.",
   "error.CS-WF-0002": "Someone else changed this envelope. Reload and try again.",
