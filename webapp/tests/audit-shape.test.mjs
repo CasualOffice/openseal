@@ -20,7 +20,7 @@ const SERVER_TYPES = new Set([
   "recipient.field_completed", "recipient.signed", "recipient.approved", "recipient.completed", "recipient.declined",
   "recipient.reassigned", "recipient.finish_later", "recipient.in_person_hosted", "envelope.viewed_by_sender",
   "document.downloaded", "certificate.downloaded", "attachment.downloaded", "auth.asserted_by_host",
-  "envelope.transferred", "envelope.exported",
+  "envelope.transferred", "envelope.exported", "envelope.restored",
 ]);
 const ACTOR_KINDS = new Set(["system", "sender", "recipient", "user", "host"]);
 

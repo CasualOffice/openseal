@@ -19,7 +19,8 @@ export const SOON_DAYS = 7;
 /// one secondary, the rest in More): `{primary, secondary, more}` as action ids, `more`
 /// in groups with the destructive group last. `cert`: whether the certificate can be
 /// had (a completed one's; an ended one's once the server serves it, UXW-30).
-export function envelopeActions(status, { cert = false, transfer = false, fields = false } = {}) {
+/// `deleted`: it is in the Deleted view (ADR-031): Restore takes Delete's place.
+export function envelopeActions(status, { cert = false, transfer = false, fields = false, deleted = false } = {}) {
   // VS-06: custom fields wherever the server keeps them; transfer for a member who
   // may (the server checks `envelopes.transfer` on every request).
   const own = [...(fields ? ["fields"] : []), ...(transfer ? ["transfer"] : [])];
@@ -27,14 +28,16 @@ export function envelopeActions(status, { cert = false, transfer = false, fields
   if (status === "draft") return { primary: "edit", secondary: null, more: [["copy", "template"], ...tail, ["delete"]] };
   if (ACTIVE.has(status)) return { primary: "correct", secondary: "resend", more: [["correct-docs", "download-current", "copy", "template", "history"], ...tail, ["void"]] };
   if (status === "completed") return { primary: "download", secondary: "certificate", more: [["copy", "template", "history"], ...tail] };
-  if (ENDED.has(status)) return { primary: "copy-resend", secondary: "download-ended", more: [[...(cert ? ["certificate"] : []), "template", "history"], ...tail, ["delete"]] };
+  if (ENDED.has(status)) return { primary: deleted ? "restore" : "copy-resend", secondary: "download-ended", more: [[...(deleted ? ["copy-resend"] : []), ...(cert ? ["certificate"] : []), "template", "history"], ...tail, ...(deleted ? [] : [["delete"]])] };
   return { primary: null, secondary: null, more: [["copy", "template"], ...tail] };
 }
 
 /// The Agreements row menu's groups for `status`, separated in the menu and with the
 /// destructive group last: open or edit | correct, resend, download | copy, save as
-/// template, history | void, delete.
-export function rowActions(status, { cert = false } = {}) {
+/// template, history | void, delete. A deleted one (the Deleted view, ADR-031) offers
+/// open | history | restore.
+export function rowActions(status, { cert = false, deleted = false } = {}) {
+  if (deleted) return [["open"], ["history"], ["restore"]];
   const groups = [[status === "draft" ? "edit" : "open"]];
   const work = [];
   if (ACTIVE.has(status)) work.push("correct", "resend", "download-current");
@@ -101,6 +104,8 @@ export const GROUPS = Object.freeze([
 /// `authFailed`: only rows the server's Authentication failed view marked
 /// (`auth_failed`, set by agreementparts.fetchAgreements from `?auth_failed=true`, VS-06).
 /// The last four have no tab: older addresses and Home's "Declined or expired" open them.
+/// `deleted`: the Deleted view (UXW-02, ADR-031), the only one holding the envelopes
+/// removed from the lists (`row.deleted_at`, from `?deleted=true`), each restorable.
 export const VIEWS = Object.freeze([
   { id: "all", tab: true },
   { id: "me", tab: true, nav: true, dot: "you", groups: ["you"], inbox: true },
@@ -113,6 +118,7 @@ export const VIEWS = Object.freeze([
   { id: "declined", statuses: ["declined"] },
   { id: "voided", statuses: ["voided"] },
   { id: "expired", statuses: ["expired"] },
+  { id: "deleted", nav: true, dot: "draft", deleted: true },
 ]);
 const LEGACY_STATUS = { draft: "drafts", sent: "waiting", delivered: "waiting", completed: "completed", declined: "declined", voided: "voided", expired: "expired" };
 
@@ -159,6 +165,7 @@ const ENDED_PILL = Object.freeze({
 /// Whether `row` belongs in view `id` at `now` (ms).
 export function inView(row, id, mine = new Set(), now = Date.now()) {
   const v = VIEWS.find((x) => x.id === id) || VIEWS[0];
+  if (!!v.deleted !== !!row?.deleted_at) return false;
   if (v.groups && !v.groups.includes(groupOf(row, mine))) return false;
   if (v.statuses && !v.statuses.includes(row.status)) return false;
   if (v.soon && !expiringSoon(row.expires_at, now)) return false;

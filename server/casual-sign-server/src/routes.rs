@@ -685,6 +685,14 @@ pub fn table() -> Vec<Route> {
         r("GET", "/api/v1/envelopes/{id}", er, JSON, env::get),
         r("PATCH", "/api/v1/envelopes/{id}", ew, JSON, env::patch),
         r("DELETE", "/api/v1/envelopes/{id}", ew, JSON, env::delete),
+        // ADR-031 (UXW-02): back from the Deleted view.
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/restore",
+            ew,
+            JSON,
+            env::restore,
+        ),
         r(
             "GET",
             "/api/v1/envelopes/{id}/status",

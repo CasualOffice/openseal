@@ -186,7 +186,6 @@ export const WEBHOOK_EVENT_TYPES = Object.freeze([
 /// `CS-NET-0002` (501), so the UI can say "not available yet" instead of hiding the
 /// control. `client.available(name)` tells which.
 export const NOT_ON_SERVER = Object.freeze({
-  restoreEnvelope: { row: "UXW-02", needs: "POST /envelopes/{id}/restore (a new workflow command and audit type envelope.restored, ADR-031 Proposed)" },
   clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit type recipient.field_cleared, ADR-032 Proposed)" },
 });
 
@@ -422,9 +421,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     setCustomFields: (id, items) => data(request("PUT", `${E(id)}/custom-fields`, { body: { items } })),
     patchEnvelope: (id, etag, body) => data(request("PATCH", E(id), { body, ifMatch: etag })),
     deleteEnvelope: (id, etag) => data(request("DELETE", E(id), { ifMatch: etag })),
-    /// Bring a deleted envelope back to the lists (`NOT_ON_SERVER.restoreEnvelope`:
-    /// a new audit type, ADR-031 Proposed).
-    restoreEnvelope: unbuilt("restoreEnvelope", (id) => data(request("POST", `${E(id)}/restore`))),
+    /// Bring a deleted envelope back to the lists (ADR-031, recorded as
+    /// `envelope.restored`); answers the envelope. `etag` is checked when given.
+    restoreEnvelope: (id, etag) => data(request("POST", `${E(id)}/restore`, { ifMatch: etag || undefined })),
     sendEnvelope: (id) => data(request("POST", `${E(id)}/send`)),
     /// Schedule a sendable draft to send itself at `sendAt` (an ISO instant, WF-02);
     /// answers the draft with `send_at`. A scheduled draft is not edited (`CS-WF-0022`).

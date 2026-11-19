@@ -239,6 +239,16 @@ export async function deleteEnvelope(ctx, id, subject, status) {
   return true;
 }
 
+/// Restore a deleted envelope to the lists (ADR-031, UXW-02): recorded on the server as
+/// `envelope.restored`; nothing in the agreement changes, so no confirmation. Resolves
+/// the envelope as it now stands.
+export async function restoreEnvelope(ctx, id) {
+  const { etag } = await ctx.api.getEnvelope(id);
+  const env = await ctx.api.restoreEnvelope(id, etag);
+  toast(t("agreements.restored"), "success");
+  return env;
+}
+
 /// Download each document as it stands (E-02): while the envelope is in progress, or as
 /// it ended when declined, voided or expired (UX-07). `version=current` serves any
 /// envelope that was sent (docs/40), with a "not signed" banner unless sealed.

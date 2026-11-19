@@ -341,6 +341,10 @@ pub enum Command {
     /// from the sender's lists (WEB-08). Nothing is purged: the chain, the documents
     /// and the state stay; `envelope.deleted` records who removed it and when.
     DeleteEnded,
+    /// List again an envelope removed by [`Command::DeleteEnded`] (ADR-031, `UXW-02`):
+    /// only while it is deleted and not purged; `envelope.restored` records who and when.
+    /// Nothing in the agreement changes.
+    RestoreDeleted,
     /// Correct a sent envelope (docs/24 §6).
     Correct {
         /// The changes, applied in order, all or none.
@@ -561,6 +565,7 @@ impl Command {
             Self::ScheduleSend { .. } => "schedule_send",
             Self::DeleteDraft => "delete_draft",
             Self::DeleteEnded => "delete_ended",
+            Self::RestoreDeleted => "restore_deleted",
             Self::Correct { .. } => "correct",
             Self::Void { .. } => "void",
             Self::Resend { .. } => "resend",

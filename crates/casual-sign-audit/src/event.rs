@@ -281,6 +281,11 @@ pub enum EventData {
     /// (WEB-08); nothing was purged: its documents, state and this chain stay.
     #[serde(rename = "envelope.deleted")]
     EnvelopeDeleted {},
+    /// An envelope removed from the sender's lists (`envelope.deleted`) was listed again
+    /// (ADR-031, `UXW-02`); nothing in the agreement changed. Additive to ADR-010 as
+    /// ADR-027 and ADR-030 were.
+    #[serde(rename = "envelope.restored")]
+    EnvelopeRestored {},
     /// The envelope's ownership passed to another member of the same workspace
     /// (ORG-09, docs/23 §2.4; additive to ADR-010 as ADR-027 was).
     #[serde(rename = "envelope.transferred")]
@@ -584,6 +589,7 @@ impl EventData {
         "envelope.purged",
         "envelope.deleted",
         "envelope.transferred",
+        "envelope.restored",
         "document.added",
         "document.admitted",
         "document.fixed",
@@ -906,8 +912,9 @@ mod tests {
             serde_json::to_value(&empty).unwrap(),
             serde_json::json!({"type": "envelope.expired", "data": {}})
         );
-        // 40 before ORG-09 added `envelope.transferred` and `envelope.exported` (additive, ADR-027).
-        assert_eq!(EventData::TYPES.len(), 42);
+        // 40 before ORG-09 added `envelope.transferred` and `envelope.exported` (additive,
+        // ADR-027); 43 with ADR-031's `envelope.restored`.
+        assert_eq!(EventData::TYPES.len(), 43);
     }
 
     #[test]

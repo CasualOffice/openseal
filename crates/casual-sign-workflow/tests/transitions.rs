@@ -218,6 +218,50 @@ fn delete_ended_takes_only_an_envelope_that_ended_without_completing_and_purges_
     assert_eq!(code(hx.run(sender(), c)), "CS-WF-0008");
 }
 
+#[test]
+fn restore_deleted_lists_a_deleted_envelope_again_and_only_while_deleted_and_not_purged() {
+    // ADR-031 (`UXW-02`).
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1)]);
+    hx.send();
+    hx.ok(sender(), Command::Void { reason: text("x") });
+    // Not deleted yet: nothing to restore.
+    assert_eq!(
+        code(hx.run(sender(), Command::RestoreDeleted)),
+        "CS-WF-0001"
+    );
+    hx.ok(sender(), Command::DeleteEnded);
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), Command::RestoreDeleted)),
+        "CS-WF-0003"
+    );
+    let before = hx.state().version;
+    let d = hx.ok(sender(), Command::RestoreDeleted);
+    assert_eq!(types(&d), ["envelope.restored"]);
+    assert!(d.effects.is_empty());
+    let s = hx.state();
+    assert!(s.deleted_at.is_none() && !s.purged);
+    assert_eq!(s.status, EnvelopeStatus::Voided);
+    assert!(s.version > before, "the lists see the change");
+    // A second restore is refused; it can be deleted and restored again.
+    assert_eq!(
+        code(hx.run(sender(), Command::RestoreDeleted)),
+        "CS-WF-0001"
+    );
+    hx.ok(sender(), Command::DeleteEnded);
+    // Purged while deleted: past retention, it cannot be restored.
+    hx.ok(
+        Principal::System,
+        Command::Purge {
+            policy: Text::new("retention.ended").unwrap(),
+        },
+    );
+    assert_eq!(
+        code(hx.run(sender(), Command::RestoreDeleted)),
+        "CS-WF-0001"
+    );
+}
+
 // Routing -----------------------------------------------------------------------------
 
 #[test]

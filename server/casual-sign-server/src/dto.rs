@@ -367,6 +367,7 @@ pub(crate) fn envelope(s: &EnvelopeState) -> Value {
         "send_at": s.send_at,
         "ended_at": s.ended_at,
         "expires_at": s.expires_at,
+        "deleted_at": s.deleted_at,
         "void_reason": s.void_reason.as_ref().map(|r| &r.0),
         "reminders": s.reminders,
         "signing_options": s.options,

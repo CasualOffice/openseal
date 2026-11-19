@@ -698,6 +698,7 @@ components:
         send_at: {type: [string, 'null'], format: date-time, description: 'A draft scheduled to send itself at this time (WF-02)'}
         ended_at: {type: [string, 'null'], format: date-time}
         expires_at: {type: [string, 'null'], format: date-time}
+        deleted_at: {type: [string, 'null'], format: date-time, description: 'When it was removed from the lists (WEB-08); null once restored (ADR-031)'}
         reminders: {type: object}
         signing_options: {$ref: '#/components/schemas/SigningOptions'}
         seal_profile: {type: string, enum: [pades-b-t, pades-b-lt, pades-b-lta]}
@@ -717,6 +718,7 @@ components:
         completed_at: {type: [string, 'null'], format: date-time}
         expires_at: {type: [string, 'null'], format: date-time}
         folder_id: {type: [string, 'null'], description: "The caller's own folder it is filed in (UXW-02)"}
+        deleted_at: {type: [string, 'null'], format: date-time, description: 'Set in the Deleted view (`deleted=true`): when it was removed from the lists'}
         my_recipient_id: {type: [string, 'null'], description: "With waiting_for=me only: the recipient the caller is (UXW-01)"}
     BulkSendCreate:
       type: object
@@ -3472,6 +3474,37 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/TransferRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/restore:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: restoreEnvelope
+      summary: "Bring a deleted envelope back to the lists (ADR-031)"
+      description: >-
+        An envelope removed from the lists by `DELETE` (declined, voided or expired; in the
+        Deleted view, `GET /envelopes?deleted=true`) is listed again. Records
+        `envelope.restored` in its chain, after the `envelope.deleted` that removed it;
+        nothing in the agreement changes. `If-Match` is checked when sent. One that is
+        not deleted, or was purged meanwhile (past its retention), is `409 CS-WF-0001`.
+      x-permission: "envelopes.write"
+      x-level: workspace
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: The envelope's `ETag` as read; a stale one is `412 CS-WF-0002`.
+          schema: {type: string}
       responses:
         '200':
           description: OK

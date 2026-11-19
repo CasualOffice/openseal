@@ -919,6 +919,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         // As the server's summary (envelopes.rs list): when it was sent and completed (UX-08).
         sent_at: e.sent_at || null, completed_at: e.status === "completed" ? e.ended_at || null : null,
         ...(e.folder_id ? { folder_id: e.folder_id } : {}), ...(waiting ? { my_recipient_id: myRecipient(e).id } : {}),
+        // As the server (ADR-031): the Deleted view says when each was removed.
+        ...(e.deleted_at ? { deleted_at: e.deleted_at } : {}),
       })),
       next_cursor: start + limit < all.length ? String(start + limit) : null,
     });
@@ -2022,12 +2024,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return json(204, null);
       }
     }
-    // UX-03, not on the server yet (api.js NOT_ON_SERVER.restoreEnvelope): back to the lists.
+    // As the server (ADR-031, `POST /envelopes/{id}/restore`): back to the lists, with
+    // `envelope.restored` after the `envelope.deleted`; not deleted (or purged) is 409.
     if (sub === "restore" && method === "POST") {
       if (!env.deleted_at) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      if (headers["if-match"] && headers["if-match"] !== `"v${env.version}"`) fail(412, "CS-WF-0002", "Stale version");
       delete env.deleted_at;
       env.version++;
-      // Not a casual-sign-audit type yet: ADR-031 (Proposed) adds it (NOT_ON_SERVER.restoreEnvelope).
       await audit(env, "envelope.restored", {}, { by: "sender" });
       return withEtag(env);
     }

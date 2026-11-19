@@ -1503,6 +1503,16 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "restoreEnvelope": {
+    "body": false,
+    "body_required": false,
+    "method": "POST",
+    "path": "/api/v1/envelopes/{id}/restore",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
   "restoreTemplate": {
     "body": false,
     "body_required": false,

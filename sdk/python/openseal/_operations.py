@@ -1506,6 +1506,16 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "restoreEnvelope": {
+        "body": False,
+        "body_required": False,
+        "method": "POST",
+        "path": "/api/v1/envelopes/{id}/restore",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
     "restoreTemplate": {
         "body": False,
         "body_required": False,

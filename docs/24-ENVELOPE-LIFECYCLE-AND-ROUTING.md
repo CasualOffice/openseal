@@ -219,8 +219,11 @@ objects concerned, never their content.
   completing (`declined`, `voided`, `expired`) from the lists. It records `envelope.deleted`, sets the state's
   `deleted_at`, and changes nothing else: no status change, no scrub, no effect; the chain and evidence stay and later
   access is still recorded. Any other status, a purged envelope, or a second time is `CS-WF-0001`.
-  Bringing one back to the lists is a planned command `RestoreDeleted` recording `envelope.restored` (ADR-031,
-  Proposed, `UXW-02`); until it is Accepted the server lists deleted envelopes (the Deleted view) but restores none.
+- **Restore deleted** (`RestoreDeleted`, ADR-031, `UXW-43`): the sender or an administrator lists a deleted envelope
+  again. Allowed only while `deleted_at` is set and the envelope is not purged (a purged one is past its retention and
+  stays gone); records `envelope.restored` `{}` and clears `deleted_at`, nothing else: no status change, no effect.
+  Not deleted, purged, or a second time is `CS-WF-0001`. The trail keeps both `envelope.deleted` and
+  `envelope.restored`; it can be deleted and restored again.
 - **Transfer** (`Transfer {to_user}`, `ORG-09`, docs/23 §2.4, additive as ADR-027): an administrator principal (the
   server admits a member holding `envelopes.transfer`) passes the envelope's ownership to another member of the same
   workspace, in any status but purged. It records `envelope.transferred {from_user, to_user}`, sets the state's
@@ -254,6 +257,7 @@ objects concerned, never their content.
 | Send (validate for send returning every violation; `document.fixed`; first step invited; expiry, warning, reminders scheduled) | Built |
 | Delete draft | Built |
 | Delete an envelope that ended without completing from the lists (`envelope.deleted`, nothing purged; `WEB-08`) | Built |
+| Restore a deleted envelope to the lists (`envelope.restored`; ADR-031, `UXW-43`) | Built |
 | Transfer ownership within the workspace (`envelope.transferred`; `ORG-09`) and record an evidence export (`envelope.exported`) | Built (the export route: `ORG-18`) |
 | Deliver/open (`recipient.delivered`; envelope `delivered` per §2) | Built |
 | Consent to the current ERSD; withdraw | Built |

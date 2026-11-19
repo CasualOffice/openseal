@@ -27,7 +27,7 @@ import { register, unregisterPrefix } from "./commands.js";
 import { button, busy, emptyState, errorState, toast, toastError, confirmDialog, menuButton, selectField, tabs, iconButton } from "./ui/index.js";
 import {
   copyEnvelope, saveAsTemplate, deleteEnvelope, downloadCurrent, downloadSealed, downloadCertificate, hasCertificate,
-  historyPanel, correctPanel, voidEnvelopes, waitingFor, DELETABLE, ACTIVE,
+  historyPanel, correctPanel, voidEnvelopes, waitingFor, DELETABLE, ACTIVE, restoreEnvelope,
 } from "./envactions.js";
 import {
   agreementsHash, rowActions, toCsv, VIEWS, toneOf, viewFrom, groupRows, flatIds, moveSelection, viewCounts, signingProgress, primaryVerb, inView,
@@ -202,6 +202,8 @@ export function mount(view, ctx, _match, params) {
   register("list.export", { label: t("agreements.export-csv"), run: () => exportCsv(visibleRows()) });
   register("list.open", { label: t("inspector.open"), run: () => { const r = selectedRow(); if (r) ctx.navigate(rowHref(r)); }, enabled: () => !!selectedRow() });
   register("list.primary", { label: t("inspector.sign"), run: () => { const r = selectedRow(); const a = r && actionsFor(r, details.get(r.id)).primary; if (a) a.run(); }, enabled: () => !!selectedRow() });
+  // ADR-031: the selected envelope of the Deleted view back to the lists.
+  register("list.restore", { label: t("agreements.restore"), run: () => { const r = selectedRow(); if (r?.deleted_at) actionsFor(r, details.get(r.id)).primary.run(); }, enabled: () => !!selectedRow()?.deleted_at });
   for (const v of tabViews) register(`list.view.${v.id}`, { label: t("agreements.legacy-view", { view: t(`agreements.view.${v.id}`) }), run: () => setView(v.id) });
   const offMeaning = registerMeaningSearch(ctx);
 
@@ -579,6 +581,8 @@ export function mount(view, ctx, _match, params) {
     } else if (verb === "download") primary = { label: t("inspector.download"), run: guard(() => downloadSealed(ctx, id, env)) };
     else if (verb === "edit") primary = { label: t("inspector.edit"), run: async () => ctx.navigate(rowHref(r)) };
     else if (verb === "copy-resend") primary = { label: t("envelope.copy-resend"), run: copyThen };
+    const restore = guard(async () => { await restoreEnvelope(ctx, id); s.picked.delete(id); refreshAfter(id); });
+    if (r.deleted_at) primary = { label: t("agreements.restore"), run: restore };
     const verbs = {
       edit: [t("envelope.edit"), "file-pen-line", () => ctx.navigate(rowHref(r))],
       open: [t("agreements.open"), "eye", () => ctx.navigate(rowHref(r))],
@@ -594,8 +598,9 @@ export function mount(view, ctx, _match, params) {
       history: [t("agreements.history"), "list-ordered", guard(() => historyPanel(ctx, id, subject))],
       void: [t("envelope.void"), "ban", guard(async () => { if (await voidEnvelopes(ctx, [id])) refreshAfter(id); }), true],
       delete: [t(r.status === "draft" ? "agreements.delete-draft" : "agreements.delete"), "trash-2", guard(async () => { if (await deleteEnvelope(ctx, id, subject, r.status)) { s.picked.delete(id); refreshAfter(id); } }), true],
+      restore: [t("agreements.restore"), "undo-2", restore],
     };
-    const more = rowActions(r.status, { cert: hasCertificate(ctx, r.status) }).map((g) => g.map((a) => {
+    const more = rowActions(r.status, { cert: hasCertificate(ctx, r.status), deleted: !!r.deleted_at }).map((g) => g.map((a) => {
       const [label, ic, run, danger] = verbs[a];
       return { label, icon: ic, run, danger };
     }));

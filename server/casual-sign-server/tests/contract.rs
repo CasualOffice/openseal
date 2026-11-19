@@ -196,6 +196,35 @@ fn slice6_operations<'a>(
             .call("GET", "/api/v1/reports/envelopes?format=csv", k, None, &[])
             .await;
         assert_eq!(csv.status, StatusCode::OK);
+        // ADR-031 (UXW-02): the voided envelope deleted, then restored to the lists.
+        let tag = api
+            .call("GET", &format!("/api/v1/envelopes/{reid}"), k, None, &[])
+            .await
+            .etag();
+        let gone = api
+            .call(
+                "DELETE",
+                &format!("/api/v1/envelopes/{reid}"),
+                k,
+                None,
+                &[("if-match", &tag)],
+            )
+            .await;
+        assert_eq!(gone.status, StatusCode::NO_CONTENT);
+        let back = ok(
+            api.call(
+                "POST",
+                &format!("/api/v1/envelopes/{reid}/restore"),
+                k,
+                None,
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "restore",
+        )
+        .await;
+        assert_eq!(back["status"], "voided");
     })
 }
 

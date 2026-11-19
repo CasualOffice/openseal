@@ -523,6 +523,16 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             s.deleted_at = Some(ctx.now);
             Ok(())
         }
+        Command::RestoreDeleted => {
+            authorize_sender(s, cmd, ctx)?;
+            // A purged envelope never reaches here (`decide` refuses it first).
+            if s.purged || s.deleted_at.is_none() {
+                return Err(not_allowed(cmd, s));
+            }
+            out.event(EventData::EnvelopeRestored {});
+            s.deleted_at = None;
+            Ok(())
+        }
         Command::Transfer { to_user } => {
             // Administrators only: a sender cannot give an envelope away by themselves.
             if !matches!(ctx.principal, Principal::Admin { .. }) {

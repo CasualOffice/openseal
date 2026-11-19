@@ -611,6 +611,7 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
                 "completed_at": e.completed_at.map(rfc3339),
                 "expires_at": e.expires_at.map(rfc3339),
                 "folder_id": l.folder.map(|f| f.to_string()),
+                "deleted_at": e.deleted_at.map(rfc3339),
             });
             if waiting && let Some(map) = item.as_object_mut() {
                 map.insert(
@@ -917,6 +918,21 @@ pub(crate) async fn delete(c: Call, Path(id): Path<String>) -> Result<Response, 
     command(&c, &mut tx, &mut cmds, &mut l, cmd, v).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `POST /envelopes/{id}/restore` (ADR-031, `UXW-02`): list again an envelope removed
+/// by `DELETE` (it is in the Deleted view). Recorded as `envelope.restored`; nothing in
+/// the agreement changes. `If-Match` is checked when sent. One that is not deleted, or
+/// was purged meanwhile (past its retention), is `409 CS-WF-0001`.
+pub(crate) async fn restore(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let mut cmds = c.commands(&mut tx).await?;
+    command(&c, &mut tx, &mut cmds, &mut l, Command::RestoreDeleted, v).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
 }
 
 #[derive(Debug, Deserialize)]

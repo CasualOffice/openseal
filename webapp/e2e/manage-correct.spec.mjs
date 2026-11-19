@@ -262,3 +262,66 @@ for (const scheme of ["light", "dark"]) {
     });
   });
 }
+
+// ADR-031 (UXW-02): an envelope deleted from the lists is in the Deleted view; Restore
+// there brings it back, and its history shows both the removal and the return. Mock:
+// a seeded declined envelope; Compose stack: one sent and voided for the run. Axe,
+// light and dark, on the Deleted view (mock).
+test("ADR-031: a deleted envelope is restored from the Deleted view, with both events in its history", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 90_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  let id;
+  let subject;
+  if (REAL) {
+    subject = `ADR-031 restore ${run}`;
+    id = await inApp(page, async ({ subject, pdf, run }) => {
+      const api = window.__vs06;
+      const e = await api.createEnvelope({
+        subject, status: "sent",
+        documents: [{ name: "r.pdf", content_base64: pdf }],
+        recipients: [{ ref: "s", type: "signer", name: "Rae Restore", email: `adr031-${run}@example.com`, routing_order: 1 }],
+        fields: [{ recipient: "s", document: 0, type: "signature", page: 1, x: 72, y: 600, width: 180, height: 40, required: true }],
+      });
+      await api.voidEnvelope(e.id, "Wrong party");
+      return e.id;
+    }, { subject, pdf: Buffer.from(makePdf([{ title: subject, lines: ["Clause 1."] }])).toString("base64"), run });
+  } else {
+    ({ id, subject } = await page.evaluate(() => JSON.parse(sessionStorage.getItem("openseal.mock.v1")).envelopes.find((e) => e.status === "declined")));
+  }
+  // Deleted from its own page.
+  await page.goto(app(`#/envelopes/${encodeURIComponent(id)}`), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+  await more(page, "Delete");
+  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("Envelope deleted.")).toBeVisible();
+  // Only in the Deleted view.
+  await page.goto(app("#/agreements"), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
+  await expect(page.locator(".os-agr-row[data-id]").first()).toBeVisible();
+  await expect(row(page, subject)).toHaveCount(0);
+  await page.locator('#nav-views [data-view="deleted"]').click();
+  await expect(row(page, subject)).toBeVisible();
+  if (!REAL) {
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expectAccessible(page, `Deleted view (${scheme})`);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  await row(page, subject).click();
+  await page.getByTestId("inspector-primary").filter({ hasText: "Restore" }).click();
+  await expect(page.getByText("Envelope restored to the lists.")).toBeVisible();
+  await expect(row(page, subject)).toHaveCount(0);
+  // Back in the lists, with both events in its history.
+  await page.goto(app("#/agreements?folder=all"), { waitUntil: "domcontentloaded" });
+  await expect(row(page, subject)).toBeVisible();
+  await page.goto(app(`#/envelopes/${encodeURIComponent(id)}`), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+  await more(page, "History");
+  const hist = page.getByTestId("history-timeline");
+  await expect(hist.getByText("Removed from the lists").first()).toBeVisible();
+  await expect(hist.getByText("Restored to the lists").first()).toBeVisible();
+});
