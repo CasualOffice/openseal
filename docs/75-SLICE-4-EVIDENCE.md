@@ -61,15 +61,13 @@ Recommendation: ready to propose for closure once a `main` run with this branch 
 **Decisions only the owner can make:**
 
 0. "Anchors": is the API (DocuSign's anchor tabs) enough, or must the editor also place a field at typed text?
-1. "Full field set": does it include optional signature (`FG-052`), the free-form signer (`FG-037`), saved field
-   presets (`FG-079`), 3,000 fields per envelope (`FG-082`), colour (`FG-076`) and dynamic XFA (`FG-014`), all marked
-   slice 4 in docs/96 but not named in the docs/06 outcome?
+1. "Full field set": does it include optional signature (`FG-052`), the free-form signer (`FG-037`), saved field presets (`FG-079`), 3,000 fields per envelope (`FG-082`) and colour (`FG-076`)? **Decided 2026-11-20 (owner instruction 67): not part of slice 4;** each stays its own row (`FLD-OPT-01`, `FLD-FREE-01`, `FLD-PRESET-01`, `FLD-3K-01`, `FLD-COLOUR-01`), picked up in plan order. Dynamic XFA (`FG-014`) stays with `XFA-02`..`XFA-05`.
 
 ## Found and not fixed
 
 | Row | What | Size |
 | --- | --- | --- |
-| `VS-04G` | The rest of docs/96's slice-4 rows outside the outcome's words (`FG-052`, `FG-037`, `FG-079`, `FG-082`, colour of `FG-076`) | M |
+| `FLD-OPT-01`, `FLD-FREE-01`, `FLD-PRESET-01`, `FLD-3K-01`, `FLD-COLOUR-01` | Outside slice 4 by owner instruction 67 (`VS-04G`) | M |
 | `VS-04I` | Text tags stay visible in the delivered and sealed document (DocuSign and SignNow advise white tag text; hiding it would change the document the signer reviews) | S |
 | `VS-04J` | Fill a PDF's own form in place and keep it fillable (`FG-015`) as a send option, beside flattening | M |
 
