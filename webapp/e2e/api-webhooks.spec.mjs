@@ -180,9 +180,13 @@ test("slice 8 (VS-08C): an API key sends an envelope, signed webhooks arrive and
   }, { timeout: 60_000, intervals: [2000] }).toBe(true);
   if (REAL) {
     // The same event again, the same webhook-id, signed, and now accepted.
-    const got = await received("envelope.sent", envelopeId);
-    const ok = got.filter((d) => d.answered === 200 && d.verified);
-    expect(ok.length).toBeGreaterThan(0);
+    // Main run 44809730807 found no accepted, verified delivery right after "Delivered":
+    // read the receiver until it shows one, and name what it saw if it never does.
+    let got = [];
+    await expect.poll(async () => {
+      got = await received("envelope.sent", envelopeId);
+      return got.filter((d) => d.answered === 200 && d.verified).length;
+    }, { timeout: 30_000, intervals: [1000], message: () => `receiver saw: ${JSON.stringify(got.map((d) => [d.id, d.answered, d.verified]))}` }).toBeGreaterThan(0);
     expect(new Set(got.map((d) => d.id)).size).toBe(1);
   }
 
