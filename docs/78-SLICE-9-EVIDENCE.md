@@ -81,3 +81,6 @@ slices 6 and 8 closed and `VS-08J` (SDKs published as beta).
 | `WF-06` (existing) | An embedded recipient may still be given `delivery: email` | S |
 
 Nothing here states that any signature is legally valid or that the product is compliant or certified (docs/09).
+
+
+**Owner answers (2026-11-21):** plain `http://` origins are also allowed for intranet (private-network) hosts, not only development hosts; prepare and correct views stay API-client only. To be recorded as owner instruction 81 and built before the slice 9 PR.
