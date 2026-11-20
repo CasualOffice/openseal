@@ -70,8 +70,16 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
   by default, the completed documents).
 - Viewers complete by viewing every document to the end.
 - Approvers complete with Approve or decline with Decline; they never sign.
-- Editors (allowed to edit) may change later recipients and fields before signing.
+- Editors (allowed to edit) may change later recipients and fields before signing. At the ceremony (`VS-06A`, docs/40
+  §6) an editor adds, moves and removes fields of their own and of recipients later in the order not yet reached
+  (`POST /s/{token}/editor/fields`, `PATCH`/`DELETE /s/{token}/editor/fields/{field}`), each a `RecipientEdit`
+  recorded as `envelope.corrected` with the editor as actor; a field naming a recipient routing has reached is
+  refused (`409 CS-WF-0001`), as is any other recipient type.
 - Agents (specify recipients) supply the name and email of later recipients (`POST /s/{token}/recipients`, docs/40 §6), then finish.
+- Intermediaries (update recipients) and editors may also set a later recipient's phone number and authentication
+  through the same call (`VS-06A`): `auth` replaces their methods, an `access_code` is stored as Argon2id as the
+  sender's is and never answered, and dropping `access_code` drops the stored code; an agent changing the methods is
+  refused by the engine (`403 CS-WF-0003`).
 - In-person signers are hosted by a staff user who authenticates first; the event records both. On the server
   (`UXW-36`), `POST /envelopes/{id}/recipients/{r}/host` runs `HostInPerson` as `InPersonHost` and returns a one-time
   link whose every command runs as that host (docs/40 As built); the signer's emailed link cannot act for them.

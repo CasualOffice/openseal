@@ -179,6 +179,19 @@ pub(crate) fn checkmark(canvas: &mut Canvas, w: f64, h: f64, color: Color) {
     canvas.line("Q");
 }
 
+/// A strike-through (FG-080, ADR-044): one horizontal line through the vertical middle of
+/// a `w` × `h` box, as wide as it, 1 point thick (thinner in a box under 2 points high),
+/// with butt caps so it ends exactly at the box's edges.
+pub(crate) fn strike(canvas: &mut Canvas, w: f64, h: f64, color: Color) {
+    canvas.line("q");
+    canvas.stroke_color(color);
+    canvas.line(&format!("{} w 0 J", num(h.min(2.0) / 2.0)));
+    canvas.move_to(0.0, h / 2.0);
+    canvas.line_to(w, h / 2.0);
+    canvas.line("S");
+    canvas.line("Q");
+}
+
 /// A filled dot, as a selected radio button.
 pub(crate) fn dot(canvas: &mut Canvas, w: f64, h: f64, color: Color) {
     canvas.fill_color(color);
@@ -467,6 +480,14 @@ pub(crate) fn field(
                 _ => Err(mismatch()),
             }
         }
+        FieldType::Strikethrough => match value {
+            FieldValue::Checked(true) => {
+                let mut d = Drawing::default();
+                strike(&mut d.canvas, w, h, color_of(field));
+                Ok(Drawn::Marks(d, Fit::default()))
+            }
+            _ => Err(mismatch()),
+        },
         FieldType::Checkbox => match value {
             FieldValue::Checked(true) => {
                 let mut d = Drawing::default();

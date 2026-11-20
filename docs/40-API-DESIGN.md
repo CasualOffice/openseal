@@ -707,8 +707,35 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
   (`reports.read`, administrators by default) over envelopes created in `[from, to)`, Deleted left out, newest
   first, at most 10,000 rows (`truncated`, or `x-truncated: true` on CSV). CSV is RFC 4180 with CRLF; a cell starting
   with `=`, `+`, `-`, `@`, tab or carriage return starts with `'`.
+- **An editor changes fields at the ceremony** (`VS-06A`, FG-025, DocuSign's "Allow to edit"). `POST
+  /s/{token}/editor/fields {fields: [field], location?}` (`201`; each field in the API's wire form, at most 100),
+  `PATCH /s/{token}/editor/fields/{field}` (a JSON merge of the wire form; `page`, `x`, `y`, `width`, `height` may be
+  given flat and merge into the placement) and `DELETE /s/{token}/editor/fields/{field}`, each answering the view.
+  After authentication and consent like every ceremony write (SEC-CER-01). Only fields every recipient of which
+  (owner and `shared_with`) is the editor or later in the order and not yet reached, on a document the editor sees;
+  a recipient routing has reached, or a caller who is not an acting editor, is `409 CS-WF-0001`; a field not found
+  or on a hidden document `404`. The engine's `RecipientEdit` checks each change again and records
+  `envelope.corrected` with the editor as actor. The editor's view adds `editable_fields` (the later recipients'
+  fields; their own are in `fields`). The paths are under `/editor/` so `DELETE /s/{token}/fields/{field}` stays
+  free for a signer clearing a value (`UXW-35`, ADR-032). The signing page offers Edit fields (toolbar and More):
+  movable boxes, drag or arrow keys (Shift for 10 points), Delete, and an Add field bar (`webapp/editfields.js`).
+- **An intermediary sets a later recipient's authentication** (`VS-06A`, FG-026, DocuSign's "Update
+  recipients"). `POST /s/{token}/recipients` also takes, from an intermediary or editor, `phone` (E.164), `auth`
+  (the methods, replacing theirs) and `access_code` (stored as Argon2id as the sender's codes are, through the same
+  `store_codes`; never answered, to the intermediary or the sender). A code without `access_code` among the methods,
+  the method without a code given now or set before, an emailed code or `sso` without an email, or a code by SMS or
+  voice without a number is `422` at `/recipients/{i}/access_code`, `/auth` or `/phone`; dropping `access_code`
+  deletes the stored code; an agent changing the methods is refused by the engine (`403 CS-WF-0003`).
+  `later_recipients` now carries each one's `phone` and `auth` (never a code). The review step's later-recipient form
+  offers the link only, an access code, an emailed code or a text-message code.
+- **Strike-through by an editor** (`FG-080`, ADR-044). A field of type `strikethrough` (no value; drawn by the seal
+  as a line through the middle of its box) placed through the editor endpoints above; every recipient's view adds
+  `strikes` (`{id, document_id, placement, recipient_id}`, each strike on a document they see, hidden ones left out),
+  drawn on the signing and review pages. The edit mode's arrow keys with Alt resize a field, so a strike is made as
+  long as the words.
 - Tests: `-server` `tests/manage_views.rs`, `tests/correct_documents.rs`, `tests/editor_intermediary.rs`,
-  `tests/reports.rs`; the contract test calls every new operation.
+  `tests/reports.rs`; the contract test calls every new operation; `webapp/tests/editfields.test.mjs`;
+  `manage-correct.spec.mjs` (`VS-06A`, mock mode and the Compose stack).
 
 ## As built (`WEB-19`, document analysis; docs/33 §6, §7 As built)
 

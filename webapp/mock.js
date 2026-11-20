@@ -60,6 +60,8 @@ const FIELD_TYPES = new Set([
   "signature", "initials", "stamp", "date_signed", "name", "first_name", "last_name", "email", "company", "title",
   "envelope_id", "text", "number", "date", "email_address", "phone", "ssn", "zip", "checkbox", "radio_group",
   "dropdown", "multi_select", "formula", "attachment", "note", "approve", "decline", "hyperlink", "payment", "drawing",
+  // FG-080 (ADR-044): an editor's strike-through.
+  "strikethrough",
 ]);
 /// The members of an engine `Field` besides its ids, type and place (api.js `FIELD_MEMBERS`).
 const FIELD_MEMBERS = ["required", "read_only", "locked", "label", "value", "default", "validation", "format", "group", "conditional", "formula", "options", "allow_custom", "tooltip", "placeholder"];
@@ -519,11 +521,21 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       // VS-02, as the server: an agent, intermediary or editor sees the later
       // recipients not yet reached, which `POST /s/{token}/recipients` may name.
       ...(shown && NAMES_LATER.has(rec.type) ? { later_recipients: laterOf(env, rec) } : {}),
+      // FG-080, as the server: every strike-through on a document they see, whoever drew it.
+      ...(shown ? { strikes: env.fields.filter((f) => f.type === "strikethrough" && !(rec.excluded_documents || []).includes(f.document_id)).map((f) => ({ id: f.id, document_id: f.document_id, placement: f.placement, recipient_id: f.recipient_id })) } : {}),
+      // VS-06A, as the server: an editor also sees the later recipients' fields, which
+      // `PATCH`/`DELETE /s/{token}/editor/fields/{field}` may change.
+      ...(shown && rec.type === "editor" ? { editable_fields: env.fields.filter((f) => !holds(f, rec.id) && editableField(env, rec, f)) } : {}),
     };
   }
+  /// VS-06A, as the server's `editable_owner`: an editor changes their own fields and
+  /// those of recipients later in the order not yet reached.
+  const editableOwner = (rec, q) => q.id === rec.id || ((q.routing_order || 1) > (rec.routing_order || 1) && q.status === "created");
+  const editableField = (env, rec, f) => !!f.recipient_id && !(rec.excluded_documents || []).includes(f.document_id)
+    && [f.recipient_id, ...(f.shared_with || [])].every((r) => { const q = env.recipients.find((x) => x.id === r); return q && editableOwner(rec, q); });
   const laterOf = (env, rec) => env.recipients
     .filter((q) => (q.routing_order || 1) > (rec.routing_order || 1) && q.status === "created")
-    .map((q) => ({ id: q.id, type: q.type, routing_order: q.routing_order || 1, name: q.name || "", email: q.email || "" }));
+    .map((q) => ({ id: q.id, type: q.type, routing_order: q.routing_order || 1, name: q.name || "", email: q.email || "", phone: q.phone || null, auth: [...(q.auth || [])] }));
   const publicRecipient = (r) => {
     const { access_code, auth_passed, token, otp_open, sso_state, viewed_to_end, hosted, ...rest } = r;
     void access_code; void auth_passed; void token; void otp_open; void sso_state; void viewed_to_end; void hosted;
@@ -3225,6 +3237,50 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       await audit(env, "recipient.reassigned", { recipient_id: rec.id, to_recipient_id: nr.id, ...(body?.reason ? { reason: String(body.reason) } : {}) }, loc);
       return json(200, view(env, rec, token));
     }
+    // VS-06A, as the server: an editor adds, moves and removes their own fields and those
+    // of later recipients not yet reached; anyone else, or a reached recipient's field,
+    // is refused (409 CS-WF-0001). Recorded as `envelope.corrected`.
+    if (sub === "editor" && parts[4] === "fields") {
+      if (rec.type !== "editor" || !["sent", "delivered"].includes(rec.status)) fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const refuse = () => fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const check = (f) => { if (!editableField(env, rec, f)) refuse(); };
+      if (!parts[5] && method === "POST") {
+        const list = Array.isArray(body?.fields) ? body.fields : [];
+        if (!list.length || list.length > 100) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/fields", code: "invalid" }]);
+        const before = env.fields.length;
+        const added = [];
+        try {
+          for (const f of list) {
+            const q = env.recipients.find((x) => x.id === f?.recipient_id);
+            if (!q) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/fields/recipient_id", code: "invalid" }]);
+            if (!editableOwner(rec, q)) refuse();
+            added.push(addField(env, f));
+          }
+        } catch (e) { env.fields.length = before; throw e; }
+        await audit(env, "envelope.corrected", { changed: added.map((f) => `fields.${f.id}`) }, loc);
+        return json(201, view(env, rec, token));
+      }
+      const f = env.fields.find((x) => x.id === parts[5] && !(rec.excluded_documents || []).includes(x.document_id));
+      if (!f || parts[6]) fail(404, "CS-API-0002", "Not found");
+      check(f);
+      if (method === "PATCH") {
+        const next = structuredClone(f);
+        const flat = ["page", "x", "y", "width", "height"];
+        const patch = body && typeof body === "object" ? body : {};
+        if (flat.some((k) => k in patch)) next.placement = placementOf({ ...f.placement, ...Object.fromEntries(flat.filter((k) => k in patch).map((k) => [k, patch[k]])) });
+        if (patch.recipient_id) next.recipient_id = patch.recipient_id;
+        setMembers(next, patch);
+        check(next);
+        Object.assign(f, next);
+        await audit(env, "envelope.corrected", { changed: [`fields.${f.id}`] }, loc);
+        return json(200, view(env, rec, token));
+      }
+      if (method === "DELETE") {
+        env.fields.splice(env.fields.indexOf(f), 1);
+        await audit(env, "envelope.corrected", { changed: [`fields.${f.id}`] }, loc);
+        return json(200, view(env, rec, token));
+      }
+    }
     // VS-02, as the server's `RecipientEdit`: an agent or intermediary names later
     // recipients not yet reached (names and addresses only); anyone else is refused.
     if (sub === "recipients" && method === "POST") {
@@ -3232,17 +3288,33 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const list = Array.isArray(body?.recipients) ? body.recipients : [];
       if (!list.length || list.length > 100) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/recipients", code: "invalid" }]);
       const later = laterOf(env, rec).map((q) => q.id);
+      const bad = (i, k) => fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/${k}`, code: "CS-API-0001" }]);
       for (const [i, n] of list.entries()) {
         const q = env.recipients.find((x) => x.id === n?.id);
         if (!q) fail(404, "CS-API-0002", "Not found");
         if (!later.includes(q.id)) fail(403, "CS-WF-0003", "Not permitted");
-        if (n.name != null && !String(n.name).trim()) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/name`, code: "invalid" }]);
-        if (n.email != null && !/^[^@\s]+@[^@\s]+$/.test(String(n.email).trim())) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/email`, code: "invalid" }]);
+        if (n.name != null && !String(n.name).trim()) bad(i, "name");
+        if (n.email != null && !/^[^@\s]+@[^@\s]+$/.test(String(n.email).trim())) bad(i, "email");
+        // VS-06A, as the server: an intermediary or editor sets the number, the methods
+        // and an access code (kept, never answered); an agent changing the methods is refused.
+        if (n.phone != null && !/^\+[1-9][0-9 .()-]{7,}$/.test(String(n.phone).trim())) bad(i, "phone");
+        const auth = Array.isArray(n.auth) ? n.auth : q.auth || [];
+        if (n.auth != null && rec.type === "agent" && JSON.stringify(n.auth) !== JSON.stringify(q.auth || [])) fail(403, "CS-WF-0003", "Not permitted");
+        const email = n.email != null ? String(n.email).trim() : q.email;
+        const phone = n.phone != null ? String(n.phone).trim() : q.phone;
+        if ((auth.includes("email_otp") || auth.includes("sso")) && !email) bad(i, "auth");
+        if ((auth.includes("sms_otp") || auth.includes("voice_otp")) && !phone) bad(i, "auth");
+        const code = n.access_code ? String(n.access_code) : "";
+        if (code ? !auth.includes("access_code") || code.length > 255 : auth.includes("access_code") && !q.access_code) bad(i, "access_code");
       }
       for (const n of list) {
         const q = env.recipients.find((x) => x.id === n.id);
         if (n.name != null) q.name = String(n.name).trim();
         if (n.email != null) q.email = String(n.email).trim();
+        if (n.phone != null) q.phone = String(n.phone).trim();
+        if (Array.isArray(n.auth)) q.auth = [...n.auth];
+        if (n.access_code) q.access_code = String(n.access_code);
+        else if (!q.auth.includes("access_code")) delete q.access_code;
       }
       await audit(env, "envelope.corrected", { changed: list.map((n) => `recipients.${n.id}`) }, loc);
       return json(200, view(env, rec, token));

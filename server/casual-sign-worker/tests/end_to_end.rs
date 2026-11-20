@@ -849,3 +849,218 @@ async fn an_account_defaulting_to_b_lt_gets_long_term_seals_verified_by_pyhanko(
         "B-LT",
     );
 }
+
+/// The decoded content of every Form XObject in `pdf`.
+fn form_contents(pdf: &[u8]) -> String {
+    let never = || false;
+    let mut a = casual_sign_pdf::admit(pdf, &casual_sign_pdf::Limits::default(), &never).unwrap();
+    let nums: Vec<u32> = a.document.object_numbers().collect();
+    let mut all = String::new();
+    for n in nums {
+        if let Ok(casual_sign_pdf::Object::Stream(s)) = a.document.object(n, &never)
+            && s.dict.name(b"Subtype") == Some(b"Form")
+            && let Ok(ops) = a.document.decode_stream(n, &never)
+        {
+            all.push_str(&String::from_utf8_lossy(&ops));
+            all.push('\n');
+        }
+    }
+    all
+}
+
+/// FG-080 (ADR-044, DocuSign's polyline overlay): an editor strikes text through during
+/// their turn; the signer after them is shown the strike before they sign; the worker's
+/// seal draws it into the sealed document, which ours and pyHanko verify; the chain
+/// names the editor as the one who added it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_editors_strike_through_is_shown_to_the_next_signer_and_sealed_into_the_document() {
+    let Some(env) = Env::new("end_to_end_strike").await else {
+        return;
+    };
+    let st = AppState::new(
+        env.db.store.clone(),
+        Blobs::Fs(Arc::new(env.blob_store())),
+        JwtKeys::generate().unwrap(),
+        Arc::new(Shared(Arc::clone(&env.clock))),
+        Config {
+            public_url: "https://sign.example.test".into(),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    st.set_mfa_key(common::mfa_key());
+    let app = casual_sign_server::app(st);
+    let org = env.db.organization("Strike").await;
+    casual_sign_server::bootstrap_workspace(
+        &env.db.store,
+        org,
+        "Strike",
+        "admin@strike.example.test",
+        "Admin",
+        PASSWORD,
+    )
+    .await
+    .unwrap();
+    let mut staff = Http {
+        app: app.clone(),
+        cookie: None,
+        csrf: None,
+    };
+    let login = staff
+        .call(
+            "POST",
+            "/api/v1/auth/login",
+            Some(json!({"email": "admin@strike.example.test", "password": PASSWORD})),
+            &[],
+        )
+        .await;
+    assert_eq!(login.status, StatusCode::OK, "{:?}", login.json());
+    let set = login.headers["set-cookie"].to_str().unwrap();
+    staff.cookie = Some(set.split(';').next().unwrap().to_owned());
+    staff.csrf = Some(login.json()["csrf_token"].as_str().unwrap().to_owned());
+    common::pass_factor(
+        &staff.app,
+        staff.cookie.as_deref().unwrap(),
+        staff.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await;
+    let sig = |r: &str, y: u32| {
+        json!({"recipient": r, "document": 0, "type": "signature", "page": 1,
+               "x": 72, "y": y, "width": 180, "height": 40, "required": true})
+    };
+    let e = staff
+        .ok(
+            "POST",
+            "/api/v1/envelopes",
+            Some(json!({
+                "subject": "Lease with a struck clause", "status": "sent",
+                "documents": [{"name": "lease.pdf", "content_base64": b64(&env.original)}],
+                "recipients": [
+                    {"ref": "e", "type": "editor", "name": "Eda Editor", "email": "eda@strike.example.test", "routing_order": 1},
+                    {"ref": "s", "type": "signer", "name": "Sam Signer", "email": "sam@strike.example.test", "routing_order": 2},
+                ],
+                "fields": [sig("e", 100), sig("s", 160)],
+            })),
+            StatusCode::CREATED,
+        )
+        .await;
+    let id = e["id"].as_str().unwrap().to_owned();
+    let doc = e["documents"][0]["id"].as_str().unwrap().to_owned();
+    let ed = e["recipients"][0]["id"].as_str().unwrap().to_owned();
+    let field_of = |rid: &Value| {
+        e["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["recipient_id"] == *rid)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let f_ed = field_of(&e["recipients"][0]["id"]);
+    let f_sam = field_of(&e["recipients"][1]["id"]);
+    let base = format!("/api/v1/envelopes/{id}");
+
+    // The editor opens their link, strikes a line through, then signs.
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    let token = env.smtp.to("eda@strike.example.test")[0]
+        .token()
+        .expect("a signing link");
+    let s = format!("/s/{token}");
+    let mut c = Http {
+        app: app.clone(),
+        cookie: None,
+        csrf: None,
+    };
+    let opened = c
+        .call("POST", &format!("{s}/session"), Some(json!({})), &[])
+        .await;
+    assert_eq!(opened.status, StatusCode::OK, "{:?}", opened.json());
+    let set = opened.headers["set-cookie"].to_str().unwrap();
+    c.cookie = Some(set.split(';').next().unwrap().to_owned());
+    let placed = c
+        .ok(
+            "POST",
+            &format!("{s}/editor/fields"),
+            Some(json!({"fields": [{"recipient_id": ed, "document_id": doc,
+                "type": "strikethrough", "page": 1, "x": 72, "y": 240, "width": 220, "height": 10}]})),
+            StatusCode::CREATED,
+        )
+        .await;
+    assert_eq!(placed["strikes"].as_array().unwrap().len(), 1, "{placed}");
+    c.ok(
+        "POST",
+        &format!("{s}/documents/{doc}/viewed"),
+        Some(json!({"pages_seen": [1]})),
+        StatusCode::OK,
+    )
+    .await;
+    let adopted = c
+        .ok(
+            "POST",
+            &format!("{s}/adopt"),
+            Some(json!({"mark": "signature", "method": "draw", "image_base64": b64(&png())})),
+            StatusCode::OK,
+        )
+        .await;
+    let capture = adopted["adoption_id"].as_str().unwrap();
+    c.ok(
+        "POST",
+        &format!("{s}/finish"),
+        Some(json!({"values": [{"field": f_ed, "value": {"signature": capture}}]})),
+        StatusCode::OK,
+    )
+    .await;
+
+    // The signer after them is shown the strike before signing, then signs.
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    let (sam, sam_link) = sign(&env, &app, "sam@strike.example.test", &f_sam).await;
+    let seen = sam.ok("GET", &sam_link, None, StatusCode::OK).await;
+    let strikes = seen["strikes"].as_array().unwrap();
+    assert_eq!(strikes.len(), 1, "{seen}");
+    assert_eq!(strikes[0]["placement"]["y"], "240");
+
+    // Sealed: the line is drawn into the document, which both verifiers accept.
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    let done = staff.ok("GET", &base, None, StatusCode::OK).await;
+    assert_eq!(done["status"], "completed", "{done}");
+    let r = staff
+        .call(
+            "GET",
+            &format!("{base}/documents/{doc}/content?version=sealed"),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let sealed = r.body;
+    let drawn = form_contents(&sealed);
+    assert!(
+        drawn.contains("1 w 0 J\n0 5 m\n220 5 l\nS"),
+        "the strike-through is drawn: {drawn}"
+    );
+    ours(&env, &sealed);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("end-to-end-strike");
+    pyhanko(&dir, &[("fg080-strike-sealed-bt.pdf", &sealed)]);
+
+    // The chain names the editor as the one who added it.
+    let audit = staff
+        .ok("GET", &format!("{base}/audit"), None, StatusCode::OK)
+        .await;
+    let strike_id = strikes[0]["id"].as_str().unwrap();
+    assert!(
+        audit["items"].as_array().unwrap().iter().any(|i| {
+            i["type"] == "envelope.corrected"
+                && i["event"]["actor"]["id"] == ed.as_str()
+                && i["event"]["data"]["changed"]
+                    .as_array()
+                    .is_some_and(|c| c.iter().any(|p| p == &json!(format!("fields.{strike_id}"))))
+        }),
+        "envelope.corrected by the editor names the strike"
+    );
+}

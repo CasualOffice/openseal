@@ -230,6 +230,111 @@ fn conversion_operations<'a>(
     })
 }
 
+/// `VS-06A`: an editor adds, moves and removes a later signer's field through the
+/// ceremony. Boxed: the contract test's future is already large.
+fn editor_operations<'a>(
+    api: &'a Api,
+    a: &'a common::harness::Tenant,
+    k: &'a common::harness::Auth,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        let e = ok(
+            api.call(
+                "POST",
+                "/api/v1/envelopes",
+                k,
+                Some(json!({
+                    "subject": "VS-06A", "status": "sent",
+                    "documents": [{"name": "c.pdf", "content_base64": b64(&pdf(1))}],
+                    "recipients": [
+                        {"ref": "ed", "type": "editor", "name": "Ed Itor", "email": "ed@example.test", "routing_order": 1},
+                        {"ref": "s", "type": "signer", "name": "Si Gner", "email": "si@example.test", "routing_order": 2}],
+                    "fields": [
+                        {"recipient": "ed", "document": 0, "type": "signature", "page": 1, "x": 72, "y": 500, "width": 180, "height": 40, "required": true},
+                        {"recipient": "s", "document": 0, "type": "signature", "page": 1, "x": 72, "y": 600, "width": 180, "height": 40, "required": true}],
+                })),
+                &[],
+            )
+            .await,
+            StatusCode::CREATED,
+            "editor env",
+        )
+        .await;
+        let ted = invite(
+            api,
+            a,
+            e["id"].as_str().unwrap(),
+            e["recipients"][0]["id"].as_str().unwrap(),
+        )
+        .await;
+        let (_, hed) = open(api, &format!("/s/{ted}")).await;
+        let hed: Vec<(&str, &str)> = hed.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        ok(
+            api.call(
+                "POST",
+                &format!("/s/{ted}/consent"),
+                &Auth::None,
+                Some(json!({"ersd_version": "2026-1"})),
+                &hed,
+            )
+            .await,
+            StatusCode::OK,
+            "consent ed",
+        )
+        .await;
+        let placed = ok(
+            api.call(
+                "POST",
+                &format!("/s/{ted}/editor/fields"),
+                &Auth::None,
+                Some(json!({"fields": [{"recipient_id": e["recipients"][1]["id"],
+                    "document_id": e["documents"][0]["id"], "type": "text", "page": 1,
+                    "x": 300, "y": 600, "width": 120, "height": 24}]})),
+                &hed,
+            )
+            .await,
+            StatusCode::CREATED,
+            "editor places",
+        )
+        .await;
+        let f = placed["editable_fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["type"] == "text")
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        ok(
+            api.call(
+                "PATCH",
+                &format!("/s/{ted}/editor/fields/{f}"),
+                &Auth::None,
+                Some(json!({"y": 640})),
+                &hed,
+            )
+            .await,
+            StatusCode::OK,
+            "editor moves",
+        )
+        .await;
+        ok(
+            api.call(
+                "DELETE",
+                &format!("/s/{ted}/editor/fields/{f}"),
+                &Auth::None,
+                Some(json!({})),
+                &hed,
+            )
+            .await,
+            StatusCode::OK,
+            "editor removes",
+        )
+        .await;
+    })
+}
+
 /// Each personal-data operation once, as the signed-in administrator (who owns the
 /// organization, so may not erase themselves), against ids of no object where one is
 /// named. Boxed: the contract test's future is already large.
@@ -1948,6 +2053,7 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     }
     slice6_operations(&api, k, reid).await;
     conversion_operations(&api, k).await;
+    editor_operations(&api, &a, k).await;
     // The reassigned recipient's link was revoked in the same transaction.
     let revoked = api
         .call("GET", &format!("/s/{tre}"), &Auth::None, None, &hre)

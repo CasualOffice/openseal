@@ -211,6 +211,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Bulk send list (`POST /bulk-sends`, `UXW-04`): rows; values; rows sent per `…/send` call | 1–1,000 in the 1 MiB body (CSV or JSON); name 1–255 characters without control characters, email 3–320 bytes with one `@` and no spaces; 10 | CS-BLK-0007, CS-BLK-0001 to 0003 |
 | Template shares (`PUT /templates/{id}/shares`, `UXW-06`): shares per template; a member's email | 0–500; 3–320 bytes after trimming | CS-API-0001 |
 | Recipients an agent names in one call (`POST /s/{token}/recipients`, `VS-02`): count; name; email | 1–100; 1–255 characters after trimming; 3–320 bytes with an `@` | CS-API-0001 |
+| Fields an editor adds in one call (`POST /s/{token}/editor/fields`, `VS-06A`): count; each field | 1–100; as `POST /envelopes/{id}/fields` | CS-API-0001, CS-FLD-0002 |
 | Inbox signing link (`POST …/sign-link`, `UXW-01`) | 5 minutes, bound to the first browser | CS-AUTH-0002 |
 | Requests per authenticated principal | 1,200 per minute | CS-API-0003 |
 | Ceremony requests per token / per client address | 300 / 1,200 per minute | CS-API-0003 |

@@ -142,7 +142,7 @@ test("every field member round-trips through the mock, and null removes one", as
   const { etag: e2 } = await c.getEnvelope(env.id);
   await assert.rejects(c.patchField(env.id, num.id, e2, { options: "One" }), (e) => e.code === "CS-FLD-0002");
   await assert.rejects(c.addFields(env.id, [fieldWire({ recipient: env.recipients[0].id, document: env.documents[0].id, type: "hologram", page: 1, x: 1, y: 1, width: 9, height: 9 })]), (e) => e.code === "CS-FLD-0002");
-  assert.equal(FIELD_TYPES.length, 30);
+  assert.equal(FIELD_TYPES.length, 31, "the engine's kinds, with the strike-through (FG-080)");
   assert.ok(FIELD_MEMBERS.includes("conditional"));
 });
 

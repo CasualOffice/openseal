@@ -188,6 +188,186 @@ test("slice 6 (VS-06): authentication failed view, resend, custom fields and sea
   if (REAL) await page.video()?.saveAs(path.join(DEMO, `vs06-${testInfo.project.name}-manage-and-correct.webm`));
 });
 
+/// An envelope sent for the run with `recipients` (each `{ref, type, name, email,
+/// routing_order}`) and a signature for each signing ref in `signs`: answers `{id,
+/// links}`, each recipient's signing link by ref (the mock's token, or on the Compose
+/// stack the link emailed to them; only those routing reaches now are asked for).
+async function sentFor(page, subject, recipients, signs, ask) {
+  const started = Date.now();
+  const made = await inApp(page, async ({ subject, recipients, signs, pdf }) => {
+    const api = window.__vs06;
+    const e = await api.createEnvelope({
+      subject, status: "sent",
+      documents: [{ name: "edit.pdf", content_base64: pdf }],
+      recipients,
+      fields: signs.map((ref, i) => ({ recipient: ref, document: 0, type: "signature", page: 1, x: 72, y: 120 + i * 120, width: 160, height: 44, required: true })),
+    });
+    return { id: e.id, tokens: Object.fromEntries(recipients.map((r, i) => [r.ref, e.recipients[i].mock_token || null])) };
+  }, { subject, recipients, signs, pdf: Buffer.from(makePdf([{ title: subject, lines: ["Clause 1.", "Clause 2."] }])).toString("base64") });
+  const links = {};
+  for (const ref of ask) {
+    links[ref] = REAL ? await emailedLink(recipients.find((r) => r.ref === ref).email, started) : signPage(made.tokens[ref]);
+  }
+  return { id: made.id, links };
+}
+
+/// Open a signing link and accept the disclosure when asked; the documents are shown.
+async function openSigning(page, link) {
+  await page.goto(link, { waitUntil: "domcontentloaded" });
+  const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
+  const progress = page.locator("#guide-progress");
+  await expect(consent.or(progress).first()).toBeVisible({ timeout: 20_000 });
+  if (await consent.isVisible()) {
+    await page.getByLabel("I agree to use electronic records and signatures.").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+  }
+  await expect(progress).toBeVisible();
+}
+
+// VS-06A (DocuSign's "Allow to edit"): an editor adds a field for the signer after them
+// with the keyboard, moves it, removes another, and is done; the server holds the
+// change. Mock mode and, on the Compose stack, through the link emailed to the editor.
+test("VS-06A: an editor adds, moves and removes a later signer's fields during their turn", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 60_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  const { id, links } = await sentFor(page, `VS-06A edit ${run}`, [
+    { ref: "ed", type: "editor", name: "Eda Editor", email: `vs06a-ed-${run}@example.com`, routing_order: 1 },
+    { ref: "s2", type: "signer", name: "Sam Later", email: `vs06a-s2-${run}@example.com`, routing_order: 2 },
+  ], ["ed", "s2"], ["ed"]);
+  await openSigning(page, links.ed);
+  await page.getByTestId("edit-fields").click();
+  const bar = page.getByTestId("edit-bar");
+  await expect(bar).toBeVisible();
+  await expect(page.locator("#guide")).toBeHidden();
+  // Their own signature and the later signer's are movable; nothing else.
+  await expect(page.getByTestId("edit-field")).toHaveCount(2);
+  if (!REAL) {
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expectAccessible(page, `signing page editing fields (${scheme})`);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  await bar.getByLabel("For").selectOption({ label: "Sam Later" });
+  await bar.getByLabel("Field").selectOption({ label: "Text" });
+  await bar.getByTestId("edit-add").click();
+  await expect(page.getByTestId("edit-field")).toHaveCount(3);
+  const added = page.locator(".os-efield--text");
+  await expect(added).toBeFocused();
+  const at = await added.boundingBox();
+  for (let i = 0; i < 5; i++) await page.keyboard.press("Shift+ArrowRight");
+  await expect(page.locator("#edit-live")).toHaveText("Field moved.");
+  expect((await added.boundingBox()).x).toBeGreaterThan(at.x);
+  // The later signer's signature is removed with Delete.
+  const theirs = page.getByRole("button", { name: "Signature · Sam Later" });
+  await theirs.focus();
+  await page.keyboard.press("Delete");
+  await expect(page.locator("#edit-live")).toHaveText("Field removed.");
+  await expect(page.getByTestId("edit-field")).toHaveCount(2);
+  await bar.getByTestId("edit-done").click();
+  await expect(page.locator("#guide")).toBeVisible();
+  await expect(page.getByTestId("edit-fields")).toBeFocused();
+  // What the sender sees: one text field for the later signer, moved, and the
+  // editor's own signature only.
+  await page.goto(app("#/agreements"), { waitUntil: "domcontentloaded" });
+  const env = await inApp(page, async (id) => (await window.__vs06.getEnvelope(id)).envelope, id);
+  const s2 = env.recipients.find((r) => r.name === "Sam Later").id;
+  const text = env.fields.filter((f) => f.type === "text");
+  expect(text).toHaveLength(1);
+  expect(text[0].recipient_id).toBe(s2);
+  expect(env.fields.filter((f) => f.type === "signature").map((f) => f.recipient_id)).not.toContain(s2);
+});
+
+// FG-080 (ADR-044, DocuSign's polyline overlay used by an editor): an editor strikes a
+// line through text with the keyboard, lengthens it, and is done; the line is on their
+// page and on the page of the signer acting beside them. The worker's end-to-end test
+// seals it and has pyHanko verify the result.
+test("FG-080: an editor strikes text through, and the other signer sees the line", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 60_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  const { links } = await sentFor(page, `FG-080 strike ${run}`, [
+    { ref: "ed", type: "editor", name: "Eda Editor", email: `fg080-ed-${run}@example.com`, routing_order: 1 },
+    { ref: "p", type: "signer", name: "Pat Parallel", email: `fg080-p-${run}@example.com`, routing_order: 1 },
+  ], ["ed", "p"], ["ed", "p"]);
+  await openSigning(page, links.ed);
+  await page.getByTestId("edit-fields").click();
+  const bar = page.getByTestId("edit-bar");
+  await bar.getByLabel("Field").selectOption({ label: "Strike-through" });
+  await bar.getByTestId("edit-add").click();
+  const line = page.locator(".os-efield--strikethrough");
+  await expect(line).toBeFocused();
+  const before = await line.boundingBox();
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Alt+Shift+ArrowRight");
+  await expect(page.locator("#edit-live")).toHaveText("Field moved.");
+  expect((await line.boundingBox()).width).toBeGreaterThan(before.width);
+  await bar.getByTestId("edit-done").click();
+  await expect(page.getByTestId("strike")).toHaveCount(1);
+  await expect(page.getByRole("img", { name: "Text struck through" })).toHaveCount(1);
+  // The signer beside them sees it on their page.
+  await openSigning(page, links.p);
+  await expect(page.getByTestId("strike")).toHaveCount(1);
+  if (!REAL) await expectAccessible(page, "signing page with a strike-through");
+});
+
+// VS-06A (DocuSign's "Update recipients"): an intermediary asks the signer after them for
+// an access code they choose; the signer must then enter it. Mock mode and, on the
+// Compose stack, through the links emailed to each.
+test("VS-06A: an intermediary sets the next signer's access code, which the signer must then enter", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 60_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  const code = `ian-${run.slice(-6)}`;
+  const signer = `vs06a-s-${run}@example.com`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  const { id, links } = await sentFor(page, `VS-06A auth ${run}`, [
+    { ref: "im", type: "intermediary", name: "Ian Intermediary", email: `vs06a-im-${run}@example.com`, routing_order: 1 },
+    { ref: "s", type: "signer", name: "Bea Buyer", email: signer, routing_order: 2 },
+  ], ["s"], ["im"]);
+  const started = Date.now();
+  await openSigning(page, links.im);
+  if (await page.locator("#guide-finish").isVisible()) await page.locator("#guide-finish").click();
+  const form = page.getByTestId("later-recipients");
+  await expect(form).toBeVisible();
+  await form.getByLabel("How they confirm who they are").selectOption("access_code");
+  // Without a code the page says so before anything is sent.
+  await page.getByTestId("review-finish").click();
+  await expect(form.getByText("Enter the access code they will be asked for.")).toBeVisible();
+  await expect(form.getByLabel("Access code")).toBeFocused();
+  if (!REAL) {
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expectAccessible(page, `review with the later recipient's authentication (${scheme})`);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  await form.getByLabel("Access code").fill(code);
+  await page.getByTestId("review-finish").click();
+  await expect(page.getByTestId("sign-done")).toBeVisible({ timeout: 20_000 });
+  // The signer is asked for the code the intermediary chose; a wrong one is refused.
+  let link;
+  if (REAL) link = await emailedLink(signer, started);
+  else {
+    await page.goto(app("#/agreements"), { waitUntil: "domcontentloaded" });
+    link = signPage(await inApp(page, async (id) => (await window.__vs06.getEnvelope(id)).envelope.recipients.find((r) => r.type === "signer").mock_token, id));
+  }
+  await page.goto(link, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Enter your access code" })).toBeVisible();
+  await page.getByLabel("Access code").fill("not-the-code");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("alert").or(page.locator(".os-field-error")).first()).toBeVisible();
+  await page.getByLabel("Access code").fill(code);
+  await page.getByRole("button", { name: "Continue" }).click();
+  const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
+  await expect(consent.or(page.locator("#guide-progress")).first()).toBeVisible();
+});
+
 // WEB-07 on the Compose stack: the signer's own history and reassignment, through the
 // signing page's More menu, on an envelope sent with reassignment allowed (its link
 // read from Mailpit). guided-ceremony.spec.mjs covers the same in mock mode.

@@ -1306,6 +1306,27 @@ pub fn table() -> Vec<Route> {
             ceremony::fill,
         ),
         r(
+            "POST",
+            "/s/{token}/editor/fields",
+            Public,
+            JSON,
+            ceremony::place_fields,
+        ),
+        r(
+            "PATCH",
+            "/s/{token}/editor/fields/{field}",
+            Public,
+            JSON,
+            ceremony::edit_field,
+        ),
+        r(
+            "DELETE",
+            "/s/{token}/editor/fields/{field}",
+            Public,
+            JSON,
+            ceremony::remove_field,
+        ),
+        r(
             "PUT",
             "/s/{token}/fields/{field}/attachment",
             Public,

@@ -320,7 +320,13 @@ async fn recipients_in(
     Ok((changes, refs, codes))
 }
 
-async fn store_codes(tx: &mut TenantTx, codes: Vec<(RecipientId, String)>) -> Result<(), ApiError> {
+/// Store each recipient's access code as Argon2id (never the code), replacing any
+/// earlier one: the sender's create and `PATCH`, and an intermediary's or editor's
+/// `POST /s/{token}/recipients` (`VS-06A`).
+pub(crate) async fn store_codes(
+    tx: &mut TenantTx,
+    codes: Vec<(RecipientId, String)>,
+) -> Result<(), ApiError> {
     for (r, code) in codes {
         let phc = tokio::task::spawn_blocking(move || hash_password(&code))
             .await

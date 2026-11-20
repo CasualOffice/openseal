@@ -214,3 +214,423 @@ async fn an_editor_names_then_signs_and_an_intermediary_updates_then_finishes() 
     assert!(types.contains(&"recipient.signed"), "{types:?}");
     api.db.drop().await;
 }
+
+/// The ids of the fields in a view's `key` list.
+fn ids_in(view: &Value, key: &str) -> Vec<String> {
+    view[key]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|f| f["id"].as_str().unwrap().to_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[tokio::test]
+async fn an_editor_places_and_moves_a_later_signers_fields_then_signs() {
+    // VS-06A (DocuSign's "Allow to edit"): during their turn an editor adds a field for
+    // a later signer and moves another; the signer acting beside them may not; neither
+    // may touch the field of a recipient routing has reached.
+    let Some(api) = Api::new("editor_fields", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let e = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(json!({
+                "subject": "VS-06A editor fields", "status": "sent",
+                "documents": [{"name": "w.pdf", "content_base64": b64(&pdf(2))}],
+                "recipients": [
+                    {"ref": "ed", "type": "editor", "name": "Eda Editor",
+                        "email": "editor@example.test", "routing_order": 1},
+                    {"ref": "p1", "type": "signer", "name": "Pat Parallel",
+                        "email": "pat@example.test", "routing_order": 1},
+                    {"ref": "s2", "type": "signer", "name": "Sam Later",
+                        "email": "sam@example.test", "routing_order": 2},
+                ],
+                "fields": [
+                    {"recipient": "ed", "document": 0, "type": "signature", "page": 1,
+                        "x": 72, "y": 100, "width": 180, "height": 40, "required": true},
+                    {"recipient": "p1", "document": 0, "type": "signature", "page": 1,
+                        "x": 72, "y": 200, "width": 180, "height": 40, "required": true},
+                    {"recipient": "s2", "document": 0, "type": "signature", "page": 1,
+                        "x": 72, "y": 300, "width": 180, "height": 40, "required": true},
+                ],
+            })),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create",
+    );
+    let env = e["id"].as_str().unwrap().to_owned();
+    let base = format!("/api/v1/envelopes/{env}");
+    let rid = |i: usize| e["recipients"][i]["id"].as_str().unwrap().to_owned();
+    let (ed, p1, s2) = (rid(0), rid(1), rid(2));
+    let doc = e["documents"][0]["id"].as_str().unwrap().to_owned();
+    let field_of = |r: &str| {
+        e["fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["recipient_id"] == r)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let (p1_sig, s2_sig) = (field_of(&p1), field_of(&s2));
+
+    // The editor's view lists the later signer's field as theirs to change, never the
+    // parallel signer's (routing has reached them).
+    let editor = invite(&api, &a, &env, &ed).await;
+    let (view, bound) = open(&api, &editor).await;
+    let h = hdr(&bound);
+    assert_eq!(
+        ids_in(&view, "editable_fields"),
+        std::slice::from_ref(&s2_sig),
+        "{view}"
+    );
+
+    // They add a text field for the later signer and move the signer's signature.
+    let added = ok(
+        api.call(
+            "POST",
+            &format!("/s/{editor}/editor/fields"),
+            &Auth::None,
+            Some(
+                json!({"fields": [{"recipient_id": s2, "document_id": doc, "type": "text",
+                "page": 1, "x": 300, "y": 300, "width": 120, "height": 24,
+                "required": false, "label": "Reference"}]}),
+            ),
+            &h,
+        )
+        .await,
+        StatusCode::CREATED,
+        "the editor adds a field for the later signer",
+    );
+    assert_eq!(ids_in(&added, "editable_fields").len(), 2, "{added}");
+    ok(
+        api.call(
+            "PATCH",
+            &format!("/s/{editor}/editor/fields/{s2_sig}"),
+            &Auth::None,
+            Some(json!({"x": 320, "y": 500})),
+            &h,
+        )
+        .await,
+        StatusCode::OK,
+        "the editor moves the later signer's signature",
+    );
+
+    // A reached recipient's field is not theirs to change, nor to add: 409.
+    for (method, path, body) in [
+        (
+            "PATCH",
+            format!("/s/{editor}/editor/fields/{p1_sig}"),
+            json!({"x": 10}),
+        ),
+        (
+            "DELETE",
+            format!("/s/{editor}/editor/fields/{p1_sig}"),
+            json!({}),
+        ),
+        (
+            "POST",
+            format!("/s/{editor}/editor/fields"),
+            json!({"fields": [{"recipient_id": p1, "document_id": doc, "type": "text",
+                "page": 1, "x": 300, "y": 600, "width": 120, "height": 24}]}),
+        ),
+    ] {
+        let r = api.call(method, &path, &Auth::None, Some(body), &h).await;
+        assert_eq!(
+            r.status,
+            StatusCode::CONFLICT,
+            "{method} {path}: {:?}",
+            r.json()
+        );
+        assert_eq!(r.json()["code"], "CS-WF-0001", "{:?}", r.json());
+    }
+
+    // The parallel signer is no editor: refused before any id is looked up.
+    let pat = invite(&api, &a, &env, &p1).await;
+    let (_, pbound) = open(&api, &pat).await;
+    let r = api
+        .call(
+            "PATCH",
+            &format!("/s/{pat}/editor/fields/{s2_sig}"),
+            &Auth::None,
+            Some(json!({"x": 10})),
+            &hdr(&pbound),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "{:?}", r.json());
+
+    // What the sender sees now: the field added, the signature moved.
+    let now = ok(
+        api.call("GET", &base, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "get",
+    );
+    let fields = now["fields"].as_array().unwrap();
+    let moved = fields.iter().find(|f| f["id"] == s2_sig.as_str()).unwrap();
+    assert_eq!(moved["placement"]["x"], "320", "{moved}");
+    assert!(
+        fields
+            .iter()
+            .any(|f| f["recipient_id"] == s2.as_str() && f["type"] == "text"),
+        "{now}"
+    );
+
+    // The editor and the parallel signer sign; the later signer gets the fields.
+    sign(&api, &invite(&api, &a, &env, &ed).await, &[]).await;
+    sign(&api, &invite(&api, &a, &env, &p1).await, &[]).await;
+    let sam = invite(&api, &a, &env, &s2).await;
+    let (sview, _) = open(&api, &sam).await;
+    let mine: Vec<&str> = sview["fields"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["type"].as_str().unwrap())
+        .collect();
+    assert!(
+        mine.contains(&"text") && mine.contains(&"signature"),
+        "{sview}"
+    );
+    assert!(
+        sview.get("editable_fields").is_none(),
+        "only an editor's view lists them"
+    );
+
+    // The editor, finished, changes nothing any more.
+    let r = api
+        .call(
+            "DELETE",
+            &format!("/s/{editor}/editor/fields/{s2_sig}"),
+            &Auth::None,
+            Some(json!({})),
+            &h,
+        )
+        .await;
+    assert!(r.status.is_client_error(), "{}", r.status);
+
+    // The chain records each change with the editor as actor.
+    let audit = ok(
+        api.call("GET", &format!("{base}/audit"), &a.auth, None, &[])
+            .await,
+        StatusCode::OK,
+        "audit",
+    );
+    let corrected: Vec<&Value> = audit["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["type"] == "envelope.corrected" && e["event"]["actor"]["id"] == ed.as_str())
+        .collect();
+    assert_eq!(corrected.len(), 2, "the add and the move, by the editor");
+    api.db.drop().await;
+}
+
+#[tokio::test]
+async fn an_intermediary_sets_a_later_signers_access_code_and_sms_and_an_agent_may_not() {
+    // VS-06A (DocuSign's "Update recipients"): an intermediary changes how the people
+    // after them authenticate: an access code (stored hashed, never readable back) for
+    // one, a code by SMS for another. The signer must then pass the code they set.
+    let Some(api) = Api::new("intermediary_auth", Rls::On).await else {
+        return;
+    };
+    let a = api.tenant("alpha").await;
+    let e = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &a.auth,
+            Some(json!({
+                "subject": "VS-06A intermediary auth", "status": "sent",
+                "documents": [{"name": "w.pdf", "content_base64": b64(&pdf(2))}],
+                "recipients": [
+                    {"ref": "ag", "type": "agent", "name": "Al Agent",
+                        "email": "agent@example.test", "routing_order": 1},
+                    {"ref": "im", "type": "intermediary", "name": "Ian Intermediary",
+                        "email": "intermediary@example.test", "routing_order": 2},
+                    {"ref": "s1", "type": "signer", "name": "Bea Buyer",
+                        "email": "bea@example.test", "routing_order": 3},
+                    {"ref": "s2", "type": "signer", "name": "Cy Seller",
+                        "email": "cy@example.test", "routing_order": 3},
+                ],
+                "fields": [
+                    {"recipient": "s1", "document": 0, "type": "signature", "page": 1,
+                        "x": 72, "y": 100, "width": 180, "height": 40, "required": true},
+                    {"recipient": "s2", "document": 0, "type": "signature", "page": 1,
+                        "x": 72, "y": 300, "width": 180, "height": 40, "required": true},
+                ],
+            })),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "create",
+    );
+    let env = e["id"].as_str().unwrap().to_owned();
+    let base = format!("/api/v1/envelopes/{env}");
+    let rid = |i: usize| e["recipients"][i]["id"].as_str().unwrap().to_owned();
+    let (ag, im, s1, s2) = (rid(0), rid(1), rid(2), rid(3));
+    let code = json!({"recipients": [{"id": s1, "auth": ["access_code"], "access_code": "set-by-ian-77"}]});
+
+    // An agent names people; changing their authentication is not theirs (the engine).
+    let agent = invite(&api, &a, &env, &ag).await;
+    let (_, abound) = open(&api, &agent).await;
+    let r = api
+        .call(
+            "POST",
+            &format!("/s/{agent}/recipients"),
+            &Auth::None,
+            Some(code.clone()),
+            &hdr(&abound),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN, "{:?}", r.json());
+    ok(
+        api.call(
+            "POST",
+            &format!("/s/{agent}/finish"),
+            &Auth::None,
+            Some(json!({})),
+            &hdr(&abound),
+        )
+        .await,
+        StatusCode::OK,
+        "the agent finishes",
+    );
+
+    // The intermediary: a method without its code, or a code by SMS without a number,
+    // is refused; then the access code for one, SMS for the other.
+    let inter = invite(&api, &a, &env, &im).await;
+    let (iview, ibound) = open(&api, &inter).await;
+    let h = hdr(&ibound);
+    assert_eq!(iview["later_recipients"][0]["auth"], json!([]), "{iview}");
+    for (body, pointer) in [
+        (
+            json!({"recipients": [{"id": s1, "auth": ["access_code"]}]}),
+            "/recipients/0/access_code",
+        ),
+        (
+            json!({"recipients": [{"id": s2, "auth": ["sms_otp"]}]}),
+            "/recipients/0/auth",
+        ),
+        (
+            json!({"recipients": [{"id": s1, "access_code": "no-method"}]}),
+            "/recipients/0/access_code",
+        ),
+    ] {
+        let r = api
+            .call(
+                "POST",
+                &format!("/s/{inter}/recipients"),
+                &Auth::None,
+                Some(body),
+                &h,
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::UNPROCESSABLE_ENTITY, "{:?}", r.json());
+        assert!(
+            format!("{:?}", r.json()).contains(pointer),
+            "{:?}",
+            r.json()
+        );
+    }
+    let named = ok(
+        api.call(
+            "POST",
+            &format!("/s/{inter}/recipients"),
+            &Auth::None,
+            Some(json!({"recipients": [
+                {"id": s1, "auth": ["access_code"], "access_code": "set-by-ian-77"},
+                {"id": s2, "auth": ["sms_otp"], "phone": "+44 7700 900123"},
+            ]})),
+            &h,
+        )
+        .await,
+        StatusCode::OK,
+        "the intermediary sets their authentication",
+    );
+    let later = named["later_recipients"].as_array().unwrap();
+    let auth_of = |id: &str| later.iter().find(|r| r["id"] == id).unwrap()["auth"].clone();
+    assert_eq!(auth_of(&s1), json!(["access_code"]));
+    assert_eq!(auth_of(&s2), json!(["sms_otp"]));
+    assert!(
+        !named.to_string().contains("set-by-ian-77"),
+        "the code is never answered"
+    );
+    for d in iview["envelope"]["documents"].as_array().unwrap() {
+        let doc = d["id"].as_str().unwrap();
+        ok(
+            api.call(
+                "POST",
+                &format!("/s/{inter}/documents/{doc}/viewed"),
+                &Auth::None,
+                Some(json!({"pages_seen": [1, 2]})),
+                &h,
+            )
+            .await,
+            StatusCode::OK,
+            "viewed",
+        );
+    }
+    ok(
+        api.call(
+            "POST",
+            &format!("/s/{inter}/finish"),
+            &Auth::None,
+            Some(json!({})),
+            &h,
+        )
+        .await,
+        StatusCode::OK,
+        "the intermediary finishes",
+    );
+    let now = ok(
+        api.call("GET", &base, &a.auth, None, &[]).await,
+        StatusCode::OK,
+        "get",
+    );
+    assert!(
+        !now.to_string().contains("set-by-ian-77"),
+        "the sender cannot read it either"
+    );
+
+    // The signer must pass the code the intermediary set: a wrong one is refused.
+    let t1 = invite(&api, &a, &env, &s1).await;
+    let (v1, b1) = open(&api, &t1).await;
+    assert_eq!(v1["auth_required"], json!(["access_code"]), "{v1}");
+    let wrong = api
+        .call(
+            "POST",
+            &format!("/s/{t1}/authenticate"),
+            &Auth::None,
+            Some(json!({"method": "access_code", "code": "guess"})),
+            &hdr(&b1),
+        )
+        .await;
+    assert_eq!(wrong.status, StatusCode::FORBIDDEN);
+    ok(
+        api.call(
+            "POST",
+            &format!("/s/{t1}/authenticate"),
+            &Auth::None,
+            Some(json!({"method": "access_code", "code": "set-by-ian-77"})),
+            &hdr(&b1),
+        )
+        .await,
+        StatusCode::OK,
+        "the code the intermediary set",
+    );
+    let t2 = invite(&api, &a, &env, &s2).await;
+    let (v2, _) = open(&api, &t2).await;
+    assert_eq!(v2["auth_required"], json!(["sms_otp"]), "{v2}");
+    api.db.drop().await;
+}

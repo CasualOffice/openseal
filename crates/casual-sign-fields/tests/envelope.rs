@@ -90,6 +90,32 @@ fn hiding_cascades_to_grandchildren_even_on_unchecked() {
 }
 
 #[test]
+fn a_strike_through_is_drawn_whenever_shown_and_takes_no_other_value() {
+    // FG-080, ADR-044: no recipient fills a strike-through; when shown its value is the
+    // mark (drawn by flattening), when hidden it is not drawn, and a client that sends
+    // anything else is told so (`CS-FLD-0022`).
+    let mut st = when(
+        field("st", FieldType::Strikethrough),
+        "A",
+        Condition::Checked,
+    );
+    st.required = true;
+    let fields = vec![labelled("a", FieldType::Checkbox, "A"), st.clone()];
+    let out = evaluate_envelope(&fields, &values(&[("a", FieldValue::Checked(true))]));
+    assert!(out.is_complete(), "{:?}", out.issues);
+    assert_eq!(out.values.get(&id("st")), Some(&FieldValue::Checked(true)));
+    let out = evaluate_envelope(&fields, &values(&[]));
+    assert_eq!(out.hidden, vec![id("st")]);
+    assert!(!out.values.contains_key(&id("st")));
+    let out = evaluate_envelope(
+        &[field("st", FieldType::Strikethrough)],
+        &values(&[("st", text("x"))]),
+    );
+    assert_eq!(codes(&out.issues), s(&[("st", "CS-FLD-0022")]));
+    assert!(check_for_send(&[field("st", FieldType::Strikethrough)]).is_empty());
+}
+
+#[test]
 fn hidden_required_fields_are_not_required() {
     let mut b = when(field("b", FieldType::Text), "A", Condition::Checked);
     b.required = true;
