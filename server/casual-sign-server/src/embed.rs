@@ -65,7 +65,7 @@ fn development_host(host: &str) -> bool {
 /// The origin `s` names, as a browser compares it (`scheme://host[:port]`, lower case,
 /// no default port), or `None` when it is not one: a path, query, fragment, user
 /// name or wildcard; a scheme other than `https`, or `http` but to a development host
-/// ([`development_host`]); a host with characters a host name has not.
+/// (`localhost`, loopback, `.test` or `.localhost`); a host with characters a host name has not.
 #[must_use]
 pub fn origin(s: &str) -> Option<String> {
     if s.is_empty() || s.len() > MAX_ORIGIN {
