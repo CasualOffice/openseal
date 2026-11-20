@@ -727,8 +727,11 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
             require_complete: false,
         };
         let e = &services.engine;
+        // FG-009 (ADR-045): the envelope id stamp, as every signer was shown it.
+        let mut options = FlattenOptions::default();
+        options.envelope_id_stamp = s.options.stamp_envelope_id;
         let flat = e
-            .fill_and_flatten(delivered, &fill, &FlattenOptions::default())
+            .fill_and_flatten(delivered, &fill, &options)
             .map_err(|x| pipeline(x.code()))?;
         let flattened_hash = Hash256::digest(&flat.bytes);
         let completed = e

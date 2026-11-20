@@ -698,6 +698,19 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "getInsights": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/insights",
+    "path_params": [],
+    "query": [
+      "from",
+      "sender",
+      "to",
+      "utc_offset_minutes"
+    ]
+  },
   "getMe": {
     "body": false,
     "body_required": false,

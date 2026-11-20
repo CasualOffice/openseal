@@ -364,6 +364,8 @@ body:has(dialog[open]) .os-guide { visibility: hidden; }
 .os-signframe--review { grid-template-columns: minmax(0, 1fr) auto; }
 .os-signframe--review .os-docview__pages { padding-bottom: 2rem; }
 .os-signframe--review .os-page__overlay { container-type: size; }
+/* FG-009: the envelope id stamp, as the engine draws it (grey 7 pt Helvetica). */
+.os-stamp { position: absolute; display: flex; align-items: center; overflow: hidden; white-space: nowrap; line-height: 1; color: #404040; font-family: "Liberation Sans", Arial, Helvetica, sans-serif; pointer-events: none; }
 .os-flat { position: absolute; display: flex; align-items: center; overflow: hidden; color: #0b1f4b; line-height: 1; white-space: nowrap; }
 .os-flat img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .os-flat--checkbox { justify-content: center; }

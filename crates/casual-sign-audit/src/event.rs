@@ -239,6 +239,11 @@ pub enum EventData {
         recipients: u32,
         /// Documents at send.
         documents: u32,
+        /// Every page carries the envelope id stamp (`FG-009`, ADR-045): what each
+        /// signer sees and the sealed document holds. Absent when off, so events
+        /// written before it existed serialize, and hash, as they did.
+        #[serde(default, skip_serializing_if = "is_false")]
+        envelope_id_stamped: bool,
     },
     /// The sender corrected the envelope after sending.
     #[serde(rename = "envelope.corrected")]
@@ -818,6 +823,11 @@ impl AuditEvent {
             data,
         })
     }
+}
+
+// Takes a reference because serde's `skip_serializing_if` passes one.
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 // Tests may unwrap, index and panic (CLAUDE.md).

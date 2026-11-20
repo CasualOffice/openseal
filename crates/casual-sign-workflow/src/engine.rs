@@ -1203,6 +1203,7 @@ fn send_now(s: &mut EnvelopeState, out: &mut Out<'_>) -> Result<(), WorkflowErro
     out.event(EventData::EnvelopeSent {
         recipients: u32::try_from(s.recipients.len()).unwrap_or(u32::MAX),
         documents: u32::try_from(s.documents.len()).unwrap_or(u32::MAX),
+        envelope_id_stamped: s.options.stamp_envelope_id,
     });
     for d in &mut s.documents {
         d.fixed = true;

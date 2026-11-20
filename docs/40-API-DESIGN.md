@@ -736,6 +736,22 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
 - Tests: `-server` `tests/manage_views.rs`, `tests/correct_documents.rs`, `tests/editor_intermediary.rs`,
   `tests/reports.rs`; the contract test calls every new operation; `webapp/tests/editfields.test.mjs`;
   `manage-correct.spec.mjs` (`VS-06A`, mock mode and the Compose stack).
+- **Envelope id stamping** (`FG-009`, ADR-045): `signing_options.stamp_envelope_id` (absent when off) on
+  `POST /envelopes` and `PATCH /envelopes/{id}`; left out of a create request's `signing_options` (or with no
+  `signing_options`) it takes the account setting `stamp_envelope_id` (`PATCH /accounts/me`, a boolean, else `422`
+  pointing at `/settings/stamp_envelope_id`). A correction that changes it is `409 CS-WF-0001`. The ceremony view
+  carries it in `envelope.signing_options`, and the page draws the stamp over every page; `content?version=current`
+  and the sealed document carry it on every page. No new operation. Tests: `-server` `tests/envelope_id_stamp.rs`,
+  `-worker` `tests/end_to_end.rs`.
+- **Insights** (`FG-141`, DocuSign's Insights): `GET /insights?from&to&sender&utc_offset_minutes` over the envelopes
+  created in `[from, to)`, Deleted left out (the reports' window): `totals` (created, sent, completed, declined,
+  voided, expired, in progress), `time_to_complete` (median and 90th percentile seconds from sent to completed,
+  PostgreSQL's continuous `percentile_cont`; null with none completed), `days` (sent and completed per day in the
+  caller's day, oldest first, days with neither absent) and `top_senders` (the ten who sent most). Gated by
+  `envelopes.read`: a holder of `reports.read` sees the workspace (`scope: workspace`) and may name a sender;
+  anyone else sees their own envelopes (`scope: own`), and naming another sender is `403 CS-AUTH-0006`.
+  Aggregates only: no subject, name or address. The web app's Insights page (`#/insights`, from Reports) draws it.
+  Tests: `-server` `tests/insights.rs`; the contract test calls it.
 
 ## As built (`WEB-19`, document analysis; docs/33 §6, §7 As built)
 

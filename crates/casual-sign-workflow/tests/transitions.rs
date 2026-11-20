@@ -943,6 +943,7 @@ fn signing_options_can_turn_off_decline_reassign_and_finish_later() {
                     allow_decline: false,
                     allow_finish_later: false,
                     capture_location: false,
+                    stamp_envelope_id: false,
                 },
             }],
         },
@@ -971,6 +972,61 @@ fn signing_options_can_turn_off_decline_reassign_and_finish_later() {
     for c in [decline, later, reassign] {
         assert_eq!(code(hx.run(r1(), c)), "CS-WF-0012");
     }
+}
+
+/// `FG-009` (ADR-045): the envelope id stamp is chosen on the draft, recorded on
+/// `envelope.sent`, and cannot be turned on or off by a correction, since signers may
+/// already have seen the pages with or without it.
+#[test]
+fn the_envelope_id_stamp_is_recorded_at_send_and_fixed_after() {
+    let stamped = SigningOptions {
+        stamp_envelope_id: true,
+        ..SigningOptions::default()
+    };
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1), recipient("r2", Signer, 2)]);
+    hx.ok(
+        sender(),
+        Command::Edit {
+            changes: vec![Change::SetSigningOptions { options: stamped }],
+        },
+    );
+    let d = hx.send();
+    assert!(d.events.iter().any(|e| matches!(
+        e.data,
+        EventData::EnvelopeSent {
+            envelope_id_stamped: true,
+            ..
+        }
+    )));
+    for options in [SigningOptions::default(), stamped] {
+        let mut o = options;
+        o.allow_decline = false;
+        let r = hx.run(
+            sender(),
+            Command::Correct {
+                changes: vec![Change::SetSigningOptions { options: o }],
+            },
+        );
+        if options.stamp_envelope_id {
+            // The stamp unchanged: the other options still correct.
+            assert!(r.is_ok(), "{r:?}");
+        } else {
+            assert_eq!(code(r), "CS-WF-0001");
+        }
+    }
+    assert!(hx.state().options.stamp_envelope_id);
+    // Unstamped by default: the event carries nothing new.
+    let mut plain = Harness::new();
+    plain.draft(&[recipient("r1", Signer, 1)]);
+    let d = plain.send();
+    assert!(d.events.iter().any(|e| matches!(
+        e.data,
+        EventData::EnvelopeSent {
+            envelope_id_stamped: false,
+            ..
+        }
+    )));
 }
 
 #[test]

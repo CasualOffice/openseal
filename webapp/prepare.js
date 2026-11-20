@@ -82,6 +82,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     message: "",
     emailSubject: "",
     captureLocation: false,
+    // FG-009: stamp the envelope id on every page; a new draft takes the account's default.
+    stampEnvelopeId: false,
     reminderFirst: null,
     reminderEvery: null,
     expiresDays: null,
@@ -1817,6 +1819,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       sendAt.addEventListener("change", () => { S.sendAt = sendAt.value; });
       const loc = h("input", { id: "env-location", type: "checkbox", checked: S.captureLocation });
       loc.addEventListener("change", () => { S.captureLocation = loc.checked; S.dirty = true; });
+      const stamp = h("input", { id: "env-stamp", type: "checkbox", checked: S.stampEnvelopeId, attrs: { "aria-describedby": "env-stamp-help", "data-testid": "env-stamp" } });
+      stamp.addEventListener("change", () => { S.stampEnvelopeId = stamp.checked; S.dirty = true; });
       reviewPanel.append(h("section", { class: "os-card", attrs: { "aria-labelledby": "rv-opt-h" } },
         h("h3", { id: "rv-opt-h", class: "os-card__title", text: t("wizard.options") }),
         h("div", { class: "os-optgrid" },
@@ -1827,7 +1831,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("p", { class: "os-muted os-small", text: t("prepare.reminders-help") }),
         h("p", { class: "os-muted os-small", text: t("prepare.send-at-help") }),
         h("label", { class: "os-check", attrs: { for: "env-location" } }, loc, h("span", { text: t("prepare.capture-location") })),
-        h("p", { class: "os-muted os-small", text: t("prepare.capture-location-help") })));
+        h("p", { class: "os-muted os-small", text: t("prepare.capture-location-help") }),
+        h("label", { class: "os-check", attrs: { for: "env-stamp" } }, stamp, h("span", { text: t("prepare.stamp-envelope-id") })),
+        h("p", { id: "env-stamp-help", class: "os-muted os-small", text: t("prepare.stamp-envelope-id-help") })));
     } else {
       reviewPanel.append(h("p", { class: "os-muted os-small", text: t("template.roles-help") }));
     }
@@ -1877,6 +1883,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.subject = env.subject || "";
     S.message = env.message || "";
     S.captureLocation = !!env.signing_options?.capture_location;
+    S.stampEnvelopeId = !!env.signing_options?.stamp_envelope_id;
     S.reminderFirst = Number.isInteger(env.reminders?.first_after_days) ? env.reminders.first_after_days : null;
     S.reminderEvery = Number.isInteger(env.reminders?.then_every_days) ? env.reminders.then_every_days : null;
     S.expiresDays = env.expires_at ? Math.max(1, Math.ceil((Date.parse(env.expires_at) - Date.now()) / 86_400_000)) : null;
@@ -2019,7 +2026,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
   /// The keys of the recipients a field is shared with who still take fields (VS-04D).
   const sharedWith = (f) => (f.sharedKeys || []).filter((k) => k !== f.recipientKey && S.recipients.some((r) => r.key === k && takesFields(r)));
-  const options = () => ({ ...(S.captureLocation ? { capture_location: true } : {}) });
+  const options = () => ({ ...(S.captureLocation ? { capture_location: true } : {}), stamp_envelope_id: S.stampEnvelopeId });
   /// Reminders and expiry as the API takes them; absent members mean "account default".
   const sendOptions = () => ({
     reminders: { ...(S.reminderFirst ? { first_after_days: S.reminderFirst } : {}), ...(S.reminderEvery ? { then_every_days: S.reminderEvery } : {}) },
@@ -2159,8 +2166,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (sent.length) await ctx.api.addFields(S.id, sent.map(([, b]) => b));
       const { envelope: e2, etag } = await ctx.api.getEnvelope(S.id);
       const optsChanged = JSON.stringify(sendOptions()) !== S.serverOptions;
-      if (optsChanged || (e2.subject || "") !== S.subject.trim() || (e2.message || "") !== S.message || !!e2.signing_options?.capture_location !== S.captureLocation) {
-        await ctx.api.patchEnvelope(S.id, etag, { subject: S.subject.trim(), message: S.message, signing_options: { ...(e2.signing_options || {}), capture_location: S.captureLocation }, ...(optsChanged ? sendOptions() : {}) });
+      if (optsChanged || (e2.subject || "") !== S.subject.trim() || (e2.message || "") !== S.message || !!e2.signing_options?.capture_location !== S.captureLocation || !!e2.signing_options?.stamp_envelope_id !== S.stampEnvelopeId) {
+        await ctx.api.patchEnvelope(S.id, etag, { subject: S.subject.trim(), message: S.message, signing_options: { ...(e2.signing_options || {}), capture_location: S.captureLocation, stamp_envelope_id: S.stampEnvelopeId }, ...(optsChanged ? sendOptions() : {}) });
       }
       const { envelope: final } = await ctx.api.getEnvelope(S.id);
       if (revision === rev) { await loadFromServer(final); return; }
@@ -2659,6 +2666,11 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     } catch (err) {
       if (!ctx.failed(err)) toastError(err);
     }
+  }
+  // FG-009: a new envelope starts from the account's envelope id stamp default (the
+  // server applies it too when a request does not say). Unreadable: off, as the server.
+  if (!TPL && !S.id) {
+    try { S.stampEnvelopeId = (await ctx.api.account())?.settings?.stamp_envelope_id === true; } catch { /* off */ }
   }
   const handed = !TPL && !S.id ? takeFiles() : null;
   if (handed) await addFiles(handed);

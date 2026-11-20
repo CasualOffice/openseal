@@ -692,6 +692,8 @@ async function documents() {
     }
     overlay.append(...strikesOn(p));
     const mine = fields.filter((f) => f.document_id === p.key && f.p.page === p.n).sort((a, b) => a.p.y - b.p.y || a.p.x - b.p.x);
+    const stamp = stampNode(p);
+    if (stamp) overlay.append(stamp);
     for (const f of mine) overlay.append(fieldNode(f, p));
   });
   thumbs.build();
@@ -1842,6 +1844,8 @@ function review() {
     el.setAttribute("data-testid", "review-page");
     overlay.setAttribute("aria-hidden", "true");
     overlay.append(...strikesOn(p));
+    const stamp = stampNode(p);
+    if (stamp) overlay.append(stamp);
     for (const f of fields.filter((x) => x.document_id === p.key && x.p.page === p.n)) overlay.append(flat(f, p));
   });
   rzc.sync();
@@ -1856,6 +1860,21 @@ function review() {
 
 /// A field as it will look on the signed page: the value only, no field chrome. Sized
 /// in percentages of the page, the text in container units of the page's height.
+/// The envelope id stamp (FG-009, ADR-045) over page `pg` when the envelope has it on:
+/// where and how large the engine draws it in the sealed document (casual-sign-flatten
+/// `stamp_rect`: a 10 pt band 4 pt below the top, inset 18 pt; 7 pt text), so what the
+/// signer sees here is what the seal carries. Decorative copy of the page: hidden from
+/// assistive technology (the envelope id is in the page's own text once sealed).
+function stampNode(pg) {
+  if (!view?.envelope?.signing_options?.stamp_envelope_id || !view.envelope.id) return null;
+  const inset = Math.min(18, pg.width * 0.05);
+  const band = Math.min(10, pg.height * 0.5);
+  const box = h("div", { class: "os-stamp", text: t("sign.envelope-stamp", { id: view.envelope.id }), attrs: { "aria-hidden": "true", "data-testid": "envelope-stamp" } });
+  placeBox(box, { x: inset, y: Math.min(4, Math.max(0, pg.height - band)), width: Math.max(1, pg.width - 2 * inset), height: band }, pg);
+  box.style.fontSize = `${((Math.min(7, band) / pg.height) * 100).toFixed(3)}cqh`;
+  return box;
+}
+
 function flat(f, pg) {
   const box = h("div", { class: `os-flat os-flat--${f.type}` });
   placeBox(box, f.p, pg);

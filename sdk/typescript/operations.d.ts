@@ -149,6 +149,8 @@ export interface Operations {
   getFormData(params: { "id": string | number | boolean }): Promise<any>;
   /** A group with its members' user ids — `GET /api/v1/groups/{id}` (groups.manage) */
   getGroup(params: { "id": string | number | boolean }): Promise<any>;
+  /** The Insights dashboard's figures over the envelopes created in a window (FG-141) — `GET /api/v1/insights` (envelopes.read) */
+  getInsights(params?: { "from"?: string | number | boolean; "sender"?: string | number | boolean; "to"?: string | number | boolean; "utc_offset_minutes"?: string | number | boolean }): Promise<any>;
   /** The signed-in user's own profile (UXW-37) — `GET /api/v1/users/me` */
   getMe(params?: Record<string, never>): Promise<any>;
   /** The workspace's document-analysis settings (docs/33 §6, WEB-19) — `GET /api/v1/account/settings/ml` (settings.sending) */

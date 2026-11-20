@@ -75,3 +75,51 @@ export function countPages(bytes) {
   const n = (s.match(/\/Type\s*\/Page\b(?!s)/g) || []).length;
   return n || 1;
 }
+
+/// The envelope id stamp (FG-009, ADR-045) for mock mode: `line` in 7 pt Helvetica, grey,
+/// in the top margin of every page, as one incremental update (the original bytes stay a
+/// prefix, as the engine's). Only for files with a classic cross-reference table whose
+/// pages hold a MediaBox, one content stream and a Font dictionary (what `makePdf`
+/// writes); anything else comes back unchanged. Not a PDF writer: the real server draws
+/// the stamp with the engine (casual-sign-flatten).
+export function stampPdf(bytes, line) {
+  const s = new TextDecoder("latin1").decode(bytes);
+  const start = [...s.matchAll(/startxref\s+(\d+)/g)].pop();
+  const size = [...s.matchAll(/\/Size\s+(\d+)/g)].pop();
+  const root = [...s.matchAll(/\/Root\s+(\d+)\s+0\s+R/g)].pop();
+  if (!start || !size || !root) return bytes;
+  const pages = [];
+  for (const m of s.matchAll(/(\d+) 0 obj\s*(<<\s*\/Type \/Page\b[\s\S]*?>>)\s*endobj/g)) {
+    const box = m[2].match(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/);
+    const contents = m[2].match(/\/Contents (\d+) 0 R/);
+    if (!box || !contents || !/\/Font <</.test(m[2])) return bytes;
+    pages.push({ num: Number(m[1]), dict: m[2], w: Number(box[1]), h: Number(box[2]), contents: contents[1] });
+  }
+  if (!pages.length) return bytes;
+  let next = Number(size[1]);
+  const font = next++;
+  const objs = [[font, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]];
+  for (const p of pages) {
+    const inset = Math.min(18, p.w * 0.05);
+    const band = Math.min(10, p.h * 0.5);
+    const top = Math.min(4, p.h - band);
+    const ops = `q 0.25 g BT /FS ${Math.min(7, band)} Tf ${inset} ${p.h - top - band + 2} Td (${esc(line)}) Tj ET Q\n`;
+    const content = next++;
+    objs.push([content, `<< /Length ${ops.length} >>\nstream\n${ops}endstream`]);
+    objs.push([p.num, p.dict.replace(/\/Contents \d+ 0 R/, `/Contents [${p.contents} 0 R ${content} 0 R]`).replace("/Font <<", `/Font << /FS ${font} 0 R`)]);
+  }
+  let tail = "\n";
+  const offs = [];
+  for (const [n, body] of objs) {
+    offs.push([n, bytes.length + tail.length]);
+    tail += `${n} 0 obj\n${body}\nendobj\n`;
+  }
+  const xref = bytes.length + tail.length;
+  tail += "xref\n";
+  for (const [n, off] of offs.sort((a, b) => a[0] - b[0])) tail += `${n} 1\n${String(off).padStart(10, "0")} 00000 n \n`;
+  tail += `trailer\n<< /Size ${next} /Root ${root[1]} 0 R /Prev ${start[1]} >>\nstartxref\n${xref}\n%%EOF\n`;
+  const out = new Uint8Array(bytes.length + tail.length);
+  out.set(bytes, 0);
+  out.set(latin1(tail), bytes.length);
+  return out;
+}

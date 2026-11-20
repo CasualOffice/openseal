@@ -196,6 +196,21 @@ fn slice6_operations<'a>(
             .call("GET", "/api/v1/reports/envelopes?format=csv", k, None, &[])
             .await;
         assert_eq!(csv.status, StatusCode::OK);
+        // FG-141: the Insights dashboard's figures.
+        let got = ok(
+            api.call(
+                "GET",
+                "/api/v1/insights?utc_offset_minutes=60&sender=me",
+                k,
+                None,
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "insights",
+        )
+        .await;
+        assert_eq!(got["scope"], "workspace");
     })
 }
 

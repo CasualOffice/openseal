@@ -1,0 +1,41 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH w AS ( SELECT e.sent_at, CASE WHEN e.status = 'completed' THEN e.completed_at END AS done_at FROM envelopes AS e WHERE e.account_id = $1 AND e.deleted_at IS NULL AND EXISTS (SELECT 1 FROM envelope_states AS s WHERE s.account_id = e.account_id AND s.envelope_id = e.id) AND e.created_at >= $2 AND e.created_at < $3 AND ($4::uuid IS NULL OR e.sender_user_id = $4)), d AS ( SELECT to_char((sent_at AT TIME ZONE 'UTC') + make_interval(mins => $5), 'YYYY-MM-DD') AS day, 1 AS sent, 0 AS completed FROM w WHERE sent_at IS NOT NULL UNION ALL SELECT to_char((done_at AT TIME ZONE 'UTC') + make_interval(mins => $5), 'YYYY-MM-DD'), 0, 1 FROM w WHERE done_at IS NOT NULL) SELECT day AS \"day!\", sum(sent)::int8 AS \"sent!\", sum(completed)::int8 AS \"completed!\" FROM d GROUP BY day ORDER BY day",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "day!",
+        "type_info": "Text",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "sent!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "c6cbc3eadc960548f57e8a94865fe1dcb659dd41a2960073088e037d9463fa1f"
+}

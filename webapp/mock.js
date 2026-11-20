@@ -9,7 +9,7 @@
 // reloads and navigation within the tab, so the sender app and the signing page share
 // one fake server. Each test or Playwright context starts from the same seed.
 
-import { makePdf, countPages } from "./mockpdf.js";
+import { makePdf, countPages, stampPdf } from "./mockpdf.js";
 
 const DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 import { checkText } from "./signfields.js";
@@ -283,6 +283,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   // ---- Model helpers -----------------------------------------------------------
   /// The seal profiles an envelope or the account's default may name (docs/22 §3).
   const SEAL_PROFILES = ["pades-b-t", "pades-b-lt", "pades-b-lta"];
+  /// Signing options as the server answers them: `stamp_envelope_id` absent when off.
+  function stampOff(o) {
+    if (!o.stamp_envelope_id) delete o.stamp_envelope_id;
+    return o;
+  }
+
   function newEnvelope({ subject = "", message = "", signing_options = {}, created_at } = {}) {
     const env = {
       id: uid(), status: "draft", version: 1, sender_user_id: "user-demo", subject, message,
@@ -837,7 +843,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         changed.push("reminders");
         return;
       }
-      case "set_signing_options": env.signing_options = { ...(c.options || {}) }; changed.push("signing_options"); return;
+      case "set_signing_options":
+        // As the engine (FG-009, ADR-045): the envelope id stamp is fixed once sent.
+        if (!!c.options?.stamp_envelope_id !== !!env.signing_options?.stamp_envelope_id) fail(409, "CS-WF-0001", "Not allowed in the current state");
+        env.signing_options = stampOff({ ...(c.options || {}) }); changed.push("signing_options"); return;
       case "set_seal_profile": fail(409, "CS-WF-0001", "Not allowed in the current state", [{ pointer: `${at}/op`, code: "draft_only" }]);
       // falls through: fail throws
       default: fail(422, "CS-API-0001", "Malformed request", [{ pointer: `${at}/op`, code: "CS-API-0001" }]);
@@ -953,6 +962,62 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   // ---- Reports (VS-06, server api/reports.rs) ---------------------------------------------
   /// `GET /reports/{envelopes|recipients|usage}` as the server: envelopes created in
   /// `[from, to)`, of `sender`, newest first, not deleted; JSON or formula-safe CSV.
+  /// `GET /insights` (FG-141), as the server: over the envelopes created in the window
+  /// (Deleted left out), counts by how they stand, the median and 90th percentile
+  /// (continuous, as PostgreSQL's `percentile_cont`) of sent → completed in seconds,
+  /// sent and completed per day in the caller's day, and the top ten senders. The demo
+  /// user is an administrator (`reports.read`), so the scope is the workspace.
+  function insights(query) {
+    const bad = (k) => fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/query/${k}`, code: "CS-API-0001" }]);
+    const from = query.get("from");
+    const to = query.get("to");
+    if (from && Number.isNaN(Date.parse(from))) bad("from");
+    if (to && Number.isNaN(Date.parse(to))) bad("to");
+    if (from && to && Date.parse(to) <= Date.parse(from)) bad("to");
+    const off = query.get("utc_offset_minutes") == null ? 0 : Number(query.get("utc_offset_minutes"));
+    if (!Number.isInteger(off) || Math.abs(off) > 840) bad("utc_offset_minutes");
+    const senderQ = query.get("sender");
+    const sender = senderQ === "me" ? "user-demo" : senderQ;
+    const envs = db.envelopes.filter((e) => !e.deleted_at && e.status !== undefined
+      && (!from || Date.parse(e.created_at) >= Date.parse(from)) && (!to || Date.parse(e.created_at) < Date.parse(to))
+      && (!sender || e.sender_user_id === sender));
+    const doneAt = (e) => (e.status === "completed" ? e.completed_at || e.ended_at || null : null);
+    const n = (f) => envs.filter(f).length;
+    const secs = envs.filter((e) => e.sent_at && doneAt(e)).map((e) => (Date.parse(doneAt(e)) - Date.parse(e.sent_at)) / 1000).sort((a, b) => a - b);
+    const pct = (p) => {
+      if (!secs.length) return null;
+      const at = p * (secs.length - 1);
+      const lo = Math.floor(at);
+      return Math.round(secs[lo] + (secs[Math.min(lo + 1, secs.length - 1)] - secs[lo]) * (at - lo));
+    };
+    const day = (iso) => new Date(Date.parse(iso) + off * 60_000).toISOString().slice(0, 10);
+    const days = new Map();
+    const bump = (d, k) => { const v = days.get(d) || { day: d, sent: 0, completed: 0 }; v[k]++; days.set(d, v); };
+    for (const e of envs) {
+      if (e.sent_at) bump(day(e.sent_at), "sent");
+      if (doneAt(e)) bump(day(doneAt(e)), "completed");
+    }
+    const by = new Map();
+    for (const e of envs.filter((x) => x.sent_at)) {
+      const u = by.get(e.sender_user_id) || { sender_user_id: e.sender_user_id, sent: 0, completed: 0 };
+      u.sent++;
+      if (e.status === "completed") u.completed++;
+      by.set(e.sender_user_id, u);
+    }
+    const completed = n((e) => e.status === "completed");
+    return json(200, {
+      scope: "workspace", from: from || null, to: to || null, sender: sender || null, utc_offset_minutes: off,
+      totals: {
+        created: envs.length, sent: n((e) => !!e.sent_at), completed,
+        declined: n((e) => e.status === "declined"), voided: n((e) => e.status === "voided"), expired: n((e) => e.status === "expired"),
+        in_progress: n((e) => ["sent", "delivered", "completing"].includes(e.status)),
+      },
+      time_to_complete: { completed, median_seconds: pct(0.5), p90_seconds: pct(0.9) },
+      days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)),
+      top_senders: [...by.values()].sort((a, b) => b.sent - a.sent || a.sender_user_id.localeCompare(b.sender_user_id)).slice(0, 10),
+    });
+  }
+
   function report(kind, query) {
     const bad = (k) => fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/query/${k}`, code: "CS-API-0001" }]);
     const from = query.get("from");
@@ -1087,7 +1152,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   async function createEnvelopeFrom(body) {
     const b = body || {};
     checkSizes(0, (b.documents || []).map((d) => d.content_base64 || ""));
-    const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
+    // As the server (FG-009): a request that does not say takes the account's stamp default.
+    const opts = { ...(b.signing_options || {}) };
+    if (!("stamp_envelope_id" in opts) && account().settings?.stamp_envelope_id === true) opts.stamp_envelope_id = true;
+    const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: stampOff(opts) });
     if (inSandbox()) env.sandbox = true;
     if (b.reminders) env.reminders = b.reminders;
     if (Number.isInteger(b.expires_in_days)) env.expires_at = iso(b.expires_in_days * 24 * 60);
@@ -1967,6 +2035,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if ("builtin_profiles" in body.settings) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/builtin_profiles", code: "CS-API-0001" }]);
         // As the server: `workflow_policy` is taken only as a whole `Policy` (RTE-03).
         if ("workflow_policy" in body.settings && body.settings.workflow_policy !== null && !policyOk(body.settings.workflow_policy)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/workflow_policy", code: "CS-API-0001" }]);
+        // As the server (FG-009): the envelope id stamp default is true or false.
+        if ("stamp_envelope_id" in body.settings && body.settings.stamp_envelope_id !== null && typeof body.settings.stamp_envelope_id !== "boolean") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/stamp_envelope_id", code: "CS-API-0001" }]);
         // As the server (VS-07): the default seal profile is one of the three PAdES levels.
         if ("default_seal_profile" in body.settings && body.settings.default_seal_profile !== null && !SEAL_PROFILES.includes(body.settings.default_seal_profile)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/default_seal_profile", code: "CS-API-0001" }]);
         const before = db.account.settings;
@@ -1985,6 +2055,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "ersd-versions" && !id) return ersdVersions(method, body);
     if (res === "admin-events" && !id && method === "GET") return adminEvents(query);
     if (res === "reports" && id && !sub && method === "GET") return report(id, query);
+    if (res === "insights" && !id && method === "GET") return insights(query);
     // WEB-06: recipient autocomplete, as the server's GET /contacts.
     if (res === "contacts" && method === "GET") {
       const q = (query.get("q") || "").trim().toLowerCase();
@@ -2037,7 +2108,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "PATCH") {
         checkIfMatch(env, headers); draftOnly(env); notScheduled(env);
         const changed = [];
-        for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) { env[k] = body[k]; changed.push(k); }
+        for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) { env[k] = k === "signing_options" ? stampOff({ ...body[k] }) : body[k]; changed.push(k); }
         if (body && "expires_in_days" in body) { env.expires_at = Number.isInteger(body.expires_in_days) ? iso(body.expires_in_days * 24 * 60) : null; changed.push("expires_at"); }
         await edited(env, changed);
         return withEtag(env);
@@ -2233,7 +2304,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         // `version=current` (WEB-06 E-02): the document as it stands, fields filled so
         // far. The mock has no flattening, so it is the delivered file.
         if (query.get("version") === "current" && env.status === "draft") fail(409, "CS-API-0009", "Not available in the object's state");
-        return pdf(unb64(db.blobs[d.id]));
+        // FG-009 (ADR-045): the current and sealed documents carry the envelope id stamp.
+        const bytes = unb64(db.blobs[d.id]);
+        if (env.signing_options?.stamp_envelope_id && ["current", "sealed"].includes(query.get("version"))) return pdf(stampPdf(bytes, `Envelope ID: ${env.id}`));
+        return pdf(bytes);
       }
       if (!subSub && method === "DELETE") {
         checkIfMatch(env, headers);

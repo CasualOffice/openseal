@@ -422,6 +422,17 @@ pub(crate) fn apply_changes(
             }
             Change::SetSigningOptions { options } => {
                 sender_only(scope)?;
+                // The envelope id stamp is on every page every signer sees (`FG-009`,
+                // ADR-045): once sent, turning it on or off would make the sealed
+                // pages differ from what a signer already saw.
+                if options.stamp_envelope_id != s.options.stamp_envelope_id
+                    && !matches!(scope, Scope::Draft)
+                {
+                    return Err(WorkflowError::NotAllowed {
+                        command: scope.command(),
+                        status: s.status,
+                    });
+                }
                 s.options = *options;
                 report.changed.push("signing_options".to_owned());
             }
