@@ -187,7 +187,8 @@ test("slice 9 (VS-09): a host page on another origin embeds signing, prepare and
   // Declining is heard as a decline.
   await openHost(page, HOST, "signing", v.decline, v.os);
   const d = frame(page);
-  await expect(d.getByRole("heading", { name: "Electronic records and signatures" })).toBeVisible({ timeout: 20_000 });
+  // The disclosure is asked for only when the account has one (a fresh real account has none).
+  await expect(d.getByRole("heading", { name: "Electronic records and signatures" }).or(d.locator("#guide-progress")).first()).toBeVisible({ timeout: 20_000 });
   await d.getByRole("button", { name: "More" }).click();
   await d.getByRole("menuitem", { name: "Decline to sign" }).click();
   const dlg = d.getByRole("dialog", { name: "Decline to sign?" });
@@ -220,7 +221,10 @@ test("slice 9 (VS-09): a host page on another origin embeds signing, prepare and
   // A view link opens once: the same prepare link again opens nothing.
   await openHost(page, HOST, "prepare", v.prepare, v.os, { timeout: "5" });
   await expect(events(page)).toContainText("openseal:error", { timeout: 15_000 });
-  if (REAL) await page.video()?.saveAs(path.join(DEMO, `vs09-${testInfo.project.name}-host-page-signing-prepare-correct.webm`));
+  if (!REAL) return;
+  // A recording is complete, and can be saved, once its page is closed.
+  await page.close();
+  await page.video()?.saveAs(path.join(DEMO, `vs09-${testInfo.project.name}-host-page-signing-prepare-correct.webm`));
 });
 
 test("a page on an origin the workspace does not allow cannot frame a view, and a forged message is ignored", async ({ page }, testInfo) => {
@@ -271,7 +275,7 @@ for (const scheme of ["light", "dark"]) {
       await expectAccessible(page, `Admin's Embedding card (${scheme})`);
       // The views, opened on their own (axe scans the page it is given).
       await page.goto(v.sign);
-      await expect(page.getByRole("heading", { name: "Electronic records and signatures" })).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByRole("heading", { name: "Electronic records and signatures" }).or(page.locator("#guide-progress")).first()).toBeVisible({ timeout: 20_000 });
       await expectAccessible(page, `the embedded signing view (${scheme})`);
       await page.goto(v.prepare);
       await expect(page.getByTestId("wizard-next").or(page.getByRole("button", { name: "Send", exact: true })).first()).toBeVisible({ timeout: 20_000 });
