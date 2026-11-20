@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Troubleshooting | OpenSeal</title>
+<meta name="description" content="Common OpenSeal deployment failures and how to fix them: ports, services that will not start, keyd unreachable or refusing, timestamp authorities, email, envelopes stuck completing, and what the logs show.">
+<meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0f0f11" media="(prefers-color-scheme: dark)">
+<meta property="og:title" content="Troubleshooting | OpenSeal">
+<meta property="og:description" content="Common OpenSeal deployment failures and how to fix them: ports, services that will not start, keyd unreachable or refusing, timestamp authorities, email, envelopes stuck completing, and what the logs show.">
+<link rel="icon" href="../assets/mark.svg" type="image/svg+xml">
+<link rel="preload" href="../assets/fonts/ui/geist-1.3.1-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/theme-init.js"></script>
+<script type="module" src="../assets/site.js"></script>
+</head>
+<body data-root="../">
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap header-row">
+    <a class="brand" href="../index.html" aria-label="OpenSeal home">
+      <img class="logo-light" src="../assets/logo.svg" alt="" width="120" height="24">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="" width="120" height="24">
+    </a>
+    <nav class="nav-links" aria-label="Main"><a href="../index.html#product">Product</a><a href="../verify.html">Verify</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../changelog.html">Changelog</a><a href="../download.html">Download</a></nav>
+    <div class="header-actions">
+      <button type="button" class="search-open" aria-label="Search the site" aria-keyshortcuts="/"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg><span class="search-open__label">Search</span><span class="kbd" aria-hidden="true">/</span></button>
+      <button type="button" class="icon-btn theme-toggle" aria-label="Use the dark theme"><svg class="i when-light" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg><svg class="i when-dark" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg></button>
+      <a class="header-gh" href="https://github.com/CasualOffice/openseal">GitHub</a>
+      <a class="btn btn-strong btn-sm header-cta" href="../app/app.html#/signin">Try the demo</a>
+      <details class="menu">
+        <summary aria-label="Menu"><svg class="i when-closed" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg><svg class="i when-open" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></summary>
+        <nav class="menu-panel" aria-label="Main (mobile)"><a href="../index.html#product">Product</a><a href="../verify.html">Verify</a><a href="../docs/index.html" aria-current="page">Docs</a><a href="../docs/api.html">API</a><a href="../roadmap.html">Roadmap</a><a href="../changelog.html">Changelog</a><a href="../download.html">Download</a><a href="https://github.com/CasualOffice/openseal" class="nav-gh">GitHub<svg class="i" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></a><a class="menu-cta" href="../app/app.html#/signin">Try the demo<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></a></nav>
+      </details>
+    </div>
+  </div>
+</header>
+<main id="main" tabindex="-1" class="docs-main">
+<div class="wrap docs-layout">
+  <aside class="docs-side">
+    <details class="docs-nav-toggle"><summary><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M8 5h13"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="M3 10a2 2 0 0 0 2 2h3"/><path d="M3 5v12a2 2 0 0 0 2 2h3"/></svg>Documentation menu</summary><nav class="docs-nav" aria-label="Documentation (menu)"><h2>Get started</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li><li><a href="first-envelope.html">Sending your first envelope</a></li></ul><h2>Guides</h2><ul><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li><li><a href="webhooks.html">Webhooks</a></li><li><a href="administration.html">Administration</a></li></ul><h2>Deploy</h2><ul><li><a href="self-hosting.html">Deployment overview</a></li><li><a href="deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="deploy-production.html">Production deployment</a></li><li><a href="configuration.html">Configuration reference</a></li><li><a href="troubleshooting.html" aria-current="page">Troubleshooting</a></li></ul><h2>API reference</h2><ul><li><a href="api.html">API overview</a></li><li class="docs-nav__sub"><a href="api-envelopes.html">Envelopes</a></li><li class="docs-nav__sub"><a href="api-recipients.html">Recipients</a></li><li class="docs-nav__sub"><a href="api-documents.html">Documents</a></li><li class="docs-nav__sub"><a href="api-templates.html">Templates</a></li><li class="docs-nav__sub"><a href="api-webhooks.html">Webhooks</a></li><li class="docs-nav__sub"><a href="api-objects.html">Objects</a></li></ul><h2>Reference</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li><li><a href="contributing.html">Contributing</a></li></ul></nav></details>
+    <nav class="docs-nav docs-nav--wide" aria-label="Documentation"><h2>Get started</h2><ul><li><a href="index.html">Documentation</a></li><li><a href="getting-started.html">Getting started</a></li><li><a href="first-envelope.html">Sending your first envelope</a></li></ul><h2>Guides</h2><ul><li><a href="signing.html">Signing</a></li><li><a href="templates.html">Templates</a></li><li><a href="verifying.html">Verifying a document</a></li><li><a href="webhooks.html">Webhooks</a></li><li><a href="administration.html">Administration</a></li></ul><h2>Deploy</h2><ul><li><a href="self-hosting.html">Deployment overview</a></li><li><a href="deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="deploy-production.html">Production deployment</a></li><li><a href="configuration.html">Configuration reference</a></li><li><a href="troubleshooting.html" aria-current="page">Troubleshooting</a></li></ul><h2>API reference</h2><ul><li><a href="api.html">API overview</a></li><li class="docs-nav__sub"><a href="api-envelopes.html">Envelopes</a></li><li class="docs-nav__sub"><a href="api-recipients.html">Recipients</a></li><li class="docs-nav__sub"><a href="api-documents.html">Documents</a></li><li class="docs-nav__sub"><a href="api-templates.html">Templates</a></li><li class="docs-nav__sub"><a href="api-webhooks.html">Webhooks</a></li><li class="docs-nav__sub"><a href="api-objects.html">Objects</a></li></ul><h2>Reference</h2><ul><li><a href="security.html">Security and evidence model</a></li><li><a href="architecture.html">Architecture overview</a></li><li><a href="faq.html">FAQ</a></li><li><a href="contributing.html">Contributing</a></li></ul></nav>
+  </aside>
+  <article class="docs-article prose">
+    <nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="index.html">Docs</a></li><li>Deploy</li><li aria-current="page">Troubleshooting</li></ol></nav>
+<h1>Troubleshooting</h1>
+<p class="lede">What commonly goes wrong when deploying OpenSeal, what the logs show for it, and how to fix it. Every service writes one JSON object per line, so most answers start with a <code>grep</code>.</p>
+
+<h2 id="first-look">First look</h2>
+<pre><code>docker compose ps                                    # which service is not healthy, or restarting
+docker compose logs --tail 50 SERVICE                # its last lines
+docker compose logs | grep '"event":"start_failed"'  # why a service would not start</code></pre>
+<p>On the production profile add <code>-f deploy/compose.production.yml</code> (and the release's <code>compose.release.yml</code>) to every command. A service that does not start writes one <code>start_failed</code> line with the setting that failed in <code>error</code> and, when there is one, the error code in <code>code</code>:</p>
+<pre><code>{"ts":"2026-11-20T09:30:00Z","level":"ERROR","service":"worker","event":"start_failed","error":"…","code":"CS-KEY-0013"}</code></pre>
+<p>Error codes are listed in the <a href="https://github.com/CasualOffice/openseal/blob/main/docs/20-ERROR-CODE-REGISTRY.md">error code registry</a>. Logs never contain names, email addresses, client addresses, tokens or document text, so they are safe to share when you ask for help; still check before you paste.</p>
+
+<h2 id="ports">The port is already in use</h2>
+<p><strong>Symptom:</strong> <code>docker compose up</code> fails with <code>Bind for 127.0.0.1:8080 failed: port is already allocated</code> (or 8025 for Mailpit).</p>
+<p><strong>Fix:</strong> stop what holds the port, or move OpenSeal's: <code>OPENSEAL_HTTP_PORT=8081 docker compose up -d --wait</code> (<code>OPENSEAL_MAIL_PORT</code> for Mailpit). The evaluation stack's public URL follows <code>OPENSEAL_HTTP_PORT</code>, so links in emails stay right. Ports bind to <code>127.0.0.1</code> only; to reach the stack from another machine, put a TLS proxy in front.</p>
+
+<h2 id="wait-timeout">docker compose up --wait never finishes</h2>
+<p><strong>Look at</strong> <code>docker compose ps</code>: the service still <code>starting</code> or <code>unhealthy</code> is the cause, and its dependants wait for it.</p>
+<ul>
+  <li><code>migrate</code> <code>exited (1)</code>: the database was not reachable, or a migration failed. Its log names the migration. A restore target must be empty before <code>migrate</code> ever runs.</li>
+  <li><code>server</code> unhealthy: read its <code>start_failed</code> line. The usual causes are a missing <code>OPENSEAL_MFA_KEY</code> outside development, an <code>http://</code> public URL without the development switch, or a malformed key.</li>
+  <li><code>clamav</code> starting: it loads its signatures for up to a few minutes after a start and needs about 1 GB of memory.</li>
+  <li>Production profile: <code>keyd</code> or <code>worker</code> restarting with <code>CS-KEY-0014</code>: the manifests are not recorded yet, or a setting changed. See <a href="#manifest">below</a>.</li>
+</ul>
+
+<h2 id="required-variable">Compose says a variable is required</h2>
+<p><strong>Symptom:</strong> <code>required variable OPENSEAL_PUBLIC_URL is missing a value: set OPENSEAL_PUBLIC_URL (https)</code>.</p>
+<p><strong>Fix:</strong> the production profile refuses to render until every required variable is set. The <a href="configuration.html#production-profile">configuration reference</a> lists them; set them in your environment or an <code>--env-file</code>.</p>
+
+<h2 id="manifest">keyd or the worker refuses to start: CS-KEY-0014</h2>
+<p><strong>Log:</strong> <code>start_failed</code> with <code>"code":"CS-KEY-0014"</code> naming a setting, and a <code>security_configuration</code> line whose <code>manifest</code> is not <code>matches</code>.</p>
+<p><strong>Cause:</strong> a security setting differs from the recorded manifest, is set but not listed, or is listed but not set. <code>init-secrets.sh</code> leaves both manifests empty, so this is expected until you record them. After a change you did not intend, find what changed first.</p>
+<p><strong>Fix:</strong> after an approved change, record the manifests again and restart:</p>
+<pre><code>docker compose $F run --rm --no-deps keyd config-manifest | sudo tee "$OPENSEAL_SECRETS_DIR/keyd-config-manifest" &gt; /dev/null
+docker compose $F run --rm --no-deps worker config-manifest | sudo tee "$OPENSEAL_SECRETS_DIR/worker-config-manifest" &gt; /dev/null</code></pre>
+
+<h2 id="keyd-unreachable">keyd is unreachable: CS-KEY-0011</h2>
+<p><strong>Log:</strong> the worker logs <code>keyd_unavailable</code> at start, and later <code>transport.backend_failed</code> with <code>CS-KEY-0011</code>; envelopes wait in <code>completing</code>; a <code>seal_failed</code> alert repeats.</p>
+<p><strong>Cause:</strong> keyd is stopped, still starting, or not on the worker's network (connection refused, reset or timed out, or the name does not resolve). This is treated as an outage: the worker keeps running every other job and retries the seal every 60 seconds.</p>
+<p><strong>Fix:</strong> bring keyd back (<code>docker compose ps keyd</code>, then its log). The next seal attempt completes the envelope; nothing needs to be re-sent.</p>
+
+<h2 id="keyd-refuses">keyd refuses the worker: CS-KEY-0013, CS-KEY-0001</h2>
+<p><strong>Log:</strong> the worker stops at start with <code>start_failed</code> and <code>CS-KEY-0013</code> (the TLS handshake was refused), or <code>CS-KEY-0001</code> (keyd answered, but the caller is not on its allow list); keyd logs <code>transport.caller_refused</code> with <code>reason</code> <code>handshake</code> or <code>not_allowed</code> and the certificate's fingerprint.</p>
+<p><strong>Cause:</strong> a configuration error, not an outage: <code>OPENSEAL_KEYD_CA</code> is not the CA keyd's certificate chains to, <code>OPENSEAL_KEYD_SERVER_NAME</code> is not the name in keyd's certificate, or the worker's client certificate is untrusted, expired or missing from <code>keyd-allow-list</code>.</p>
+<p><strong>Fix:</strong> compare the fingerprint keyd logged with <code>keyd-allow-list</code>; check the certificates' dates with <code>openssl x509 -noout -dates -in worker-client-chain.pem</code>. After rotating an identity, record the manifests and restart keyd, then the worker.</p>
+
+<h2 id="keyd-hsm">keyd cannot use the HSM: CS-KEY-0003, CS-KEY-0006</h2>
+<p><strong>Log:</strong> keyd's <code>start_failed</code> with <code>CS-KEY-0003</code> (the HSM is unavailable, the PIN was refused, or a PKCS#11 call failed) or <code>CS-KEY-0006</code> (no usable certificate, the key not found or ambiguous in the token, or the key does not match the certificate).</p>
+<p><strong>Fix:</strong> check that <code>OPENSEAL_PKCS11_MODULE</code> is inside <code>OPENSEAL_PKCS11_DIR</code> and loads in a slim Linux container, that the token label and key label are exact, that <code>keyd-pkcs11-pin</code> holds the PIN with no trailing newline your HSM rejects, that a network HSM is reachable from keyd's network, and that <code>seal-chain.pem</code> starts with the certificate of that key.</p>
+
+<h2 id="seal-token">Seals fail with CS-KEY-0015</h2>
+<p><strong>Log:</strong> keyd records <code>CS-KEY-0015</code>; the worker logs <code>transport.backend_failed</code> with that code and retries every 60 seconds.</p>
+<p><strong>Cause:</strong> keyd holds a seal token key and the database has none, a different one, or a clock more than five minutes from keyd's.</p>
+<p><strong>Fix:</strong> write the same key to <code>keyd-seal-token-key</code> and <code>migrate-seal-token-key</code>, run <code>docker compose $F run --rm migrate</code> (it installs the key), restart keyd, and keep both hosts' clocks on NTP.</p>
+
+<h2 id="tsa">The timestamp authority fails: CS-WRK-0018, CS-SEAL-0005</h2>
+<p><strong>Log:</strong> <code>transport.backend_failed</code> with <code>"backend":"tsa"</code>, the TSA's <code>index</code> in your list and a <code>reason</code>: <code>connect</code>, <code>tls</code>, <code>timeout</code>, <code>status</code>, <code>answer</code> or <code>address_refused</code> (the URL is never logged). The worker tries the next TSA in the list; when none answers, the seal fails and is retried.</p>
+<ul>
+  <li><code>connect</code>, <code>timeout</code>: the worker cannot reach it. On the production profile only the worker has a route out, through the <code>egress</code> network; check your firewall.</li>
+  <li><code>tls</code>: the TSA's HTTPS certificate does not verify.</li>
+  <li><code>answer</code> or <code>CS-SEAL-0005</code>: the token is not usable. A TSA whose tokens identify its certificate with ESSCertID v1 (SHA-1), such as FreeTSA, is refused.</li>
+  <li>The seal is made but fails its own check: <code>trust-anchors.pem</code> lacks the TSA's root or the seal certificate's root. Add both.</li>
+</ul>
+<p>Test a TSA before using it: <code>OPENSEAL_INTEROP_NETWORK=1 python3 tools/interop/interop.py check --tsa-url URL --tsa-root ROOT.pem</code>.</p>
+
+<h2 id="email">Emails are not delivered</h2>
+<ul>
+  <li><strong>Evaluation stack:</strong> nothing leaves the machine; every email is in Mailpit at <a href="http://localhost:8025">http://localhost:8025</a>.</li>
+  <li><strong>Worker log shows SMTP errors:</strong> check <code>OPENSEAL_SMTP_HOST</code>, <code>OPENSEAL_SMTP_PORT</code> (587 for STARTTLS), the user and the <code>smtp-password</code> file. The profile sets <code>OPENSEAL_SMTP_SECURITY=starttls</code>, so the relay must offer STARTTLS.</li>
+  <li><strong>Accepted by the relay but not received:</strong> look at SPF, DKIM and DMARC for the <code>OPENSEAL_MAIL_FROM</code> domain, and at the relay's bounce reports. A bounced invitation shows on the envelope's recipient.</li>
+  <li><strong>Text-message or voice codes fail with CS-WRK-0013:</strong> no SMS gateway is configured (<code>OPENSEAL_SMS_GATEWAY_URL</code>).</li>
+</ul>
+
+<h2 id="completing">An envelope stays in completing</h2>
+<p>Every signer has finished, but the envelope has not reached <code>completed</code>. The seal job is waiting on something; nothing sealed is served until it completes.</p>
+<ul>
+  <li>A <code>seal_failed</code> alert with <code>CS-SEAL-0001</code> or <code>CS-KEY-*</code>: keyd, see above. The job retries every 60 seconds.</li>
+  <li>Retries with <code>CS-BLOB-0001</code>: the object store refuses writes.</li>
+  <li><code>CS-WRK-0020</code>: a sandbox workspace's envelope, and no sandbox key is configured.</li>
+  <li>A <code>job_dead</code> alert: the job gave up on a failure no retry cures. Fix the cause, then queue it again as in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/65-RUNNING-IT.md">docs/65 §Failure recovery</a>; a seal already stored is read back, never made twice.</li>
+</ul>
+
+<h2 id="uploads">Uploads are refused</h2>
+<ul>
+  <li><code>413 CS-API-0006</code>: over the size limit (50 MiB a document; 70 MiB request body). At your edge proxy, allow bodies up to 280 MB.</li>
+  <li><code>422 CS-PDF-*</code>: the PDF could not be admitted (encrypted without a password, too many pages, malformed); the code says which.</li>
+  <li><code>422 CS-SCAN-0001</code>: ClamAV found malware; recorded in the admin log as <code>upload.malware_refused</code>.</li>
+  <li><code>503 CS-SCAN-0002</code>: ClamAV could not answer (starting, unreachable, timed out). Wait for it to be healthy.</li>
+</ul>
+
+<h2 id="sign-in">Signing in fails</h2>
+<ul>
+  <li><strong>Evaluation stack in a browser on another machine:</strong> the stack sends cookies over plain HTTP for <code>localhost</code> only. Use <code>http://localhost:8080</code> on the same machine.</li>
+  <li><strong>OAuth access tokens answer <code>401 CS-AUTH-0002</code> after a restart:</strong> the token signing key changed. Swapping it straight away invalidates every token it signed; rotate it with the previous key mounted (<a href="deploy-production.html#rotations">Rotations</a>). Likewise never replace <code>OPENSEAL_MFA_KEY</code> or the password pepper without their runbooks.</li>
+  <li><strong>The proxy's address is recorded instead of the client's:</strong> <code>OPENSEAL_TRUSTED_PROXIES</code> does not cover the <code>edge</code> network, or your edge does not send <code>X-Forwarded-For</code>.</li>
+  <li><strong>429 CS-API-0003:</strong> rate limited; ten sign-in attempts a minute per name. Wait for <code>Retry-After</code>.</li>
+</ul>
+
+<h2 id="get-help">Getting help</h2>
+<p>Open an issue on <a href="https://github.com/CasualOffice/openseal/issues">GitHub</a> with the release, which stack, the <code>start_failed</code> or failing lines and the request id (<code>X-Request-Id</code>) of a failing API call. Report security problems privately, as the <a href="../security.html">security policy</a> says.</p>
+
+    <nav class="prevnext" aria-label="Previous and next"><a class="pn pn-prev" href="configuration.html"><span class="pn-dir"><svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m15 18-6-6 6-6"/></svg>Previous</span><span class="pn-title">Configuration reference</span></a><a class="pn pn-next" href="api.html"><span class="pn-dir">Next<svg class="i" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m9 18 6-6-6-6"/></svg></span><span class="pn-title">API overview</span></a></nav>
+  </article>
+  <nav class="toc" aria-label="On this page"><h2>On this page</h2><ul><li><a href="#first-look">First look</a></li><li><a href="#ports">The port is already in use</a></li><li><a href="#wait-timeout">docker compose up --wait never finishes</a></li><li><a href="#required-variable">Compose says a variable is required</a></li><li><a href="#manifest">keyd or the worker refuses to start: CS-KEY-0014</a></li><li><a href="#keyd-unreachable">keyd is unreachable: CS-KEY-0011</a></li><li><a href="#keyd-refuses">keyd refuses the worker: CS-KEY-0013, CS-KEY-0001</a></li><li><a href="#keyd-hsm">keyd cannot use the HSM: CS-KEY-0003, CS-KEY-0006</a></li><li><a href="#seal-token">Seals fail with CS-KEY-0015</a></li><li><a href="#tsa">The timestamp authority fails: CS-WRK-0018, CS-SEAL-0005</a></li><li><a href="#email">Emails are not delivered</a></li><li><a href="#completing">An envelope stays in completing</a></li><li><a href="#uploads">Uploads are refused</a></li><li><a href="#sign-in">Signing in fails</a></li><li><a href="#get-help">Getting help</a></li></ul></nav>
+</div>
+</main>
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <img class="logo-light" src="../assets/logo.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <img class="logo-dark" src="../assets/logo-dark.svg" alt="OpenSeal" width="120" height="24" loading="lazy">
+      <p>Open-source electronic signatures under <span class="nowrap">Apache-2.0</span>. Part of <a href="https://github.com/CasualOffice">CasualOffice</a>.</p>
+      <p class="foot-legal">Designed to support e-signature laws such as ESIGN, UETA and eIDAS. Nothing here is legal advice.</p>
+    </div>
+    <div class="foot-col"><h2>Product</h2><ul><li><a href="../index.html#product">Overview</a></li><li><a href="../app/app.html#/signin">Try the demo</a></li><li><a href="../verify.html">Verify a PDF</a></li><li><a href="../download.html">Download and deploy</a></li><li><a href="../roadmap.html">Roadmap</a></li><li><a href="../changelog.html">Changelog</a></li></ul></div>
+    <div class="foot-col"><h2>Documentation</h2><ul><li><a href="../docs/getting-started.html">Getting started</a></li><li><a href="../docs/deploy-compose.html">Deploy with Docker Compose</a></li><li><a href="../docs/deploy-production.html">Production deployment</a></li><li><a href="../docs/api.html">API reference</a></li><li><a href="../docs/webhooks.html">Webhooks</a></li></ul></div>
+    <div class="foot-col"><h2>Trust</h2><ul><li><a href="../docs/security.html">Security and evidence</a></li><li><a href="../docs/verifying.html">Verifying a document</a></li><li><a href="../security.html">Security policy</a></li><li><a href="../docs/architecture.html">Architecture</a></li></ul></div>
+    <div class="foot-col"><h2>Project</h2><ul><li><a href="https://github.com/CasualOffice/openseal">GitHub</a></li><li><a href="../docs/contributing.html">Contributing</a></li><li><a href="../brand.html">Brand and attribution</a></li></ul></div>
+  </div>
+  <div class="wrap foot-base"><p>Apache License 2.0. "Powered by OpenSeal" is welcome and never required.</p><p>Pre-release software: v0.1.0 is for evaluation, not yet for production agreements.</p></div>
+</footer>
+<dialog class="search-dialog" aria-label="Search the site">
+  <form method="dialog" class="search-form" role="search">
+    <label class="sr-only" for="search-q">Search</label>
+    <svg class="i search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+    <input id="search-q" class="search-input" type="search" placeholder="Search docs and pages" autocomplete="off" spellcheck="false">
+    <button type="submit" class="icon-btn search-close" aria-label="Close search"><svg class="i" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </form>
+  <p class="search-status" role="status" aria-live="polite"></p>
+  <ul class="search-results"></ul>
+</dialog>
+</body>
+</html>

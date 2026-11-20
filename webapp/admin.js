@@ -1188,15 +1188,19 @@ function webhooks(panel, ctx) {
           h("th", { attrs: { scope: "col" }, class: "os-col-actions", text: t("templates.col.actions") }))));
       const tb = h("tbody");
       for (const d of rows) {
-        const state = ["delivered", "failed", "pending"].includes(d.status) ? d.status : "pending";
-        const tone = state === "delivered" ? "completed" : state === "failed" ? "declined" : "sent";
+        // A pending delivery that has already been tried failed its last attempt and waits
+        // for a retry; it is shown as failed and can be delivered again now (UXW-33).
+        const tried = d.status === "pending" && (d.attempts ?? 0) > 0;
+        const state = tried ? "retrying" : ["delivered", "failed", "pending"].includes(d.status) ? d.status : "pending";
+        const bad = state === "failed" || state === "retrying";
+        const tone = state === "delivered" ? "completed" : bad ? "declined" : "sent";
         tb.append(h("tr", { attrs: { "data-testid": "delivery-row", "data-id": d.id } },
           h("td", {}, h("code", { text: d.event_type || "" })),
           h("td", { class: "os-col-date", attrs: { "data-label": t("admin.wh.result") } },
-            h("span", { class: `os-badge os-badge--${tone}` }, icon(state === "delivered" ? "circle-check" : state === "failed" ? "circle-x" : "hourglass", { size: 16 }), h("span", { text: t(`admin.wh.${state}`) }))),
+            h("span", { class: `os-badge os-badge--${tone}` }, icon(state === "delivered" ? "circle-check" : bad ? "circle-x" : "hourglass", { size: 16 }), h("span", { text: t(`admin.wh.${state}`) }))),
           h("td", { class: "os-col-date", attrs: { "data-label": t("admin.wh.attempts") }, text: String(d.attempts ?? 0) }),
           h("td", { class: "os-col-date", attrs: { "data-label": t("admin.wh.http") }, text: d.last_status_code == null ? "—" : String(d.last_status_code) }),
-          h("td", { class: "os-col-actions" }, state === "failed"
+          h("td", { class: "os-col-actions" }, bad
             ? button(t("admin.wh.redeliver"), { icon: "refresh-cw", size: "sm", attrs: { "aria-label": t("admin.wh.redeliver-named", { event: d.event_type || "" }) }, onClick: () => redeliver(w, d) })
             : null)));
       }

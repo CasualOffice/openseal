@@ -271,11 +271,18 @@ test("sandbox (VS-08D): a sandbox workspace is marked everywhere, keys start osk
   await create.getByLabel("Name", { exact: true }).fill(name);
   await create.getByLabel("Sandbox workspace").check();
   await create.getByRole("button", { name: "Create workspace" }).click();
+  await expect(create).toBeHidden();
   const row = page.getByRole("row", { name: new RegExp(name) });
   await expect(row.getByTestId("ws-sandbox")).toHaveText("Sandbox");
-  await row.getByRole("button", { name: `Join ${name}` }).click();
-  await page.getByRole("dialog", { name: new RegExp(name) }).getByRole("button", { name: "Join" }).click();
-  await expect(page.locator(".os-toast").last()).toContainText(name);
+  // The list reloads after a create; on WebKit a click could land on the row being
+  // replaced (main run 44635991663 sent no join), so open the join dialog until it opens.
+  const join = page.getByRole("dialog", { name: `Join ${name}` });
+  await expect(async () => {
+    await row.getByRole("button", { name: `Join ${name}` }).click();
+    await expect(join).toBeVisible({ timeout: 3000 });
+  }).toPass({ timeout: 30_000 });
+  await join.getByRole("button", { name: "Join", exact: true }).click();
+  await expect(page.getByText(`You joined ${name}.`)).toBeVisible();
 
   // Switched into it: every screen says it is a sandbox.
   // The workspace menu lists what the page loaded: a fresh load lists the new one.

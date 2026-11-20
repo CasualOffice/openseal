@@ -1,0 +1,85 @@
+<!--meta {"title": "Deploy with Docker Compose", "description": "Run OpenSeal on one machine with Docker Compose for evaluation: prerequisites, step-by-step commands, the first administrator, checking it works, and stopping or removing it."} -->
+<h1>Deploy with Docker Compose</h1>
+<p class="lede">The whole platform on one machine, for evaluation and development: the server, the worker, the key daemon, PostgreSQL, an object store, a development timestamp authority and a mail catcher. About ten minutes, most of it the first image build.</p>
+
+<div class="callout warn">{{icon:triangle-alert}}<div><p><strong>Evaluation only.</strong> This stack generates its own certificate authority and seal key on first start, keeps the key in a software HSM, uses a development timestamp authority and sends cookies over plain HTTP. Its seals validate only against the generated root, not in Adobe Acrobat. For anything that others rely on, follow <a href="deploy-production.html">Production deployment</a>.</p></div></div>
+
+<h2 id="prerequisites">Prerequisites</h2>
+<ul>
+  <li>Docker with Compose v2: Docker Desktop, or Docker Engine with the <code>compose</code> plugin. Check with <code>docker compose version</code>.</li>
+  <li>A few gigabytes of free memory for Docker and of free disk for the images and volumes.</li>
+  <li>Git, to fetch the Compose file and its helper files.</li>
+  <li>Ports <code>8080</code> (the web app and API) and <code>8025</code> (Mailpit) free on <code>127.0.0.1</code>. Both can be moved.</li>
+</ul>
+
+<h2 id="steps">Steps</h2>
+<ol class="steps">
+  <li>
+    <h3 id="get-the-files">Get the files</h3>
+    <p>The Compose file builds from, and mounts helper files of, the repository. Check out the release you want to evaluate:</p>
+<pre><code>git clone https://github.com/CasualOffice/openseal
+cd openseal
+git checkout v0.1.0</code></pre>
+  </li>
+  <li>
+    <h3 id="start">Start the stack</h3>
+    <p>Either build the images from this checkout:</p>
+<pre><code>docker compose up -d --build --wait</code></pre>
+    <p>or pull the release's published images instead of building:</p>
+<pre><code>export OPENSEAL_IMAGE_PREFIX=ghcr.io/casualoffice/openseal OPENSEAL_VERSION=0.1.0
+docker compose pull
+docker compose up -d --wait</code></pre>
+    <p><code>--wait</code> returns once every service reports healthy. On the first start the one-shot <code>pki</code> service writes a development CA, the TLS certificates between services, the seal key and certificate, a timestamp certificate, the API token key and random passwords into the <code>secrets</code> volume, which every other service mounts read-only. Then <code>migrate</code> applies the database migrations and exits, and the server starts.</p>
+  </li>
+  <li>
+    <h3 id="first-administrator">Create the first administrator</h3>
+    <p>An install starts empty. <code>bootstrap</code> creates the first organization and workspace, the built-in permission profiles and the first administrator, and prints their ids. It works once: it is refused as soon as an organization exists.</p>
+<pre><code>docker compose exec -e OPENSEAL_ADMIN_PASSWORD='a long passphrase of your own' server \
+    casual-sign-server bootstrap "Example Workspace" admin@example.com "Example Admin"</code></pre>
+    <p>The password must be 12 to 256 characters. Administrators owe a second factor by default, so at the first sign-in the web app asks you to enrol an authenticator app.</p>
+  </li>
+  <li>
+    <h3 id="sign-in">Sign in and send a test envelope</h3>
+    <p>Open <a href="http://localhost:8080">http://localhost:8080</a>, sign in as <code>admin@example.com</code>, and send yourself a PDF (<a href="first-envelope.html">Sending your first envelope</a> walks through it). Every email the stack sends, including signing invitations, lands in Mailpit at <a href="http://localhost:8025">http://localhost:8025</a>.</p>
+  </li>
+</ol>
+
+<h2 id="verify">Check that it works</h2>
+<p>Every long-running service should be <code>running</code> and <code>healthy</code>; <code>pki</code> and <code>migrate</code> have <code>exited (0)</code>:</p>
+<pre><code>docker compose ps</code></pre>
+<p>The server answers its public keys (this is also its health check):</p>
+<pre><code>curl -fsS http://localhost:8080/.well-known/jwks.json</code></pre>
+<p>The worker has started and reached keyd (look for <code>"event":"config"</code> lines and no <code>start_failed</code>):</p>
+<pre><code>docker compose logs worker | tail -n 20</code></pre>
+<p>End to end: send an envelope to an address of your choosing, sign it through the link in Mailpit, and the envelope reaches <strong>Completed</strong> with a sealed PDF and a certificate of completion. A sealed PDF from this stack validates against the stack's own root:</p>
+<pre><code>docker compose exec keyd cat /secrets/ca.pem &gt; openseal-dev-root.pem</code></pre>
+<p>Drop the sealed PDF on the <a href="../verify.html">Verify page</a> and add <code>openseal-dev-root.pem</code> as a trusted certificate.</p>
+
+<h2 id="options">Options</h2>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Compose options">
+<table>
+  <thead><tr><th scope="col">To</th><th scope="col">Do</th></tr></thead>
+  <tbody>
+    <tr><td>Move the web app's port</td><td><code>OPENSEAL_HTTP_PORT=8443 docker compose up -d --wait</code></td></tr>
+    <tr><td>Move Mailpit's port</td><td><code>OPENSEAL_MAIL_PORT=8026 docker compose up -d --wait</code></td></tr>
+    <tr><td>Scan uploads for malware</td><td><code>OPENSEAL_CLAMD_ADDR=clamav:3310 docker compose --profile production up -d --build --wait</code> (ClamAV needs about 1 GB of memory and outbound HTTPS for its signatures)</td></tr>
+    <tr><td>Follow what it does</td><td><code>docker compose logs -f server worker</code>; every line is one JSON object</td></tr>
+    <tr><td>Ship logs to a collector</td><td>Add <code>-f deploy/compose.log-forwarding.yml</code> (syslog over mutual TLS); see <a href="deploy-production.html#monitoring">Monitoring</a></td></tr>
+  </tbody>
+</table>
+</div>
+<p>Ports bind to <code>127.0.0.1</code> only. To reach the stack from another machine, put a TLS proxy in front of it, and read <a href="deploy-production.html">Production deployment</a> first.</p>
+
+<h2 id="stop">Stop, restart and remove</h2>
+<pre><code>docker compose stop            # stop; data, keys and mail are kept
+docker compose up -d --wait    # start again
+docker compose down            # remove the containers; volumes are kept
+docker compose down -v         # remove everything, including every volume: data, keys and mail</code></pre>
+<p><code>down -v</code> deletes the database, the documents and the generated keys. A new start generates a new CA and seal key, so PDFs sealed before no longer chain to the new root (they still verify against the old one if you kept it).</p>
+
+<h2 id="next">Next</h2>
+<ul>
+  <li><a href="first-envelope.html">Send your first envelope</a>, then try <a href="templates.html">templates</a> and <a href="webhooks.html">webhooks</a>.</li>
+  <li>Call the <a href="api.html">API</a> with a key from Admin, API.</li>
+  <li>Plan a real deployment with <a href="deploy-production.html">Production deployment</a>.</li>
+</ul>

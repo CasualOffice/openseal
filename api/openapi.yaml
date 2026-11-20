@@ -331,7 +331,7 @@ components:
       properties:
         response_type: {type: string, const: code}
         client_id: {type: string}
-        redirect_uri: {type: string, description: One of the client's registered redirect URIs, exactly}
+        redirect_uri: {type: string, description: "One of the client's registered redirect URIs, exactly"}
         scope: {type: string, description: Space-separated; each within the client's scopes and the member's own}
         state: {type: string, maxLength: 512}
         code_challenge: {type: string, minLength: 43, maxLength: 128}

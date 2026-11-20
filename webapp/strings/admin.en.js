@@ -575,6 +575,7 @@ export const ADMIN = {
   "admin.wh.delivered": "Delivered",
   "admin.wh.failed": "Failed",
   "admin.wh.pending": "Pending",
+  "admin.wh.retrying": "Failed, will retry",
   "admin.wh.redeliver": "Deliver again",
   "admin.wh.redeliver-named": "Deliver again: {event}",
   "admin.wh.redelivered": "Delivered again.",

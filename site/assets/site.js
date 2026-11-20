@@ -213,3 +213,85 @@ if (dialog) {
   });
   dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
 }
+
+// ---- Code languages (the API reference, SITE-12) ----------------------------------------------
+// Each request sample has a tab per language; the choice is remembered and applied to every
+// sample on every page. Without this script all languages show, one after another.
+const LANG_KEY = "openseal.apiLang";
+const langBoxes = [...document.querySelectorAll("[data-langs]")];
+function setLang(lang, store) {
+  for (const box of langBoxes) {
+    const tabs = [...box.querySelectorAll('[role="tab"]')];
+    if (!tabs.some((t) => t.dataset.lang === lang)) continue;
+    for (const t of tabs) {
+      const on = t.dataset.lang === lang;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+    }
+    for (const p of box.querySelectorAll(".code-panel")) p.classList.toggle("is-active", p.dataset.lang === lang);
+  }
+  if (store) { try { localStorage.setItem(LANG_KEY, lang); } catch { /* storage off */ } }
+}
+if (langBoxes.length) {
+  let saved = null;
+  try { saved = localStorage.getItem(LANG_KEY); } catch { /* storage off */ }
+  if (saved) setLang(saved, false);
+  for (const box of langBoxes) {
+    const tabs = [...box.querySelectorAll('[role="tab"]')];
+    for (const t of tabs) {
+      t.addEventListener("click", () => {
+        // Keep the clicked sample where it is on screen while the others change height.
+        const before = box.getBoundingClientRect().top;
+        setLang(t.dataset.lang, true);
+        scrollBy(0, box.getBoundingClientRect().top - before);
+      });
+      t.addEventListener("keydown", (e) => {
+        const i = tabs.indexOf(t);
+        const next = e.key === "ArrowRight" ? tabs[(i + 1) % tabs.length] : e.key === "ArrowLeft" ? tabs[(i - 1 + tabs.length) % tabs.length] : null;
+        if (next) { e.preventDefault(); setLang(next.dataset.lang, true); next.focus(); }
+      });
+    }
+  }
+}
+
+// ---- The API navigation follows the operation in view -------------------------------------------
+const opLinks = [...document.querySelectorAll(".api-nav--wide .api-nav__ops a")];
+if (opLinks.length && "IntersectionObserver" in window) {
+  const byId = new Map(opLinks.map((a) => [a.dataset.op, a]));
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting) continue;
+      const link = byId.get(e.target.getAttribute("aria-labelledby"));
+      if (!link) continue;
+      for (const a of opLinks) a.classList.toggle("is-active", a === link);
+      const side = link.closest(".api-side");
+      if (side) {
+        const r = link.getBoundingClientRect(); const s = side.getBoundingClientRect();
+        if (r.top < s.top + 40 || r.bottom > s.bottom - 40) side.scrollTop += r.top - s.top - s.height / 3;
+      }
+    }
+  }, { rootMargin: "-15% 0px -70% 0px" });
+  for (const sec of document.querySelectorAll(".api-op")) io.observe(sec);
+}
+
+// ---- Table filter (the configuration reference) ---------------------------------------------------
+for (const box of document.querySelectorAll("[data-filter-box]")) {
+  const input = box.querySelector("[data-filter]");
+  const out = box.querySelector("[role=status]");
+  const rows = [...document.querySelectorAll(`[data-filter-scope="${input.dataset.filter}"] tbody tr`)];
+  box.hidden = false;
+  let timer = 0;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const ts = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+      let shown = 0;
+      for (const r of rows) {
+        const hit = ts.every((t) => r.textContent.toLowerCase().includes(t));
+        r.hidden = !hit;
+        if (hit) shown += 1;
+      }
+      out.textContent = ts.length ? `${shown} of ${rows.length} variables` : "";
+    }, 60);
+  });
+}
