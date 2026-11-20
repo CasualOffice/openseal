@@ -245,7 +245,7 @@ pub struct SigningOptions {
     /// serialize, and hash, as they did.
     #[serde(default, skip_serializing_if = "is_false")]
     pub capture_location: bool,
-    /// Stamp "Envelope ID: <id>" in the top margin of every page (DocuSign's envelope id
+    /// Stamp `Envelope ID: <id>` in the top margin of every page (DocuSign's envelope id
     /// stamping, `FG-009`, ADR-045): shown to every signer and drawn into the sealed
     /// document. Off by default, and absent from the wire when off, as
     /// `capture_location`. It can change only while the envelope is a draft.

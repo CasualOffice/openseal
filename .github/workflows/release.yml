@@ -2,7 +2,7 @@ name: release
 
 # REL-01 (docs/06 "Release 1 ships as v0.0.1", docs/15 §Release gates, docs/65 §Releases).
 #
-# On a `v*` tag, or by hand: build the server, worker and keyd images from deploy/Dockerfile
+# On a `v*` tag, or by hand: build the server, worker, keyd and convertd images from deploy/Dockerfile
 # (linux/amd64), push them to GitHub Container Registry, and for every image digest:
 # a BuildKit SBOM and provenance attached to the image, a standalone SPDX SBOM (syft), a
 # keyless cosign signature and a SLSA build provenance attestation. Then a CycloneDX SBOM
@@ -53,7 +53,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        target: [server, worker, keyd]
+        target: [server, worker, keyd, convertd]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Name the image
@@ -179,7 +179,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           args=()
-          for t in server worker keyd; do args+=(--image "$(cat "in/image-${t}.txt")"); done
+          for t in server worker keyd convertd; do args+=(--image "$(cat "in/image-${t}.txt")"); done
           python3 -I tools/release/pin_release.py --version "$version" --out dist "${args[@]}"
           # The pinned profile still passes every hardening rule (HRD-06), images by digest.
           docker compose -f deploy/compose.production.yml -f dist/compose.release.yml \
