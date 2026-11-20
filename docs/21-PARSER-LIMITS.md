@@ -246,6 +246,16 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Refresh token | 30 days unused, one use, rotated | CS-AUTH-0014 | `tests/oauth.rs` (replay revokes the family) |
 | JWT bearer assertion | `exp` in the future and at most 3,600 s after `iat`; `iat` at most 60 s ahead | CS-AUTH-0014 | `tests/oauth.rs` |
 
+
+### Embedding (`VS-09`, built)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| Embedding origins per workspace | 20, each at most 255 bytes | CS-API-0001 |
+| View `return_url` | 2,048 bytes | CS-EMB-0001 |
+| View `state` | 1,024 characters, no control character | CS-API-0001 |
+| View link life; spent | 5 minutes; once | CS-AUTH-0002 |
+| Prepare or correct view session | 1 hour | CS-AUTH-0002 |
 ## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, `CON-06`, `CON-07`, `CON-08`, `CON-09`, built)
 
 | Limit | Default | Code |

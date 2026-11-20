@@ -197,11 +197,47 @@ the event (or `*`) and whose envelope, if set, is this one.
 | `correct` | Same, for an in-flight envelope | As prepare |
 | `template_edit` | Edit a template | As prepare |
 
-The host may also use the **custom elements** from `sdk/` (`<openseal-signing>`, `<openseal-prepare>`), which wrap
+The host may also use the **custom elements** (`<openseal-signing>`, `<openseal-prepare>`; as built, one module the
+server serves at `/openseal-elements.js` with CORS to any origin, from `webapp/`), which wrap
 the views in an iframe with a typed `postMessage` protocol (events, resize, theme tokens), as OpenCalc's
 `<opencalc-sheet>` does for its editor (OpenCalc's docs/55). An iframe, not a shadow root, because the ceremony must
 run on the OpenSeal origin: the signer's session and its evidence must not be reachable by the host page's scripts.
 `frame-ancestors` is set per account from its allowed embedding origins.
+
+**As built (slice 9, `VS-09A`–`VS-09E`, migration 0050).**
+
+- *Allowed origins.* `PATCH /accounts/me {settings: {embedding_origins: [...]}}`: at most 20 origins, each written as a
+  browser compares it (`https://host[:port]`, lower case, no default port, no path; `http://` only to `localhost`,
+  loopback or a `.test` / `.localhost` name), distinct; else `422 CS-API-0001`. A security setting
+  (`settings.security`, a recent sign-in for a staff session). Admin → Organization → Embedding edits it.
+- *Framing.* A view page (`GET /s/{token}` of an embedded link, `GET /e/{token}`) carries `frame-ancestors` naming the
+  view's `frame_origin` while it is still on the list, the whole list when the view named none, else `'none'`; every
+  other page and answer keeps `frame-ancestors 'none'` and `X-Frame-Options: DENY` (the server drops DENY only where
+  the policy names an origin). An unknown, spent or expired link's page is `'none'`.
+- *View requests.* `views/signing` takes `frame_origin`, `return_url` and `state` beside `recipient_id` and
+  `auth_asserted`; `views/prepare` (a draft) and `views/correct` (sent or delivered, else `409 CS-WF-0001`) take the
+  same three, and only an API key or access token may ask (`403 CS-AUTH-0010` to a staff session). A frame origin or a
+  return URL whose origin is not on the list is `422 CS-EMB-0001` at its pointer; `state` is at most 1,024 characters.
+  Each answers `201 {url, expires_at}`: five minutes, spent once.
+- *Signing view.* Its first `POST /s/{token}/session` binds it as any link does and, for an embedded link only, also
+  answers `binding`, which the page keeps in memory and sends back as `X-OpenSeal-Binding`: a browser sends a
+  cross-site frame no first-party cookie. Any other link takes only its `HttpOnly` cookie. The view answers `embed:
+  {frame_origin, frame_origins, return_url, state}`.
+- *Prepare and correct.* `POST /e/{token}/session` spends the link (`401 CS-AUTH-0002` when unknown, expired or spent,
+  or when its client is revoked or its member disabled) and answers `{session, envelope_id, kind, expires_at, embed}`:
+  an `osv_` bearer session for one hour, acting as the client's member through the client (its `envelopes:*` scopes
+  at most), on that envelope only and only with its editor's operations (prepare: the envelope, its documents,
+  recipients, fields, suggestions, send and schedule; correct: reading it, recipients, `correct` and `resend`);
+  anything else is `403 CS-EMB-0002`. Revoking the client ends it. `embed.html` opens the web app's editor or correct
+  panel on it.
+- *Events.* The page posts `{type: "openseal", v: 1, event, state, envelope_id?, recipient_id?}` to each of
+  `embed.frame_origins` by name, never `*`: `ready`, then `completed`, `declined` or `finish_later` (signing), `sent`
+  or `cancelled` (prepare), `corrected` or `cancelled` (correct); then goes to `return_url?event=…&state=…` when
+  given. The elements raise `openseal:ready`, `openseal:complete`, `openseal:decline`, `openseal:cancel` and
+  `openseal:error` (also when the view does not answer within `timeout` seconds, as when a page that is not allowed
+  is refused the frame), taking a message only from their own frame and OpenSeal's origin. `theme(tokens)` sends named
+  theme tokens (OpenCalc's rule); the page applies known names with safe values only. An example host page is
+  `sdk/embed/example/index.html`. Not built: `template_edit` (`VS-09F`), resize events (`VS-09G`).
 
 An embedded recipient's authentication is the host's: the view request may carry `auth_asserted: {method, at}`, which
 is recorded as `auth.asserted_by_host` ([49](49-SIGNNOW-STUDY.md) §5). Only the API client that created the envelope
@@ -285,7 +321,7 @@ own actions or group scope, or to itself, is `403 CS-ORG-0005`; permission profi
 | `/documents/{doc}/pages/{n}.png` | **Not built** (thumbnails are rendered by pdf.js in the browser, ADR-007; a server thumbnail needs a renderer) |
 | `/certificate`, `/documents/combined`, `/audit?format=pdf`, `content?version=sealed` | Answer `409 CS-API-0009` until the seal job (stage 2D) stores them; `GET /audit` (JSON) re-verifies the chain on every read |
 | `/views/signing` | Built; only the API client that created the envelope may ask (WF-05, `CS-AUTH-0010` to another client of the account or a staff session; `404` to another account's client, nothing recorded; `tests/auth.rs`); `auth_asserted` records the host's opening and `auth.asserted_by_host` |
-| `/views/prepare`, `/views/correct` | **Not built** (slice 9) |
+| `/views/prepare`, `/views/correct` | Built (slice 9, §5 As built): an API client only; spent once through `POST /e/{token}/session` for a session kept to its envelope (`tests/embedding.rs`) |
 | `/templates` | `GET`, `POST` (with roles), `GET /{id}` (with documents and fields), `PATCH /{id}` (name, email subject and message, `If-Match`), and editing (`WEB-06`, below); using templates is `POST /envelopes/from-templates` (slice 3, below) |
 | `/ersd-versions` | `ERSD-01`. Scope `admin:account`. `POST {text, language?}` publishes `text` as the next version of `language` (`en` when absent; one more than its highest) and sets `settings.workflow_policy.ersd = {version: "<n>", hash}` in the same transaction, with `ersd.published` and `workspace.settings_changed` on the admin log; answers `201 {id, version, label, language, sha256, published_at}`, never the text. Envelopes already sent then ask for consent to the new version (consent binds version and hash). Published rows are never changed: a new text is a new version. An empty or blank text, one with a NUL, a language tag that is not 2 to 35 letters, digits and `-` starting with a letter, or an unknown member is `422 CS-API-0001`; over 100,000 bytes `413 CS-API-0006`. `GET` answers `{current, items}`: `current` the disclosure the policy names with its text (`text` null when no intact published row has that hash) or null, `items` the published versions newest first, at most 100, without text. `tests/ersd_publish.rs`; seen red without the routes (`404 CS-API-0002`) |
 | `/bulk-sends` | `UXW-04`. `POST` (scope `bulk:send`, and `envelopes:write` and `envelopes:send` as `POST /envelopes` with `status: sent` needs; `POST /{id}/send` needs the same; `403` otherwise) checks a list against a template of the account with a document and a role: CSV text (a header, then one row per envelope; a line with no value in any cell is skipped) or JSON rows, columns `<role>::name` and `<role>::email` per role, matched ignoring case and surrounding spaces. A header that does not fit is `422` (`CS-BLK-0004` missing at `/columns`, `CS-BLK-0005` unknown or repeated at `/columns/{i}`); no row, over 1,000 or unreadable CSV `422 CS-BLK-0007`. Each row's problems (`CS-BLK-0001` to `0003`, `0006`) are answered with their column; such a row is stored `failed` and never sent. `validate_only` stores nothing and answers `200 {columns, row_count, valid, rows}`; otherwise `201` the batch with its rows, `queued`. `POST /{id}/send` (its sender only, `403` otherwise) sends the next 10 pending rows, each made and sent as `POST /envelopes` does (the same code path) in its own transaction, the row locked `FOR UPDATE SKIP LOCKED` so two callers never send one row twice; a refused row is `failed` with the refusal's code and the rest go on; the caller repeats it until `counts.pending` is 0, when the batch is `completed`. `POST /{id}/cancel` leaves pending rows unsent (`409 CS-WF-0001` once finished). `GET` and `GET /{id}` (scope `envelopes:read`) show the caller's own, or every one to an administrator or a member who sees every envelope; another account's is `404`. Each sent envelope carries `bulk_send_id`. `bulk_send.completed` is not emitted yet (`UXW-47`). `tests/bulk_send.rs`; seen red without the routes (`404 CS-API-0002`) |

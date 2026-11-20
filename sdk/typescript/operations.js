@@ -191,6 +191,16 @@ export const OPERATIONS = Object.freeze({
     "path_params": [],
     "query": []
   },
+  "createCorrectView": {
+    "body": true,
+    "body_required": false,
+    "method": "POST",
+    "path": "/api/v1/envelopes/{id}/views/correct",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
   "createEnvelope": {
     "body": true,
     "body_required": true,
@@ -237,6 +247,16 @@ export const OPERATIONS = Object.freeze({
     "method": "POST",
     "path": "/api/v1/permission-profiles",
     "path_params": [],
+    "query": []
+  },
+  "createPrepareView": {
+    "body": true,
+    "body_required": false,
+    "method": "POST",
+    "path": "/api/v1/envelopes/{id}/views/prepare",
+    "path_params": [
+      "id"
+    ],
     "query": []
   },
   "createSignLink": {

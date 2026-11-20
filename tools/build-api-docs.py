@@ -110,7 +110,8 @@ ACRONYMS = {"Otp": "OTP", "Sso": "SSO", "Mfa": "MFA", "Totp": "TOTP", "Ersd": "E
 
 
 def group_of(path: str) -> str:
-    if path.startswith("/s/"):
+    # The embedded views' own page and session (VS-09) are the ceremony's kind: not public API.
+    if path.startswith("/s/") or path.startswith("/e/"):
         return "ceremony"
     if path.startswith("/.well-known/") or path.startswith("/api/v1/oauth"):
         return "oauth"

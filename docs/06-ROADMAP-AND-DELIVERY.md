@@ -120,7 +120,7 @@ rows go on the Current line in the same commit.
 | 2 | **4 Every field** (finishing: closes on green `main`, instruction 68) | Complex forms: applications, insurance, loans | 2026-11-24 | — |
 | 3 | **8 API and webhooks** (current, 2026-11-20; [76](76-SLICE-8-EVIDENCE.md)) | Developers integrating signing | 2026-11-27 | `UXW-10` `UXW-31` `UXW-32` `UXW-33` |
 | 4 | 6 Manage and correct | Daily senders: folders, search, correct, resend | 2026-12-01 | `UXW-02` `UXW-20` `UXW-42` `WEB-07` |
-| 5 | 9 Embedding | Developers embedding signing in their app → **M4** | 2026-12-03 | — |
+| 5 | **9 Embedding** (in progress 2026-11-21, next in this plan; [78](78-SLICE-9-EVIDENCE.md)) | Developers embedding signing in their app → **M4** | 2026-12-03 | — |
 | 6 | 10 Organization admin and SSO | Mid-size and large companies | 2026-12-08 | `ORG-01` `ORG-06` `UXW-09` `UXW-37` `UXW-38` `UXW-39` |
 | 7 | 11 Bulk send and signing links | High-volume senders | 2026-12-11 | — |
 | 8 | 12 Brand and language | Branded and non-English use | 2026-12-15 | `UXW-12` |

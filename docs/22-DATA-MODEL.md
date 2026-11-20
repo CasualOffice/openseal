@@ -439,6 +439,14 @@ live template sets it (the template keeps its roles, documents and fields, leave
 `Templates::list_deleted`, `get_deleted` and `restore` serve the Deleted view); deleting it there removes it for good.
 A template has no audit chain, so neither step is evidence. Fifty-four tables with `0022`.
 
+`0050_embedding.sql` (`VS-09`): `recipient_tokens` gains `frame_origin`, `return_url` and `return_state`, set only on
+an `embedded` token (a check); a tenant table `embed_views` (`id`, `envelope_id`, `kind` `prepare` or `correct`,
+`client_id`, `user_id`, `token_sha256`, `expires_at`, `used_at`, `session_sha256`, `session_expires_at`, the three
+host members, `created_at`; spent exactly when it has a session, both checked) holds prepare and correct view links
+and their sessions, as hashes only; `openseal_resolve_embed_view` and `openseal_resolve_embed_session` find a live
+link's or session's workspace. `TenantTx::embed_views` (`create`, `unspent`, `spend`, `by_session`) and
+`Recipients::set_embed_target`; the purge deletes an envelope's views with its links.
+
 `0023_password_reset.sql` (`UXW-37`, `UXW-38`) adds two tenant tables. `password_resets` (`id`, `user_id`,
 `requested_at`, `token_sha256`, `sent_at`, `expires_at`, `used_at`, `revoked_at`) records a self-service reset: never
 the email or the token, only the token's SHA-256 once the worker has sent it, with a one-hour expiry (a retried send mints a fresh link); a reset is open

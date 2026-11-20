@@ -8,7 +8,8 @@ API contract (slice 8, `VS-08E`, docs/40 §7):
 Generated, and never edited by hand:
 
 - sdk/typescript/operations.js — every public operation (all of `/api/v1` and
-  `/.well-known`; the signing ceremony's `/s/` is not public API, docs/40 §6): its HTTP
+  `/.well-known`; the signing ceremony's `/s/` and the embedded views' own `/e/` are not
+  public API, docs/40 §5, §6): its HTTP
   method, path, path parameters, query parameters and whether it takes a JSON body.
 - sdk/typescript/operations.d.ts — the client's typed method for each operation.
 - sdk/python/openseal/_operations.py — the same table for the Python client.
@@ -39,7 +40,7 @@ def operations(spec: dict) -> list[dict]:
     """The public operations, sorted by operationId."""
     out = []
     for path, item in spec["paths"].items():
-        if path.startswith("/s/"):
+        if path.startswith("/s/") or path.startswith("/e/"):
             continue
         shared = item.get("parameters", [])
         for method in METHODS:

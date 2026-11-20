@@ -73,6 +73,6 @@ Docs are true as of 2026-11-20 (`main` at `f667422`; CI run 44610734814 green on
 **Slices 1, 2, 3, 4, 5 and 7 are closed** (instructions 59, 66, 68). **v0.1.0 is published** (2026-11-20, tag at
 `f667422`, release run 44615842313: signed images, provenance, SBOMs, signed `SHA256SUMS`; the owner makes the GHCR
 packages public). Slice 8 is the current slice of the binding Execution plan (docs/06, instruction 62,
-`tools/check-plan.py`). It is not for production agreements. A fix for a red `main` is checked locally and pushed to
+`tools/check-plan.py`); slice 9 (embedding) is built on a branch for review (docs/78). It is not for production agreements. A fix for a red `main` is checked locally and pushed to
 `main` directly; other work goes through one pull request at a time whose CI must be green before it is merged.
 Commits carry no Claude attribution or e-mail (instruction 57).
