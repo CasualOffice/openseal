@@ -26,7 +26,9 @@ The account chooses; the default is **PAdES B-T**, so every sealed document carr
 | PAdES **B-LT** | A later incremental update with the **DSS** dictionary: `/Certs`, `/OCSPs`, `/CRLs`, `/VRI` per signature | Regulated accounts; validation years later without network |
 | PAdES **B-LTA** | A **document timestamp** (`/Type /DocTimeStamp`, `SubFilter /ETSI.RFC3161`) over everything including the DSS; renewed before the TSA certificate or algorithm weakens | Archives; renewal job (slice 17) |
 
-`adbe.pkcs7.sha1` and `adbe.x509.rsa_sha1` are never written. `adbe.pkcs7.detached` is read and verified, not written.
+`adbe.pkcs7.sha1` and `adbe.x509.rsa_sha1` are never written. `adbe.pkcs7.detached` is read and verified, not written,
+except (designed, ADR-047) to carry a remote provider's CMS that is not CAdES-conformant (§3.1); never for a signature
+we make.
 
 ## 3. When the seal is applied
 
@@ -40,9 +42,42 @@ signature naming that recipient in `/Name` and `/Reason`. Each signer's contribu
 and visible in Acrobat's signature panel. The first seal may be a **certification signature** with `/DocMDP P=2`
 (form filling and signing allowed), so later approval signatures do not invalidate it.
 
-**Option: per-signer keys** (slice 18, AES/QES). The signer's signature is made by their own key at a QTSP through the
-CSC API. Then the document is locked once sent, signing is sequential, and the certificate of completion and audit
-trail are **separate PDFs** so the signed PDF stays untouched by our additions (the same choice Documenso made [V]).
+**Option: per-signer keys** (brought forward from slice 18 to slice 5r by owner instruction 75; §3.1). The signer's
+signature is made by their own key at a remote provider: a QTSP or other RSSP through the CSC API, or an Indian ESP
+through the CCA eSign API. Each document is locked at its first such signature, remote signers sign one after the
+other, and the certificate of completion and audit trail are **separate PDFs** so the signed PDF stays untouched by
+our additions (the same choice Documenso made [V]).
+
+### 3.1 Remote-provider signatures (designed: ADR-046 and ADR-047, Proposed; `RSP-01`, `RSP-02`)
+
+Not built. The decisions are in [08](08-ADR-REGISTER.md) §Full records; this is the map.
+
+- **Who signs what.** A `signer` recipient with signature type `remote` signs with a certificate in their own name,
+  held by a provider: a CSC API v2 provider (DigiCert Document Trust Manager, A-Trust; ADR-046) or an eSign Service
+  Provider as whose ASP OpenSeal acts (eMudhra, CDSL Ventures; ADR-047). GlobalSign DSS stays in slice 18
+  (`RSP-03`).
+- **The bytes.** Per document, the first remote signature is the lock point: revision R0 flattens every final value
+  into page content and turns the fields still to be filled into AcroForm fields. Each remote signature is then one
+  incremental revision (fill in place, `FILL-01`; the signer's `/Sig` field; a `/Contents` placeholder planned large
+  enough that it is never re-laid out); the hash the provider signs comes from that revision's ByteRange (for CSC,
+  through our CAdES signed attributes; for eSign, as the `InputHash` the ESP puts in its own CMS). After the lock
+  point a document's layout is frozen.
+- **The engine.** `seal()` splits into `prepare` and `complete`, so a signer can leave for the provider between the
+  hash and the signature; `seal()` itself keeps its bytes. The `KeyProvider` seam keeps the non-interactive case:
+  keyd gains a `csc` backend for a platform seal key held at a QTSP.
+- **Levels.** Each remote signature is B-B (or, for a provider's CMS that is not CAdES-conformant, an
+  `adbe.pkcs7.detached` signature: the only case in which we write that SubFilter, §2), then B-T with our TSA unless
+  the provider's CMS already carries a time-stamp we can verify, then a DSS revision at once, so a short-lived
+  certificate keeps its validation data.
+- **The platform seal comes last**, over every remote signature and the last fill, at the account's profile (§4, §5,
+  ADR-036 tokens unchanged); the certificate of completion is a separate PDF sealed on its own, with the audit trail
+  embedded. Slice 16's per-signer platform seals reuse the same lock point and revisions with keyd as the signer.
+- **Checks before anything is embedded**: the provider's value or CMS verifies over our digest, under the certificate
+  the provider named, chaining to the anchors the operator configured for that provider, not revoked. Our verifier,
+  pyHanko and EU DSS (0 undefined changes) must agree on every remote-signature fixture, as on every seal (rule 26).
+- **Evidence and claims**: four additive audit types (`recipient.remote_signing_started`, `_prepared`, `_failed`,
+  `recipient.remote_signed`) in [32](32-AUDIT-TRAIL-AND-EVIDENCE.md) §3; what may be said about these signatures is
+  [09](09-LEGAL-AND-COMPLIANCE.md) §2a.
 
 ## 4. The sealing algorithm
 

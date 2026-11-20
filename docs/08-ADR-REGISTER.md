@@ -55,3 +55,650 @@ WASM bundle; a new dependency in the engine; a legal or evidence property.
 | ADR-044 | **A strike-through is a field kind, `strikethrough`, that an editor places at the ceremony and the seal draws as one line** (`FG-080`, slice 6, DocuSign's polyline overlay used by an editor). *What.* A new `FieldType::Strikethrough` (wire `strikethrough`): one horizontal line through the vertical middle of the field's rectangle, as wide as it, 1 point thick (half the height under 2 points), butt caps, in the field's `format.color` or black. It takes no recipient value (`takes_input` false; never required): `casual_sign_fields::evaluate_envelope` gives a visible one the implied value `{checked: true}` and a client that sends anything else gets `CS-FLD-0022`; a condition may hide it, and then it is not drawn. `casual-sign-flatten` draws it like any other field, in the same incremental update, so the delivered bytes stay a prefix (docs/30 §7). Any recipient type may hold one (a display kind, as `note`). An editor adds, moves, lengthens and removes it through `POST /s/{token}/editor/fields` and `PATCH`/`DELETE …/editor/fields/{field}` (`VS-06A`); a sender may place one through the API. *Evidence.* The chain records each change as `envelope.corrected` naming `fields.<id>` with the editor as actor (the engine's `RecipientEdit`, no new event type: the audit schema is unchanged); every later recipient's view lists every strike on a document they see (`strikes`), and the signing and review pages draw them, so they see the text struck through before acting (WYSIWYS); the sealed document draws the same line, and its hash is the chain's `document.sealed`. Bounded by the envelope's field limit (docs/21). *Alternatives.* A set of free polylines per field (DocuSign's `polyLineOverlayTabs`): needs a new value type and a parser for untrusted point lists, for no gain in the common case of striking words on a line; several strikes are several fields. A dedicated audit type carrying the geometry: deferred; the sealed PDF and the field id carry it today. *Tests.* `-fields` `tests/envelope.rs` and the parity table (227 cases, native = WASM), `-flatten` `tests/flatten.rs` (every rotation, crop and UserUnit; the line's operators), `-worker` `tests/end_to_end.rs` (sealed, verified by ours and pyHanko), `manage-correct.spec.mjs` FG-080 | Accepted 2026-11-21 (owner instruction 79) | [30](30-PDF-PIPELINE.md) §7, [24](24-ENVELOPE-LIFECYCLE-AND-ROUTING.md), [40](40-API-DESIGN.md) |
 | ADR-045 | **Envelope id stamping: drawn by the flattener over every page like a field value, shown to every signer, chosen before sending and fixed after** (`FG-009`, `VS-06E1`; touches the evidence). *Why.* DocuSign stamps the envelope id in each page's top margin so a printed page leads back to its envelope; the stamp must be in what every signer saw and in the sealed bytes, and the seal must cover it. *Choice.* `signing_options.stamp_envelope_id` per envelope (off by default, absent from the JSON when off); the account setting `stamp_envelope_id` is the default for a create request that does not say, and the editor starts a new envelope from it. The delivered document (normalized at upload, its hash in `document.added` and `document.fixed`) is not changed. `casual-sign-flatten` draws the stamp (`FlattenOptions::envelope_id_stamp`) in the same incremental update as the field values: "Envelope ID: <id>" in 7 pt Liberation Sans, grey, one line in a 10 pt band 4 pt below the top edge of every page as displayed, inset 18 pt from the sides (5 % on a narrow page, shrinking to fit), placed through the page geometry for every rotation, crop box and UserUnit; an id that is not an id is refused (`CS-FLD-0005`). The signing page draws the same line in the same place over every page from the start of the ceremony and in the review, and the in-progress download (`version=current`) carries it, so what a signer sees is what is sealed, as for values (ADR-020). The choice is in the audit chain: `envelope.sent` carries `envelope_id_stamped: true` (absent when off, so earlier chains hash unchanged), and the engine refuses to turn it on or off after sending (`CS-WF-0001`), since a signer may already have seen the pages. The seal is applied over the stamped bytes. The certificate of completion is not stamped (it is generated after, and names the envelope id in its own text). *Rejected.* Stamping the delivered document at send time: a second revision of the delivered bytes after the hash the upload recorded, so `document.added` would no longer name what signers received, anchors and detected fields would be found on other bytes, and template documents reused by hash would diverge; the flatten-time stamp gives the same guarantee (shown before acting, sealed, covered) without it. Stamping only at seal time without showing it (the sealed pages would differ from what signers saw). *Tested.* flatten `tests/flatten.rs` `the_envelope_id_stamp_is_in_the_top_margin_of_every_page_in_every_rotation` and `the_envelope_id_stamp_is_on_every_page_and_needs_a_valid_id`, the corpus sweep `every_corpus_file_takes_the_envelope_id_stamp_on_every_page` (`tests/corpus_layers.rs`, `OPENSEAL_CORPUS_SWEEP=1`: 371 files, 10,692 pages, each stamp read back, no failure); workflow `the_envelope_id_stamp_is_recorded_at_send_and_fixed_after`; server `tests/envelope_id_stamp.rs`; worker `an_envelope_stamped_with_its_id_is_sealed_with_the_stamp_on_every_page` (pyHanko 0.38.1 in Docker: intact, valid, trusted, `ENTIRE_FILE`, no modification; pypdf reads the stamp on every delivered page and not on the certificate's); web `tests/stamp.test.mjs`; browser `vs06e-screens.spec.mjs` | Accepted 2026-11-21 (owner instruction 79) | [30](30-PDF-PIPELINE.md) §7, [31](31-SEALING-AND-SIGNATURES.md) §3, [32](32-AUDIT-TRAIL-AND-EVIDENCE.md) §3, [22](22-DATA-MODEL.md), [24](24-ENVELOPE-LIFECYCLE-AND-ROUTING.md), [40](40-API-DESIGN.md) |
 | ADR-043 | **Sign on paper: the scan joins the envelope as a fixed document, bound by a new audit type** (`FG-013`, slice 6, owner instruction 78; touches the audit event schema). *Why.* DocuSign lets a signer print, sign by hand and return the pages; OpenSeal must do the same without weakening evidence. *Choice.* An envelope option `signing_options.allow_sign_on_paper` (off by default, absent from the wire when off, so earlier options hash unchanged). A signer (type `signer` only) whose turn it is, authenticated and consented (as every ceremony write, `SEC-CER-01`), chooses Sign on paper on the signing page, prints the documents (the page's own print and download) and uploads the scan, a PDF only, at most the document size limit, through `POST /s/{token}/paper`: screened for malware, admitted and normalized like any upload (docs/30 §2) and stored with its original. The engine command `SignOnPaper {recipient, document}` adds it to the envelope as a fixed document named "Signed on paper.pdf" (`document.added`, `document.admitted`, `document.fixed`, as a correction adds one), then records the new type `recipient.signed_on_paper {recipient_id, documents, document_id, upload_hash}` (`documents`: the delivered hashes of what the signer printed, before the scan joined them) and `recipient.completed`; routing moves on. Because the scan is a document of the envelope, the seal job seals it with the rest and the certificate lists it; the certificate shows the signer as "Signed on paper" with the scan's document, never "Signed" alone. Fields assigned to that signer keep what they hold and need no value. Additive to the event schema of ADR-010, as ADR-027 and ADR-031 are: earlier chains hash unchanged, an earlier verifier lists the type as unrecognised, not failed. Not a milestone or a webhook topic of its own (`recipient.completed` is). *Rejected:* keeping the scan outside the sealed set (an attachment, as signer attachments are: then the seal would not cover the evidence of the signature); drawing the scan's pages into the delivered documents (changes what other parties saw); allowing other recipient types (an approver or viewer has nothing to sign by hand). *What it does not claim:* that a hand signature on a scan is verified; the evidence is that this scan, of these printed documents, was uploaded by this authenticated recipient at this time (docs/09). Written by the slice-6 worker for the owner's review | Accepted 2026-11-21 (owner instruction 79) | [24](24-ENVELOPE-LIFECYCLE-AND-ROUTING.md) As built, [32](32-AUDIT-TRAIL-AND-EVIDENCE.md) §3, [40](40-API-DESIGN.md), [96](96-FEATURE-FIT-GAP.md) FG-013 |
+| ADR-046 | **Remote-provider signatures per recipient, and the CSC API v2 adapter** (`RSP-01`, slice 5r, owner instruction 75; touches the public API, the PDF revisions before the seal, the audit event schema, the state machine, key custody and a legal property). *What.* A `signer` gets a signature type, `simple` (today) or `remote` with a provider the account enabled; two remote signers never share a routing order. *PDF.* Per document, the first remote signature is a **lock point**: revision R0 flattens every final value into page content and materializes the fields of recipients not yet finished as AcroForm fields; each remote signature is a revision that fills those fields in place (`FILL-01`) and adds the signer's `/Sig`; layout is frozen after it; at completion a last fill, then **the platform seal last** (keyd, ADR-036 tokens, the account's profile), DSS over every signature; the certificate of completion and audit trail become a separate sealed PDF. *Engine.* `casual-sign-seal` splits into `prepare` (placeholder, ByteRange digest, DER signed attributes) and `complete` (a provider's value or CMS, our RFC 3161 time-stamp, verify); `seal()` stays byte-identical. *CSC.* v2.0.0.2 (v2.1 to confirm): `oauth2/authorize` scope `service` with PKCE, `credentials/list` and `credentials/info` (chain, `SCAL`, `signatureQualifier`), prepare, then scope `credential` binding the signed-attribute hashes (SCAL2), `signatures/signHash`; never a PIN or OTP on our pages, never `extendTransaction`; B-T then DSS at once. keyd gains a non-interactive `csc` backend (the `KeyProvider` seam proper) through a new host crate `casual-sign-csc`. *Evidence.* Four additive audit types (`recipient.remote_signing_started`, `_prepared`, `_failed`, `recipient.remote_signed`); the certificate prints the provider certificate and what the provider states, never a legal status. *Secrets.* Operator catalogue with secret files by reference; an account's own client secret sealed AES-256-GCM under `OPENSEAL_PROVIDER_SECRETS_KEY`; keys only in keyd. Full record, protocol facts, failures, tests (a CSC stub signing with `openssl`, pyHanko and EU DSS), owner inputs and open questions below | Accepted 2026-11-21 (owner instruction 82) | This page §ADR-046 (below); [31](31-SEALING-AND-SIGNATURES.md) §3.1; [09](09-LEGAL-AND-COMPLIANCE.md) §2a |
+| ADR-047 | **India eSign through a licensed ESP, OpenSeal as the ASP** (`RSP-02`, slice 5r, owner instruction 75; touches a wire format, the audit schema, key custody, a crate boundary and a legal property). Everything ADR-046 decides for remote signatures applies. *Protocol.* CCA eSign API v2.1 (Aadhaar online e-KYC; request and response through the browser; one hash per request) and v3.3 (CA e-KYC account; server-to-server request, acknowledgement, `txnref`, server-to-server answer, `EsignStatus`; up to 5 hashes). *Hash.* The SHA-256 ByteRange digest of the prepared revision as `InputHash`; `responseSigType` `PKCS7pdf` (chain, revocation and CA time-stamp captured while the one-time certificate lives); raw types refused (the certificate does not exist before signing). *Format.* `ETSI.CAdES.detached` when the ESP's CMS conforms, else `adbe.pkcs7.detached` as the one exception to docs/31 §2, only for a provider's CMS; our time-stamp if it has none; DSS at once; BER refused until `SEAL-13`. *Checks.* The ESP's XML Signature under its configured certificate, `txn` correlation and single use, `message-digest` equal to ours, chain to the CCA root. *XML.* ADR-026's bounded reader moves to a new engine crate `casual-sign-xml`; a narrow XML Signature profile and canonicalization in a new host crate `casual-sign-esign`, checked against xmlsec1 in CI only. *Keys.* The ASP's request-signing key in keyd, answered only with a database-minted ASP token for an open session. *Data.* OpenSeal never receives an Aadhaar number, VID, OTP or biometric; the certificate is personal data. Full record below | Accepted 2026-11-21 (owner instruction 82) | This page §ADR-047 (below); [31](31-SEALING-AND-SIGNATURES.md) §3.1; [09](09-LEGAL-AND-COMPLIANCE.md) §2a, §4 |
+
+## Full records
+
+ADRs whose reasoning is too long for a table row are written out here; the row above stays the summary.
+
+### ADR-046 — Remote-provider signatures per recipient, and the CSC API v2 adapter (`RSP-01`)
+
+**Status: Proposed, 2026-11-21.** Owner instruction 75 brought it forward from slice 18 to right after slice 9 (M4).
+It touches the public API, the persisted PDF format (new revisions before the seal), the audit event schema, the
+envelope and recipient state machines, key custody and a legal property, so it needs an Accepted ADR before any code.
+ADR-047 (India eSign, below) builds on the shared parts
+here: §3.1 to §3.9 and §3.11 to §3.14 are written once, for every remote provider.
+
+#### 1. Context
+
+Today every agreement is a simple electronic signature (SES) protected by **one platform seal** at completion
+([31](31-SEALING-AND-SIGNATURES.md) §3, ADR-008): the signer adopts a mark, the platform's key in `keyd` signs the
+finished document. Customers in the EU who need an advanced or qualified signature, and customers whose counterparty
+insists on a certificate in the signer's own name, need **the signer's own key** to sign: a key that a qualified
+trust service provider (QTSP) or another remote signing service provider (RSSP) holds for the signer, reached over the
+Cloud Signature Consortium (CSC) API. DigiCert Document Trust Manager and A-Trust are the two named providers;
+others speak the same API.
+
+Three facts shape the design:
+
+1. **The signer authorizes each signature at the provider, interactively, over a hash we compute.** At SCAL2 (the
+   level a qualified signature needs) the authorization is bound to the hash. So the document bytes the signature
+   covers must exist, final, *at the signer's turn*, not at completion.
+2. **A PDF signature covers every byte before it.** Anything written after it must be a change validators accept
+   (a new signature, form filling of fields that existed, DSS data, a document timestamp). Our flattener draws values
+   into page content ([30](30-PDF-PIPELINE.md) §7), which after a signature is a disallowed change for every
+   validator, ours included (`casual-sign-verify` `diff.rs`, `Disallowed::PageChanged`).
+3. **`KeyProvider::sign` is a synchronous call inside `seal()`** (`casual-sign-crypto` `key.rs`). It fits a key the
+   platform can use without a person (an HSM, a KMS, or a CSC credential authorized by the service), not a signer
+   who must log in at the provider between our hash and their signature.
+
+#### 2. Protocol facts relied on
+
+Source: *Architectures and protocols for remote signature applications*, Cloud Signature Consortium API
+**v2.0.0.2** (the public V2 release; its revision history lists 2.0.0.0 of 25/03/2022 and 2.0.0.1 of 19/08/2022),
+sections 8.4 and 11. **v2.1** is published by the Consortium with changes to `signatures/signDoc` and authorization;
+what it changes for the calls below is **to confirm** before building, and against each provider's sandbox, since a
+provider may implement a profile of either.
+
+| Call | What we rely on | Confidence |
+| --- | --- | --- |
+| `info` (§11.1) | Base URI, the authorization types offered (`oauth2code`, `implicit`, `explicit`), the OAuth 2.0 endpoints, the methods supported | Spec |
+| `oauth2/authorize` (§8.4.2) | Authorization code flow. Scope `service` for the signer to log in; scope `credential` with `credentialID`, `numSignatures`, `hashes` (base64url) and `hashAlgorithmOID` to authorize specific hashes, or `authorization_details` (RFC 9396) carrying the same | Spec; whether DigiCert DTM and A-Trust require PKCE and accept `authorization_details`: to confirm with the provider's sandbox |
+| `oauth2/token` (§8.4.4) | Code for an access token; with scope `credential` the token is good as the SAD for `signHash` (§11.10) | Spec |
+| `credentials/list` (§11.4) | The signer's credential ids, optionally with `credentialInfo` | Spec |
+| `credentials/info` (§11.5) | `key/status`, `key/algo` (OIDs), `key/len`, `key/curve`, `cert/status`, `cert/certificates` (the chain, base64 DER), `cert/issuerDN`, `cert/serialNumber`, `cert/subjectDN`, `cert/validFrom`, `cert/validTo`, `auth/mode`, `SCAL`, `multisign`, and the optional `signatureQualifier` (for example `eu_eidas_qes`) | Spec; the qualifier values each provider returns: to confirm |
+| `credentials/authorize` (§11.6) | For `explicit` mode only: `credentialID`, `numSignatures`, `hashes`, `hashAlgorithmOID`, `authData` (PIN, OTP) → `SAD`, `expiresIn` (default 3600 s); at SCAL2 the hashes are required and bind the SAD; never used with `oauth2code` | Spec |
+| `credentials/extendTransaction` (§11.9) | Renews a SAD for more `signHash` calls in a multi-signature transaction; the spec warns it "may break the support of SCAL 2" | Spec; not used by this design (§3.4) |
+| `signatures/signHash` (§11.10) | `credentialID`, `SAD`, `hashes` (base64 raw digests), `hashAlgorithmOID`, `signAlgo` (one of `key/algo`), `signAlgoParams` (RSASSA-PSS); synchronous by default (`operationMode` `S`); answers `signatures`, one per hash, **in input order** | Spec; whether an ECDSA value comes back DER-encoded or as raw `r‖s`: to confirm with the provider's sandbox (the adapter accepts both and re-encodes to DER) |
+| `signatures/signDoc` (§11.11) | The provider builds the whole PDF signature from the document | Spec; not used (§6) |
+
+What is **not** in the CSC API, and so is the provider's policy: how the signer is identified and enrolled, which
+second factor they use, the certificate profile, the time a SAD or code lives in practice, rate limits.
+
+#### 3. Decision
+
+##### 3.1 A signature type per recipient
+
+A recipient of type `signer` gets a **signature type**: `simple` (the default and today's behaviour: an adopted mark
+under the platform seal) or `remote` with a **provider** the account has enabled (§3.11). On the wire it is
+`signature: {type: "remote", provider_id: "…"}`, absent for `simple`, so every earlier envelope and event hashes as
+before (the additive rule of ADR-027). It is chosen by the sender (or a template role) before sending and may be
+corrected only while that recipient has not started signing; changing it after their turn began is
+`409 CS-RSP-0007`. In-person signers, signing groups and the `seal` recipient type (slice 18) are not given a remote
+type by this ADR. **Two remote signers never share a routing order**: their signatures must be made one after the
+other over each other's bytes, so a send that places two at one order is refused (`422 CS-RSP-0007`, with the
+violation naming both). Simple recipients may share an order with a remote one.
+
+##### 3.2 The PDF: a lock point, signer revisions, and the platform seal last
+
+This is the part ADR-047 and slice 16 (per-signer seals) reuse.
+
+- **Until the first remote signature, nothing changes**: values are recorded, corrections and editors work as today.
+- **The lock point**, per document, is the moment the first remote signature over that document is prepared (§3.4);
+  a document no remote signer acts on (one hidden from them, WF-02) is never locked and is flattened at completion as
+  today. For each locked document the worker writes revision **R0**: the delivered document with **every value already final flattened into page content**
+  by the existing flattener (finished recipients, this signer's own values, the envelope id stamp of ADR-045,
+  strike-throughs of ADR-044), and **every field of recipients who have not finished materialized as an AcroForm
+  field** with an empty appearance, in its rectangle, read-only to viewers. Text, date, number, email, formula and
+  dropdown fields become text fields; checkboxes and radio groups become button fields; a later simple signer's
+  signature and initials become read-only text fields whose filled appearance draws the adopted mark (a text field
+  rather than a push button because validators classify a text field's `/V` and `/AP` change as form filling; this is
+  **to confirm with pyHanko and EU DSS in the first stage** before the rest is built). Each **later remote signer**
+  gets an unsigned `/Sig` field at their first signature field's rectangle. R0 is ordinary page-content flattening
+  for everything already known, so it adds no new rendering path for finished values.
+- **Each remote signature is one revision Rk** on top of the previous bytes: a fill-in-place update (the built
+  `FILL-01` code: `/V` and a regenerated appearance) for every materialized field whose recipient finished since the
+  last revision, then the remote signer's `/Sig` field with its signature dictionary and a `/Contents` placeholder.
+  The signer's first signature field is the visible widget: the adopted mark, the recipient's name as sent, and
+  "Digitally signed, see the signature panel" (the certificate's own name is not known before signing for every
+  provider, and the appearance is inside the signed bytes). Their other signature and initials fields are drawn as
+  materialized fields filled in the same revision, so the signature covers them.
+- **After a document's lock point, its layout is frozen.** Adding, moving or removing a field, an editor's strike-through, turning
+  on the envelope id stamp, replacing a document or any correction that changes a document is refused
+  (`409 CS-RSP-0007`); correcting a later recipient's name, email, phone or authentication, reminders, void and
+  decline are still allowed (none of them changes a document's bytes).
+- **At completion** the worker writes one last fill-in-place revision for values after the last remote signature (if
+  any), then **the platform seal**, an approval signature by `keyd` exactly as today (seal token of ADR-036, the
+  account's profile, B-T by default), then, at B-LT or above, the DSS for every signature in the file (the existing
+  `augment` over all signatures), then the B-LTA document timestamp if the profile asks. The platform seal is the
+  last signature and covers the whole file, so `seal::check_verified`'s rule (the last signature covers the whole
+  file but a DSS tail) holds unchanged.
+- **No DocMDP certification at the lock point** by this ADR: an approval signature without DocMDP permits form
+  filling and further signatures, which is what later recipients need, and certifying at the lock point would need a
+  platform key use for an envelope that is not completing (outside ADR-036's token). Slice 16 may add certification
+  with `/DocMDP P=2` at the lock point; the revision model is the same.
+- **The certificate of completion and the audit trail become a separate PDF** for an envelope with any remote
+  signature: appending pages or an associated file to a document after signatures is a disallowed change. The
+  separate certificate is rendered, sealed on its own with the platform key and verified, as the envelope certificate
+  of an ended envelope already is (UXW-30, [32](32-AUDIT-TRAIL-AND-EVIDENCE.md) §6), with `audit-trail.json` embedded
+  in it. It prints each document's final sealed SHA-256, so the documents are bound to it by hash and it to them by
+  its own seal. The account setting that appends the certificate to the document does not apply to such envelopes;
+  the evidence package (§6.1 there) already carries `certificate.pdf` as its own entry.
+
+Validators: our verifier already classifies `FormFill`, `Signature` and `DssUpdate` as allowed after an approval
+signature without DocMDP (`casual-sign-verify` `report.rs`, `ModificationClass`); pyHanko's difference analysis and
+EU DSS's "undefined changes" count must agree on the stub fixtures before the design is built out (§4).
+
+##### 3.3 The engine: sign in two phases
+
+`casual-sign-seal` gains a split of what `seal()` does in one call (docs/31 §4 steps 1 to 7):
+
+- `prepare(input, &SealRequest, &PlaceholderPlan) -> Prepared`: append the signature revision with a fixed-width
+  `/ByteRange` and a `/Contents` placeholder of a planned size, fill the ByteRange, and return the bytes, the
+  ByteRange, the **ByteRange digest** and, when the caller gives the signer's certificate chain and algorithm, the
+  **DER signed attributes** (`content-type`, `message-digest`, ESS `signing-certificate-v2`; no CMS `signingTime`,
+  as today) and their digest. `Prepared` is plain data the worker stores (bytes in the blob store, the rest in the
+  session row) so completion may run in another process, minutes later.
+- `complete(prepared, ExternalSignature, &dyn TimestampSource, &CompleteOptions) -> Sealed`, where
+  `ExternalSignature` is either `Value {signature, chain, algorithm}` (CSC: we assemble the CMS around the provider's
+  value over our signed attributes) or `Cms(der)` (ADR-047: the provider's own CMS, checked before use). It verifies
+  the signature value against the certificate's public key and the digest, adds the RFC 3161 `signature-time-stamp`
+  unsigned attribute (B-T), writes the CMS into the placeholder, and runs our verifier on the result (docs/31 §4
+  step 8). It **never re-lays out**: a CMS larger than the placeholder is `CS-RSP-0005` and the session fails,
+  because a new layout is a new hash the signer did not authorize.
+- `seal()` becomes `prepare` then `complete` with a `KeyProvider`, and **its output must stay byte-identical** on the
+  existing fixtures (a test compares the bytes before and after the refactor). Placeholder planning for a remote
+  signature uses the chain from `credentials/info`, the key's maximum signature length and the TSA's token bound plus
+  the usual margin, so the one-retry rule of today is never needed.
+
+The engine stays pure: no network, the time supplied, the signature value supplied (ADR-004).
+
+##### 3.4 The ceremony, with a CSC provider
+
+1. The signer opens their link, passes the envelope's authentication and consent, fills their fields and adopts a
+   mark for the visible widget, as today. The review step shows the engine's preview, as today (ADR-020).
+2. **Sign with <provider>** replaces Finish. The engine command `BeginRemoteSigning` (their turn, every required field
+   filled, no other remote session open in the envelope) freezes their values and records
+   `recipient.remote_signing_started`. The browser goes, top-level (never in a frame: providers forbid framing, and an
+   embedded view opens a window), to the provider's `oauth2/authorize` with scope `service`, PKCE S256 and a `state`
+   bound to the session (stored hashed, as RAUTH-01 does).
+3. Back at `/rsp/callback/{provider}`, the server checks `state` and hands the code to a worker job, which exchanges
+   it, calls `credentials/list` and `credentials/info`, and keeps the credentials that are enabled, valid, of an
+   algorithm we accept (§3.6) and of a `signatureQualifier` the account requires, if it requires one (for example
+   only `eu_eidas_qes`). None: the session fails with `CS-RSP-0006`. More than one: the page asks the signer to
+   choose. The worker then prepares every document the signer may see (§3.5), records
+   `recipient.remote_signing_prepared`, and the page **shows the prepared documents rendered from the exact bytes
+   whose hashes will be signed** (`GET /s/{token}/remote-signing/documents/{id}`), with a button to authorize.
+4. The browser goes to `oauth2/authorize` with scope `credential`, the `credentialID`, `numSignatures` equal to the
+   number of documents, the hashes of the signed attributes and their algorithm OID. With `multisign` below the
+   number of documents, the signer authorizes in batches of `multisign`, one round trip each. We never use
+   `credentials/extendTransaction` (it weakens SCAL2 binding) and **never collect a signer's PIN or OTP on our
+   pages** (`explicit` mode would pass them through the platform, which undermines the sole-control argument a
+   remote signature exists for); a credential whose `auth/mode` is only `explicit` is not offered (§8 question 3).
+5. Back at the callback, the worker exchanges the code for the credential token, calls `signatures/signHash` once with
+   all the hashes, checks that the answer has one value per hash in order, and completes each document (§3.6). In the
+   same transaction as storing the revisions it records `recipient.remote_signed`, then `recipient.signed` and
+   `recipient.completed` as today, and routing moves on.
+
+Access tokens, the SAD and the credential token live only in the worker's memory for the job; the authorization code
+and the PKCE verifier sit in the session row sealed under the provider secrets key (§3.11) and are deleted at first
+use.
+
+##### 3.5 The hash, from the exact bytes that will be sealed
+
+For each document: take the stored bytes as they stand (the delivered document, or the last revision written for
+this envelope); write R0 if this is the lock point, then Rk with the placeholder, through `casual-sign-pdf`'s
+incremental writer (deterministic, the input a prefix of the output); fill the `/ByteRange` `[0, a, b, c]` so it
+covers every byte except the `/Contents` hex string; digest the covered bytes with SHA-256 (SHA-384 or SHA-512 when
+the key's algorithm calls for it). For CSC that ByteRange digest becomes the `message-digest` signed attribute and the
+**hash sent to the provider is the digest of the DER signed attributes** (with the explicit `SET OF` tag, RFC 5652
+§5.4), which is what the signature value is over. The prepared bytes are stored content-addressed before the signer
+is sent away; completion embeds into exactly those bytes and nothing else, and a second preparation (a retry) is a new
+revision from the same base with a new hash.
+
+##### 3.6 Embedding, level, and what is accepted
+
+- The provider's value is checked before use: it verifies under the certificate's public key over our signed
+  attributes (aws-lc-rs in the worker), the certificate is the one `credentials/info` returned, and its chain builds
+  to a trust anchor configured for that provider, valid at the time-stamp time and not revoked (OCSP, else CRL).
+  Anything else fails the session `CS-RSP-0004` and nothing is written.
+- Algorithms accepted from a provider: RSA 2,048 to 8,192 bits (PKCS#1 v1.5 or PSS) and ECDSA P-256 or P-384, with
+  SHA-256 or stronger. RSA 2,048 is below what our own seals use (SEC-S08) but common at providers whose certificate
+  policy governs it; it is recorded and printed (§8 question 4).
+- The CMS is PAdES **B-B** (`SubFilter /ETSI.CAdES.detached`, our signed attributes), then **B-T** with our own TSA
+  (`TimestampSource`, docs/31 §6). Right after it, while the signer's certificate is certainly valid, the worker
+  appends a DSS revision for that signature (**B-LT** for it, the existing `dss::add_dss`), so a short-lived provider
+  certificate never leaves a signature without revocation data. The account's B-LTA, if any, is applied once at
+  completion over the whole file.
+- `casual-sign-verify` runs on every revision written; the worker also requires that every remote signature already
+  in the file still verifies and that every later revision classifies as allowed.
+
+##### 3.7 Audit events (additive to ADR-010, as ADR-027 was)
+
+| Type | Actor | Data |
+| --- | --- | --- |
+| `recipient.remote_signing_started` | recipient | `session`, `provider: {id, kind: "csc" or "in_esign", name}` |
+| `recipient.remote_signing_prepared` | platform | `session`, `documents: [{document_id, base_hash, prepared_hash, byte_range, byte_range_digest, to_be_signed}]` (SHA-256 of the bytes before the revision, of the prepared bytes, and the digest the provider signs), `certificate_sha256` when known before signing (CSC), `lock_point: true` on the first |
+| `recipient.remote_signed` | recipient | `session`, `provider`, `provider_reference` (the provider's transaction id where it has one, else absent), `certificate: {sha256, issuer, serial, not_before, not_after, subject_cn, key, qualifier, qc_statements}`, `name_match: exact, normalized or differs`, `documents: [{document_id, revision_hash, signature_sha256, timestamp_time}]` |
+| `recipient.remote_signing_failed` | recipient or platform | `session`, `reason: cancelled, expired, provider_unavailable, provider_refused, response_invalid, no_eligible_credential, placeholder_overflow, envelope_ended`, `provider_code` (the provider's own error code, never its message) |
+
+`subject_cn` is personal data, classified as a name (docs/07 §Data). Values the signer typed stay hashed in their
+field events as today. A failed session reopens the signer's fields; a new attempt is a new session. `qualifier` is
+the CSC `signatureQualifier` **as the provider stated it**; `qc_statements` lists the ETSI EN 319 412-5 statements
+present in the certificate (`QcCompliance`, `QcSSCD`, `QcType`) as found, never interpreted as a legal status.
+None of these types is a milestone or a notice; `recipient.remote_signing_failed` is a webhook topic (§3.14).
+
+##### 3.8 Certificate of completion and verification
+
+The certificate's signer section gains, per remote signer: the provider's name, the signature type ("Signature
+created by <provider> with the signer's certificate"), the certificate's subject common name, issuer, serial,
+validity and SHA-256 fingerprint, the qualifier and QC statements as stated by the provider and the certificate, the
+name match result, the signature format and level (`PAdES B-LT`), the time-stamp time, and the provider's reference.
+The wording is fixed by docs/09 §2a and reviewed by counsel; it never says "qualified", "advanced" or "legally
+valid" in OpenSeal's own voice. The Verify page and CLI report each remote signature as its own signer (they already
+verify any signature); a provider's roots are added to the verifier's trust store by the operator, as other roots
+are.
+
+##### 3.9 How the platform seal coexists, and slice 16
+
+Per-signer remote signatures come first, in routing order; the platform seal is always last, over everything, at
+the account's profile. A reader's signature panel shows each signer's own signature and then the platform's. Slice
+16's **per-signer platform seals** are the same revision model with `keyd` instead of a provider at each signer's
+Finish (and optionally a DocMDP P=2 certification at the lock point); slice 16 therefore reuses the lock point, the
+materialized fields and the two-phase engine API rather than designing its own.
+
+##### 3.10 The `KeyProvider` seam proper: a `csc` backend in keyd
+
+Where no person authorizes each signature, a CSC credential **is** a `KeyProvider`: keyd gains a `csc` backend beside
+PKCS#11, for an operator who holds the **platform seal key** (or, in slice 18, a legal entity's seal for the `seal`
+recipient) at a QTSP instead of in their own HSM. It authorizes with the service's own credentials (OAuth 2.0 client
+credentials or mutual TLS, as the provider offers), uses `credentials/authorize` with the hash for each signature
+when the credential is SCAL2 and `implicit` otherwise, and calls `signHash` with the digest of the signed attributes
+keyd is given. Everything keyd does today stays: seal tokens (ADR-036), the operation log, the probe signature at
+start, the refusal of an expired signer certificate, reconciliation (CON-09). keyd's only new egress is the
+configured CSC base URI. The CSC client is one small host crate, `server/casual-sign-csc` (wire types, the OAuth 2.0
+exchanges, bounded JSON reading: answers over 1 MiB, more than 32 credentials or 16 certificates are refused), whose
+first consumers are the worker (§3.4) and keyd; it compiles natively only and never enters the engine.
+
+##### 3.11 Providers, accounts and secrets
+
+- **The provider catalogue is the operator's**: `platform.signing_providers` (kind `csc` or `in_esign`, name, base
+  URI and OAuth endpoints, the trust anchors for its signers' certificates, the OAuth `client_id`, the names of the
+  secrets it needs, the accounts it is offered to, enabled), changed in the console by two key custodians and read by
+  the worker at most once a minute, exactly as TSA endpoints are (CON-07). Every URL passes the `SEC-W01` address
+  policy before each request.
+- **An account enables a provider** in a tenant table, `account_signing_providers` (`account_id`, provider, options:
+  the qualifiers it requires, whether a differing name refuses or is recorded, its own credentials if it brought its
+  own contract), under RLS and the scoped repository (ADR-013); `account:admin` changes it, and each change is an
+  admin audit event.
+- **Secrets are never in the database in clear.** By default they are files the operator mounts for the worker (and
+  keyd) and the catalogue names them (`secret_refs`, as webhooks do, read through `casual-sign-secrets`). An account
+  that brings its own provider contract writes its client secret through the API once; it is stored **sealed with
+  AES-256-GCM under `OPENSEAL_PROVIDER_SECRETS_KEY`** (an operator file, rotated with a previous key as
+  `OPENSEAL_MFA_KEY` is, docs/65), with `openseal-provider-secret-v1 ‖ account id ‖ provider id ‖ name` as associated
+  data so a sealed value cannot be moved to another row; it is never returned, only replaced, and only the worker
+  opens it. Slice 15's per-tenant keys (BYOK) re-wrap these values. **A private key is never a secret of this kind**:
+  any key a provider integration signs with lives in keyd (ADR-047's ASP key).
+
+##### 3.12 Failure and timeouts
+
+| Case | Behaviour |
+| --- | --- |
+| Provider unreachable or 5xx before the signer leaves | No session opens; the page says the provider is unavailable and the signer may try later. `provider_unavailable` if a session was open |
+| Signer abandons at the provider (closes the tab, denies consent, wrong second factor) | The session expires after **15 minutes** without a callback (account setting, 5 to 60), `recipient.remote_signing_failed {expired}` or `{cancelled}` when the provider says so (OAuth `access_denied`); fields reopen; the signer can start again from their link |
+| SAD or credential token expired before `signHash` | The job never waits: it signs within the callback's job. An expiry answer (`invalid_request` on the SAD) fails the session `expired`; the signer authorizes again, over a new preparation |
+| A callback or answer after the session closed | Refused (`CS-RSP-0003`), logged as a security event; the prepared bytes are never embedded; nothing enters the chain |
+| `signHash` answers the wrong number of values, or a value that does not verify | `response_invalid` (`CS-RSP-0004`); nothing is written |
+| Our TSA or OCSP down at completion of the signature | The provider's value is kept in the session; `complete` retries with backoff (the signer sees "finishing your signature"); after 15 minutes the session fails `provider_unavailable` and the value is discarded (a signature made but never embedded binds nothing) |
+| Envelope voided, declined or expired while a session is open | The session closes `envelope_ended`; a late answer is refused as above |
+| Repeated failures | After 3 failed sessions for one recipient the sender is notified; there is **no automatic fallback** to a simple signature, which would silently lower the assurance the sender asked for; the sender may correct the recipient's signature type before they start again |
+
+##### 3.13 Threats (new rows in docs/07, `SEC-S13` to `SEC-S16`)
+
+A provider signature over bytes other than those shown (the prepared bytes are stored first and are the only bytes
+completed; the hash is computed by the worker, never the browser); a forged or replayed callback (state hashed and
+single-use, session-bound, PKCE, code exchanged only by the worker with the client secret); substitution of another
+person's credential (the certificate is the one `credentials/info` returned for that session; name match recorded);
+theft of provider credentials (files or AES-GCM sealed values, worker-only; keyd for keys); a hostile provider answer
+(bounded JSON, every value verified before use); a provider page framing or phishing (top-level navigation only to
+the configured authorization endpoint).
+
+##### 3.14 API and webhooks
+
+`POST /envelopes` and templates accept `signature` on a recipient; `GET /signing-providers` lists what the account
+may use (`envelopes:write`); `GET`/`PUT /signing-providers/{id}` (account options and its own credentials, write-only,
+`account:admin`). Ceremony (not public API): `POST /s/{token}/remote-signing` (start), `GET …/remote-signing`
+(state, polled), `GET …/remote-signing/documents/{id}` (the exact prepared bytes), `POST …/remote-signing/cancel`,
+and `GET /rsp/callback/{provider}` (the OAuth redirect URI). Webhook topic `recipient.remote_signing_failed`;
+success is the existing `recipient.completed`. OpenAPI and the SDKs gain these when built (docs/40).
+
+#### 4. Test strategy, without real providers
+
+- **A CSC stub** in `tools/e2e/auth_stubs.py` (`csc`; standard library and the `openssl` command, as the OIDC stub):
+  `info`, `oauth2/authorize` (a consent page, PKCE S256 checked), `oauth2/token`, `credentials/list`,
+  `credentials/info`, `signatures/signHash`, with credentials at SCAL1 and SCAL2 under the test PKI
+  (`tools/interop`), RSA-3072, RSA-2048, P-256; switches for each failure in §3.12 (deny, expire, wrong count,
+  wrong value, another credential's certificate, raw `r‖s` ECDSA, slow answer). It signs hashes with
+  `openssl pkeyutl`, never with our code.
+- **Engine tests**: `seal()` byte-identical before and after the split; `prepare`/`complete` with a supplied value;
+  overflow refused; a value over other bytes refused; R0 and fill revisions classify as `FormFill` and `Signature`
+  in our verifier; a page-content change after a remote signature is `Disallowed` (each seen red with its check
+  removed).
+- **Fixtures**: `fixtures/sealed/remote-csc-*.pdf` (simple, remote, simple; two remote signers; three documents with
+  `multisign` 2), generated by `fixtures/tools/generate.py` against the stub, and checked by `tools/verify-sealed.py`
+  with **pyHanko** (whole file, hard-fail revocation, its difference analysis at form filling) and **EU DSS** (each
+  signature `TOTAL_PASSED` with the test root, PAdES level detected, **0 undefined changes**). A tampered copy of
+  each must fail all three (rule 26).
+- **End to end**: the worker's `tests/end_to_end.rs` and a Playwright spec on the Compose stack with the stub, through
+  both redirects, including abandon, expiry and retry.
+- **keyd `csc` backend**: keyd seals through the stub at SCAL1 and SCAL2; refused without a seal token, as today.
+- **Real sandboxes, opt-in** (`OPENSEAL_INTEROP_NETWORK=1`, as the production TSA check): `tools/interop/rsp.py`
+  runs one envelope through a provider's sandbox with the owner's credentials and validates the output with pyHanko
+  and EU DSS; the result and date are recorded in docs/31. CI never needs network or provider credentials.
+
+#### 5. What the owner must supply
+
+- A commercial agreement and **sandbox access** with DigiCert (Document Trust Manager) and with A-Trust: client ids
+  and secrets, test signer identities and credentials (SCAL1 and SCAL2), the roots and intermediates of their test
+  and production signer certificates, the redirect URIs to register, and each provider's terms for a third-party
+  signing application (some QTSPs require the application to meet their integration conditions or to be named in
+  their service; to confirm per provider).
+- Which `signatureQualifier` values each provider returns, and whether each requires PKCE or `authorization_details`.
+- Counsel review (`LEG-02`, docs/69 question 9) of the docs/09 §2a wording and the certificate's text before the
+  first real provider is enabled.
+
+#### 6. Alternatives considered
+
+- **`signatures/signDoc`** (the provider builds the PDF signature): sends the whole document to the provider, gives
+  up control of the bytes and of the revision model, and differs between providers. Rejected; it may serve a provider
+  that offers nothing else, as its own decision.
+- **Sign at completion, over the final document**: every remote signer would have to return after everyone finished,
+  and a SAD cannot wait days. Rejected.
+- **Flatten each signer's values into page content as today and accept the "modified" verdict**: every validator
+  would report earlier signatures as covering a changed document. Rejected: evidence integrity first.
+- **`explicit` mode with PIN or OTP typed on our page**: simpler (one redirect fewer), but the signer's credential
+  secrets would pass through the platform. Rejected (open question 3 for credentials that offer nothing else).
+- **Only the `KeyProvider` seam, calling the provider inside `seal()`**: blocks a worker thread on a person for
+  minutes and cannot carry the signer's authorization; kept only for the non-interactive keyd backend (§3.10).
+- **A remote signature without the platform seal**: possible, but the platform seal is what binds the later simple
+  signers and the final state, and keeps one rule for every completed envelope. Rejected.
+- **Certificate pages before the first remote signature**: the certificate must record the remote signatures and
+  the completion, which come later. Rejected; the separate sealed certificate is what docs/31 §3 already chose.
+
+#### 7. What changes where, when built
+
+Engine: `casual-sign-seal` (`prepare`, `complete`), `casual-sign-crypto` (CMS around an external value; foreign CMS
+for ADR-047), `casual-sign-flatten` (materialize fields; `FILL-01` reused), `casual-sign-workflow` (the commands, the
+recipient's `signing_remotely` sub-state, the lock rules), `casual-sign-audit` (the four types),
+`casual-sign-certificate` (the remote signer section). Hosts: `casual-sign-csc` (new), the worker (jobs), the server
+(ceremony, callback, API), keyd (`csc` backend), the console (catalogue), migrations for the session table, the
+catalogue and account enablement. Documents: docs/19, 20, 21, 22, 24, 30, 31, 32, 40, 07, 09, 65, 96.
+
+#### 8. Open questions for the owner
+
+1. **Who contracts with the QTSP?** The operator, for all accounts (simplest; the catalogue holds one set of
+   credentials per provider), or each customer with their own contract (the design supports both). Recommendation:
+   operator-wide first, per-account credentials as built here for enterprise customers.
+2. **Required qualifier per account**: should an account be able to require `eu_eidas_qes` only, so a signer with a
+   non-qualified credential cannot sign? Recommendation: yes, as designed (an account option, off by default).
+3. **Credentials that offer only `explicit` PIN or OTP entry**: offer them (our page would carry the PIN to the
+   provider) or not? Recommendation: not, until a provider we need offers nothing else.
+4. **RSA 2,048-bit provider keys**: accept (as designed) or require 3,072+? Recommendation: accept and record; the
+   provider's certificate policy governs its keys.
+5. **Name mismatch**: when the certificate's name differs from the recipient's name, record it (default) or refuse
+   the signature? Recommendation: record by default, refusal as an account option.
+6. **Remote signers in parallel**: this design refuses two remote signers at one routing order. Acceptable, or should
+   the second wait while the first finishes? Recommendation: refuse at send; it keeps every signature over a known base.
+
+### ADR-047 — India eSign through a licensed ESP, as an ASP (`RSP-02`)
+
+**Status: Proposed, 2026-11-21.** Owner instruction 75. It touches a wire format (signed XML to and from an ESP), the
+audit event schema, key custody (an ASP request-signing key), a new engine crate boundary and a legal property.
+**Everything ADR-046 decides for remote-provider signatures applies unchanged**: the per-recipient signature type
+(§3.1), the lock point and signer revisions with the platform seal last (§3.2), the two-phase engine API (§3.3), the
+hash from the exact prepared bytes (§3.5), the four audit types (§3.7), the separate certificate of completion
+(§3.2, §3.8), providers, accounts and secrets (§3.11), the failure model (§3.12) and the API shape (§3.14). This
+record decides only what India eSign changes.
+
+#### 1. Context
+
+eSign is India's online electronic signature service: an **eSign Service Provider (ESP)**, a Certifying Authority
+licensed by the Controller of Certifying Authorities (CCA), authenticates the signer through an e-KYC provider,
+generates a key pair for them, has its CA issue a short-lived certificate, signs the hash an **Application Service
+Provider (ASP)** sent, and deletes the key. eMudhra and CDSL Ventures (CVL) are the two ESPs the owner named. OpenSeal
+(or its operator) is the ASP: it never sees the signer's Aadhaar number, OTP or biometrics, and it never holds the
+signer's key. The owner's operator is in India and India is in the legal scope beside the US and the EU (instruction
+52), so this matters early.
+
+#### 2. Protocol facts relied on
+
+Sources, read 2026-11-21 from cca.gov.in: **eSign API Specifications v2.1** ("Online Aadhaar & Others"; version 2.1
+of May 2018, changed 10.08.2020 to add `PKCS7pdf` and `PKCS7complete`, and 07.02.2023 to add face authentication; ESP
+readiness 07.04.2023) and **eSign API Specifications v3.3** ("CA eKYC Account based", 09 Dec 2020). The CCA lists
+v2.0 and earlier as withdrawn. Section numbers below are the specifications'.
+
+| Fact | v2.1 | v3.3 |
+| --- | --- | --- |
+| Flow | §3.1.1: the ASP sends the request XML through the browser to the ESP's URL (or the ESP's SDK); the ESP authenticates the signer by e-KYC (Aadhaar), shows the hash with `docInfo`, creates a key pair and gets a certificate, signs, and **redirects the browser to the ASP's `responseUrl`** with the response XML | §3.1: the ASP **posts the request server to server** and gets an acknowledgement (`status="2"`, pending, with `resCode`); the browser is then sent to the ESP's authentication page by an `application/x-www-form-urlencoded` POST of `txnref = Base64(txn + "\|" + resCode)` (§3.4); the signer authenticates against their e-KYC account at the CA (PIN and SMS OTP or TOTP, or the ESP's app); the ESP **POSTs the final response to `responseUrl` from its server** and optionally redirects the browser to `redirectUrl` |
+| Request | §3.3.1: `<Esign ver sc ts txn ekycId ekycIdType aspId AuthMode responseSigType responseUrl>` with `<Docs><InputHash id hashAlgorithm docInfo>hex</InputHash></Docs>` and an enveloped W3C XML Signature by the ASP | §3.3.1: `<Esign ver signerid ts txn maxWaitPeriod aspId responseUrl redirectUrl signingAlgorithm>`, `InputHash` gains `docUrl` (mandatory) and carries `responseSigType` per document |
+| Consent | `sc="Y"` is mandatory and means the ASP took the signer's explicit, informed consent (identity and address data from e-KYC, the certificate application, key generation, one-time signature, key deletion); "Check box [Y/N], No by default" | Consent taken at the ESP's account |
+| Clock | `ts` in Indian Standard Time, ISO format, within 30 minutes of the ESP's clock | Same; `txn` unique per ASP and ESP per calendar day; `maxWaitPeriod` in minutes (default 1440) |
+| Authentication | `AuthMode`: 1 OTP or TOTP, 2 fingerprint, 3 iris, 4 face; OTP gives a "Single Factor" class certificate, biometrics "Multi Factor" (India PKI CP) | ESP account's PIN and second factor; `signerid` (`id@id-type.esp-id`, id types username, mobile, PAN) optional |
+| Documents per request | `id` "should be 1. Only single document hash is allowed" | 1 to 5, sequential; the signer may untick one, which returns that `DocSignature` with error "User Rejected" |
+| Hash | `hashAlgorithm` fixed to `SHA256`, the value in hex | Same |
+| Response signature types | `rawrsa`, `rawecdsa`, `PKCS7` (signer certificate only, no revocation), `PKCS7pdf` (all issuer certificates to the root, CRLs or OCSP for each issuer as the signed attribute `pdfRevocationInfoArchival` 1.2.840.113583.1.1.8, and "should also be time stamped" by the CA's TSA), `PKCS7complete` (issuer certificates and revocation as unsigned information) | `raw`, `PKCS7`, `PKCS7pdf` (time-stamp optional), `PKCS7complete`; `signingAlgorithm` `RSA` or `ECDSA` |
+| Response | §3.4: `<EsignResp status ts txn resCode errCode errMsg>` with `<UserX509Certificate>` (base64 DER), `<Signatures><DocSignature id sigHashAlgorithm error>` and the ESP's enveloped XML Signature; `resCode` is the ESP's transaction id, which "ASP is expected to store in their audit log"; "the API does not give any identity related data of the eSign user" | §3.5: as v2.1 with `ver`, `status` 1, 0 or **2 (pending)**, `error`; the same `resCode` across the acknowledgement and the final answer |
+| Status check | — | §3.6: `<EsignStatus ver ts txn aspId>` signed by the ASP returns the response again; the ESP keeps it at least 30 days |
+| Errors | Annexure 1: `ESP-901` to `ESP-999` (for example `ESP-911` input signature verification failed, `ESP-944` and `ESP-945` user terminated, `ESP-946` page expired, `ESP-991` database error, `ESP-999` unknown), and UIDAI authentication errors passed through | As v2.1, plus "User Rejected" per document |
+| Certificate | §3.1.1(h): an e-KYC class certificate "which has e-KYC number, Name of the eSign user, e-KYC response code, Authentication Type, and Time Stamp embedded"; v3.3 §1: "limited validity period and is only for one-time signing" | Same |
+
+**To confirm with each ESP's sandbox (UAT)**: how a browser carries the request and the response in v2.1 (the
+specification says POST `application/xml`, which a browser form cannot send; ESPs take it in a named form field);
+which XML canonicalization and signature algorithm their XML Signatures use; the exact signed attributes of their
+`PKCS7pdf` CMS (ESS `signing-certificate-v2` present or not, CMS `signingTime` present or not, DER or BER, a
+time-stamp or not); what the certificate's "e-KYC number" holds (a token, a hash, masked digits); the certificate
+policy OIDs of each class; which versions each ESP runs; the maximum size of a response; whether an API key is
+required beside the XML Signature.
+
+#### 3. Decision
+
+##### 3.1 Versions and flows
+
+The adapter speaks **v2.1** (Aadhaar online e-KYC, the common case for individual signers) and **v3.3** (an e-KYC
+account at the CA), chosen per catalogue row; one ESP may appear twice. The ceremony of ADR-046 §3.4 becomes:
+
+1. Review as today. Then the **eSign consent** (v2.1): a versioned text (the points §3.3.1.1 lists, in the signer's
+   language, reviewed by counsel), a checkbox unticked by default, and **Sign with eSign (<ESP>)**. The text's
+   SHA-256 goes into `recipient.remote_signing_started`; without the tick no request is made (`sc="Y"` is never sent
+   on the platform's word alone).
+2. `BeginRemoteSigning` as in ADR-046. No certificate is needed before signing (the ESP issues it), so the worker
+   prepares the documents at once (lock point, revisions, ByteRange digests) and records
+   `recipient.remote_signing_prepared`; the page shows the exact prepared bytes.
+3. **v2.1:** the worker builds and signs the request; the page posts it to the ESP's URL in a top-level navigation;
+   the signer enters their Aadhaar number or VID and authenticates **at the ESP**; the ESP sends the browser back to
+   `POST /rsp/esign/{provider}/response` with the response; the server stores it (bounded, §3.5) and queues the
+   worker. One request per document (v2.1 allows one hash), in order, the page saying "document 2 of 3".
+   **v3.3:** the worker posts the request server to server (up to 5 hashes, so 5 documents per round trip), keeps the
+   acknowledgement's `resCode`, and the page posts `txnref` to the ESP's authentication page; the ESP's final answer
+   arrives server to server at the same `responseUrl` (and the browser returns through `redirectUrl` to a page that
+   polls). With no answer when the session's time ends, the worker asks `EsignStatus` once before closing it
+   `expired`.
+4. The worker checks the response and the CMS (§3.4, §3.5), completes each document (ADR-046 §3.3 `complete` with
+   `ExternalSignature::Cms`) and records `recipient.remote_signed`, `recipient.signed`, `recipient.completed`.
+
+Request values: `ver` from the catalogue; `txn` the session id (a UUIDv7, unique per day by construction);
+`ts` from the worker's clock in IST; `aspId` from the catalogue; `AuthMode` from the account's allowed list (OTP and
+face by default; fingerprint and iris need a registered capture device at the signer's side, so only for an account
+that runs assisted signing); `responseSigType` `PKCS7pdf`; `ekycId` and `ekycIdType` per the specification with **no
+UID token**, so the request carries no Aadhaar data; `maxWaitPeriod` the session's limit in minutes; `signerid` not
+sent unless the account opts in and the sender gave one; `signingAlgorithm` `RSA` unless the catalogue row says the ESP
+offers ECDSA. `docInfo` is the document's name cut to 50 characters with control characters removed, or the account's
+generic label ("Agreement <envelope short id>") if the account chooses not to send names. **v3.3 `docUrl`** is a
+capability URL to the exact prepared bytes: 256 random bits, one document, valid only while the session is open,
+read-only, each fetch recorded as `document.downloaded` by the ESP's viewer.
+
+##### 3.2 The hash and the response type
+
+`InputHash` is the hex SHA-256 **ByteRange digest** of the prepared revision (ADR-046 §3.5); with `PKCS7pdf` the ESP
+writes it as the CMS `message-digest` signed attribute and signs its own signed attributes. We ask for `PKCS7pdf`
+because the certificate lives minutes: the issuer chain and the revocation data the ESP gathers at signing time are
+what a validator needs years later, and the CA's time-stamp fixes the time inside the certificate's validity.
+`PKCS7complete` and `PKCS7` are accepted per catalogue row (we then gather revocation ourselves at once). **`rawrsa`,
+`rawecdsa` and `raw` are not used**: we would have to build the signed attributes, whose ESS `signing-certificate-v2`
+names a certificate that does not exist until the ESP signs; the only CMS possible without them is a legacy one with
+no signed attributes.
+
+##### 3.3 Which PDF signature format we write
+
+The ESP's CMS is theirs; we never re-sign or re-encode its signed attributes (they are verified as received, docs/31
+§8). The `SubFilter` follows what the CMS is: **`ETSI.CAdES.detached`** when its signed attributes are
+`content-type`, `message-digest` and ESS `signing-certificate` or `signing-certificate-v2`, without CMS
+`signingTime`; otherwise **`adbe.pkcs7.detached`**. docs/31 §2 says we never write `adbe.pkcs7.detached`; this ADR
+makes one exception: it is written **only to carry a provider's CMS that is not CAdES-conformant**, never for a
+signature we make. Its time-stamp: an existing `signature-time-stamp` unsigned attribute is kept if it verifies to an
+anchor configured for that ESP (the CA's TSA under the CCA root); otherwise we add ours (B-T), re-encoding only the
+outer SignedData in DER with the signed attributes' bytes untouched. Then, as for every remote signature, a DSS
+revision at once (B-LT for it) from the CMS's archival revocation data and fresh OCSP or CRL answers for the signer
+certificate. A **BER** CMS is refused (`CS-RSP-0004`) until `SEAL-13` decides whether BER from third-party signers is
+accepted; the certificate of completion states the format and level honestly ("CMS signature, adbe.pkcs7.detached,
+with time-stamp and validation data", never "PAdES" when it is not).
+
+##### 3.4 What is checked before anything is embedded
+
+The response: its XML Signature verifies (§3.5) under **the ESP's response-signing certificate configured in the
+catalogue** (never a certificate from the message); `txn` names an open session of this provider and this is the
+first valid answer for it (a second, from the browser and the server both, is ignored once one is accepted; a
+replay after close is refused `CS-RSP-0003`); `status="1"`; one `DocSignature` per `InputHash` sent, by id. The CMS:
+exactly one SignerInfo; `message-digest` equals our ByteRange digest for that document; the signature verifies over
+the signed attributes as received; the signer certificate is the `UserX509Certificate`; its chain builds to the
+configured anchors (the CCA root for the environment, through the ESP's CA), with digital-signature or
+non-repudiation key usage, valid at the time-stamp time, not revoked; SHA-256 or stronger; RSA 2,048 bits or more or
+ECDSA P-256 or P-384 (ADR-046 §3.6). Any failure fails the session `response_invalid` and nothing is written.
+
+##### 3.5 XML: a bounded reader and a narrow XML Signature profile
+
+- **No general XML library in the product.** The bounded XML reader of ADR-026 (refuses DTDs and entities, bounds
+  depth, nodes and attributes) moves from `casual-sign-xfa` into an engine crate of its own, **`casual-sign-xml`**,
+  whose consumers are `-xfa` and the new host crate below (a crate boundary change, which this ADR records; docs/19
+  when built). Limits for eSign answers: 512 KiB per response, depth 16, 256 elements, 5 `DocSignature`, 16 KiB of
+  base64 certificate, 512 KiB of base64 per signature; the reader's own limits otherwise (docs/21).
+- **XML Signature, one profile**: an enveloped `Signature` as the last child of the root; one `Reference` with
+  `URI=""`; transforms enveloped-signature then canonical XML 1.0 or exclusive canonical XML (whichever the ESP uses,
+  to confirm); digest SHA-256; signature RSA-SHA256 (or ECDSA-SHA256 if an ESP uses it). Anything else (other
+  references, `XPath` transforms, comments, more than one `Signature`, a `Signature` elsewhere) is refused. The values
+  the worker reads come from **the same parsed tree** whose canonical form was verified, so signature wrapping finds
+  nothing to wrap. Canonicalization of that subset (namespaces in scope, attribute order, character escaping) is
+  written in the host crate **`server/casual-sign-esign`** (request writer, canonicalization, signature verification
+  with aws-lc-rs, response reader, error mapping; consumers the worker and the server); it is not cryptography of
+  our own, and interoperability is checked in CI against **xmlsec1**, an independent implementation (§4).
+- **Requests are signed by the ASP's key in keyd**, never a key on disk in the worker: a new alias class for ASP
+  keys, which keyd answers only with an **ASP token** the database mints for an open eSign session
+  (`openseal-keyd-asp-token-v1`, HMAC over the session id and expiry, the seal-token mechanism of ADR-036 with its own
+  label and key), so a caller with the worker's identity can sign ASP requests only for sessions the database says
+  are open. The ASP's certificate (public) is in the catalogue and in the signature's `KeyInfo` if the ESP wants it.
+
+##### 3.6 The ESP's endpoints on our side
+
+`POST /rsp/esign/{provider}/response` is public: in v2.1 the browser brings the answer, in v3.3 the ESP's server
+does. It is authenticated only by what §3.4 checks, so it is rate-limited per provider and IP, refuses bodies over the
+limit before reading them, and answers the same way for a known and an unknown `txn`. A catalogue row may add an IP
+allow-list for v3.3 server calls. The raw request and response XML of each session are kept with the envelope's
+evidence (blob store, hashes in the chain, §3.8), as the ASP's record of the transaction.
+
+##### 3.7 Aadhaar and personal data
+
+OpenSeal **never asks for, receives or stores** an Aadhaar number, VID, UID token, OTP, biometric or e-KYC record:
+the signer gives them to the ESP on the ESP's page, and the request carries none. What we receive is the signer's
+certificate, which the specification says embeds an "e-KYC number", the name, the e-KYC response code, the
+authentication type and a time; it is necessarily inside the signed PDF, since a validator needs it. The whole
+certificate is classified as personal data (docs/07 §Data): logs carry only its fingerprint; the chain records its
+fingerprint, issuer, serial, validity, subject common name and policy OIDs, never its other attributes. Whether the
+"e-KYC number" in issued certificates is Aadhaar-derived, and what that means for showing it in the certificate of
+completion, is to confirm on a sandbox certificate and for counsel (§8 question 6); until then the certificate of
+completion prints only the fields above.
+
+##### 3.8 Audit trail and certificate of completion
+
+ADR-046's four types, with `provider.kind = "in_esign"` and these members: `remote_signing_started` adds
+`consent_sha256` (the eSign consent text) and `api_version`; `remote_signing_prepared` adds per document the
+`txn`; `remote_signed` adds `provider_reference` = the ESP's `resCode`, `auth_mode` (what the request allowed, and
+the authentication type the certificate states), `request_sha256` and `response_sha256` (the stored XML),
+`signature_format` (`ETSI.CAdES.detached` or `adbe.pkcs7.detached`) and the certificate's policy OIDs;
+`remote_signing_failed` adds the ESP's error code (`ESP-944`, a UIDAI code, "User Rejected"), never its message. The
+certificate of completion says, per signer: "Signed with eSign through <ESP>; the signer authenticated at the ESP by
+<Aadhaar OTP, face, …>; certificate issued by <CA>", the `resCode`, the certificate's details and the format. Nothing
+says the signature is valid under the IT Act; docs/09 §2a and §4 hold the wording.
+
+##### 3.9 Failures (in addition to ADR-046 §3.12)
+
+| ESP answer | Session result |
+| --- | --- |
+| `ESP-944`, `ESP-945` (user terminated), UIDAI authentication failures, "User Rejected" on a document | `cancelled`; fields reopen |
+| `ESP-946` (page expired), no answer by the session's end (after `EsignStatus` in v3.3) | `expired` |
+| `ESP-901` to `ESP-911`, `ESP-922`, `ESP-992` (the request or the ASP was refused) | `provider_refused`; an operator alert, since these mean a configuration or ASP registration problem, not the signer's |
+| `ESP-991`, `ESP-993`, `ESP-999`, HTTP failure | `provider_unavailable` |
+| `status="2"` from a status check | Still pending; the session stays open until its end |
+
+#### 4. Test strategy, without a real ESP
+
+- **A stub ESP** in `tools/e2e/auth_stubs.py` (`esign`; standard library, the `openssl` command and **xmlsec1**, a
+  CI tool only): both flows (v2.1 through the browser, v3.3 server to server with acknowledgement, `txnref`,
+  background answer, `EsignStatus`), a page asking for a made-up 12-digit number and a code, a per-transaction
+  certificate issued by a test "ESP CA" under a test "CCA root" (`tools/interop`), CMS built from the given hash by
+  writing the signed attributes in DER by hand and signing them with `openssl pkeyutl` (never with our crypto
+  code), and its responses signed with `xmlsec1 --sign`; our requests are checked with `xmlsec1 --verify` against the
+  test ASP certificate. Variants: CAdES-like; Adobe-like `PKCS7pdf` (`signingTime`, `pdfRevocationInfoArchival`, a
+  CA time-stamp); `PKCS7`; `PKCS7complete`; BER-encoded; a digest of other bytes; another certificate than
+  `UserX509Certificate`; an expired certificate; an unsigned, wrongly signed or wrapped XML; a DTD or entity payload;
+  an oversize body; a late, replayed or duplicate answer; each Annexure error code.
+- **Fixtures**: `fixtures/sealed/remote-esign-*.pdf` (one per CMS variant that is accepted), checked by our verifier,
+  **pyHanko** and **EU DSS** with the test CCA root, each with a tampered copy that fails all three.
+- **Unit and hostile tests** for `casual-sign-xml` (moved, behaviour unchanged, the XFA corpus still passing) and
+  `casual-sign-esign` (canonicalization against xmlsec1 outputs committed as fixtures; every refusal of §3.5 seen
+  red), and a fuzz target for the response reader.
+- **End to end**: worker tests and a Playwright spec on the Compose stack through the stub, for both versions,
+  including cancel, expiry, a status-check recovery and a multi-document envelope.
+- **Real UAT, opt-in** (`OPENSEAL_INTEROP_NETWORK=1`): `tools/interop/rsp.py --esign` through eMudhra's or CVL's UAT
+  with the owner's ASP credentials and the test identities the ESP provides; validated by pyHanko and EU DSS; the run
+  and date recorded in docs/31.
+
+#### 5. What the owner must supply
+
+- **ASP onboarding with each ESP** (eMudhra, CVL): the agreement and commercial terms, the **ASP ID**, the ASP's
+  request-signing certificate registered with the ESP (which certificate class and issuer each ESP accepts: to
+  confirm) with its key provisioned in keyd's HSM, UAT and production URLs per API version, the ESP's
+  response-signing certificate, the CCA root and ESP CA chains for UAT and production, the test identities UAT
+  accepts, and the ASP obligations each ESP sets (consent wording, how long the ASP keeps transaction logs, any
+  security audit or undertaking: to confirm).
+- Whether **the operator is the ASP** for every account, or some customers register as ASPs themselves.
+- **Counsel review** (`LEG-02`, `LEG-03`) of the docs/09 §2a and §4 wording, the eSign consent text, and the handling
+  of the certificate's e-KYC attributes under the IT Act 2000 (section 3A and the Second Schedule), the CCA's
+  e-authentication guidelines, the Aadhaar Act 2016 and the DPDP Act 2023.
+
+#### 6. Alternatives considered
+
+- **`rawrsa` or `raw` responses** with our own CMS: impossible to make CAdES-conformant (the certificate is unknown
+  until the ESP signs). Rejected.
+- **The ESP's JavaScript SDK or widget inside our signing page**: a third party's script in the page that holds the
+  agreement, against the strict CSP (docs/07). Rejected; top-level navigation to the ESP instead.
+- **xmlsec1 or libxml2 in the product** for XML Signature: a C parser outside ADR-006 with a history of entity and
+  memory defects. Rejected for the product; used in CI only, as the independent check.
+- **An eSign aggregator** instead of direct ESP onboarding: if it speaks the CCA API it is just another catalogue row;
+  a proprietary API would be its own adapter and ADR.
+- **eSign Remote API** (the CCA's remote key storage specification) and USB-token DSCs through a browser bridge:
+  other products, other decisions (the bridge is slice 18).
+
+#### 7. What changes where, when built
+
+Engine: `casual-sign-xml` (new, moved from `-xfa`), `-seal` and `-crypto` (`ExternalSignature::Cms`, keeping a
+foreign CMS's signed attributes and adding an unsigned time-stamp), `-workflow`, `-audit`, `-certificate`. Hosts:
+`casual-sign-esign` (new), the worker, the server (consent, response endpoint, `docUrl`), keyd (ASP alias class and
+ASP tokens), migrations (sessions' eSign members, the token function). Documents: docs/19, 20, 21, 22, 24, 31, 32, 40,
+07, 09, 65, 96.
+
+#### 8. Open questions for the owner
+
+1. **Which version first**: v2.1 (Aadhaar online e-KYC, individuals; recommended first) and v3.3 in the same row if the
+   ESP offers it, or v2.1 only?
+2. **Operator as the ASP** for every account (recommended first), or per-customer ASPs too?
+3. **Authentication modes allowed by default**: OTP and face (recommended), or OTP only? Fingerprint and iris only for
+   accounts that run assisted signing?
+4. **`docInfo`**: send the document's name (recommended, cut to 50 characters) or always a generic label?
+5. **Keeping the raw request and response XML** with the envelope's evidence for as long as the envelope (recommended),
+   or only for the ESP's required log period?
+6. **The certificate's e-KYC attributes**: if a sandbox certificate shows Aadhaar-derived data, may the signed PDF
+   carry it (it must, to be verifiable) and may the certificate of completion show any of it? Counsel to answer.
+7. **Name mismatch** between the e-KYC name and the recipient's name as sent: record (recommended) or refuse?
+8. **Non-CAdES CMS** (`adbe.pkcs7.detached`, if an ESP's `PKCS7pdf` carries `signingTime`): accept as designed, or
+   offer only ESPs whose CMS is CAdES-conformant?

@@ -125,6 +125,7 @@ one recorded in `envelope.completed`.
 | `excluded_documents` | Document visibility (`WF-02`): documents this recipient never sees, is never served and does not act on; at least one stays visible and none holds a field of theirs |
 | `route_delay_hours`, `held_until` | Delayed routing (`WF-02`): hours to wait, once their turn comes, before they are invited (0 to 720; not on a `cc`), and the time that wait ends; until then their link does not open (`CS-WF-0007`) |
 | `signing_group` | Designed, not built (slice 29, ADR-035 Proposed, `WF-01`): 2 to 20 members `{member_id, name, email, phone?, delivery}` frozen at send from an account group (`groups`, `group_members`) or listed; any one may act, the first to open their link claims the recipient; only on `signer`, `approver`, `viewer`. Members' contact details are personal data as a recipient's |
+| `signature` | Designed, not built (slice 5r, ADR-046 and ADR-047 Proposed, `RSP-01`, `RSP-02`): absent for a simple signature; `{type: "remote", provider_id}` for a `signer` who signs with their own certificate at a provider the account enabled (`account_signing_providers`, a tenant table; the provider catalogue `platform.signing_providers` is the operator's). Remote signing sessions are rows of their own (prepared hashes, state, sealed authorization code; never a token or SAD) |
 | `consent` | ERSD version accepted, time, from the audit chain |
 | `language` | Signer UI and email language |
 | `declined_reason`, `reassigned_to` | |
