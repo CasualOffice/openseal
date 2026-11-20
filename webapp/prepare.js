@@ -29,7 +29,7 @@ import { button, busy, emptyState, toast, toastError, confirmDialog, selectField
 import { openPdf } from "./pdfview.js";
 import { docView, zoomControls, thumbnails } from "./docview.js";
 import { FIELD_TYPES, TYPED, CHOICE, DEFAULT_SIZE, clampRect, nudge, resize, placeAt, freeSpot, toWire, fromWire, takesInput, requiredByDefault, validationFrom, optionsFrom } from "./geometry.js";
-import { errorMessage, RECIPIENT_TYPES } from "./api.js";
+import { errorMessage, RECIPIENT_TYPES, UPLOAD_ACCEPT, isPdfBytes, isZipBytes, isUploadFile, docBaseName } from "./api.js";
 import { rolesFrom } from "./templatemodel.js";
 import { templatePlan, applyTemplate, FIELD_SETTINGS, blankSetting, settingsOf } from "./templatesync.js";
 import { conditionFrom, groupFrom, formulaFrom, labelsFor, DATE_FORMATS } from "./fieldlogic.js";
@@ -37,7 +37,7 @@ import { suggestionsFrom } from "./detect.js";
 import { snapRect, touching, nextStop, bounds, intersects, fromCorners } from "./guides.js";
 import { compact, fromServer, groups, stepMove, canStep, moveGroup, joinGroup, newStepBefore, setOrder, byOrder, isAllAtOnce } from "./routing.js";
 import { takeFiles } from "./handoff.js";
-import { sendSummary } from "./people.js";
+import { sendSummary, FIELD_TAKERS } from "./people.js";
 import { LIBRARY, LIBRARY_MORE, TOOLBAR, toolForKey, stepStates, continueState, sendChecks, recipientRows, templateOffer, applyTemplatePlan, ocrPagesFrom, piiSummary, recipientPatch, matchSentRecipients, matchSentFields } from "./preparemodel.js";
 import { stepControl, recipientRow, libraryItem, toolButton, armHint, ghostBar, templateBanner, appliedChip, loadingPage, checksList, piiCard, assignList, markOcr, sparkle, spinner, kindGlyph } from "./prepareview.js";
 import { mlStatus, featureOn, loadSuggestions, acceptSuggestion, dismissSuggestion, suggestions as mlSuggestions, percent, isUnavailable } from "./ml.js";
@@ -69,6 +69,10 @@ const newKey = (p) => `${p}${++keySeq}`;
 
 export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) {
   const TPL = !!opts.template;
+  // Correct mode (VS-06, UXW-19): a sent envelope opened with `?correct=1` is edited
+  // here, documents and fields included; each save is the server's Correct (docs/24 §6),
+  // nothing saves itself, and the last step saves the correction instead of sending.
+  const CORRECT = !TPL && _params?.get?.("correct") === "1";
   const TPL_ID = TPL && opts.templateId ? decodeURIComponent(opts.templateId) : null;
   const S = {
     tplId: TPL_ID,
@@ -78,11 +82,14 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     message: "",
     emailSubject: "",
     captureLocation: false,
+    // FG-009: stamp the envelope id on every page; a new draft takes the account's default.
+    stampEnvelopeId: false,
     reminderFirst: null,
     reminderEvery: null,
     expiresDays: null,
     sendAt: "", // WF-02: "Send at" as a datetime-local value; empty sends now
     scheduled: false, // WF-02: the saved draft has a schedule
+    correcting: false, // VS-06: a sent envelope opened in Correct mode
     serverOptions: "",
     ordered: true, // "Set signing order"; each recipient's step is `r.order` (WEB-09)
     docs: [],
@@ -246,7 +253,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     renderFieldsOnly();
   }
   const reviewPanel = h("section", { class: "os-panel os-panel--review", attrs: { "aria-labelledby": "review-h" } });
-  const fileInput = h("input", { type: "file", accept: "application/pdf,.pdf", multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "pdf-input" } });
+  const fileInput = h("input", { type: "file", accept: UPLOAD_ACCEPT, multiple: true, class: "os-sr-only", attrs: { "aria-hidden": "true", tabindex: "-1", "data-testid": "pdf-input" } });
   fileInput.addEventListener("change", () => { addFiles([...fileInput.files]); fileInput.value = ""; });
   const panes = {
     documents: h("div", { class: "os-wizard__pane os-wizard__pane--narrow" }, docsPanel),
@@ -396,14 +403,16 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   const recipient = (rk) => S.recipients.find((r) => r.key === rk);
   /// Who fills fields (UX-05): a signer, and an in-person signer whom staff host. An
   /// approver, a viewer and a copy take none.
-  const takesFields = (r) => r?.type === "signer" || r?.type === "in_person_signer";
+  const takesFields = (r) => FIELD_TAKERS.has(r?.type);
   const signers = () => S.recipients.filter(takesFields);
   /// The types a recipient may be given (UX-05): the engine's ready ones (api.js
   /// RECIPIENT_TYPES_READY), and an in-person signer only where staff can host one
   /// (NOT_ON_SERVER.hostInPerson); an agent, who names later recipients in their turn
-  /// (VS-02); a type already set stays offered.
+  /// (VS-02); an editor, who names later recipients and then signs, and an
+  /// intermediary, who updates later recipients and signs nothing (VS-06, docs/24 §3);
+  /// a type already set stays offered.
   const recipientTypes = (current) => {
-    const out = ["signer", ...(ctx.api.available?.("hostInPerson") ? ["in_person_signer"] : []), "approver", "viewer", "agent", "cc"];
+    const out = ["signer", ...(ctx.api.available?.("hostInPerson") ? ["in_person_signer"] : []), "approver", "viewer", "agent", "editor", "intermediary", "cc"];
     return out.includes(current) || !current ? out : [...out, current];
   };
   const displayName = (r, i) => r?.name?.trim() || t(TPL ? "template.role-n" : "prepare.recipient-n", { n: i + 1 });
@@ -876,7 +885,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
           h("strong", { class: "os-doccard__name", text: d.name }),
           h("span", { class: "os-muted os-small", text: (d.pages.length === 1 ? t("prepare.page-one") : t("prepare.pages-long", { n: d.pages.length })) })),
         h("div", { class: "os-doccard__actions" }, up, down,
-          d.id && !TPL ? null : button(t("prepare.remove-doc", { name: d.name }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeDoc(d) }))));
+          button(t("prepare.remove-doc", { name: d.name }), { icon: "trash-2", size: "sm", variant: "ghost", iconOnly: true, onClick: () => removeDoc(d) }))));
     });
     const add = h("li", {}, h("button", { type: "button", class: "os-doccard os-doccard--add", on: { click: () => fileInput.click() } },
       icon("plus", { size: 24 }), h("span", { text: t("prepare.add-pdf") })));
@@ -907,14 +916,27 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     for (const file of files) {
       if (file.size > MAX_UPLOAD) { toast(t("prepare.too-large", { name: file.name }), "error"); continue; }
       const bytes = new Uint8Array(await file.arrayBuffer());
-      if (String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") { toast(t("prepare.not-pdf", { name: file.name }), "error"); continue; }
+      // A Word document (ADR-042): the server converts it for the pages shown here, and
+      // converts it again when it is uploaded, keeping the .docx as the original.
+      const word = isZipBytes(bytes) && /\.docx$/i.test(file.name);
+      if (!isPdfBytes(bytes) && !word) { toast(t("prepare.not-pdf", { name: file.name }), "error"); continue; }
+      let shown = bytes;
+      if (word) {
+        say(t("prepare.converting", { name: file.name }));
+        try {
+          shown = await ctx.api.convertDocument(bytes);
+        } catch (err) {
+          if (!ctx.failed(err)) toastError(err);
+          continue;
+        }
+      }
       try {
-        const pdf = await openPdf(bytes.slice());
-        const d = { key: newKey("d"), id: null, name: file.name.slice(0, 255), bytes, pages: pdf.pages };
+        const pdf = await openPdf(shown.slice());
+        const d = { key: newKey("d"), id: null, name: file.name.slice(0, 255), bytes, pages: pdf.pages, ...(word ? { converted: true } : {}) };
         pdfs.set(d.key, pdf);
         S.docs.push(d);
         S.dirty = true;
-        const base = file.name.replace(/\.pdf$/i, "");
+        const base = docBaseName(file.name);
         if (!S.subject) { S.subject = (TPL ? base : t("prepare.default-subject", { name: base })).slice(0, 255); subject.value = S.subject; }
         if (TPL && !S.emailSubject) S.emailSubject = t("prepare.default-subject", { name: base }).slice(0, 255);
         say(t("prepare.doc-added", { name: d.name, n: d.pages.length }));
@@ -1797,6 +1819,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       sendAt.addEventListener("change", () => { S.sendAt = sendAt.value; });
       const loc = h("input", { id: "env-location", type: "checkbox", checked: S.captureLocation });
       loc.addEventListener("change", () => { S.captureLocation = loc.checked; S.dirty = true; });
+      const stamp = h("input", { id: "env-stamp", type: "checkbox", checked: S.stampEnvelopeId, attrs: { "aria-describedby": "env-stamp-help", "data-testid": "env-stamp" } });
+      stamp.addEventListener("change", () => { S.stampEnvelopeId = stamp.checked; S.dirty = true; });
       reviewPanel.append(h("section", { class: "os-card", attrs: { "aria-labelledby": "rv-opt-h" } },
         h("h3", { id: "rv-opt-h", class: "os-card__title", text: t("wizard.options") }),
         h("div", { class: "os-optgrid" },
@@ -1807,7 +1831,9 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("p", { class: "os-muted os-small", text: t("prepare.reminders-help") }),
         h("p", { class: "os-muted os-small", text: t("prepare.send-at-help") }),
         h("label", { class: "os-check", attrs: { for: "env-location" } }, loc, h("span", { text: t("prepare.capture-location") })),
-        h("p", { class: "os-muted os-small", text: t("prepare.capture-location-help") })));
+        h("p", { class: "os-muted os-small", text: t("prepare.capture-location-help") }),
+        h("label", { class: "os-check", attrs: { for: "env-stamp" } }, stamp, h("span", { text: t("prepare.stamp-envelope-id") })),
+        h("p", { id: "env-stamp-help", class: "os-muted os-small", text: t("prepare.stamp-envelope-id-help") })));
     } else {
       reviewPanel.append(h("p", { class: "os-muted os-small", text: t("template.roles-help") }));
     }
@@ -1857,6 +1883,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.subject = env.subject || "";
     S.message = env.message || "";
     S.captureLocation = !!env.signing_options?.capture_location;
+    S.stampEnvelopeId = !!env.signing_options?.stamp_envelope_id;
     S.reminderFirst = Number.isInteger(env.reminders?.first_after_days) ? env.reminders.first_after_days : null;
     S.reminderEvery = Number.isInteger(env.reminders?.then_every_days) ? env.reminders.then_every_days : null;
     S.expiresDays = env.expires_at ? Math.max(1, Math.ceil((Date.parse(env.expires_at) - Date.now()) / 86_400_000)) : null;
@@ -1864,7 +1891,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     S.scheduled = !!env.send_at;
     S.serverOptions = JSON.stringify(sendOptions());
     subject.value = S.subject;
-    title.textContent = S.subject.trim() || t("prepare.title");
+    title.textContent = S.correcting ? t("prepare.correct-title", { subject: S.subject.trim() || t("envelope.untitled") }) : S.subject.trim() || t("prepare.title");
     const prevDocs = new Map(S.docs.filter((d) => d.id).map((d) => [d.id, d]));
     const docs = [];
     for (const d of env.documents || []) {
@@ -1999,7 +2026,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   }
   /// The keys of the recipients a field is shared with who still take fields (VS-04D).
   const sharedWith = (f) => (f.sharedKeys || []).filter((k) => k !== f.recipientKey && S.recipients.some((r) => r.key === k && takesFields(r)));
-  const options = () => ({ ...(S.captureLocation ? { capture_location: true } : {}) });
+  const options = () => ({ ...(S.captureLocation ? { capture_location: true } : {}), stamp_envelope_id: S.stampEnvelopeId });
   /// Reminders and expiry as the API takes them; absent members mean "account default".
   const sendOptions = () => ({
     reminders: { ...(S.reminderFirst ? { first_after_days: S.reminderFirst } : {}), ...(S.reminderEvery ? { then_every_days: S.reminderEvery } : {}) },
@@ -2033,7 +2060,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   let autosaveTimer = null;
   const AUTOSAVE_MS = 4000;
   function scheduleAutosave() {
-    if (TPL) return;
+    if (TPL || S.correcting) return;
     clearTimeout(autosaveTimer);
     autosaveTimer = setTimeout(autosave, AUTOSAVE_MS);
   }
@@ -2102,6 +2129,10 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         const created = await ctx.api.addDocument(S.id, d.name, d.bytes);
         d.id = created.id;
       }
+      // A saved document removed here goes, with its fields (VS-06).
+      const before = (await ctx.api.getEnvelope(S.id)).envelope;
+      const keepDocs = new Set(S.docs.map((d) => d.id));
+      for (const d of before.documents || []) if (!keepDocs.has(d.id)) await ctx.api.deleteDocument(S.id, d.id, await etagNow());
       const { envelope: server } = await ctx.api.getEnvelope(S.id);
       const keepFields = new Set(S.fields.filter((f) => f.id).map((f) => f.id));
       for (const f of server.fields || []) if (!keepFields.has(f.id)) await ctx.api.deleteField(S.id, f.id, await etagNow());
@@ -2135,8 +2166,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
       if (sent.length) await ctx.api.addFields(S.id, sent.map(([, b]) => b));
       const { envelope: e2, etag } = await ctx.api.getEnvelope(S.id);
       const optsChanged = JSON.stringify(sendOptions()) !== S.serverOptions;
-      if (optsChanged || (e2.subject || "") !== S.subject.trim() || (e2.message || "") !== S.message || !!e2.signing_options?.capture_location !== S.captureLocation) {
-        await ctx.api.patchEnvelope(S.id, etag, { subject: S.subject.trim(), message: S.message, signing_options: { ...(e2.signing_options || {}), capture_location: S.captureLocation }, ...(optsChanged ? sendOptions() : {}) });
+      if (optsChanged || (e2.subject || "") !== S.subject.trim() || (e2.message || "") !== S.message || !!e2.signing_options?.capture_location !== S.captureLocation || !!e2.signing_options?.stamp_envelope_id !== S.stampEnvelopeId) {
+        await ctx.api.patchEnvelope(S.id, etag, { subject: S.subject.trim(), message: S.message, signing_options: { ...(e2.signing_options || {}), capture_location: S.captureLocation, stamp_envelope_id: S.stampEnvelopeId }, ...(optsChanged ? sendOptions() : {}) });
       }
       const { envelope: final } = await ctx.api.getEnvelope(S.id);
       if (revision === rev) { await loadFromServer(final); return; }
@@ -2192,6 +2223,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   async function send() {
     const list = problems();
     if (list.length) { await showProblems(list, t("send.problems-title")); return; }
+    if (S.correcting) { await finishCorrecting(); return; }
     // Who gets it now, who in turn, who reviews and who only gets a copy (R-02; UX-05:
     // with signing steps only the first step is emailed at once).
     const subj = S.subject.trim() || t("envelope.untitled");
@@ -2214,6 +2246,23 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         await ctx.api.sendEnvelope(S.id);
         S.dirty = false;
         await celebrate();
+        ctx.navigate(`#/envelopes/${encodeURIComponent(S.id)}`);
+      } catch (err) {
+        if (!ctx.failed(err)) showSaveError(err);
+      }
+    });
+  }
+
+  /// Save a correction (VS-06): every change made here goes to the server as the
+  /// envelope's Correct; recipients whose fields or documents changed sign again, and
+  /// the trail records `envelope.corrected` with what changed (docs/24 §6).
+  async function finishCorrecting() {
+    if (!(await confirmDialog(t("prepare.correct-confirm-title"), t("prepare.correct-confirm"), { confirm: t("prepare.correct-save") }))) return;
+    await busy(sendBtn, async () => {
+      try {
+        await save();
+        S.dirty = false;
+        toast(t("envelope.corrected"), "success");
         ctx.navigate(`#/envelopes/${encodeURIComponent(S.id)}`);
       } catch (err) {
         if (!ctx.failed(err)) showSaveError(err);
@@ -2571,7 +2620,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     if (!e.dataTransfer.files?.length) return;
     e.preventDefault();
     stage.classList.remove("is-dropping");
-    addFiles([...e.dataTransfer.files].filter((f) => f.type === "application/pdf" || /\.pdf$/i.test(f.name)));
+    addFiles([...e.dataTransfer.files].filter(isUploadFile));
   });
 
   const beforeUnload = (e) => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } };
@@ -2605,12 +2654,23 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
   if (S.id) {
     try {
       const { envelope } = await ctx.api.getEnvelope(S.id);
-      if (envelope.status !== "draft") { ctx.navigate(`#/envelopes/${encodeURIComponent(S.id)}`); return () => {}; }
+      S.correcting = CORRECT && ["sent", "delivered"].includes(envelope.status);
+      if (envelope.status !== "draft" && !S.correcting) { ctx.navigate(`#/envelopes/${encodeURIComponent(S.id)}`); return () => {}; }
       await loadFromServer(envelope);
+      if (S.correcting) {
+        sendBtn.querySelector("span")?.replaceChildren(t("prepare.correct-save"));
+        sendBtn.dataset.testid = "correct-finish";
+        view.querySelector(".os-prepare")?.classList.add("is-correcting");
+      }
       renderAll();
     } catch (err) {
       if (!ctx.failed(err)) toastError(err);
     }
+  }
+  // FG-009: a new envelope starts from the account's envelope id stamp default (the
+  // server applies it too when a request does not say). Unreadable: off, as the server.
+  if (!TPL && !S.id) {
+    try { S.stampEnvelopeId = (await ctx.api.account())?.settings?.stamp_envelope_id === true; } catch { /* off */ }
   }
   const handed = !TPL && !S.id ? takeFiles() : null;
   if (handed) await addFiles(handed);

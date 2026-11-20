@@ -293,8 +293,9 @@ pub enum Access {
         /// SHA-256 of the bytes served (the value names the same hash).
         hash: Hash256,
     },
-    /// A completed envelope's evidence package was exported (ORG-09, docs/23 §2.4);
-    /// recorded as `envelope.exported` naming the member who exported it.
+    /// An envelope's evidence package was exported (ORG-09, docs/23 §2.4, `VS-06D`): a
+    /// completed one, or one that ended without completing; recorded as
+    /// `envelope.exported` naming the member who exported it.
     EvidenceExported,
 }
 
@@ -341,6 +342,10 @@ pub enum Command {
     /// from the sender's lists (WEB-08). Nothing is purged: the chain, the documents
     /// and the state stay; `envelope.deleted` records who removed it and when.
     DeleteEnded,
+    /// List again an envelope removed by [`Command::DeleteEnded`] (ADR-031, `UXW-02`):
+    /// only while it is deleted and not purged; `envelope.restored` records who and when.
+    /// Nothing in the agreement changes.
+    RestoreDeleted,
     /// Correct a sent envelope (docs/24 §6).
     Correct {
         /// The changes, applied in order, all or none.
@@ -450,6 +455,17 @@ pub enum Command {
         recipient: Id,
         /// The field and value.
         entry: FieldEntry,
+    },
+    /// Sign on paper (FG-013, ADR-043): a signer whose turn it is, authenticated and
+    /// consented, on an envelope allowing it, completes with the scan of the documents
+    /// they printed and signed by hand. The server admits the scan like any upload and
+    /// passes it as `document`; it is added to the envelope (fixed, so the seal covers
+    /// it) and `recipient.signed_on_paper` binds it to the documents printed.
+    SignOnPaper {
+        /// The recipient.
+        recipient: Id,
+        /// The admitted scan.
+        document: DocumentSpec,
     },
     /// The recipient finished: signs (signer types), completes (viewer, agent,
     /// intermediary). Values given here are set first.
@@ -561,6 +577,7 @@ impl Command {
             Self::ScheduleSend { .. } => "schedule_send",
             Self::DeleteDraft => "delete_draft",
             Self::DeleteEnded => "delete_ended",
+            Self::RestoreDeleted => "restore_deleted",
             Self::Correct { .. } => "correct",
             Self::Void { .. } => "void",
             Self::Resend { .. } => "resend",
@@ -577,6 +594,7 @@ impl Command {
             Self::AdoptSignature { .. } => "adopt_signature",
             Self::CompleteField { .. } => "complete_field",
             Self::Finish { .. } => "finish",
+            Self::SignOnPaper { .. } => "sign_on_paper",
             Self::Approve { .. } => "approve",
             Self::Decline { .. } => "decline",
             Self::Reassign { .. } => "reassign",

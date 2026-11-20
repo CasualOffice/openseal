@@ -36,6 +36,10 @@ const SLICE_MODULES = [
   "authorize.js", "admin.js", "adminmodel.js", "profile.js",
   // embedding (slice 9): the embedded prepare and correct page, the framed side, the host page's elements, Admin's websites
   "embed.js", "embedframe.js", "embedmodel.js", "openseal-elements.js",
+  // manage and correct (slice 6): Agreements with its views, filters and inspector, Home, Reports
+  "dashboard.js", "managemodel.js", "inspector.js", "home.js", "reports.js", "reportmodel.js",
+  // slice 6 additions (VS-06E): the Insights dashboard
+  "insights.js", "insightsmodel.js",
   // verify
   "verify.js", "verifyview.js", "verifyreport.js", "trail.js",
   // shared components

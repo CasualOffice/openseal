@@ -40,6 +40,20 @@ export function errorMessage(err) {
   return err.requestId ? `${base} (${err.code}, ${err.requestId})` : `${base} (${err.code})`;
 }
 
+/// A Word document's media type: uploads take PDF and Word (.docx, ADR-042).
+export const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+/// The file pickers' `accept` for a document upload.
+export const UPLOAD_ACCEPT = `application/pdf,.pdf,${DOCX_TYPE},.docx`;
+/// Whether bytes are a PDF.
+export const isPdfBytes = (b) => b.length >= 5 && String.fromCharCode(...b.subarray(0, 5)) === "%PDF-";
+/// Whether bytes are a ZIP archive, as a Word document is.
+export const isZipBytes = (b) => b.length >= 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4;
+/// Whether a picked or dropped file is one a document upload takes (by type or name).
+export const isUploadFile = (f) =>
+  f.type === "application/pdf" || /\.pdf$/i.test(f.name) || f.type === DOCX_TYPE || /\.docx$/i.test(f.name);
+/// A document's name without its file extension (`.pdf` or `.docx`).
+export const docBaseName = (name) => String(name || "").replace(/\.(pdf|docx)$/i, "");
+
 const random = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
@@ -63,13 +77,15 @@ export const RECIPIENT_TYPES = Object.freeze(["signer", "in_person_signer", "app
 /// `agent` naming later recipients by `POST /s/{token}/recipients` then finishing, VS-02),
 /// or none (`cc`); the others are the engine's, their ceremony a later slice (editor and
 /// intermediary, slice 6; witness 16, seal 18, notary 31).
-export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "agent", "cc"]);
+export const RECIPIENT_TYPES_READY = Object.freeze(["signer", "in_person_signer", "approver", "viewer", "agent", "editor", "intermediary", "cc"]);
 
 /// Every field type the API takes: the engine's `FieldType` (docs/22 §6), in wire spelling.
 export const FIELD_TYPES = Object.freeze([
   "signature", "initials", "stamp", "date_signed", "name", "first_name", "last_name", "email", "company", "title",
   "envelope_id", "text", "number", "date", "email_address", "phone", "ssn", "zip", "checkbox", "radio_group",
   "dropdown", "multi_select", "formula", "attachment", "note", "approve", "decline", "hyperlink", "payment", "drawing",
+  // FG-080 (ADR-044): an editor's strike-through, placed at the ceremony.
+  "strikethrough",
 ]);
 /// The types the ceremony fills or shows and the flattener draws today (docs/40 As built,
 /// `WEB-06`); the rest are taken and stored, their signer side a later row.
@@ -186,7 +202,6 @@ export const WEBHOOK_EVENT_TYPES = Object.freeze([
 /// `CS-NET-0002` (501), so the UI can say "not available yet" instead of hiding the
 /// control. `client.available(name)` tells which.
 export const NOT_ON_SERVER = Object.freeze({
-  restoreEnvelope: { row: "UXW-02", needs: "POST /envelopes/{id}/restore (a new workflow command and audit type envelope.restored, ADR-031 Proposed)" },
   clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit type recipient.field_cleared, ADR-032 Proposed)" },
 });
 
@@ -225,7 +240,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     }
   }
 
-  async function send(method, path, { body, query, ifMatch, raw = false, ceremony = false, signal, accept = null } = {}) {
+  async function send(method, path, { body, bytes, contentType, query, ifMatch, raw = false, ceremony = false, signal, accept = null } = {}) {
     let url = baseUrl + path;
     if (query) {
       const q = new URLSearchParams();
@@ -235,6 +250,8 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     }
     const headers = { Accept: accept || (raw ? "application/pdf, application/problem+json" : "application/json") };
     if (body !== undefined) headers["Content-Type"] = "application/json";
+    // A file sent as itself (a Word document to convert, ADR-042), not as JSON.
+    if (bytes !== undefined) headers["Content-Type"] = contentType || "application/octet-stream";
     if (method !== "GET" && !ceremony && csrf) headers["X-CSRF-Token"] = csrf;
     if (bearer && !ceremony) headers.Authorization = `Bearer ${bearer}`;
     if (binding && ceremony) headers["X-OpenSeal-Binding"] = binding;
@@ -245,7 +262,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       res = await fetchImpl(url, {
         method,
         headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: bytes !== undefined ? bytes : body === undefined ? undefined : JSON.stringify(body),
         credentials: baseUrl ? "include" : "same-origin",
         ...(signal ? { signal } : {}),
       });
@@ -265,7 +282,7 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
         errors: problem.errors,
       });
     }
-    if (raw) return { blob: await res.blob(), etag: res.headers.get("ETag"), next: res.headers.get("X-Next-Cursor") };
+    if (raw) return { blob: await res.blob(), etag: res.headers.get("ETag"), next: res.headers.get("X-Next-Cursor"), truncated: res.headers.get("X-Truncated") === "true" };
     if (res.status === 204) return { data: null, etag: res.headers.get("ETag") };
     const text = await res.text();
     return { data: text ? JSON.parse(text) : null, etag: res.headers.get("ETag") };
@@ -399,12 +416,15 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// (which date `from`/`to` bound: `updated_at`, the default, `created_at`,
     /// `sent_at`, `completed_at`), `folder` (one of the user's folder ids) and
     /// `deleted: true` (the Deleted view).
-    listEnvelopes: ({ status, cursor, limit = 25, q, sort, order, sender, from, to, recipient, date_field, folder, deleted } = {}) => {
+    /// VS-06: `auth_failed: true` (the Authentication failed quick view), `expires_before`
+    /// (Date or RFC 3339), `custom_field` (a custom field's exact name) with
+    /// `custom_value` (text its value contains).
+    listEnvelopes: ({ status, cursor, limit = 25, q, sort, order, sender, from, to, recipient, date_field, folder, deleted, auth_failed, expires_before, custom_field, custom_value } = {}) => {
       const query = {
         status: Array.isArray(status) ? status.join(",") : status,
         cursor, limit, q, sort, order, sender, from: instantOf(from), to: instantOf(to),
       };
-      for (const [k, v] of Object.entries({ recipient, date_field, folder, deleted: deleted ? "true" : null })) {
+      for (const [k, v] of Object.entries({ recipient, date_field, folder, deleted: deleted ? "true" : null, auth_failed: auth_failed ? "true" : null, expires_before: instantOf(expires_before), custom_field, custom_value: custom_field ? custom_value : null })) {
         if (!blank(v)) query[k] = v;
       }
       return list(query);
@@ -422,11 +442,19 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       return { envelope: r.data, etag: r.etag || etagOf(r.data) };
     },
     createEnvelope: (body) => data(request("POST", "/api/v1/envelopes", { body })),
+    /// The envelope's custom fields `{items: [{name, value}]}` (VS-06, FG-139): sender
+    /// metadata, searchable, never part of the agreement.
+    customFields: (id) => data(request("GET", `${E(id)}/custom-fields`)),
+    /// Pass the envelope to another member of this workspace (ORG-09, ORG-41): answers
+    /// the envelope with its new `sender_user_id`; `envelopes.transfer` on the server.
+    transferEnvelope: (id, etag, toUser) => data(request("POST", `${E(id)}/transfer`, { body: { to_user: toUser }, ifMatch: etag })),
+    /// Replace them; answers them as stored.
+    setCustomFields: (id, items) => data(request("PUT", `${E(id)}/custom-fields`, { body: { items } })),
     patchEnvelope: (id, etag, body) => data(request("PATCH", E(id), { body, ifMatch: etag })),
     deleteEnvelope: (id, etag) => data(request("DELETE", E(id), { ifMatch: etag })),
-    /// Bring a deleted envelope back to the lists (`NOT_ON_SERVER.restoreEnvelope`:
-    /// a new audit type, ADR-031 Proposed).
-    restoreEnvelope: unbuilt("restoreEnvelope", (id) => data(request("POST", `${E(id)}/restore`))),
+    /// Bring a deleted envelope back to the lists (ADR-031, recorded as
+    /// `envelope.restored`); answers the envelope. `etag` is checked when given.
+    restoreEnvelope: (id, etag) => data(request("POST", `${E(id)}/restore`, { ifMatch: etag || undefined })),
     sendEnvelope: (id) => data(request("POST", `${E(id)}/send`)),
     /// Schedule a sendable draft to send itself at `sendAt` (an ISO instant, WF-02);
     /// answers the draft with `send_at`. A scheduled draft is not edited (`CS-WF-0022`).
@@ -444,6 +472,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// expired one, the envelope certificate saying how it ended (UXW-30; 409 until the
     /// worker has made it).
     certificate: async (id) => (await request("GET", `${E(id)}/certificate`, { raw: true })).blob,
+    /// One ZIP with everything that proves the agreement (VS-06D): each document as
+    /// sealed or as it ended, the certificate, the audit trail and a manifest of SHA-256s.
+    /// Recorded on the server as `envelope.exported`; an envelope still in flight is 409.
+    evidencePackage: async (id) => (await request("GET", `${E(id)}/evidence-package`, { raw: true })).blob,
     /// The anchor proof of the envelope's latest anchored chain head (`FG-158`), as a
     /// Blob of `openseal.anchor-proof` JSON; null while nothing is anchored (`404
     /// CS-API-0017`). Other refusals throw.
@@ -462,6 +494,14 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     documentContent: async (id, doc, version = "normalized") =>
       (await request("GET", `${E(id)}/documents/${encodeURIComponent(doc)}/content`, { raw: true, query: { version } })).blob,
     addDocument: (id, name, bytes) => data(request("POST", `${E(id)}/documents`, { body: { name, content_base64: toBase64(bytes) } })),
+    /// A Word document (.docx) converted to PDF and admitted as its upload would be,
+    /// nothing stored (ADR-042): the editor's preview while fields are placed. Answers
+    /// the PDF's bytes; the upload itself sends the .docx, kept as the original.
+    convertDocument: async (bytes) =>
+      new Uint8Array(await (await request("POST", "/api/v1/conversions", { bytes, contentType: DOCX_TYPE, raw: true })).blob.arrayBuffer()),
+    /// Remove a document and its fields: a draft's edit, or a sent envelope's correction
+    /// (who finished on it acts again, docs/24 §6).
+    deleteDocument: (id, doc, etag) => data(request("DELETE", `${E(id)}/documents/${encodeURIComponent(doc)}`, { ifMatch: etag })),
     addRecipients: (id, items) => data(request("POST", `${E(id)}/recipients`, { body: { items } })),
     patchRecipient: (id, r, etag, body) => data(request("PATCH", `${E(id)}/recipients/${encodeURIComponent(r)}`, { body, ifMatch: etag })),
     deleteRecipient: (id, r, etag) => data(request("DELETE", `${E(id)}/recipients/${encodeURIComponent(r)}`, { ifMatch: etag })),
@@ -599,6 +639,18 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     adminEvents: ({ cursor, limit, verify } = {}) => data(request("GET", "/api/v1/admin-events", { query: { cursor, limit, verify } })),
     /// The same page as the server's CSV (`seq,at,action,hash,prev,event`): `{text, next}`,
     /// `next` the cursor of the page after it, or null on the last.
+    /// A workspace report (VS-06, `reports.read`): `kind` `envelopes`, `recipients` or
+    /// `usage`, over envelopes created in `[from, to)` of `sender` (an id or "me");
+    /// `{items, truncated}`.
+    report: (kind, { from, to, sender } = {}) => data(request("GET", `/api/v1/reports/${encodeURIComponent(kind)}`, { query: { from, to, sender } })),
+    /// The same report as the server's CSV: `{text, truncated}`.
+    /// `GET /insights` (FG-141): the dashboard's figures for the window, the workspace's
+    /// with `reports.read`, else the caller's own.
+    insights: ({ from, to, sender, utc_offset_minutes } = {}) => data(request("GET", "/api/v1/insights", { query: { from, to, sender, utc_offset_minutes } })),
+    reportCsv: async (kind, { from, to, sender } = {}) => {
+      const r = await request("GET", `/api/v1/reports/${encodeURIComponent(kind)}`, { query: { from, to, sender, format: "csv" }, raw: true, accept: "text/csv, application/problem+json" });
+      return { text: await r.blob.text(), truncated: !!r.truncated };
+    },
     adminEventsCsv: async ({ cursor, limit } = {}) => {
       const r = await request("GET", "/api/v1/admin-events", { query: { cursor, limit, format: "csv" }, raw: true, accept: "text/csv, application/problem+json" });
       return { text: await r.blob.text(), next: r.next == null || r.next === "" ? null : Number(r.next) };
@@ -819,10 +871,24 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       decline: (token, reason, location) =>
         data(request("POST", `${S(token)}/decline`, { body: withLocation(reason ? { reason } : {}, location), ceremony: true })),
       finishLater: (token) => data(request("POST", `${S(token)}/finish-later`, { body: {}, ceremony: true })),
+      /// Sign on paper (FG-013, ADR-043): the scan (a PDF, base64) of the documents the
+      /// signer printed and signed by hand; answers the view, this recipient completed.
+      signOnPaper: (token, contentBase64, location) =>
+        data(request("POST", `${S(token)}/paper`, { body: withLocation({ content_base64: contentBase64 }, location), ceremony: true })),
       /// An agent (or intermediary) names later recipients before finishing (VS-02):
       /// `[{id, name?, email?}]`, ids from the view's `later_recipients`.
       nameRecipients: (token, recipients, location) =>
         data(request("POST", `${S(token)}/recipients`, { body: withLocation({ recipients }, location), ceremony: true })),
+      /// VS-06A: an editor adds fields (the API's wire form: recipient_id, document_id,
+      /// type, page, x, y, width, height) for themself or a later recipient not yet
+      /// reached; moves or changes one (a merge, `x`/`y`/… flat); removes one. Each
+      /// answers the view, whose `editable_fields` lists the later recipients' fields.
+      placeFields: (token, fields, location) =>
+        data(request("POST", `${S(token)}/editor/fields`, { body: withLocation({ fields }, location), ceremony: true })),
+      editField: (token, field, patch) =>
+        data(request("PATCH", `${S(token)}/editor/fields/${encodeURIComponent(field)}`, { body: patch, ceremony: true })),
+      removeField: (token, field) =>
+        data(request("DELETE", `${S(token)}/editor/fields/${encodeURIComponent(field)}`, { body: {}, ceremony: true })),
       /// WEB-06: attach a file (PDF, PNG or JPEG) to an attachment field.
       attach: (token, field, bytes) =>
         data(request("PUT", `${S(token)}/fields/${encodeURIComponent(field)}/attachment`, { body: { content_base64: toBase64(bytes) }, ceremony: true })),

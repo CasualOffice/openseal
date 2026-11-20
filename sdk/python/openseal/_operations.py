@@ -32,7 +32,9 @@ OPERATIONS = {
         "path_params": [
             "id"
         ],
-        "query": []
+        "query": [
+            "name"
+        ]
     },
     "addFields": {
         "body": True,
@@ -165,6 +167,14 @@ OPERATIONS = {
         "body_required": True,
         "method": "POST",
         "path": "/api/v1/auth/mfa/totp/confirm",
+        "path_params": [],
+        "query": []
+    },
+    "convertDocument": {
+        "body": False,
+        "body_required": False,
+        "method": "POST",
+        "path": "/api/v1/conversions",
         "path_params": [],
         "query": []
     },
@@ -660,11 +670,31 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "getEnvelopeCustomFields": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/envelopes/{id}/custom-fields",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
     "getEnvelopeStatus": {
         "body": False,
         "body_required": False,
         "method": "GET",
         "path": "/api/v1/envelopes/{id}/status",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
+    "getEvidencePackage": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/envelopes/{id}/evidence-package",
         "path_params": [
             "id"
         ],
@@ -700,6 +730,19 @@ OPERATIONS = {
             "id"
         ],
         "query": []
+    },
+    "getInsights": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/insights",
+        "path_params": [],
+        "query": [
+            "from",
+            "sender",
+            "to",
+            "utc_offset_minutes"
+        ]
     },
     "getMe": {
         "body": False,
@@ -755,6 +798,22 @@ OPERATIONS = {
             "r"
         ],
         "query": []
+    },
+    "getReport": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/reports/{kind}",
+        "path_params": [
+            "kind"
+        ],
+        "query": [
+            "format",
+            "from",
+            "limit",
+            "sender",
+            "to"
+        ]
     },
     "getRetention": {
         "body": False,
@@ -940,9 +999,13 @@ OPERATIONS = {
         "path": "/api/v1/envelopes",
         "path_params": [],
         "query": [
+            "auth_failed",
             "cursor",
+            "custom_field",
+            "custom_value",
             "date_field",
             "deleted",
+            "expires_before",
             "folder",
             "from",
             "limit",
@@ -1496,6 +1559,16 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "restoreEnvelope": {
+        "body": False,
+        "body_required": False,
+        "method": "POST",
+        "path": "/api/v1/envelopes/{id}/restore",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
     "restoreTemplate": {
         "body": False,
         "body_required": False,
@@ -1551,6 +1624,16 @@ OPERATIONS = {
         "body_required": False,
         "method": "POST",
         "path": "/api/v1/envelopes/{id}/send",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
+    "setEnvelopeCustomFields": {
+        "body": True,
+        "body_required": True,
+        "method": "PUT",
+        "path": "/api/v1/envelopes/{id}/custom-fields",
         "path_params": [
             "id"
         ],

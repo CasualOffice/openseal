@@ -142,7 +142,7 @@ test("every field member round-trips through the mock, and null removes one", as
   const { etag: e2 } = await c.getEnvelope(env.id);
   await assert.rejects(c.patchField(env.id, num.id, e2, { options: "One" }), (e) => e.code === "CS-FLD-0002");
   await assert.rejects(c.addFields(env.id, [fieldWire({ recipient: env.recipients[0].id, document: env.documents[0].id, type: "hologram", page: 1, x: 1, y: 1, width: 9, height: 9 })]), (e) => e.code === "CS-FLD-0002");
-  assert.equal(FIELD_TYPES.length, 30);
+  assert.equal(FIELD_TYPES.length, 31, "the engine's kinds, with the strike-through (FG-080)");
   assert.ok(FIELD_MEMBERS.includes("conditional"));
 });
 
@@ -333,9 +333,9 @@ test("calls not on the server fail at once with CS-NET-0002 and never reach it",
   const seen = [];
   const fake = async (url) => { seen.push(url); return new Response(JSON.stringify({ items: [] }), { status: 200 }); };
   const c = createClient({ fetch: fake });
-  assert.equal(c.available("restoreEnvelope"), false);
+  assert.equal(c.available("clearField"), false);
   assert.equal(c.available("listWebhooks"), true, "a call the server serves is available");
-  const refused = [c.restoreEnvelope("e"), c.ceremony.clearField("t", "f")];
+  const refused = [c.ceremony.clearField("t", "f")];
   for (const p of refused) await assert.rejects(p, (e) => e.status === 501 && e.code === "CS-NET-0002" && Object.hasOwn(NOT_ON_SERVER, e.detail));
   assert.deepEqual(seen, []);
   await c.listEnvelopes({ status: ["sent", "delivered"] });
@@ -370,6 +370,11 @@ test("the Inbox, folders, filters, the Deleted views and an ended envelope's cer
   await c.inbox();
   await c.signLink("e1");
   await c.listEnvelopes({ recipient: "ann", date_field: "sent_at", folder: "f1", deleted: true });
+  // ADR-031: a restore reaches the server, with the version when one is known.
+  assert.ok(c.available("restoreEnvelope") && !Object.hasOwn(NOT_ON_SERVER, "restoreEnvelope"));
+  await c.restoreEnvelope("e1");
+  await c.restoreEnvelope("e1", '"v4"');
+  assert.deepEqual(seen.splice(-2), ["POST /api/v1/envelopes/e1/restore", "POST /api/v1/envelopes/e1/restore"]);
   await c.listFolders();
   await c.createFolder("Leases");
   await c.renameFolder("f1", "Old leases");
@@ -451,8 +456,14 @@ test("deleting an ended envelope keeps it, readable and restorable; a draft is r
   assert.ok(kept.envelope.deleted_at);
   await assert.rejects(c.deleteEnvelope(declined.id, kept.etag), (e) => e.code === "CS-WF-0001", "a second delete");
   assert.deepEqual((await c.listEnvelopes({ deleted: true })).items.map((e) => e.id), [declined.id]);
-  await c.restoreEnvelope(declined.id);
+  const back = await c.restoreEnvelope(declined.id);
+  assert.equal(back.deleted_at, undefined, "no longer deleted");
   assert.ok((await c.listEnvelopes({ limit: 200 })).items.some((e) => e.id === declined.id));
+  assert.deepEqual((await c.listEnvelopes({ deleted: true })).items, []);
+  // ADR-031: both events in the trail, in order; a second restore is 409.
+  const types = (await c.audit(declined.id)).items.map((i) => i.type);
+  assert.deepEqual(types.slice(-2), ["envelope.deleted", "envelope.restored"]);
+  await assert.rejects(c.restoreEnvelope(declined.id), (e) => e.status === 409 && e.code === "CS-WF-0001");
   // The certificate of an ended envelope (ahead of the server).
   const cert = await c.certificate(declined.id);
   assert.ok(cert.size > 100);

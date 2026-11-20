@@ -104,6 +104,10 @@ fn organization_policy_json(org: &Value, settings: &Value) -> Value {
 /// (VS-07): read by `POST /envelopes` and bulk sends (`envelopes::create_in`).
 pub(crate) const DEFAULT_SEAL_PROFILE: &str = "default_seal_profile";
 
+/// The account setting saying whether a new envelope stamps its id on every page
+/// (`FG-009`, ADR-045) when its request does not say: read by `envelopes::create_in`.
+pub(crate) const STAMP_ENVELOPE_ID: &str = "stamp_envelope_id";
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AccountPatch {
@@ -184,6 +188,10 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
             && serde_json::from_value::<casual_sign_model::SealProfile>(v.clone()).is_err()
         {
             return Err(ApiError::invalid("/settings/default_seal_profile"));
+        }
+        // FG-009: whether new envelopes stamp their id on every page, true or false.
+        if k == STAMP_ENVELOPE_ID && !v.is_null() && !v.is_boolean() {
+            return Err(ApiError::invalid("/settings/stamp_envelope_id"));
         }
         if v.is_null() {
             settings.remove(&k);

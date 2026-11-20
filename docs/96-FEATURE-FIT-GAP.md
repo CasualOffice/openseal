@@ -10,14 +10,14 @@ This is the parity measure: at every slice close, the count of `Build` and `Plug
 **Disposition:** `Build` — in the core. `Plugin` — the core defines the seam and ships one provider. No row is `Out` or `Later` (owner
 instructions 8 and 9). 
 
-**Today: 52 of 168 rows work end to end; 5 more have their engine built and tested; 32 are designed, 42 are partial (`FG-008`, `FG-012`, `FG-053`, `FG-056`, `FG-058`, `FG-059`, `FG-060`, `FG-061`, `FG-062`, `FG-063`, `FG-064`, `FG-065`, `FG-066`, `FG-067`, `FG-068`, `FG-069`, `FG-071`, `FG-073`, `FG-074`, `FG-075`, `FG-076`, `FG-077`, `FG-078`, `FG-092`, `FG-095`, `FG-097`, `FG-098`, `FG-100`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-137`, `FG-140`, `FG-154`, `FG-171`, `FG-172`, `FG-177`, `FG-182`, `FG-183`, `FG-184`, `FG-195`) and 37 are not started** (counted with `grep` over the Status column; 168 rows; recounted 2026-11-19 for slice 4 (`VS-04`): `FG-053`, `FG-056`, `FG-058`, `FG-059`, `FG-061`, `FG-064`, `FG-067`, `FG-068`, `FG-069`, `FG-075`, then `FG-074`, `FG-077`, `FG-078`, `FG-008` to Partial, built on a branch; the 2026-11-19 slice-3 line said 51 working where the rows counted 52). Counts recounted 2026-11-17: the 2026-11-13 line said 42 not started, which did not add up to the rows (`DOC-008`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status. 2026-11-21, slice 9 (`VS-09`, [78](78-SLICE-9-EVIDENCE.md)): `FG-196`, `FG-197`, `FG-198` Designed → Partial (built and tested on a branch); by the Status column now 52 work, 5 engine, 26 designed, 49 partial, 36 not started.
+**Today: 52 of 168 rows work end to end; 5 more have their engine built and tested; 29 are designed, 45 are partial (`FG-008`, `FG-012`, `FG-025`, `FG-026`, `FG-053`, `FG-056`, `FG-058`, `FG-059`, `FG-060`, `FG-061`, `FG-062`, `FG-063`, `FG-064`, `FG-065`, `FG-066`, `FG-067`, `FG-068`, `FG-069`, `FG-071`, `FG-073`, `FG-074`, `FG-075`, `FG-076`, `FG-077`, `FG-078`, `FG-092`, `FG-095`, `FG-097`, `FG-098`, `FG-100`, `FG-130`, `FG-131`, `FG-132`, `FG-133`, `FG-137`, `FG-139`, `FG-140`, `FG-154`, `FG-171`, `FG-172`, `FG-177`, `FG-182`, `FG-183`, `FG-184`, `FG-195`) and 37 are not started** (counted with `grep` over the Status column; 168 rows; recounted 2026-11-19 for slice 4 (`VS-04`): `FG-053`, `FG-056`, `FG-058`, `FG-059`, `FG-061`, `FG-064`, `FG-067`, `FG-068`, `FG-069`, `FG-075`, then `FG-074`, `FG-077`, `FG-078`, `FG-008` to Partial, built on a branch; the 2026-11-19 slice-3 line said 51 working where the rows counted 52). Counts recounted 2026-11-17: the 2026-11-13 line said 42 not started, which did not add up to the rows (`DOC-008`). `Works` here means merged, tested, and exercised in a browser run where it has UI (the Playwright specs in `webapp/e2e`, in mock mode and, for send, sign and download, on the Compose stack in `compose-e2e`); a row that works only in part keeps its earlier status. 2026-11-21, slice 9 (`VS-09`, [78](78-SLICE-9-EVIDENCE.md)): `FG-196`, `FG-197`, `FG-198` Designed → Partial (built and tested on a branch); by the Status column after merging slice 6: 53 work, 5 engine, 22 designed, 2 built, 54 partial, 32 not started.
 
 ## Documents
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
 | FG-001 | Upload PDF | DS, SN | Build | 1 | Works |
-| FG-002 | Upload Word, Excel, PowerPoint, images (converted) | DS, SN | Build | 6 | Designed |
+| FG-002 | Upload Word, Excel, PowerPoint, images (converted) | DS, SN | Build | 6 | Works for Word (`.docx`, `VS-06C`, ADR-042); Excel and PowerPoint `VS-06F`, images not converted |
 | FG-003 | Import from URL | SN | Build | 8 | — |
 | FG-004 | Import from cloud storage (Drive, OneDrive, Dropbox, Box) | DS | Plugin | 24 | — |
 | FG-005 | Multiple documents per envelope; reorder | DS, SN (groups) | Build | 2 | Designed |
@@ -26,11 +26,11 @@ instructions 8 and 9).
 | FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Partial: Detect fields suggests a PDF's own form fields (`source: acroform`, named after themselves), placed in the editor for the chosen signer (`fields.spec.mjs`; mock `slice4-mock.test.mjs`); filling in place (`FG-015`) is not offered as a send option; built on a branch (`VS-04`, [75](75-SLICE-4-EVIDENCE.md)); `Works` once `fields.spec.mjs` is green on `main` |
 | FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | Engine (`XFA-01`; gaps `XFA-02`..`XFA-05`) |
 | FG-015 | Fill a PDF's own form fields in place and keep them fillable (alongside flattening) | — | Build | 4 | Engine |
-| FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
+| FG-009 | Envelope id stamping in page header | DS | Build | 6 | Built on a branch (`VS-06E1`, ADR-045): per envelope and account default, set in the editor's options and Admin; drawn on every page by the flattener, shown on the signing page, in the in-progress and sealed documents; `Works` once `vs06e-screens.spec.mjs` is green on `main` |
 | FG-010 | Document visibility per recipient | DS | Build | 6 | Works: engine, server (a hidden document is neither listed nor served to that recipient, `404`), editor's More options per recipient (`WF-02`) |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
 | FG-012 | Template matching on upload | DS | Build | 3 | Partial: uploads to a draft are matched against the workspace's template page hashes when template matching is on (`WEB-19`); not run on the real stack in a browser |
-| FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | — |
+| FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | Partial: built on a branch (`VS-06`, ADR-043 Accepted by owner instruction 78): the envelope option, `POST /s/{token}/paper` (admitted like any upload, added as a fixed document so the seal covers it, `recipient.signed_on_paper`), Sign on paper in the signing page's More, the certificate's "Signed on paper"; `Works` once `manage-correct.spec.mjs` is green on `main` |
 
 ## Recipients and routing
 
@@ -41,8 +41,8 @@ instructions 8 and 9).
 | FG-022 | Needs to view (viewer) | DS, SN | Build | 2 | Works (the editor adds viewers, `UX-05`; the viewer completes by viewing every document to the end through the ceremony on the server, `VS-02` tests/routing.rs; the signing page ends their turn and the receipt says viewed, browser run `webapp/e2e/recipient-types.spec.mjs`, `RTE-01`) |
 | FG-023 | Approver | SN | Build | 2 | Works (the editor adds approvers, `UX-05`; the approver approves through the ceremony on the server, `VS-02` tests/routing.rs; the review step offers Approve and the receipt says approved, browser run `webapp/e2e/recipient-types.spec.mjs`, `RTE-01`) |
 | FG-024 | Specify recipients (agent) | DS | Build | 2 | Works (the editor offers the agent; the agent names later recipients through `POST /s/{token}/recipients` and finishes, routing then reaching them, `VS-02` tests/routing.rs; the signing page asks for the names and emails, browser run `webapp/e2e/recipient-types.spec.mjs`, `RTE-01`) |
-| FG-025 | Allow to edit (editor) | DS | Build | 6 | Designed |
-| FG-026 | Update recipients (intermediary) | DS | Build | 6 | Designed |
+| FG-025 | Allow to edit (editor) | DS | Build | 6 | Partial: offered in the editor; an editor names later recipients in their turn, then signs (`tests/editor_intermediary.rs`); changing fields at the ceremony (`POST /s/{token}/editor/fields`, `PATCH`/`DELETE …/editor/fields/{field}`, the signing page's Edit fields) built on a branch (`VS-06A`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
+| FG-026 | Update recipients (intermediary) | DS | Build | 6 | Partial: offered in the editor; an intermediary updates later recipients' names and emails, then finishes (`tests/editor_intermediary.rs`); changing a later recipient's authentication (access code stored hashed, emailed or SMS code) built on a branch (`VS-06A`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
 | FG-027 | In-person signer | DS, SN | Build | 14 | Engine (hosting served by `POST /envelopes/{id}/recipients/{r}/host`, `UXW-36`; the editor offers it, `UX-05`; the envelope page's "Host signing" opens the hosted session in the tab, `UXW-18`, in a mock-mode browser run, `webapp/e2e/recipient-types.spec.mjs`; the Compose spec `real-stack.spec.mjs` green on chromium and webkit in `compose-e2e`, 2026-11-14) |
 | FG-028 | Witness | DS | Build | 16 | — |
 | FG-029 | Notary (remote online notarization) | DS, SN | Build, with provider plugins | 31 | — |
@@ -93,7 +93,7 @@ instructions 8 and 9).
 | FG-077 | Anchor text auto-place | DS | Build | 4 | Partial: `anchor` on a field in create and `POST /fields`, one field per match in the delivered document (server `tests/anchors_tags.rs`, seen red); not offered in the editor (the editor places by hand or by Detect fields); built on a branch (`VS-04`, [75](75-SLICE-4-EVIDENCE.md)); `Works` once `fields.spec.mjs` is green on `main` |
 | FG-078 | Text tags in documents | SN | Build | 4 | Partial: `"text_tags": true` on create places the tags' fields; Detect fields suggests each tag in the editor (`tests/anchors_tags.rs`, seen red; `fields.spec.mjs`); the tag text stays visible; built on a branch (`VS-04`, [75](75-SLICE-4-EVIDENCE.md)); `Works` once `fields.spec.mjs` is green on `main` |
 | FG-079 | Custom (saved) field presets | DS | Build | 4 | — |
-| FG-080 | Strike-through by editor | DS | Build | 6 | — |
+| FG-080 | Strike-through by editor | DS | Build | 6 | Partial: a `strikethrough` field kind (ADR-044) an editor places, lengthens and moves at the ceremony; every later recipient sees it; the seal draws it (verified by ours and pyHanko, `-worker` `tests/end_to_end.rs`); built on a branch (`VS-06A`, `VS-06E`); `Works` once `manage-correct.spec.mjs` is green on `main` |
 | FG-081 | Responsive signing (smart sections) | DS | Build | 23 | — |
 | FG-082 | 3,000 fields per envelope | DS | Build | 4 | Designed |
 
@@ -145,24 +145,24 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Partial: the Inbox (envelopes waiting for the signed-in member, signed from inside the app, `UXW-01`), each member's own folders, the Deleted view of envelopes and of templates with template restore (`UXW-02`) served; restoring a deleted envelope awaits ADR-031 |
-| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (7 days, filtered in the page), completed, with counts on Home and the rail (`UX-07`); waiting for me from the Inbox (`UXW-01`); auth failed not yet |
-| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search (from every screen and on phones, `UX-04`), status set, sender, last-change range, five sorts (`WEB-04`, `WEB-08`); recipient and a range on created, sent, completed or last change, server-side (`UXW-03`); custom fields not yet |
-| FG-133 | Correct | DS | Build | 6 | Partial: a side panel changes name, email, access code and signing order of recipients who have not acted, adds and removes them, and sets expiry and reminders (`POST /correct` and `PATCH …/recipients/{r}`; `UX-07`, tested in mock mode); fields and documents are `UXW-19` |
+| FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Partial: the Inbox (`UXW-01`), each member's own folders, the Deleted view of envelopes and of templates with restore of both (`UXW-02`; envelope restore `UXW-43`, ADR-031 Accepted by owner instruction 77); the Compose-stack e2e on CI is left |
+| FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (now also `?expires_before=` on the server), completed, with counts on Home and the rail (`UX-07`); waiting for me (`UXW-01`); Authentication failed (`?auth_failed=true`, the Agreements view; `tests/manage_views.rs`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
+| FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search (`UX-04`), status set, sender, ranges, five sorts (`WEB-04`, `WEB-08`, `UXW-03`); custom fields (`?custom_field=&custom_value=`, the Agreements filter; `tests/manage_views.rs`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
+| FG-133 | Correct | DS | Build | 6 | Partial: recipients, expiry and reminders in the Correct panel (`UX-07`); documents and fields in the editor's Correct mode (`UXW-19`, `tests/correct_documents.rs`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
 | FG-134 | Void with reason | DS, SN | Build | 2 | Works |
 | FG-135 | Resend | DS, SN | Build | 2 | Works |
 | FG-136 | Copy; save as template | DS | Build | 6 | Works |
-| FG-137 | Transfer ownership | DS | Build | 10 | Partial: `POST /envelopes/{id}/transfer` passes an envelope to another member of its workspace (`envelopes.transfer`), recorded as `envelope.transferred` (`ORG-09`); the screen is `ORG-41` |
+| FG-137 | Transfer ownership | DS | Build | 10 | Partial: `POST /envelopes/{id}/transfer` (`ORG-09`); the envelope page's Transfer panel (`ORG-41`, `manage-correct.spec.mjs`); the Users screen's transfer before removal is left |
 | FG-138 | History view | DS, SN | Build | 6 | Works (staff audit view; the signer's own `GET /s/{token}/history`, `WEB-07`) |
-| FG-139 | Envelope custom fields | DS | Build | 6 | Designed |
-| FG-140 | Reports and CSV export | DS | Build | 6 | Partial: Agreements exports the selected envelopes as CSV, formula-safe (`UX-07`); server reports are `UXW-25`; Reports page: an envelope report with sample sizes, custom range, sender filter and a nine-column CSV over the newest 1,000, computed in the page, `UX-08`; recipient and usage reports wait for REP-01 |
-| FG-141 | Insights dashboard | DS | Build | 6 | — |
+| FG-139 | Envelope custom fields | DS | Build | 6 | Partial: `GET`/`PUT /envelopes/{id}/custom-fields`, the envelope page's card and panel, searched from Agreements; never in the evidence (`tests/manage_views.rs`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
+| FG-140 | Reports and CSV export | DS | Build | 6 | Partial: the page's envelope report and CSV (`UX-08`); the server's envelope, recipient and usage reports as formula-safe CSV (`UXW-25`, `tests/reports.rs`, Full reports on the Reports page); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
+| FG-141 | Insights dashboard | DS | Build | 6 | Built on a branch (`VS-06E2`): `GET /insights` (counts, median and 90th-percentile time to complete, per day in the caller's day, top senders; the workspace's with `reports.read`, else one's own) and the Insights page from Reports (tiles, a chart with its table, outcomes, top senders, period and sender filters); `Works` once `vs06e-screens.spec.mjs` is green on `main` |
 
 ## Evidence and verification
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; every signer downloads it too, from the completion email's link (`VS-01`); a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`) |
+| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; every signer downloads it too, from the completion email's link (`VS-01`); a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`); one evidence package per envelope (documents, certificate, audit trail and a manifest of SHA-256s as one ZIP) built on a branch (`VS-06D`) |
 | FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Works |
 | FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Works |
 | FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Works |

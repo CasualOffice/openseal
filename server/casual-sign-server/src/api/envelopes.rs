@@ -16,8 +16,8 @@ use casual_sign_model::{EnvelopeStatus as MStatus, Id};
 use casual_sign_sdk::{AdmissionReport, Credentials, NormalizationReport};
 use casual_sign_store::repo::documents::{Document, NewVersion, VersionKind};
 use casual_sign_store::repo::envelopes::{
-    After, AfterKey, DateField, EnvelopeStatus, FolderFilter, ListFilter, Listed, Sort, SortKey,
-    never_expires, status_rank,
+    After, AfterKey, CustomField, DateField, EnvelopeStatus, FolderFilter, ListFilter, Listed,
+    MAX_CUSTOM_FIELDS, Sort, SortKey, never_expires, status_rank,
 };
 use casual_sign_store::repo::recipients::{NewToken, TokenPurpose};
 use casual_sign_store::{
@@ -152,16 +152,39 @@ pub(crate) fn pages_json(a: &AdmissionReport) -> Value {
     )
 }
 
+/// What happened to an upload before its transaction: the malware scan's note and, for
+/// a Word document, its conversion (ADR-042).
+#[derive(Debug, Clone, Default)]
+pub(crate) struct Screened {
+    pub(crate) scan: ScanNote,
+    pub(crate) converted: Option<casual_sign_convertd::Converted>,
+}
+
+/// Scan an upload (ASVS-11) and, when it is a Word document, convert it (ADR-042),
+/// outside any transaction: both can wait up to their timeouts.
+pub(crate) async fn screen_and_convert(
+    c: &Call,
+    kind: UploadKind,
+    target: Vec<(&'static str, String)>,
+    bytes: &[u8],
+) -> Result<Screened, ApiError> {
+    let scan = screen(&c.st, c.uploader(), kind, target, bytes).await?;
+    let converted = crate::convert::convert_upload(&c.st, bytes).await?;
+    Ok(Screened { scan, converted })
+}
+
 /// Admit and normalize an upload (docs/30 §2, §3), store the original and the
 /// delivered bytes, and record the document's rows. Signed input is kept as it is.
-async fn add_document(
+/// Also the signing page's scan of a document signed on paper (FG-013, ADR-043).
+pub(crate) async fn add_document(
     st: &AppState,
     tx: &mut TenantTx,
     env: EnvelopeId,
     name: &str,
     bytes: Vec<u8>,
-    scan: ScanNote,
+    screened: Screened,
 ) -> Result<DocumentSpec, ApiError> {
+    let Screened { scan, converted } = screened;
     let name = name.trim();
     if name.is_empty() || name.chars().count() > 255 {
         return Err(ApiError::invalid("/name"));
@@ -170,9 +193,14 @@ async fn add_document(
         return Err(ApiError::too_large());
     }
     let engine = st.0.engine.clone();
+    // A Word upload (ADR-042): the converted PDF is what is admitted; the .docx itself
+    // is kept as the original.
+    let conversion = converted.as_ref().map(crate::convert::report_entry);
+    let pdf = converted.map(|c| c.pdf);
     let (original, delivered) = tokio::task::spawn_blocking(move || {
-        let delivered = match engine.prepare(&bytes, &Credentials::default()) {
-            Err(e) if e.code() == "CS-PDF-0014" => engine.keep_signed(&bytes),
+        let admitted = pdf.as_deref().unwrap_or(&bytes);
+        let delivered = match engine.prepare(admitted, &Credentials::default()) {
+            Err(e) if e.code() == "CS-PDF-0014" => engine.keep_signed(admitted),
             other => other,
         };
         (bytes, delivered)
@@ -186,8 +214,12 @@ async fn add_document(
     }
     let original_key = st.0.blobs.put(&original).await?;
     let delivered_key = st.0.blobs.put(&delivered.bytes).await?;
-    let (report, findings) =
+    let (mut report, findings) =
         admission_json(&delivered.admission, delivered.normalization.as_ref(), scan);
+    // Present only for a converted upload, so a PDF's report hashes as it always did.
+    if let (Some(c), Some(o)) = (conversion, report.as_object_mut()) {
+        o.insert("converted".into(), c);
+    }
     let report_hash = Hash256::digest(&serde_json::to_vec(&report).unwrap_or_default());
     let doc = DocumentId(Uuid::now_v7());
     // Storage is checked against the plan under its counter rows' lock (PLAN-04,
@@ -289,7 +321,13 @@ async fn recipients_in(
     Ok((changes, refs, codes))
 }
 
-async fn store_codes(tx: &mut TenantTx, codes: Vec<(RecipientId, String)>) -> Result<(), ApiError> {
+/// Store each recipient's access code as Argon2id (never the code), replacing any
+/// earlier one: the sender's create and `PATCH`, and an intermediary's or editor's
+/// `POST /s/{token}/recipients` (`VS-06A`).
+pub(crate) async fn store_codes(
+    tx: &mut TenantTx,
+    codes: Vec<(RecipientId, String)>,
+) -> Result<(), ApiError> {
     for (r, code) in codes {
         let phc = tokio::task::spawn_blocking(move || hash_password(&code))
             .await
@@ -339,6 +377,14 @@ pub(crate) struct ListQuery {
     deleted: Option<String>,
     /// `me`: the Inbox (UXW-01).
     waiting_for: Option<String>,
+    /// `true`: the Authentication failed quick view (`VS-06`).
+    auth_failed: Option<String>,
+    /// Expiring before this (RFC 3339): the Expiring soon quick view (`VS-06`).
+    expires_before: Option<String>,
+    /// A custom field's exact name (`VS-06`, FG-132).
+    custom_field: Option<String>,
+    /// Text that custom field's value contains; needs `custom_field`.
+    custom_value: Option<String>,
 }
 
 fn parse_date_field(s: &str) -> Option<DateField> {
@@ -540,6 +586,20 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
         Some("me") => true,
         Some(_) => return Err(ApiError::invalid("/query/waiting_for")),
     };
+    let auth_failed = match q.auth_failed.as_deref() {
+        None | Some("false") => false,
+        Some("true") => true,
+        Some(_) => return Err(ApiError::invalid("/query/auth_failed")),
+    };
+    let expires_before = instant(q.expires_before.as_deref(), "/query/expires_before")?;
+    let cf_name = text_param(q.custom_field.as_deref(), "/query/custom_field")?;
+    if cf_name.is_some_and(|n| n.chars().count() > 100) {
+        return Err(ApiError::invalid("/query/custom_field"));
+    }
+    let cf_value = text_param(q.custom_value.as_deref(), "/query/custom_value")?;
+    if cf_value.is_some() && cf_name.is_none() {
+        return Err(ApiError::invalid("/query/custom_value"));
+    }
     // Without `view_all`, the caller's own only: another sender asked for is an empty
     // page, never someone else's envelopes. The Inbox is its own access: envelopes
     // waiting for the caller as a recipient, whoever sent them.
@@ -561,6 +621,9 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
         folder,
         deleted,
         waiting,
+        auth_failed,
+        expires_before,
+        custom_field: cf_name.map(|n| (n, cf_value)),
     };
     let mut tx = c.tx().await?;
     let page = tx
@@ -586,6 +649,7 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
                 "completed_at": e.completed_at.map(rfc3339),
                 "expires_at": e.expires_at.map(rfc3339),
                 "folder_id": l.folder.map(|f| f.to_string()),
+                "deleted_at": e.deleted_at.map(rfc3339),
             });
             if waiting && let Some(map) = item.as_object_mut() {
                 map.insert(
@@ -669,15 +733,15 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
             &format!("/documents/{i}/content_base64"),
         )?;
         total = total.saturating_add(b.len());
-        decoded.push((d.name.clone(), b, None));
+        decoded.push((d.name.clone(), b, Screened::default()));
     }
     if total > c.st.config().max_envelope_bytes {
         return Err(ApiError::too_large());
     }
     // Every document is scanned before it is admitted or stored (ASVS-11); the
     // envelope does not exist yet, so the event names no envelope.
-    for (_, b, scan) in &mut decoded {
-        *scan = screen(&c.st, c.uploader(), UploadKind::Document, Vec::new(), b).await?;
+    for (_, b, screened) in &mut decoded {
+        *screened = screen_and_convert(&c, UploadKind::Document, Vec::new(), b).await?;
     }
     let mut tx = c.tx().await?;
     let (env, l) = create_in(&c, &mut tx, &req, decoded, send).await?;
@@ -700,7 +764,7 @@ pub(crate) async fn create_in(
     c: &Call,
     tx: &mut TenantTx,
     req: &EnvelopeCreate,
-    decoded: Vec<(String, Vec<u8>, ScanNote)>,
+    decoded: Vec<(String, Vec<u8>, Screened)>,
     send: bool,
 ) -> Result<(EnvelopeId, Loaded), ApiError> {
     let subject = dto::subject(&req.subject)?;
@@ -724,8 +788,8 @@ pub(crate) async fn create_in(
     let mut doc_ids = Vec::new();
     let mut uploads = Vec::new();
     let mut sources: Vec<super::placing::Source> = Vec::new();
-    for (name, bytes, scan) in decoded {
-        let spec = add_document(&c.st, tx, env, &name, bytes, scan).await?;
+    for (name, bytes, screened) in decoded {
+        let spec = add_document(&c.st, tx, env, &name, bytes, screened).await?;
         doc_ids.push(spec.id.clone());
         sources.push((
             spec.id.clone(),
@@ -772,7 +836,20 @@ pub(crate) async fn create_in(
             expires_at: Some(days_from(cmds.now, d)?),
         });
     }
-    if let Some(o) = req.signing_options {
+    let settings = tx.account().get().await?.settings;
+    // The envelope id stamp (FG-009): as the request says, else the account's default.
+    let stamp_default = settings
+        .get(super::admin::STAMP_ENVELOPE_ID)
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let options = match req.signing_options {
+        Some(o) => Some(o.resolve(stamp_default)),
+        None => stamp_default.then(|| casual_sign_model::SigningOptions {
+            stamp_envelope_id: true,
+            ..casual_sign_model::SigningOptions::default()
+        }),
+    };
+    if let Some(o) = options {
         changes.push(Change::SetSigningOptions { options: o });
     }
     // The envelope's own profile, else the account's default (VS-07, FG-154): a stored
@@ -780,11 +857,7 @@ pub(crate) async fn create_in(
     // engine's own default, B-T, stays.
     let profile = match req.seal_profile {
         Some(s) => Some(s),
-        None => tx
-            .account()
-            .get()
-            .await?
-            .settings
+        None => settings
             .get(super::admin::DEFAULT_SEAL_PROFILE)
             .and_then(|v| serde_json::from_value::<casual_sign_model::SealProfile>(v.clone()).ok())
             .filter(|p| *p != casual_sign_model::SealProfile::default()),
@@ -892,6 +965,97 @@ pub(crate) async fn delete(c: Call, Path(id): Path<String>) -> Result<Response, 
     command(&c, &mut tx, &mut cmds, &mut l, cmd, v).await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `POST /envelopes/{id}/restore` (ADR-031, `UXW-02`): list again an envelope removed
+/// by `DELETE` (it is in the Deleted view). Recorded as `envelope.restored`; nothing in
+/// the agreement changes. `If-Match` is checked when sent. One that is not deleted, or
+/// was purged meanwhile (past its retention), is `409 CS-WF-0001`.
+pub(crate) async fn restore(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let mut cmds = c.commands(&mut tx).await?;
+    command(&c, &mut tx, &mut cmds, &mut l, Command::RestoreDeleted, v).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CustomFieldIn {
+    name: String,
+    value: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CustomFieldsIn {
+    items: Vec<CustomFieldIn>,
+}
+
+fn custom_fields_json(items: &[CustomField]) -> Value {
+    json!({
+        "items": items
+            .iter()
+            .map(|f| json!({ "name": f.name, "value": f.value.get() }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// `GET /envelopes/{id}/custom-fields`: the envelope's custom fields, by name (`VS-06`,
+/// FG-139). Sender metadata, searchable with `GET /envelopes?custom_field=`; never part
+/// of the agreement.
+pub(crate) async fn custom_fields(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let items = tx.envelopes().custom_fields(l.id).await?;
+    Ok(json(StatusCode::OK, &custom_fields_json(&items)))
+}
+
+/// `PUT /envelopes/{id}/custom-fields {items: [{name, value}]}`: replace the envelope's
+/// custom fields (`VS-06`). At most 100; a name is 1 to 100 characters, a value at most
+/// 1,000, neither with control characters, and no name twice (`422` at the first
+/// offender). A purged envelope is `409 CS-API-0009`. Nothing is recorded in the
+/// audit chain: the fields are not part of what any party saw or signed.
+pub(crate) async fn set_custom_fields(
+    c: Call,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    // Another account's id is 404 before the body is read, whatever it holds.
+    let mut tx = c.tx().await?;
+    let l = find(&mut tx, &c.p, &id).await?;
+    let req: CustomFieldsIn = parse(&body)?;
+    if req.items.len() > MAX_CUSTOM_FIELDS {
+        return Err(ApiError::invalid("/items"));
+    }
+    let mut fields: Vec<CustomField> = Vec::with_capacity(req.items.len());
+    for (i, f) in req.items.into_iter().enumerate() {
+        let name = f.name.trim();
+        let n = name.chars().count();
+        if n == 0 || n > 100 || name.chars().any(char::is_control) {
+            return Err(ApiError::invalid(&format!("/items/{i}/name")));
+        }
+        if f.value.chars().count() > 1000 || f.value.chars().any(char::is_control) {
+            return Err(ApiError::invalid(&format!("/items/{i}/value")));
+        }
+        if fields.iter().any(|x| x.name == name) {
+            return Err(ApiError::exists(&format!("/items/{i}/name")));
+        }
+        fields.push(CustomField {
+            name: name.to_owned(),
+            value: Personal(f.value),
+        });
+    }
+    if l.state.purged {
+        return Err(ApiError::not_available("purged"));
+    }
+    tx.envelopes().set_custom_fields(l.id, &fields).await?;
+    tx.commit().await?;
+    Ok(json(StatusCode::OK, &custom_fields_json(&fields)))
 }
 
 /// `POST /envelopes/{id}/send`.
@@ -1118,9 +1282,14 @@ pub(crate) async fn audit(
             "the PDF audit report is built with the certificate (stage 2D)",
         ));
     }
-    // `chain` re-verifies every link; a broken chain is an error, never served.
-    let _ = tx.audit().chain(l.id).await?;
-    let events = tx.audit().events(l.id).await?;
+    Ok(json(StatusCode::OK, &audit_json(&mut tx, l.id).await?))
+}
+
+/// The audit trail as `GET …/audit` answers it: `{items, chain_head}`. `chain`
+/// re-verifies every link first; a broken chain is an error, never served.
+async fn audit_json(tx: &mut TenantTx, env: EnvelopeId) -> Result<Value, ApiError> {
+    let _ = tx.audit().chain(env).await?;
+    let events = tx.audit().events(env).await?;
     let items: Vec<Value> = events
         .iter()
         .map(|e| {
@@ -1134,10 +1303,173 @@ pub(crate) async fn audit(
             })
         })
         .collect();
-    Ok(json(
-        StatusCode::OK,
-        &json!({ "items": items, "chain_head": items.last().map(|e| e["hash"].clone()) }),
-    ))
+    Ok(json!({ "items": items, "chain_head": items.last().map(|e| e["hash"].clone()) }))
+}
+
+/// A document's name as a ZIP entry: its position, then the name with anything but
+/// ASCII letters, digits, `.`, `-` and `_` as `_`, at most 80 characters, ending `.pdf`.
+fn entry_name(i: usize, name: &str) -> String {
+    let mut base: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .take(80)
+        .collect();
+    let lower = base.to_ascii_lowercase();
+    if let Some(stem) = lower.strip_suffix(".pdf") {
+        base.truncate(stem.len());
+    }
+    let base = base.trim_matches('.');
+    let base = if base.is_empty() { "document" } else { base };
+    format!("documents/{:02}-{base}.pdf", i.saturating_add(1))
+}
+
+/// `GET /envelopes/{id}/evidence-package` (`VS-06D`, `UXW-20`, docs/32 §6): one ZIP with
+/// everything that proves the agreement, for an envelope that is over (completed, or
+/// declined, voided or expired): each document as sealed (or as it ended, with the "not
+/// signed" banner, for one that ended without completing), the certificate (of
+/// completion, or the envelope certificate of UXW-30), the audit trail as `GET …/audit`
+/// answers it with the chain head, and `manifest.json` naming every other entry with its
+/// SHA-256 and size. Recorded first as `envelope.exported` (ORG-09), so the trail in
+/// the package ends with its own export and the manifest's `chain_head` is that event's
+/// hash. In flight, a draft, or purged is `409 CS-WF-0001`; a certificate not made yet
+/// `409 CS-API-0009` (an ended one is asked of the worker, as `GET …/certificate` does).
+pub(crate) async fn evidence_package(
+    c: Call,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let over = matches!(
+        l.state.status,
+        MStatus::Completed | MStatus::Declined | MStatus::Voided | MStatus::Expired
+    );
+    let cert = if over && !l.state.purged {
+        let cert = tx.envelopes().certificate(l.id).await?;
+        if cert.is_none() {
+            if l.state.status != MStatus::Completed {
+                // As `GET …/certificate`: an ended envelope's certificate is asked for.
+                let job = casual_sign_host::jobs::ended_certificate_job(
+                    casual_sign_store::JobId(Uuid::now_v7()),
+                    l.id,
+                    c.st.now(),
+                );
+                tx.jobs().enqueue(&job).await?;
+                tx.commit().await?;
+            }
+            return Err(ApiError::not_available(
+                "the certificate is not made yet; ask again shortly",
+            ));
+        }
+        cert
+    } else {
+        None
+    };
+    // Recorded before anything is read: the engine refuses an envelope that is not
+    // over, and the trail in the package then includes its own export.
+    let mut cmds = c.commands(&mut tx).await?;
+    command(
+        &c,
+        &mut tx,
+        &mut cmds,
+        &mut l,
+        Command::RecordAccess {
+            access: Access::EvidenceExported,
+        },
+        None,
+    )
+    .await?;
+    let cert = cert.ok_or_else(|| ApiError::internal("certificate"))?;
+    let mut entries: Vec<(String, Vec<u8>, Value)> = Vec::new();
+    let docs: Vec<(Id, String)> = l
+        .state
+        .documents
+        .iter()
+        .map(|d| (d.id().clone(), d.spec.name.0.as_str().to_owned()))
+        .collect();
+    for (i, (d, name)) in docs.iter().enumerate() {
+        let (bytes, sealed) = crate::preview::current(&c.st, &mut tx, &l.state, d).await?;
+        entries.push((
+            entry_name(i, name),
+            bytes,
+            json!({"kind": "document", "document_id": d, "sealed": sealed}),
+        ));
+    }
+    let cert_bytes =
+        c.st.0
+            .blobs
+            .get(&casual_sign_store::blob::BlobKey(cert))
+            .await?;
+    if sha256(&cert_bytes) != cert {
+        return Err(ApiError::internal("certificate"));
+    }
+    entries.push((
+        "certificate.pdf".to_owned(),
+        cert_bytes,
+        json!({"kind": "certificate"}),
+    ));
+    let trail = audit_json(&mut tx, l.id).await?;
+    let head = trail.get("chain_head").cloned().unwrap_or(Value::Null);
+    let trail_bytes =
+        serde_json::to_vec_pretty(&trail).map_err(|_| ApiError::internal("audit trail"))?;
+    entries.push((
+        "audit-trail.json".to_owned(),
+        trail_bytes,
+        json!({"kind": "audit_trail"}),
+    ));
+    let listed: Vec<Value> = entries
+        .iter()
+        .map(|(path, bytes, about)| {
+            let mut e = json!({
+                "path": path,
+                "sha256": Hash256::digest(bytes).hex(),
+                "size": bytes.len(),
+            });
+            if let (Some(m), Some(a)) = (e.as_object_mut(), about.as_object()) {
+                m.extend(a.clone());
+            }
+            e
+        })
+        .collect();
+    let manifest = json!({
+        "format": "openseal.evidence-package",
+        "version": 1,
+        "envelope_id": l.id.to_string(),
+        "status": l.state.status,
+        "exported_at": rfc3339(c.st.now()),
+        "exported_by": c.p.user.to_string(),
+        "chain_head": head,
+        "entries": listed,
+    });
+    let manifest =
+        serde_json::to_vec_pretty(&manifest).map_err(|_| ApiError::internal("manifest"))?;
+    let mut zip = crate::storezip::StoreZip::new();
+    zip.add("manifest.json", &manifest)
+        .map_err(|_| ApiError::internal("evidence package"))?;
+    for (path, bytes, _) in &entries {
+        zip.add(path, bytes)
+            .map_err(|_| ApiError::internal("evidence package"))?;
+    }
+    let body = zip
+        .finish()
+        .map_err(|_| ApiError::internal("evidence package"))?;
+    tx.commit().await?;
+    let mut r = (StatusCode::OK, body).into_response();
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/zip"),
+    );
+    let disposition = format!("attachment; filename=\"evidence-{}.zip\"", l.id);
+    r.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&disposition).map_err(|_| ApiError::internal("disposition"))?,
+    );
+    Ok(r)
 }
 
 /// `GET /envelopes/{id}/anchor-proof` (`FG-158`, docs/32 §5): the proof file
@@ -1201,11 +1533,14 @@ pub(crate) async fn add_document_route(
     let l = find(&mut tx, &c.p, &id).await?;
     tx.commit().await?;
     let v = expected(&c, false)?;
+    // The document itself as the body: a PDF, or a Word document to convert (ADR-042).
     let pdf = c
         .headers
         .get(header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|t| t.starts_with("application/pdf"));
+        .is_some_and(|t| {
+            t.starts_with("application/pdf") || t.starts_with(crate::convert::DOCX_MEDIA_TYPE)
+        });
     let (name, bytes) = if pdf {
         let name = q
             .get("name")
@@ -1222,9 +1557,8 @@ pub(crate) async fn add_document_route(
         (d.name, b)
     };
     within_envelope_limit(&c, &l, bytes.len())?;
-    let scan = screen(
-        &c.st,
-        c.uploader(),
+    let screened = screen_and_convert(
+        &c,
         UploadKind::Document,
         vec![("envelope", l.id.0.to_string())],
         &bytes,
@@ -1234,7 +1568,7 @@ pub(crate) async fn add_document_route(
     let mut tx = c.tx().await?;
     let mut l = find(&mut tx, &c.p, &id).await?;
     within_envelope_limit(&c, &l, bytes.len())?;
-    let spec = add_document(&c.st, &mut tx, l.id, &name, bytes, scan).await?;
+    let spec = add_document(&c.st, &mut tx, l.id, &name, bytes, screened).await?;
     let doc_id = spec.id.clone();
     let upload = (uid(&spec.id)?, spec.delivered_hash.0);
     change(
@@ -1497,11 +1831,15 @@ async fn serve_bytes(
         .await?;
     }
     tx.commit().await?;
+    // The original of a converted upload is the Word document itself (ADR-042).
+    let media = if crate::convert::is_word(&bytes) {
+        crate::convert::DOCX_MEDIA_TYPE
+    } else {
+        "application/pdf"
+    };
     let mut r = (StatusCode::OK, bytes).into_response();
-    r.headers_mut().insert(
-        header::CONTENT_TYPE,
-        HeaderValue::from_static("application/pdf"),
-    );
+    r.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(media));
     r.headers_mut().insert(
         header::CONTENT_DISPOSITION,
         HeaderValue::from_static("attachment"),

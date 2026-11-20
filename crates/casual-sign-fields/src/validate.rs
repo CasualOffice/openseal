@@ -81,6 +81,8 @@ pub(crate) fn validate_with(
         (FieldType::Checkbox | FieldType::Approve | FieldType::Decline, FieldValue::Checked(_)) => {
             Ok(())
         }
+        // FG-080, ADR-044: a strike-through's only value is the mark itself.
+        (FieldType::Strikethrough, FieldValue::Checked(true)) => Ok(()),
         (
             FieldType::Signature | FieldType::Initials | FieldType::Stamp | FieldType::Drawing,
             FieldValue::Signature(_),
@@ -115,6 +117,7 @@ pub(crate) fn validate_with(
         }
         (
             FieldType::Checkbox
+            | FieldType::Strikethrough
             | FieldType::Approve
             | FieldType::Decline
             | FieldType::Signature

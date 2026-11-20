@@ -168,3 +168,92 @@ fn every_corpus_file_flattens_its_layers_and_annotations() {
     );
     assert!(failures.is_empty(), "{failures:#?}");
 }
+
+/// `FG-009` (ADR-045): every corpus file that admits and normalizes takes the envelope
+/// id stamp on every page as an incremental update that admits again, and a reader
+/// finds the stamp's text on each page.
+#[test]
+fn every_corpus_file_takes_the_envelope_id_stamp_on_every_page() {
+    if std::env::var_os("OPENSEAL_CORPUS_SWEEP").is_none() {
+        eprintln!("skipped: set OPENSEAL_CORPUS_SWEEP=1 to sweep the corpus");
+        return;
+    }
+    let mut names: Vec<_> = std::fs::read_dir(corpus_dir())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "pdf"))
+        .collect();
+    names.sort();
+    let needle = "Envelope ID: ENV-2026-0001";
+    let mut options = FlattenOptions::default();
+    options.envelope_id_stamp = true;
+    let (mut stamped, mut pages_stamped, mut not_admitted) = (0, 0, 0);
+    let mut failures = Vec::new();
+    for path in &names {
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let raw = std::fs::read(path).unwrap();
+        let Ok(mut a) = admit(&raw, &Limits::default(), &never) else {
+            not_admitted += 1;
+            continue;
+        };
+        let Ok(n) = normalize(
+            &mut a,
+            &NormalizeOptions::with_xref(OutputXref::Stream),
+            &never,
+        ) else {
+            not_admitted += 1;
+            continue;
+        };
+        let base = n.bytes;
+        let mut a = admit(&base, &Limits::default(), &never).unwrap();
+        let (values, caps) = (BTreeMap::new(), BTreeMap::new());
+        let input = FlattenInput {
+            fields: &[],
+            values: &values,
+            captures: &caps,
+            envelope_id: Some("ENV-2026-0001"),
+            acroform: None,
+        };
+        let out = match flatten(&mut a, &input, &FontSet::bundled(), &options, &never) {
+            Ok(o) => o,
+            Err(e) => {
+                failures.push(format!("{name}: {e}"));
+                continue;
+            }
+        };
+        if !out.bytes.starts_with(&base) {
+            failures.push(format!("{name}: not an incremental update"));
+        }
+        let mut b = match admit(&out.bytes, &Limits::default(), &never) {
+            Ok(b) => b,
+            Err(e) => {
+                failures.push(format!("{name}: output does not admit: {e}"));
+                continue;
+            }
+        };
+        let pages = b.report.pages.clone();
+        match casual_sign_fields::extract_text(&mut b.document, &pages, &never) {
+            Ok(texts) => {
+                // A page whose own content crosses an extraction limit is not read to
+                // its end; the stamp, drawn last, is then not reached.
+                let missing: Vec<u32> = texts
+                    .iter()
+                    .filter(|t| !t.truncated() && !t.runs.iter().any(|r| r.text.contains(needle)))
+                    .map(|t| t.page)
+                    .collect();
+                if !missing.is_empty() {
+                    failures.push(format!("{name}: no stamp read on pages {missing:?}"));
+                }
+                pages_stamped += texts.len();
+            }
+            Err(e) => failures.push(format!("{name}: text unreadable: {e}")),
+        }
+        stamped += 1;
+    }
+    eprintln!(
+        "{stamped} files stamped ({pages_stamped} pages), {not_admitted} not admitted or normalized; {} failures",
+        failures.len()
+    );
+    assert!(failures.is_empty(), "{failures:#?}");
+}

@@ -77,3 +77,6 @@ Recommendation: ready to propose for closure once a `main` run with this branch 
 | `VS-08K` | A sandbox has no sending limit of its own beyond the rate limits | S |
 
 Nothing here states that any signature is legally valid or that the product is compliant or certified (docs/09).
+
+
+**Closed 2026-11-20** under owner instruction 73, on `main` run 44653889545 (commit a4da083), green on every job. The real stack ran `api-webhooks.spec.mjs` on chromium and webkit: an API key sends an envelope, signed webhooks arrive at the CI receiver and a failed one is delivered again, an OAuth app is allowed through the consent screen, and a sandbox workspace is marked everywhere and sealed with the sandbox key; `server-db` ran `oauth` and `sandbox`; `checks` ran `build-sdks.py --check`. SDK publishing stays open (instruction 70, `VS-08J`).

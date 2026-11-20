@@ -63,7 +63,10 @@ x-server: &server
     # On SIGINT: not ready (/readyz 503) but still serving for 5 s, while the proxy's
     # one-second health check takes this replica out of rotation; then it drains.
     OPENSEAL_DRAIN_SECONDS: "5"
+    # Word uploads converted to PDF by convertd over its socket (ADR-042).
+    OPENSEAL_CONVERTD_SOCKET: /run/convertd/convertd.sock
   secrets: [database-url, jwt-signing-key, mfa-key, password-pepper, s3-access-key, s3-secret-key, internal-ca.pem]
+  volumes: [convertd:/run/convertd]
   tmpfs: ["/tmp:size=64m,mode=1777"]
   networks: [data, edge]
   mem_limit: 2g
@@ -81,6 +84,7 @@ x-server: &server
   depends_on:
     migrate: {condition: service_completed_successfully}
     s3: {condition: service_healthy}
+    convertd: {condition: service_healthy}
 
 services:
   postgres:
@@ -231,6 +235,25 @@ services:
   server-2:
     <<: *server
 
+  # Word uploads converted to PDF (ADR-042, docs/07 SEC-P13): no network at all and no
+  # secrets; each job runs in a fresh child with its own address-space, CPU and time
+  # limits. The server replicas reach it over a Unix socket on the `convertd` volume.
+  convertd:
+    <<: *hardened
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-convertd:${OPENSEAL_VERSION:?set OPENSEAL_VERSION}
+    user: "65532:65532"
+    network_mode: none
+    volumes: [convertd:/run/convertd]
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    mem_limit: 3g
+    cpus: 2
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/casual-sign-convertd", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   # In front of both replicas (HAProxy, deploy/production/haproxy.cfg): health-checks each
   # at GET /readyz every second and sends a refused connection to the other. Your edge
   # proxy (TLS, HSTS) forwards here; bound to the host's loopback address.
@@ -324,6 +347,8 @@ volumes:
   postgres:
   s3:
   keyd:
+  # convertd's socket only: nothing else is written there.
+  convertd:
 
 # Files written by deploy/production/init-secrets.sh, or by your secret store. Each is
 # mounted read-only at /run/secrets/<name> in the services that list it, and nowhere else.

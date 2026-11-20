@@ -64,8 +64,9 @@ by JWKS (OpenCalc's docs/59 pattern).
   /envelopes/{id}/documents/{doc}/pages/{n}.png GET  (thumbnail)
   /envelopes/{id}/documents/combined            GET  sealed documents + certificate as one PDF
   /envelopes/{id}/certificate                   GET  certificate of completion PDF; envelope certificate once ended
+  /envelopes/{id}/evidence-package              GET  one ZIP: documents, certificate, audit trail, manifest (VS-06D)
   /envelopes/{id}/sign-link                     POST the signed-in member's own signing link (Inbox)
-  /envelopes/{id}/restore                       POST (planned, ADR-031 Proposed)
+  /envelopes/{id}/restore                       POST a deleted envelope back to the lists (ADR-031)
   /envelopes/{id}/audit                         GET  audit events (JSON); ?format=pdf
   /envelopes/{id}/anchor-proof                  GET  anchor proof of the latest anchored chain head (FG-158)
   /envelopes/{id}/recipients                    GET, POST
@@ -684,6 +685,28 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
   short transaction (or none), scans, then opens the transaction that stores, checking access and state again. The
   upload's type signature is checked after the scan.
 
+## As built (`VS-06C`: Word uploads converted, ADR-042)
+
+- **Uploads take PDF and Word (`.docx`).** `POST /envelopes` (each document's `content_base64`), `POST
+  /envelopes/{id}/documents` (JSON, or the file itself as `application/pdf` or
+  `application/vnd.openxmlformats-officedocument.wordprocessingml.document` with `?name=`) and `POST
+  /templates/{id}/documents` recognise a Word document by its bytes (a ZIP archive), scan it as uploaded
+  (`ASVS-11`), convert it through convertd (docs/65 §Word conversion), and admit the PDF as any upload. The
+  answer is the document as before; its `upload_sha256` is the Word document's and its `pages` the PDF's.
+- **The original is the Word document.** `GET /envelopes/{id}/documents/{doc}/content?version=original` answers it
+  with the Word media type; `normalized` and `sealed` are PDFs. The normalized version's admission report adds
+  `converted: {from: "docx", converter, pdf_sha256, external_references}`, and the envelope's chain binds the
+  report's hash. A template keeps only the PDF.
+- **`POST /conversions`** (`envelopes.write`): the file itself as the Word media type; answers the PDF converted and
+  admitted exactly as its upload would be, and stores nothing. The web editor shows it while fields are placed; the
+  upload converts again with the same converter and fonts, so the pages are the same.
+- **Refusals** (docs/20): `415 CS-CNV-0002` (not a Word document, a template, encrypted; `conversion_off` when no
+  converter is configured), `415 CS-CNV-0004` (macros), `422 CS-CNV-0001` (malformed, failed), `422 CS-CNV-0003`
+  (over a limit of docs/21 §DOCX conversion, its name in `detail`), `503 CS-CNV-0005` with `Retry-After: 30`
+  (convertd not reached, busy, or answering outside its protocol). Nothing of a refused upload is stored. As with the
+  scan, no transaction waits on a conversion: each route authorizes in a short transaction, scans and converts,
+  then opens the transaction that stores.
+
 ## As built (`UXW-01`, `UXW-02`, `UXW-03`, `UXW-30`)
 
 | Endpoint | As built |
@@ -695,11 +718,103 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
 | `GET`/`POST /folders`, `PATCH`/`DELETE /folders/{id}`, `POST /folders/{id\|none}/envelopes {envelope_ids}` | `UXW-02`: each member's own folders (`folders.owner_user_id`, migration 0022): `{items: [{id, name, count}]}` by name, `count` the envelopes filed there that are not deleted; a name is 1–100 characters, trimmed, unique among the member's own ignoring case (`422 CS-API-0001` with code `exists` at `/name`), at most 500 folders a member. Removing a folder unfiles its envelopes. Filing (1–200 ids) is the member's own view: an envelope is in at most one of each member's folders, and another member files the same envelope independently; every id must be an envelope the caller may see (`404` otherwise, nothing filed). Filing is not an act on the agreement and records nothing in the chain. Another member's or account's folder is `404`. Scopes `envelopes:read` to list, `envelopes:write` to change. Each folder also carries `kind` (below) |
 | `GET /folders?kind=templates`, `POST /folders {name, kind: templates}`, `POST /folders/{id\|none}/templates {template_ids}`, `GET /templates?folder=` | Template folders (`TSH-03`, slice 3, migration 0047): each member's own folders of kind `templates`, beside their envelope folders (a name is unique per member and kind; `kind` other than `envelopes` or `templates` is `422` at `/query/kind` or `/kind`; a rename may not change it, `422` at `/kind`). `count` is the live templates filed there that the member may still use. Filing (1–200 ids) is the member's own view and changes no template or version; every id must be a live template the caller may use (UXW-06; `404` otherwise, nothing filed); an envelope folder takes no template and a template folder no envelope (`404`; the database's composite reference names the kind). `GET /templates` items carry the caller's `folder_id` (or null); `folder={id}` narrows to one of the caller's template folders (another member's matches nothing), `folder=none` to those in none. `PATCH`/`DELETE /folders/{id}` act on either kind; removing a template folder unfiles its templates. Scope `templates:read` to file. `tests/use_templates.rs` `template_folders_are_each_members_own_*` (RLS on and off), contract and isolation scenarios, store `tests/isolation.rs`; seen red 2026-11-19 with the route renamed (`404` for `200`) |
 | `POST /envelopes/from-templates {template_ids, recipients, subject?, message?, status?}` | Using templates (slice 3, `VS-03A`): one envelope from one to ten templates (composite templates, `FG-097`, after DocuSign's), made on the server from the templates' stored documents through the path of `POST /envelopes` (`create_in`), so it is checked, audited and sent the same way; the documents are scanned again (ASVS-11). Documents come in the order the templates are named. Roles are matched by name ignoring case and surrounding spaces: one recipient per name, with the type and routing order of the first template naming it, who gets every template's fields for that role; the same name with another type is `422` at `/template_ids/{i}`. `recipients`: one `{role, name, email}` per role (a role no template has, or filled twice, `422` at `/recipients/{i}/role`; a role left unfilled `422` at `/recipients`), and people with no `role` (`type` `cc` by default, or `signer`) after every role in routing order. Subject and message default to the first template's (its name when it has no subject). `status` `draft` (default) or `sent` (scope `envelopes:send`). A template the caller may not use, another account's, a repeated one or not an id is `422` at its position. Answers `201` and the envelope, as `POST /envelopes`. Scopes `envelopes:write` and `templates:read`. `tests/use_templates.rs` (RLS on and off; access by share), the contract scenario; seen red 2026-11-19 with the route renamed (`405` for `201`) and with role names matched by case (unit test). The envelope does not yet record `template_ids` (`TSH-06`) |
-| `GET /envelopes?deleted=true` | The Deleted view (`UXW-02`): exactly the envelopes removed from the lists (`DELETE` of an envelope that ended without completing, `envelope.deleted`), readable by id as before. Restoring one is `NOT_ON_SERVER.restoreEnvelope` (ADR-031 Proposed) |
+| `GET /envelopes?deleted=true` | The Deleted view (`UXW-02`): exactly the envelopes removed from the lists (`DELETE` of an envelope that ended without completing, `envelope.deleted`), readable by id as before, each item with `deleted_at`. Restored with `POST /envelopes/{id}/restore` (ADR-031, `VS-06` As built) |
 | `DELETE /templates/{id}`, `GET /templates?deleted=true`, `POST /templates/{id}/restore` | Templates' Deleted view (`UXW-02`): deleting a live template (`If-Match` required) moves it there, kept with its roles, documents and fields (`templates.deleted_at`, migration 0022); it leaves `GET /templates` and every read and edit (`404`). `?deleted=true` lists them, most recently deleted first (any value but `true` or `false` is `422`). `restore` (`If-Match` honoured) brings it back whole, `200` with the whole template; a live template or none is `404`. Deleting it again in the Deleted view removes it for good. A template has no audit chain, so neither step is evidence. Another account's is `404`. `tests/inbox_folders.rs` `deleted_templates_*`, RLS on and off; seen red with delete removing at once (the Deleted view was empty) |
 | `GET /templates?view=`, `GET`/`PUT /templates/{id}/shares`, `PUT`/`DELETE /templates/{id}/favourite`, `GET /groups` | Template sharing, Shared with me and Favourites (`UXW-06`, migration 0031). Access is decided per request and per template, deny by default: the owner and administrators hold every right; a share with a member, a group or the whole account lets its members read and use the template (`access: use`) and, with `can_edit`, change it (`edit`); delete, restore, purge and sharing are the owner's (`owner`). No access is `404 CS-API-0002`, as another account's template; too little is `403 CS-AUTH-0006`; the Deleted view is the owner's alone (`404` to a sharer). `GET /templates` lists the templates the caller may use, each with `access`, `favourite` and `shared`; `view=owned`, `shared` (another member's templates a share reaches the caller by) or `favourites` narrow it (other values `422`). `PUT …/shares {items: [{user_id \| email \| group_id \| account: true, can_edit?}]}` replaces the set (at most 500); a user must be a member, a group one of the account's; the owner, or one target twice, is `422`; answers the shares with each member's name and email or the group's name. `PUT`/`DELETE …/favourite` star and unstar for the caller, idempotent, `204`, needing use access. `GET /groups` lists the account's groups with member counts (scope `templates:read`; managing groups is `UXW-07`, below). Templates made before 0031 were shared with the whole account to edit. `tests/template_sharing.rs` (RLS on and off), contract and isolation scenarios; seen red 2026-11-13 with the no-access answer turned into owner access (an unshared member read the template) and with the access-level check removed (a use share renamed it) |
 | `POST /groups`, `GET`/`PATCH`/`DELETE /groups/{id}`, `PUT /groups/{id}/members`, `GET`/`POST /permission-profiles`, `GET`/`PATCH`/`DELETE /permission-profiles/{id}` | Admin groups and custom permission profiles (`UXW-07`, migration 0033), scope `admin:users`. A group is `{id, name, members, user_ids}` (the list has counts only); a name is used once per account (`422` `exists` at `/name`); `PUT …/members {user_ids}` makes the members exactly those, each a member of the account (`422` at `/user_ids/{i}`), a repeated id once; deleting a group takes its template shares with it, and removing a member from the account takes them out of its groups. A profile is `{id, name, kind, builtin, permissions, members}`; `permissions` are what it grants in docs/40 §2 order plus `view_all_envelopes` (a built-in one's from its kind). A custom profile names only those (`422` at `/permissions/{i}`); built-in ones are `409 CS-WF-0001` to change or delete, and so is a profile a member holds to delete. A member's profile is read on every request, so a change applies from their next one; giving sending to more members is checked against the plan's seats (`CS-PLAN-0003`). Nobody gives more than they hold: making, changing or deleting a profile, assigning one (`POST /users`, `PATCH /users/{id}`) and changing, re-inviting (`POST /users/{id}/invite`, `PRF-01`) or removing another member are `403 CS-AUTH-0006` when the profile goes beyond the caller's own scopes or `view_all_envelopes`, and the administrator profile is an administrator's with every scope to give. Each change is an admin event (`group.created`, `group.renamed`, `group.deleted`, `group.member_added`, `group.member_removed`, `profile.created`, `profile.changed`, `profile.deleted`). Another account's group or profile is `404` whatever the body. `tests/admin_groups.rs` (RLS on and off), contract and isolation scenarios; seen red 2026-11-13 with `may_grant` always allowing, with the membership cascade removed and with the member guard removed |
 | `GET /envelopes/{id}/certificate` (declined, voided, expired) | `UXW-30`: when an envelope is declined, voided or expires, the server queues `seal_ended_certificate`; the worker renders the envelope certificate (docs/32 §6), which says how the envelope ended and never claims completion, seals it on its own with the platform key, stores it, reads it back and verifies it, and records it as the envelope's certificate; the chain is not extended. The endpoint then serves it, recorded as `certificate.downloaded`; before it exists `409 CS-API-0009`, and the read queues the job again (idempotent per envelope, so a repeated `GET` adds no second job; the only write a `GET` makes, under the read scope). Worker `tests/flow.rs`; server `tests/inbox_folders.rs` |
+
+## As built (`VS-06`: manage and correct)
+
+- **Quick views on the server.** `GET /envelopes?auth_failed=true`: envelopes `sent` or `delivered` in which a
+  recipient is locked out after failed authentication, or failed it and has not passed since (read from the engine
+  state's `auth_locked` and `auth_failures`; a resend clears both, docs/24 §3). `?expires_before=` (RFC 3339): those
+  expiring before it, the Expiring soon view; one that never expires is outside it.
+- **Envelope custom fields** (FG-139, docs/22 `custom_fields`): `GET /envelopes/{id}/custom-fields` and
+  `PUT /envelopes/{id}/custom-fields {items: [{name, value}]}` (replaced whole; at most 100, a name 1 to 100
+  characters, a value at most 1,000, no control characters, a repeated name `422` with the member code `exists`; a
+  purged envelope `409 CS-API-0009`; another account's id `404` before the body is read). Sender metadata only: never
+  shown to a recipient, never in the audit chain, the sealed PDF or the certificate. Searched with
+  `GET /envelopes?custom_field=<exact name>&custom_value=<contains, any case>` (`custom_value` without
+  `custom_field` is `422`).
+- **Correcting documents and fields.** The draft endpoints (`POST /documents`, `DELETE /documents/{doc}`, the field
+  endpoints) run the engine's `Correct` on a sent envelope, as `PATCH` already did; the web app's editor opens a sent
+  envelope with `?correct=1` and saves through them (no autosave).
+- **Reports** (`UXW-25`): `GET /reports/{envelopes|recipients|usage}?from&to&sender&format=json|csv&limit`
+  (`reports.read`, administrators by default) over envelopes created in `[from, to)`, Deleted left out, newest
+  first, at most 10,000 rows (`truncated`, or `x-truncated: true` on CSV). CSV is RFC 4180 with CRLF; a cell starting
+  with `=`, `+`, `-`, `@`, tab or carriage return starts with `'`.
+- **An editor changes fields at the ceremony** (`VS-06A`, FG-025, DocuSign's "Allow to edit"). `POST
+  /s/{token}/editor/fields {fields: [field], location?}` (`201`; each field in the API's wire form, at most 100),
+  `PATCH /s/{token}/editor/fields/{field}` (a JSON merge of the wire form; `page`, `x`, `y`, `width`, `height` may be
+  given flat and merge into the placement) and `DELETE /s/{token}/editor/fields/{field}`, each answering the view.
+  After authentication and consent like every ceremony write (SEC-CER-01). Only fields every recipient of which
+  (owner and `shared_with`) is the editor or later in the order and not yet reached, on a document the editor sees;
+  a recipient routing has reached, or a caller who is not an acting editor, is `409 CS-WF-0001`; a field not found
+  or on a hidden document `404`. The engine's `RecipientEdit` checks each change again and records
+  `envelope.corrected` with the editor as actor. The editor's view adds `editable_fields` (the later recipients'
+  fields; their own are in `fields`). The paths are under `/editor/` so `DELETE /s/{token}/fields/{field}` stays
+  free for a signer clearing a value (`UXW-35`, ADR-032). The signing page offers Edit fields (toolbar and More):
+  movable boxes, drag or arrow keys (Shift for 10 points), Delete, and an Add field bar (`webapp/editfields.js`).
+- **An intermediary sets a later recipient's authentication** (`VS-06A`, FG-026, DocuSign's "Update
+  recipients"). `POST /s/{token}/recipients` also takes, from an intermediary or editor, `phone` (E.164), `auth`
+  (the methods, replacing theirs) and `access_code` (stored as Argon2id as the sender's codes are, through the same
+  `store_codes`; never answered, to the intermediary or the sender). A code without `access_code` among the methods,
+  the method without a code given now or set before, an emailed code or `sso` without an email, or a code by SMS or
+  voice without a number is `422` at `/recipients/{i}/access_code`, `/auth` or `/phone`; dropping `access_code`
+  deletes the stored code; an agent changing the methods is refused by the engine (`403 CS-WF-0003`).
+  `later_recipients` now carries each one's `phone` and `auth` (never a code). The review step's later-recipient form
+  offers the link only, an access code, an emailed code or a text-message code.
+- **Strike-through by an editor** (`FG-080`, ADR-044). A field of type `strikethrough` (no value; drawn by the seal
+  as a line through the middle of its box) placed through the editor endpoints above; every recipient's view adds
+  `strikes` (`{id, document_id, placement, recipient_id}`, each strike on a document they see, hidden ones left out),
+  drawn on the signing and review pages. The edit mode's arrow keys with Alt resize a field, so a strike is made as
+  long as the words.
+- Tests: `-server` `tests/manage_views.rs`, `tests/correct_documents.rs`, `tests/editor_intermediary.rs`,
+  `tests/reports.rs`; the contract test calls every new operation; `webapp/tests/editfields.test.mjs`;
+  `manage-correct.spec.mjs` (`VS-06A`, mock mode and the Compose stack).
+- **Envelope id stamping** (`FG-009`, ADR-045): `signing_options.stamp_envelope_id` (absent when off) on
+  `POST /envelopes` and `PATCH /envelopes/{id}`; left out of a create request's `signing_options` (or with no
+  `signing_options`) it takes the account setting `stamp_envelope_id` (`PATCH /accounts/me`, a boolean, else `422`
+  pointing at `/settings/stamp_envelope_id`). A correction that changes it is `409 CS-WF-0001`. The ceremony view
+  carries it in `envelope.signing_options`, and the page draws the stamp over every page; `content?version=current`
+  and the sealed document carry it on every page. No new operation. Tests: `-server` `tests/envelope_id_stamp.rs`,
+  `-worker` `tests/end_to_end.rs`.
+- **Insights** (`FG-141`, DocuSign's Insights): `GET /insights?from&to&sender&utc_offset_minutes` over the envelopes
+  created in `[from, to)`, Deleted left out (the reports' window): `totals` (created, sent, completed, declined,
+  voided, expired, in progress), `time_to_complete` (median and 90th percentile seconds from sent to completed,
+  PostgreSQL's continuous `percentile_cont`; null with none completed), `days` (sent and completed per day in the
+  caller's day, oldest first, days with neither absent) and `top_senders` (the ten who sent most). Gated by
+  `envelopes.read`: a holder of `reports.read` sees the workspace (`scope: workspace`) and may name a sender;
+  anyone else sees their own envelopes (`scope: own`), and naming another sender is `403 CS-AUTH-0006`.
+  Aggregates only: no subject, name or address. The web app's Insights page (`#/insights`, from Reports) draws it.
+  Tests: `-server` `tests/insights.rs`; the contract test calls it.
+- **Restore a deleted envelope** (ADR-031 Accepted, `UXW-43`): `POST /envelopes/{id}/restore` (`envelopes.write`;
+  `If-Match` checked when sent) runs the engine's `RestoreDeleted`, records `envelope.restored` after the
+  `envelope.deleted` that removed it, and answers the envelope, now `deleted_at: null` and back in every list. Not
+  deleted, a second restore, or purged meanwhile (past its retention) is `409 CS-WF-0001`; another account's id `404`.
+  The envelope (`GET /envelopes/{id}`, every write) and the Deleted view's items now carry `deleted_at`. Web app: the
+  Deleted view in the sidebar's Views (rows from `?deleted=true`, shown only there), Restore as the inspector's primary
+  action, in the row menu and as the command `list.restore`; a deleted envelope's page offers Restore in place of
+  Delete. `NOT_ON_SERVER.restoreEnvelope` is gone.
+- **Evidence package** (`VS-06D`, `UXW-20`; docs/32 §6.1): `GET /envelopes/{id}/evidence-package`
+  (`envelopes.read`) answers `application/zip` (`attachment; filename="evidence-<id>.zip"`) for an envelope that is
+  over (completed, declined, voided, expired): `manifest.json` (every other entry's SHA-256 and size, the chain head),
+  `documents/NN-<name>.pdf` (sealed, or as it ended), `certificate.pdf`, `audit-trail.json` (as `GET …/audit`). It
+  records `envelope.exported` first, so the trail ends with it. In flight or purged `409 CS-WF-0001`, nothing
+  recorded; certificate not made yet `409 CS-API-0009`; another account's id `404`. Web app: "Download evidence
+  package" in the envelope page's More menu, once it is over (`api.evidencePackage`, the mock answers the same ZIP).
+- **Sign on paper** (`FG-013`, ADR-043): `signing_options.allow_sign_on_paper` (off by default, absent when off);
+  `POST /s/{token}/paper {content_base64, location?}` (public, the ceremony's cookie and every required
+  authentication and consent as any ceremony write): the scan, a PDF of at most the document size limit, screened,
+  admitted and normalized like any upload, added to the envelope as "Signed on paper.pdf" (fixed, sealed with the
+  rest), recorded as `recipient.signed_on_paper`, and the signer completed; answers the view. Off `409 CS-WF-0012`;
+  not a signer, not their turn or finished `409`; not a PDF `422`. Signing page: "Sign on paper" in More (command
+  `signer.sign-on-paper`), a dialog with Print, the steps and the upload. The certificate shows the signer as "Signed
+  on paper" with the scan's document.
+- Tests: `-server` `tests/manage_views.rs`, `tests/correct_documents.rs`, `tests/editor_intermediary.rs`,
+  `tests/reports.rs`, `tests/lists.rs` (restore), `tests/evidence_package.rs`, `tests/sign_on_paper.rs`; the
+  contract test calls every new operation.
 
 ## As built (`WEB-19`, document analysis; docs/33 §6, §7 As built)
 
@@ -772,7 +887,6 @@ once with `CS-NET-0002` (status 501, client-side only like `CS-NET-0001`; the `d
 
 | Name | Needs on the server | Row |
 | --- | --- | --- |
-| `restoreEnvelope` | `POST /envelopes/{id}/restore`: a deleted envelope back to the lists, a new workflow command recorded by a new audit type `envelope.restored` (ADR-031, Proposed; the Deleted view itself is served) | `UXW-02` |
 | `clearField` | `DELETE /s/{token}/fields/{field}`: a signer removes a value before finishing, recorded by a new audit type `recipient.field_cleared` (ADR-032, Proposed) | `UXW-35` |
 
 **The mock follows the server** where it had drifted: every engine recipient type is taken and routed (everyone but a
@@ -790,6 +904,6 @@ recipient with `id`, `name` and `email`, `{kind: "system"}`) and the recipient a
 draft's own edits as `envelope.corrected` (the server's `Edit` records them too) with `document.added` and
 `document.admitted`; at send `envelope.sent`, `document.fixed` and an `invitation.sent` per recipient reached; a signer's
 `recipient.signed` then `recipient.completed`; at the end `envelope.completing`, `document.flattened`, `document.sealed`
-and `envelope.completed`; a decline is `recipient.declined` then `envelope.declined`. Two types are the mock's alone,
-for calls not on the server: `envelope.restored` and `recipient.field_cleared`. `GET /s/{token}/history` filters as the
+and `envelope.completed`; a decline is `recipient.declined` then `envelope.declined`. One type is the mock's alone,
+for a call not on the server: `recipient.field_cleared`. `GET /s/{token}/history` filters as the
 server's, except that it still shows a draft's `envelope.corrected` before `envelope.sent` (`WEB-14`'s follow-up). `webapp/tests/audit-shape.test.mjs`.

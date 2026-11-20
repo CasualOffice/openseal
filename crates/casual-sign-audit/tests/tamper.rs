@@ -379,3 +379,26 @@ fn transfer_and_export_events_verify_and_are_recognised() {
     assert!(r.is_valid(), "{r:?}");
     assert_eq!(r.unrecognised, Vec::<usize>::new(), "{r:?}");
 }
+
+/// ADR-031 (`UXW-02`): `envelope.deleted` then `envelope.restored` are both in the trail,
+/// additive as ADR-027's types were: the chain stays valid and neither is unrecognised.
+#[test]
+fn delete_and_restore_events_verify_and_are_recognised() {
+    let c = chain(16, 5);
+    let mut ev = events(&c);
+    set(&mut ev[2], "type", Value::String("envelope.deleted".into()));
+    set(&mut ev[2], "data", Value::Object(vec![]));
+    rehash(&mut ev, 2);
+    relink(&mut ev, 3);
+    set(
+        &mut ev[3],
+        "type",
+        Value::String("envelope.restored".into()),
+    );
+    set(&mut ev[3], "data", Value::Object(vec![]));
+    rehash(&mut ev, 3);
+    relink(&mut ev, 4);
+    let r = verify_chain(&ev, &opts());
+    assert!(r.is_valid(), "{r:?}");
+    assert_eq!(r.unrecognised, Vec::<usize>::new(), "{r:?}");
+}

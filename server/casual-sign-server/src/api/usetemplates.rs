@@ -318,7 +318,14 @@ pub(crate) async fn create(c: Call, body: Bytes) -> Result<Response, ApiError> {
                 &bytes,
             )
             .await?;
-            decoded.push((d.name.clone(), bytes, note));
+            decoded.push((
+                d.name.clone(),
+                bytes,
+                super::envelopes::Screened {
+                    scan: note,
+                    converted: None,
+                },
+            ));
         }
     }
     let mut tx = c.tx().await?;

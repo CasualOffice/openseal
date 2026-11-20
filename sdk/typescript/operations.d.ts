@@ -9,15 +9,15 @@ export interface Operations {
   acceptInvite(params: { body: unknown }): Promise<any>;
   /** Accept a suggestion — `POST /api/v1/envelopes/{id}/suggestions/{s}/accept` (envelopes.write) */
   acceptSuggestion(params: { "id": string | number | boolean; "s": string | number | boolean }): Promise<any>;
-  /** Upload a document: admitted and normalized — `POST /api/v1/envelopes/{id}/documents` (envelopes.write) */
-  addDocument(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
+  /** Upload a document, a PDF or a Word document (.docx, converted to PDF, ADR-042): admitted and normalized; JSON, or the file itself with ?name= — `POST /api/v1/envelopes/{id}/documents` (envelopes.write) */
+  addDocument(params: { "id": string | number | boolean; "name"?: string | number | boolean; body: unknown }): Promise<any>;
   /** Add one field, or {items: [...]} — `POST /api/v1/envelopes/{id}/fields` (envelopes.write) */
   addFields(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Make a user an owner or admin (`org.admins.manage`, owners only), logged as `organization.admin_added` — `POST /api/v1/organizations/me/admins` (org.admins.manage) */
   addOrgAdmin(params: { body: unknown }): Promise<any>;
   /** Add one recipient, or {items: [...]} — `POST /api/v1/envelopes/{id}/recipients` (envelopes.write) */
   addRecipients(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
-  /** Add a document {name, content_base64}, admitted and normalized as an upload (WEB-06) — `POST /api/v1/templates/{id}/documents` (templates.write) */
+  /** Add a document {name, content_base64}, a PDF or a Word document (converted, ADR-042), admitted and normalized as an upload (WEB-06) — `POST /api/v1/templates/{id}/documents` (templates.write) */
   addTemplateDocument(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Add one field, or {items: [...]}, bound to roles (WEB-06) — `POST /api/v1/templates/{id}/fields` (templates.write) */
   addTemplateFields(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
@@ -39,6 +39,8 @@ export interface Operations {
   confirmPasswordReset(params: { body: unknown }): Promise<any>;
   /** Confirm TOTP enrolment with a first code (ASVS-01) — `POST /api/v1/auth/mfa/totp/confirm` (signing-in) */
   confirmTotp(params: { body: unknown }): Promise<any>;
+  /** Convert a Word document (.docx) to PDF and admit it as an upload would be, nothing stored: the editor's preview (ADR-042) — `POST /api/v1/conversions` (envelopes.write) */
+  convertDocument(params?: Record<string, never>): Promise<any>;
   /** Correct a sent envelope, all changes or none (If-Match required) — `POST /api/v1/envelopes/{id}/correct` (envelopes.send) */
   correctEnvelope(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** New API key or OAuth client; the secret is shown once — `POST /api/v1/api-clients` (api_clients.manage) */
@@ -137,18 +139,24 @@ export interface Operations {
   getCombined(params: { "id": string | number | boolean }): Promise<any>;
   /** A document's metadata — `GET /api/v1/envelopes/{id}/documents/{doc}` (envelopes.read) */
   getDocument(params: { "id": string | number | boolean; "doc": string | number | boolean }): Promise<any>;
-  /** Document bytes: original, normalized or sealed — `GET /api/v1/envelopes/{id}/documents/{doc}/content` (envelopes.read) */
+  /** Document bytes: original (a converted upload's original is its Word document), normalized or sealed — `GET /api/v1/envelopes/{id}/documents/{doc}/content` (envelopes.read) */
   getDocumentContent(params: { "id": string | number | boolean; "doc": string | number | boolean; "version"?: string | number | boolean }): Promise<any>;
   /** An envelope with its documents, recipients and fields — `GET /api/v1/envelopes/{id}` (envelopes.read) */
   getEnvelope(params: { "id": string | number | boolean }): Promise<any>;
+  /** The envelope's custom fields, by name (VS-06, FG-139) — `GET /api/v1/envelopes/{id}/custom-fields` (envelopes.read) */
+  getEnvelopeCustomFields(params: { "id": string | number | boolean }): Promise<any>;
   /** Envelope and recipient statuses — `GET /api/v1/envelopes/{id}/status` (envelopes.read) */
   getEnvelopeStatus(params: { "id": string | number | boolean }): Promise<any>;
+  /** One ZIP with everything that proves the agreement (VS-06D), recorded as envelope.exported — `GET /api/v1/envelopes/{id}/evidence-package` (envelopes.read) */
+  getEvidencePackage(params: { "id": string | number | boolean }): Promise<any>;
   /** A field — `GET /api/v1/envelopes/{id}/fields/{f}` (envelopes.read) */
   getField(params: { "id": string | number | boolean; "f": string | number | boolean }): Promise<any>;
   /** Every labelled field's value by data label — `GET /api/v1/envelopes/{id}/form-data` (envelopes.read) */
   getFormData(params: { "id": string | number | boolean }): Promise<any>;
   /** A group with its members' user ids — `GET /api/v1/groups/{id}` (groups.manage) */
   getGroup(params: { "id": string | number | boolean }): Promise<any>;
+  /** The Insights dashboard's figures over the envelopes created in a window (FG-141) — `GET /api/v1/insights` (envelopes.read) */
+  getInsights(params?: { "from"?: string | number | boolean; "sender"?: string | number | boolean; "to"?: string | number | boolean; "utc_offset_minutes"?: string | number | boolean }): Promise<any>;
   /** The signed-in user's own profile (UXW-37) — `GET /api/v1/users/me` */
   getMe(params?: Record<string, never>): Promise<any>;
   /** The workspace's document-analysis settings (docs/33 §6, WEB-19) — `GET /api/v1/account/settings/ml` (settings.sending) */
@@ -161,6 +169,8 @@ export interface Operations {
   getPermissionProfile(params: { "id": string | number | boolean }): Promise<any>;
   /** A recipient — `GET /api/v1/envelopes/{id}/recipients/{r}` (envelopes.read) */
   getRecipient(params: { "id": string | number | boolean; "r": string | number | boolean }): Promise<any>;
+  /** A workspace report over the envelopes created in a window (VS-06, UXW-25) — `GET /api/v1/reports/{kind}` (reports.read) */
+  getReport(params: { "kind": string | number | boolean; "format"?: string | number | boolean; "from"?: string | number | boolean; "limit"?: string | number | boolean; "sender"?: string | number | boolean; "to"?: string | number | boolean }): Promise<any>;
   /** The account's retention rules (ASVS-18) — `GET /api/v1/retention` (retention.manage) */
   getRetention(params?: Record<string, never>): Promise<any>;
   /** Who the credential is — `GET /api/v1/auth/session` (signing-in) */
@@ -198,7 +208,7 @@ export interface Operations {
   /** Documents in order — `GET /api/v1/envelopes/{id}/documents` (envelopes.read) */
   listDocuments(params: { "id": string | number | boolean }): Promise<any>;
   /** Envelopes, sorted and filtered, cursor-paginated (WEB-08) — `GET /api/v1/envelopes` (envelopes.read) */
-  listEnvelopes(params?: { "cursor"?: string | number | boolean; "date_field"?: string | number | boolean; "deleted"?: string | number | boolean; "folder"?: string | number | boolean; "from"?: string | number | boolean; "limit"?: string | number | boolean; "order"?: string | number | boolean; "q"?: string | number | boolean; "recipient"?: string | number | boolean; "sender"?: string | number | boolean; "sort"?: string | number | boolean; "status"?: string | number | boolean; "to"?: string | number | boolean; "waiting_for"?: string | number | boolean }): Promise<any>;
+  listEnvelopes(params?: { "auth_failed"?: string | number | boolean; "cursor"?: string | number | boolean; "custom_field"?: string | number | boolean; "custom_value"?: string | number | boolean; "date_field"?: string | number | boolean; "deleted"?: string | number | boolean; "expires_before"?: string | number | boolean; "folder"?: string | number | boolean; "from"?: string | number | boolean; "limit"?: string | number | boolean; "order"?: string | number | boolean; "q"?: string | number | boolean; "recipient"?: string | number | boolean; "sender"?: string | number | boolean; "sort"?: string | number | boolean; "status"?: string | number | boolean; "to"?: string | number | boolean; "waiting_for"?: string | number | boolean }): Promise<any>;
   /** The account's electronic disclosure: the one the workflow policy names, with its text, and the published versions (ERSD-01) — `GET /api/v1/ersd-versions` (ersd.manage) */
   listErsdVersions(params?: Record<string, never>): Promise<any>;
   /** Fields, optionally of one recipient or document — `GET /api/v1/envelopes/{id}/fields` (envelopes.read) */
@@ -313,6 +323,8 @@ export interface Operations {
   resendEnvelope(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Reset the second factors of a member who lost them (ASVS-32, ASVS 2.5.7) — `POST /api/v1/users/{id}/second-factor/reset` (users.update) */
   resetMemberSecondFactor(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
+  /** Bring a deleted envelope back to the lists (ADR-031) — `POST /api/v1/envelopes/{id}/restore` (envelopes.write) */
+  restoreEnvelope(params: { "id": string | number | boolean }): Promise<any>;
   /** Bring a template of the Deleted view back, with everything it had (UXW-02) — `POST /api/v1/templates/{id}/restore` (templates.write) */
   restoreTemplate(params: { "id": string | number | boolean }): Promise<any>;
   /** Revoke an API client — `DELETE /api/v1/api-clients/{id}` (api_clients.manage) */
@@ -325,6 +337,8 @@ export interface Operations {
   sendBulkSendRows(params: { "id": string | number | boolean }): Promise<any>;
   /** Send a draft — `POST /api/v1/envelopes/{id}/send` (envelopes.send) */
   sendEnvelope(params: { "id": string | number | boolean }): Promise<any>;
+  /** Replace the envelope's custom fields (VS-06) — `PUT /api/v1/envelopes/{id}/custom-fields` (envelopes.write) */
+  setEnvelopeCustomFields(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Make the group's members exactly these members of the account — `PUT /api/v1/groups/{id}/members` (groups.manage) */
   setGroupMembers(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Place an envelope under legal hold (ASVS-18) — `PUT /api/v1/envelopes/{id}/legal-hold` (retention.manage) */

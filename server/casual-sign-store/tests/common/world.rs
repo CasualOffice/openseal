@@ -75,6 +75,7 @@ pub fn events(envelope: EnvelopeId, n: usize) -> Vec<AuditEvent> {
             EventData::EnvelopeSent {
                 recipients: 1,
                 documents: 1,
+                envelope_id_stamped: false,
             }
         };
         let e = chain.next(at, Actor::system(), Context::default(), data);

@@ -70,11 +70,22 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
   by default, the completed documents).
 - Viewers complete by viewing every document to the end.
 - Approvers complete with Approve or decline with Decline; they never sign.
-- Editors (allowed to edit) may change later recipients and fields before signing.
+- Editors (allowed to edit) may change later recipients and fields before signing. At the ceremony (`VS-06A`, docs/40
+  §6) an editor adds, moves and removes fields of their own and of recipients later in the order not yet reached
+  (`POST /s/{token}/editor/fields`, `PATCH`/`DELETE /s/{token}/editor/fields/{field}`), each a `RecipientEdit`
+  recorded as `envelope.corrected` with the editor as actor; a field naming a recipient routing has reached is
+  refused (`409 CS-WF-0001`), as is any other recipient type.
 - Agents (specify recipients) supply the name and email of later recipients (`POST /s/{token}/recipients`, docs/40 §6), then finish.
+- Intermediaries (update recipients) and editors may also set a later recipient's phone number and authentication
+  through the same call (`VS-06A`): `auth` replaces their methods, an `access_code` is stored as Argon2id as the
+  sender's is and never answered, and dropping `access_code` drops the stored code; an agent changing the methods is
+  refused by the engine (`403 CS-WF-0003`).
 - In-person signers are hosted by a staff user who authenticates first; the event records both. On the server
   (`UXW-36`), `POST /envelopes/{id}/recipients/{r}/host` runs `HostInPerson` as `InPersonHost` and returns a one-time
   link whose every command runs as that host (docs/40 As built); the signer's emailed link cannot act for them.
+- **Envelope id stamp (`FG-009`, ADR-045).** `signing_options.stamp_envelope_id` is set while a draft only: a
+  correction that turns it on or off is `CS-WF-0001`, since a signer may have seen the pages already. `envelope.sent`
+  records it (`envelope_id_stamped`).
 - **Signer location (GEO-01).** When the envelope's `signing_options.capture_location` is on, the signing page asks the
   signer for their device's location; every recipient action (`recipient.delivered`, `recipient.viewed_document`,
   `recipient.signed`, `recipient.approved`, `recipient.declined`) then carries a location in its context
@@ -219,8 +230,17 @@ objects concerned, never their content.
   completing (`declined`, `voided`, `expired`) from the lists. It records `envelope.deleted`, sets the state's
   `deleted_at`, and changes nothing else: no status change, no scrub, no effect; the chain and evidence stay and later
   access is still recorded. Any other status, a purged envelope, or a second time is `CS-WF-0001`.
-  Bringing one back to the lists is a planned command `RestoreDeleted` recording `envelope.restored` (ADR-031,
-  Proposed, `UXW-02`); until it is Accepted the server lists deleted envelopes (the Deleted view) but restores none.
+- **Sign on paper** (`SignOnPaper {recipient, document}`, ADR-043, `FG-013`): with `signing_options.allow_sign_on_paper`
+  on, a `signer` whose turn it is, authenticated and consented, completes with the admitted scan of what they printed
+  and signed by hand. The scan is added as a fixed document (`document.added`, `document.admitted`, `document.fixed`),
+  then `recipient.signed_on_paper {recipient_id, documents, document_id, upload_hash}` (the delivered documents
+  printed) and `recipient.completed`; routing moves on and the seal covers the scan. Off is `CS-WF-0012`; another
+  recipient type `CS-WF-0001`; a used document id `CS-WF-0010`; the envelope's document limit `CS-WF-0001`.
+- **Restore deleted** (`RestoreDeleted`, ADR-031, `UXW-43`): the sender or an administrator lists a deleted envelope
+  again. Allowed only while `deleted_at` is set and the envelope is not purged (a purged one is past its retention and
+  stays gone); records `envelope.restored` `{}` and clears `deleted_at`, nothing else: no status change, no effect.
+  Not deleted, purged, or a second time is `CS-WF-0001`. The trail keeps both `envelope.deleted` and
+  `envelope.restored`; it can be deleted and restored again.
 - **Transfer** (`Transfer {to_user}`, `ORG-09`, docs/23 §2.4, additive as ADR-027): an administrator principal (the
   server admits a member holding `envelopes.transfer`) passes the envelope's ownership to another member of the same
   workspace, in any status but purged. It records `envelope.transferred {from_user, to_user}`, sets the state's
@@ -254,7 +274,9 @@ objects concerned, never their content.
 | Send (validate for send returning every violation; `document.fixed`; first step invited; expiry, warning, reminders scheduled) | Built |
 | Delete draft | Built |
 | Delete an envelope that ended without completing from the lists (`envelope.deleted`, nothing purged; `WEB-08`) | Built |
-| Transfer ownership within the workspace (`envelope.transferred`; `ORG-09`) and record an evidence export (`envelope.exported`) | Built (the export route: `ORG-18`) |
+| Restore a deleted envelope to the lists (`envelope.restored`; ADR-031, `UXW-43`) | Built |
+| Sign on paper: the scan added as a fixed document, `recipient.signed_on_paper` (ADR-043, `FG-013`) | Built |
+| Transfer ownership within the workspace (`envelope.transferred`; `ORG-09`) and record an evidence export (`envelope.exported`, once the envelope is over: completed or ended) | Built (the export route `GET …/evidence-package`, `VS-06D`; the import: `ORG-18`) |
 | Deliver/open (`recipient.delivered`; envelope `delivered` per §2) | Built |
 | Consent to the current ERSD; withdraw | Built |
 | Authenticate: challenge, pass, fail with lockout after `max_auth_attempts`, unlock by resend; host-asserted | Built |

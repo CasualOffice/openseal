@@ -276,13 +276,50 @@ pub(crate) struct EnvelopeCreate {
     #[serde(default)]
     pub expires_in_days: Option<u32>,
     #[serde(default)]
-    pub signing_options: Option<SigningOptions>,
+    pub signing_options: Option<SigningOptionsIn>,
     #[serde(default)]
     pub seal_profile: Option<SealProfile>,
     /// Place a field at each `{{type:recipient…}}` tag in the documents (`VS-04E`,
     /// docs/40 §Text tags); the tag's recipient is a recipient's `ref`.
     #[serde(default)]
     pub text_tags: bool,
+}
+
+/// `signing_options` of a new envelope: as [`SigningOptions`], except that
+/// `stamp_envelope_id` left out takes the account's default (`FG-009`).
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SigningOptionsIn {
+    #[serde(default = "yes")]
+    allow_reassign: bool,
+    #[serde(default = "yes")]
+    allow_decline: bool,
+    #[serde(default = "yes")]
+    allow_finish_later: bool,
+    #[serde(default)]
+    capture_location: bool,
+    #[serde(default)]
+    stamp_envelope_id: Option<bool>,
+    #[serde(default)]
+    allow_sign_on_paper: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl SigningOptionsIn {
+    /// The options, with the stamp the request names or else `stamp_default`.
+    pub(crate) fn resolve(self, stamp_default: bool) -> SigningOptions {
+        SigningOptions {
+            allow_reassign: self.allow_reassign,
+            allow_decline: self.allow_decline,
+            allow_finish_later: self.allow_finish_later,
+            capture_location: self.capture_location,
+            stamp_envelope_id: self.stamp_envelope_id.unwrap_or(stamp_default),
+            allow_sign_on_paper: self.allow_sign_on_paper,
+        }
+    }
 }
 
 /// Envelope settings a `PATCH` may change while it is a draft.
@@ -367,6 +404,7 @@ pub(crate) fn envelope(s: &EnvelopeState) -> Value {
         "send_at": s.send_at,
         "ended_at": s.ended_at,
         "expires_at": s.expires_at,
+        "deleted_at": s.deleted_at,
         "void_reason": s.void_reason.as_ref().map(|r| &r.0),
         "reminders": s.reminders,
         "signing_options": s.options,

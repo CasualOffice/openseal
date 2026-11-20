@@ -33,7 +33,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
       # Engine crates only: hosts under server/ are native (docs/19).
-      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-keyd-client --exclude casual-sign-modeld --exclude casual-sign-secrets --exclude casual-sign-seclog --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked
+      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-keyd-client --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-secrets --exclude casual-sign-seclog --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked
       - run: python3 tools/check-repo.py
       - run: python3 -I fixtures/tools/generate.py --check
       - run: python3 -I fixtures/corpus/fetch.py --check
@@ -81,7 +81,7 @@ jobs:
             part: server
         include:
           - part: engine
-            skip: "--exclude casual-sign-store --exclude casual-sign-policy --exclude casual-sign-platform-store --exclude casual-sign-console --exclude casual-sign-keyd-client --exclude casual-sign-secrets --exclude casual-sign-seclog --exclude casual-sign-keyd --exclude casual-sign-modeld --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude clipper2-rust"
+            skip: "--exclude casual-sign-store --exclude casual-sign-policy --exclude casual-sign-platform-store --exclude casual-sign-console --exclude casual-sign-keyd-client --exclude casual-sign-secrets --exclude casual-sign-seclog --exclude casual-sign-keyd --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude clipper2-rust"
           - part: server
             skip: "--exclude casual-sign-model --exclude casual-sign-pdf --exclude casual-sign-crypto --exclude casual-sign-fields --exclude casual-sign-pii --exclude casual-sign-verify --exclude casual-sign-flatten --exclude casual-sign-seal --exclude casual-sign-audit --exclude casual-sign-certificate --exclude casual-sign-sdk --exclude casual-sign-xfa --exclude casual-sign-cli --exclude casual-sign-wasm --exclude casual-sign-workflow"
     runs-on: ${{ matrix.os }}
@@ -420,6 +420,16 @@ jobs:
         with:
           name: slice-9-demo-${{ matrix.shard }}
           path: target/e2e-demo/vs09-*
+          if-no-files-found: error
+          retention-days: 90
+      # The slice 6 demo (VS-06B): manage-correct.spec.mjs's run recorded (a failed access
+      # code in the Authentication failed view, resend, custom fields and their search,
+      # documents corrected, a copy, the server's reports, a transfer).
+      - if: success() && hashFiles('target/e2e-demo/vs06-*') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: slice-6-demo-${{ matrix.shard }}
+          path: target/e2e-demo/vs06-*
           if-no-files-found: error
           retention-days: 90
       - if: failure()

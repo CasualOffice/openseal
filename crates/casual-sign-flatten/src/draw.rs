@@ -165,6 +165,31 @@ pub(crate) fn text(
     ))
 }
 
+/// The envelope id stamp (`FG-009`, ADR-045): `line` set on one line, left-aligned,
+/// grey, at most 7 pt, in a `w` × `h` box; it shrinks to fit a narrow page. `None` when
+/// a character is in no bundled face (an [`Id`] is ASCII, so never in practice).
+pub(crate) fn stamp(ctx: &mut Ctx<'_>, line: &str, w: f64, h: f64) -> Option<Drawing> {
+    let face = ctx.fonts.for_family(FontFamily::Helvetica)?;
+    let mapped = map(ctx.fonts, face, line).ok()?;
+    let setting = Setting {
+        face,
+        size: Some(STAMP_SIZE.min(h)),
+        shrink: true,
+        wrap: false,
+        align: Align::Left,
+        color: Color([0.25, 0.25, 0.25]),
+        padding: 0.0,
+        comb: None,
+        top: false,
+    };
+    let mut d = Drawing::default();
+    set(&mut d.canvas, ctx.uses, ctx.fonts, &mapped, w, h, &setting);
+    Some(d)
+}
+
+/// The stamp's text size in points (DocuSign's stamp is about this size).
+pub(crate) const STAMP_SIZE: f64 = 7.0;
+
 /// A checkmark filling most of the smaller side, centred.
 pub(crate) fn checkmark(canvas: &mut Canvas, w: f64, h: f64, color: Color) {
     let side = w.min(h) * 0.8;
@@ -175,6 +200,19 @@ pub(crate) fn checkmark(canvas: &mut Canvas, w: f64, h: f64, color: Color) {
     canvas.move_to(x0 + side * 0.18, y0 + side * 0.52);
     canvas.line_to(x0 + side * 0.42, y0 + side * 0.24);
     canvas.line_to(x0 + side * 0.84, y0 + side * 0.80);
+    canvas.line("S");
+    canvas.line("Q");
+}
+
+/// A strike-through (FG-080, ADR-044): one horizontal line through the vertical middle of
+/// a `w` × `h` box, as wide as it, 1 point thick (thinner in a box under 2 points high),
+/// with butt caps so it ends exactly at the box's edges.
+pub(crate) fn strike(canvas: &mut Canvas, w: f64, h: f64, color: Color) {
+    canvas.line("q");
+    canvas.stroke_color(color);
+    canvas.line(&format!("{} w 0 J", num(h.min(2.0) / 2.0)));
+    canvas.move_to(0.0, h / 2.0);
+    canvas.line_to(w, h / 2.0);
     canvas.line("S");
     canvas.line("Q");
 }
@@ -467,6 +505,14 @@ pub(crate) fn field(
                 _ => Err(mismatch()),
             }
         }
+        FieldType::Strikethrough => match value {
+            FieldValue::Checked(true) => {
+                let mut d = Drawing::default();
+                strike(&mut d.canvas, w, h, color_of(field));
+                Ok(Drawn::Marks(d, Fit::default()))
+            }
+            _ => Err(mismatch()),
+        },
         FieldType::Checkbox => match value {
             FieldValue::Checked(true) => {
                 let mut d = Drawing::default();

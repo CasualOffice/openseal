@@ -388,7 +388,102 @@ async fn scenario(rls: Rls) {
     assert_eq!(d.status, StatusCode::NO_CONTENT, "{:?}", d.json());
 
     attachments(&api, &a, &b, &sam).await;
+    restore(&api, &a, &b).await;
     api.db.drop().await;
+}
+
+/// ADR-031 (`UXW-02`): a deleted envelope is in the Deleted view; restoring it brings it
+/// back to the lists with `envelope.deleted` and `envelope.restored` both in its trail;
+/// another account's id is 404; a second restore, or one after a purge, is 409.
+async fn restore(api: &Api, a: &Tenant, b: &Tenant) {
+    let k = &a.auth;
+    let id = make(api, k, "Echo restore", true, json!({})).await;
+    let path = format!("/api/v1/envelopes/{id}/restore");
+    ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/envelopes/{id}/void"),
+            k,
+            Some(json!({"reason": "Wrong party"})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "void",
+    );
+    let r = api.call("POST", &path, k, None, &[]).await;
+    assert_eq!(
+        r.status,
+        StatusCode::CONFLICT,
+        "not deleted: {:?}",
+        r.json()
+    );
+    let tag = etag(api, k, &id).await;
+    let r = api
+        .call(
+            "DELETE",
+            &format!("/api/v1/envelopes/{id}"),
+            k,
+            None,
+            &[("if-match", &tag)],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{:?}", r.json());
+    let echo = strs(&["Echo restore"]);
+    assert_eq!(walk(api, k, "&deleted=true&q=Echo", 5).await, echo);
+    assert!(walk(api, k, "&q=Echo", 5).await.is_empty());
+    let view = ok(
+        api.call("GET", "/api/v1/envelopes?deleted=true&q=Echo", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "deleted view",
+    );
+    assert!(view["items"][0]["deleted_at"].is_string(), "{view}");
+    // Another account's id is 404, whatever it sends.
+    let r = api.call("POST", &path, &b.auth, None, &[]).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND, "{:?}", r.json());
+    let before = audit_types(api, k, &id).await;
+    let back = ok(
+        api.call("POST", &path, k, None, &[]).await,
+        StatusCode::OK,
+        "restore",
+    );
+    assert_eq!(back["status"], "voided");
+    assert!(back["deleted_at"].is_null(), "{back}");
+    assert_eq!(walk(api, k, "&q=Echo", 5).await, echo);
+    assert!(walk(api, k, "&deleted=true&q=Echo", 5).await.is_empty());
+    let after = audit_types(api, k, &id).await;
+    assert_eq!(after.len(), before.len() + 1);
+    assert_eq!(before.last().unwrap()["type"], "envelope.deleted");
+    assert_eq!(after.last().unwrap()["type"], "envelope.restored");
+    let r = api.call("POST", &path, k, None, &[]).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "twice: {:?}", r.json());
+    assert_eq!(r.code(), "CS-WF-0001");
+    // Deleted again and purged: past its retention it cannot come back.
+    let tag = etag(api, k, &id).await;
+    let r = api
+        .call(
+            "DELETE",
+            &format!("/api/v1/envelopes/{id}"),
+            k,
+            None,
+            &[("if-match", &tag)],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{:?}", r.json());
+    let r = api
+        .call(
+            "POST",
+            &format!("/api/v1/envelopes/{id}/purge"),
+            k,
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::ACCEPTED, "purge: {:?}", r.json());
+    let r = api.call("POST", &path, k, None, &[]).await;
+    assert_eq!(r.status, StatusCode::CONFLICT, "purged: {:?}", r.json());
+    assert_eq!(r.code(), "CS-WF-0001");
 }
 
 async fn attachments(api: &Api, a: &Tenant, b: &Tenant, sam: &Auth) {

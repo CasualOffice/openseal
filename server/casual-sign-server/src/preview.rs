@@ -181,6 +181,9 @@ pub(crate) async fn render(
     let caps = captures(st, &fields).await?;
     let engine = st.0.engine.clone();
     let envelope = state.id.as_str().to_owned();
+    // FG-009 (ADR-045): the preview carries the stamp as the seal will.
+    let mut options = FlattenOptions::default();
+    options.envelope_id_stamp = state.options.stamp_envelope_id;
     let filled = tokio::task::spawn_blocking(move || {
         let values = BTreeMap::new();
         let fill = casual_sign_sdk::Fill {
@@ -191,7 +194,7 @@ pub(crate) async fn render(
             acroform: None,
             require_complete: false,
         };
-        engine.fill_and_flatten(&delivered, &fill, &FlattenOptions::default())
+        engine.fill_and_flatten(&delivered, &fill, &options)
     })
     .await
     .map_err(|_| ApiError::internal("preview"))??;

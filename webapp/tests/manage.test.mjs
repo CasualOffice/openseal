@@ -222,3 +222,18 @@ test("a document fingerprint is shown only when the server recorded one", () => 
   assert.equal(documentFingerprint({ upload_sha256: "zz" }), null);
   assert.equal(groupHex("0123456789"), "0123 4567 89");
 });
+
+test("ADR-031: a deleted envelope is only in the Deleted view, and offers Restore in place of Delete", () => {
+  const gone = { id: "gone", status: "voided", deleted_at: "2026-11-20T10:00:00Z" };
+  const rows = [...ROWS, gone];
+  for (const v of ["all", "voided", "action", "waiting"]) assert.equal(inView(gone, v, MINE, NOW), false, v);
+  assert.equal(inView(gone, "deleted", MINE, NOW), true);
+  assert.ok(ROWS.every((r) => !inView(r, "deleted", MINE, NOW)), "a listed one is never in Deleted");
+  const c = viewCounts(rows, MINE, NOW);
+  assert.deepEqual([c.all, c.voided, c.deleted], [7, 1, 1]);
+  assert.deepEqual(rowActions("voided", { deleted: true }), [["open"], ["history"], ["restore"]]);
+  const a = envelopeActions("declined", { deleted: true });
+  assert.equal(a.primary, "restore");
+  assert.ok(!a.more.flat().includes("delete"), "no second delete");
+  assert.ok(a.more.flat().includes("copy-resend"));
+});

@@ -26,6 +26,7 @@ def images(**over: str) -> dict[str, str]:
         "server": f"{PREFIX}-server:0.0.2@{D1}",
         "worker": f"{PREFIX}-worker:0.0.2@{D2}",
         "keyd": f"{PREFIX}-keyd@{D3}",
+        "convertd": f"{PREFIX}-convertd:0.0.2@{D3}",
     }
     base.update(over)
     return {k: v for k, v in base.items() if v}
@@ -127,7 +128,7 @@ class Cli(unittest.TestCase):
             out = Path(tmp, "out")
             rc, err = self.run_main(["--version", "0.0.2", "--out", str(out), "--image", f"server={PREFIX}-server:0.0.2"])
             self.assertEqual(rc, 1)
-            self.assertIn("missing image for: keyd, worker", err)
+            self.assertIn("missing image for: convertd, keyd, worker", err)
             self.assertFalse(out.exists())
             rc, err = self.run_main(["--out", str(out), "--image", "server"])
             self.assertEqual(rc, 1)

@@ -10,6 +10,7 @@
   <url><loc>https://seal.casualoffice.org/docs/api-bulk-sends.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-ceremony.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-contacts.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-conversions.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-documents.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-envelopes.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-ersd.html</loc></url>
@@ -17,11 +18,13 @@
   <url><loc>https://seal.casualoffice.org/docs/api-fields.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-folders.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-groups.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-insights.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-oauth.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-objects.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-organizations.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-permission-profiles.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-recipients.html</loc></url>
+  <url><loc>https://seal.casualoffice.org/docs/api-reports.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-retention.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-templates.html</loc></url>
   <url><loc>https://seal.casualoffice.org/docs/api-users.html</loc></url>

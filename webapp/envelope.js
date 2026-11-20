@@ -24,7 +24,7 @@ import { register, unregisterPrefix } from "./commands.js";
 import { button, busy, statusPill, errorState, skeletonLines, skeletonBlock, toast, toastError, emptyState, pdfPreview, menuButton } from "./ui/index.js";
 import {
   statusLine, auditTable, copyEnvelope, saveAsTemplate, deleteEnvelope, downloadCurrent, downloadSealed, downloadCertificate, hasCertificate,
-  correctPanel, historyPanel, voidEnvelopes, copyText, shortDate, DELETABLE, ENDED,
+  correctPanel, historyPanel, voidEnvelopes, copyText, shortDate, DELETABLE, ENDED, customFieldsPanel, transferPanel, restoreEnvelope, downloadEvidencePackage,
 } from "./envactions.js";
 import { envelopeActions, pillOf } from "./managemodel.js";
 import { recipientsSection, evidenceSection, insightsSection, insightsAvailable } from "./agreementparts.js";
@@ -44,6 +44,7 @@ export function mount(view, ctx, [rawId]) {
   let senderName = "";
   let mlOn = false;
   let live = []; // destroy() of live sections (Insights)
+  let custom = null; // the custom fields (VS-06); null where the server has none
   const offMeaning = registerMeaningSearch(ctx);
 
   async function load() {
@@ -55,6 +56,7 @@ export function mount(view, ctx, [rawId]) {
         try { senderName = ((await ctx.api.users.list()).items || []).find((u) => u.id === envelope.sender_user_id)?.name || ""; } catch { /* the line says "sender" */ }
       }
       mlOn = await insightsAvailable().catch(() => false);
+      custom = ctx.api.customFields ? await ctx.api.customFields(id).then((x) => x.items || [], () => null) : null;
       render(envelope, audit);
     } catch (err) {
       if (ctx.failed(err)) return;
@@ -74,16 +76,21 @@ export function mount(view, ctx, [rawId]) {
       edit: { label: t("envelope.edit"), icon: "file-pen-line", panel: true, run: () => ctx.navigate(`#/prepare/${encodeURIComponent(e.id)}`) },
       correct: { label: t("envelope.correct"), icon: "pencil", testId: "envelope-correct", panel: true, run: guard(async () => { if (await correctPanel(ctx, id)) load(); }) },
       resend: { label: t("envelope.resend"), icon: "rotate-cw", run: () => resend() },
+      "correct-docs": { label: t("envelope.correct-docs"), icon: "file-pen-line", testId: "envelope-correct-docs", panel: true, run: () => ctx.navigate(`#/prepare/${encodeURIComponent(e.id)}?correct=1`) },
       "download-current": { label: t("envelope.download-current"), icon: "download", title: t("envelope.download-current-help"), run: guard(() => downloadCurrent(ctx, id, env)) },
       "download-ended": { label: t("envelope.download-ended"), icon: "download", title: t("envelope.download-ended-help"), run: guard(() => downloadCurrent(ctx, id, env)) },
       download: { label: t("envelope.download"), icon: "download", run: guard(() => downloadSealed(ctx, id, env)) },
       certificate: { label: t("envelope.certificate"), icon: "file-check", run: guard(() => downloadCertificate(ctx, id)) },
+      evidence: { label: t("envelope.evidence-package"), icon: "shield-check", testId: "envelope-evidence", run: guard(() => downloadEvidencePackage(ctx, id)) },
       "copy-resend": { label: t("envelope.copy-resend"), icon: "copy", title: t("envelope.copy-resend-help"), run: copyThen },
       copy: { label: t("agreements.copy"), icon: "copy", run: copyThen },
       template: { label: t("agreements.save-template"), icon: "layout-template", run: guard(() => saveAsTemplate(ctx, id)) },
       history: { label: t("agreements.history"), icon: "list-ordered", panel: true, run: guard(() => historyPanel(ctx, id, subject)) },
+      fields: { label: t("envelope.cf-edit"), icon: "pencil", testId: "envelope-custom-fields", panel: true, run: guard(async () => { if (await customFieldsPanel(ctx, id)) load(); }) },
+      transfer: { label: t("envelope.transfer"), icon: "user", testId: "envelope-transfer", panel: true, run: guard(async () => { if (await transferPanel(ctx, id)) load(); }) },
       void: { label: t("envelope.void"), icon: "ban", danger: true, panel: true, run: guard(async () => { if (await voidEnvelopes(ctx, [id])) load(); }) },
       delete: { label: t(e.status === "draft" ? "agreements.delete-draft" : "agreements.delete"), icon: "trash-2", danger: true, panel: true, run: guard(async () => { if (await deleteEnvelope(ctx, id, subject, e.status)) ctx.navigate("#/agreements"); }) },
+      restore: { label: t("agreements.restore"), icon: "undo-2", testId: "envelope-restore", run: guard(async () => { await restoreEnvelope(ctx, id); load(); }) },
     };
   }
 
@@ -95,7 +102,7 @@ export function mount(view, ctx, [rawId]) {
     const subject = e.subject || t("envelope.untitled");
     const back = h("a", { href: "#/agreements", class: "os-back" }, icon("chevron-left", { size: 16 }), h("span", { text: t("agreements.title") }));
     const v = verbs(e);
-    const plan = envelopeActions(e.status, { cert: hasCertificate(ctx, e.status) });
+    const plan = envelopeActions(e.status, { cert: hasCertificate(ctx, e.status), transfer: !!ctx.session?.admin, fields: custom !== null, deleted: !!e.deleted_at });
     // Every verb is a command (docs/47 principle 4): the buttons own theirs, the More
     // menu's are registered.
     for (const ids of plan.more) for (const a of ids) if (v[a]) register(`envelope.act.${a}`, { label: v[a].label, run: v[a].run });
@@ -159,6 +166,7 @@ export function mount(view, ctx, [rawId]) {
       side.append(h("section", { class: "os-card os-env__card", attrs: { "aria-label": t("inspector.tab.insights") } }, s.el));
     }
     if (e.status !== "draft") side.append(sideCard(t("envelope.evidence"), "evidence-h", evidenceSection(ctx, e, audit, { certificate: false }), "evidence-card"));
+    if (custom) side.append(sideCard(t("envelope.cf-title"), "cf-h", customList(custom), "custom-fields-card"));
     const mainCol = h("div", { class: "os-env__main" }, summaryCard(e), docCard, auditSection(e, audit));
     body.append(...[back, head, endedCallout(e), h("div", { class: "os-env__grid" }, mainCol, side)].filter(Boolean));
   }
@@ -222,6 +230,12 @@ export function mount(view, ctx, [rawId]) {
     return h("section", { class: "os-card os-envsum", attrs: { "aria-label": t("envelope.summary") } },
       h("div", { class: "os-envsum__col" }, h("h2", { class: "os-envsum__title", text: t("envelope.details") }), facts),
       h("div", { class: "os-envsum__col" }, h("h2", { class: "os-envsum__title", text: t("envelope.message-settings") }), settings));
+  }
+
+  /// The custom fields as a definition list (VS-06), or a line saying there are none.
+  function customList(items) {
+    if (!items.length) return h("p", { class: "os-muted os-small", text: t("envelope.cf-none") });
+    return h("dl", { class: "os-meta" }, items.map((f) => [h("dt", { text: f.name }), h("dd", { text: f.value || "—" })]));
   }
 
   function auditSection(e, audit) {

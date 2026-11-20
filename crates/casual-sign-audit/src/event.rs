@@ -239,6 +239,11 @@ pub enum EventData {
         recipients: u32,
         /// Documents at send.
         documents: u32,
+        /// Every page carries the envelope id stamp (`FG-009`, ADR-045): what each
+        /// signer sees and the sealed document holds. Absent when off, so events
+        /// written before it existed serialize, and hash, as they did.
+        #[serde(default, skip_serializing_if = "is_false")]
+        envelope_id_stamped: bool,
     },
     /// The sender corrected the envelope after sending.
     #[serde(rename = "envelope.corrected")]
@@ -281,6 +286,11 @@ pub enum EventData {
     /// (WEB-08); nothing was purged: its documents, state and this chain stay.
     #[serde(rename = "envelope.deleted")]
     EnvelopeDeleted {},
+    /// An envelope removed from the sender's lists (`envelope.deleted`) was listed again
+    /// (ADR-031, `UXW-02`); nothing in the agreement changed. Additive to ADR-010 as
+    /// ADR-027 and ADR-030 were.
+    #[serde(rename = "envelope.restored")]
+    EnvelopeRestored {},
     /// The envelope's ownership passed to another member of the same workspace
     /// (ORG-09, docs/23 §2.4; additive to ADR-010 as ADR-027 was).
     #[serde(rename = "envelope.transferred")]
@@ -486,6 +496,22 @@ pub enum EventData {
         /// The documents approved.
         documents: Vec<DocumentHash>,
     },
+    /// A signer signed on paper (FG-013, ADR-043): they printed the documents named here
+    /// as delivered, signed them by hand and uploaded the scan, which was admitted like
+    /// any upload and added to the envelope as `document_id` (its own `document.added`
+    /// and `document.fixed` precede this event), so the seal covers it. Their
+    /// electronic fields take no part. Additive to ADR-010 as ADR-027 was.
+    #[serde(rename = "recipient.signed_on_paper")]
+    RecipientSignedOnPaper {
+        /// The recipient.
+        recipient_id: Id,
+        /// The documents, as delivered, that the signer printed and signed by hand.
+        documents: Vec<DocumentHash>,
+        /// The uploaded scan, added to the envelope as this document.
+        document_id: Id,
+        /// SHA-256 of the uploaded scan's bytes.
+        upload_hash: Hash256,
+    },
     /// The recipient finished their part (any role).
     #[serde(rename = "recipient.completed")]
     RecipientCompleted {
@@ -551,8 +577,9 @@ pub enum EventData {
         /// SHA-256 of the bytes served.
         hash: Hash256,
     },
-    /// The envelope's evidence package was exported (ORG-09, docs/23 §2.4: the way a
-    /// completed agreement leaves its workspace; additive to ADR-010 as ADR-027 was).
+    /// The envelope's evidence package was exported (ORG-09, docs/23 §2.4: the way an
+    /// agreement leaves its workspace, `GET …/evidence-package`, `VS-06D`; additive to
+    /// ADR-010 as ADR-027 was).
     #[serde(rename = "envelope.exported")]
     EnvelopeExported {
         /// The member who exported it.
@@ -584,6 +611,7 @@ impl EventData {
         "envelope.purged",
         "envelope.deleted",
         "envelope.transferred",
+        "envelope.restored",
         "document.added",
         "document.admitted",
         "document.fixed",
@@ -604,6 +632,7 @@ impl EventData {
         "recipient.field_completed",
         "recipient.signed",
         "recipient.approved",
+        "recipient.signed_on_paper",
         "recipient.completed",
         "recipient.declined",
         "recipient.reassigned",
@@ -820,6 +849,11 @@ impl AuditEvent {
     }
 }
 
+// Takes a reference because serde's `skip_serializing_if` passes one.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 // Tests may unwrap, index and panic (CLAUDE.md).
 #[allow(clippy::unwrap_used, clippy::indexing_slicing, clippy::panic)]
 #[cfg(test)]
@@ -906,8 +940,10 @@ mod tests {
             serde_json::to_value(&empty).unwrap(),
             serde_json::json!({"type": "envelope.expired", "data": {}})
         );
-        // 40 before ORG-09 added `envelope.transferred` and `envelope.exported` (additive, ADR-027).
-        assert_eq!(EventData::TYPES.len(), 42);
+        // 40 before ORG-09 added `envelope.transferred` and `envelope.exported` (additive,
+        // ADR-027); 43 with ADR-031's `envelope.restored`; 44 with ADR-043's
+        // `recipient.signed_on_paper`.
+        assert_eq!(EventData::TYPES.len(), 44);
     }
 
     #[test]

@@ -90,6 +90,12 @@ pub enum FlattenError {
         /// The tokenizer's code.
         code: &'static str,
     },
+    /// The envelope id stamp (`FG-009`) was asked for without an envelope id, or with
+    /// one that is not an id (`CS-FLD-0005`).
+    StampIdInvalid {
+        /// Bytes of the id supplied (0 when none was).
+        bytes: usize,
+    },
     /// The document could not be read (its `CS-PDF-*` code).
     Read(PdfError),
     /// The update could not be written (its `CS-WRT-*` code).
@@ -107,7 +113,7 @@ impl FlattenError {
             Self::TooManyPoints { .. } | Self::TextTooLong { .. } | Self::ValueMismatch { .. } => {
                 "CS-FLD-0002"
             }
-            Self::UnknownCapture { .. } => "CS-FLD-0005",
+            Self::UnknownCapture { .. } | Self::StampIdInvalid { .. } => "CS-FLD-0005",
             Self::OffPage { .. } => "CS-FLD-0004",
             Self::TooManyFields { .. } => "CS-FLT-0004",
             Self::FontUnreadable { .. } => "CS-FLT-0005",
@@ -161,6 +167,10 @@ impl fmt::Display for FlattenError {
                 f,
                 "{code}: field {} names a capture that was not supplied",
                 field.as_str()
+            ),
+            Self::StampIdInvalid { bytes } => write!(
+                f,
+                "{code}: the envelope id to stamp is not an id ({bytes} bytes)"
             ),
             Self::OffPage { field } => {
                 write!(

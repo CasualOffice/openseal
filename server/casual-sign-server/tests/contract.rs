@@ -138,6 +138,258 @@ async fn jobs(api: &Api, env: &str) -> Vec<String> {
         .collect()
 }
 
+/// Slice 6 (VS-06): custom fields set, read and searched, the quick views' filters and
+/// the reports, JSON and CSV. Boxed: the contract test's future is already large.
+fn slice6_operations<'a>(
+    api: &'a Api,
+    k: &'a common::harness::Auth,
+    reid: &'a str,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        // VS-06: custom fields set, read and searched; the quick views' filters.
+        let cf = format!("/api/v1/envelopes/{reid}/custom-fields");
+        ok(
+            api.call(
+                "PUT",
+                &cf,
+                k,
+                Some(json!({"items": [{"name": "Deal", "value": "D-7"}]})),
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "set custom fields",
+        )
+        .await;
+        let got = ok(
+            api.call("GET", &cf, k, None, &[]).await,
+            StatusCode::OK,
+            "custom fields",
+        )
+        .await;
+        assert_eq!(got["items"][0]["value"], "D-7");
+        ok(
+            api.call(
+                "GET",
+                "/api/v1/envelopes?custom_field=Deal&custom_value=d-7&auth_failed=false&expires_before=2999-01-01T00:00:00Z",
+                k,
+                None,
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "search custom fields",
+        )
+        .await;
+        // VS-06: the workspace reports.
+        for kind in ["envelopes", "recipients", "usage"] {
+            ok(
+                api.call("GET", &format!("/api/v1/reports/{kind}"), k, None, &[])
+                    .await,
+                StatusCode::OK,
+                "report",
+            )
+            .await;
+        }
+
+        let csv = api
+            .call("GET", "/api/v1/reports/envelopes?format=csv", k, None, &[])
+            .await;
+        assert_eq!(csv.status, StatusCode::OK);
+        // FG-141: the Insights dashboard's figures.
+        let got = ok(
+            api.call(
+                "GET",
+                "/api/v1/insights?utc_offset_minutes=60&sender=me",
+                k,
+                None,
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "insights",
+        )
+        .await;
+        assert_eq!(got["scope"], "workspace");
+        // ADR-031 (UXW-02): the voided envelope deleted, then restored to the lists.
+        let tag = api
+            .call("GET", &format!("/api/v1/envelopes/{reid}"), k, None, &[])
+            .await
+            .etag();
+        let gone = api
+            .call(
+                "DELETE",
+                &format!("/api/v1/envelopes/{reid}"),
+                k,
+                None,
+                &[("if-match", &tag)],
+            )
+            .await;
+        assert_eq!(gone.status, StatusCode::NO_CONTENT);
+        let back = ok(
+            api.call(
+                "POST",
+                &format!("/api/v1/envelopes/{reid}/restore"),
+                k,
+                None,
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "restore",
+        )
+        .await;
+        assert_eq!(back["status"], "voided");
+        // VS-06D: the voided envelope's evidence package waits for its certificate.
+        let r = api
+            .call(
+                "GET",
+                &format!("/api/v1/envelopes/{reid}/evidence-package"),
+                k,
+                None,
+                &[],
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::CONFLICT, "{:?}", r.json());
+    })
+}
+
+/// ADR-042 (`VS-06C`): the editor's preview of a Word document, through a fake convertd
+/// (`common::convertd`). Boxed: the contract test's future is already large.
+fn conversion_operations<'a>(
+    api: &'a Api,
+    k: &'a common::harness::Auth,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        api.st
+            .set_converter(common::convertd::fake_converter().await);
+        let r = api
+            .send(
+                "POST",
+                "/api/v1/conversions",
+                k,
+                Body::from(common::convertd::docx()),
+                &[(
+                    "content-type",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )],
+            )
+            .await;
+        assert_eq!(
+            r.status,
+            StatusCode::OK,
+            "convert: {}",
+            String::from_utf8_lossy(&r.body)
+        );
+        assert!(r.body.starts_with(b"%PDF-"));
+    })
+}
+
+/// `VS-06A`: an editor adds, moves and removes a later signer's field through the
+/// ceremony. Boxed: the contract test's future is already large.
+fn editor_operations<'a>(
+    api: &'a Api,
+    a: &'a common::harness::Tenant,
+    k: &'a common::harness::Auth,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + 'a>> {
+    Box::pin(async move {
+        let e = ok(
+            api.call(
+                "POST",
+                "/api/v1/envelopes",
+                k,
+                Some(json!({
+                    "subject": "VS-06A", "status": "sent",
+                    "documents": [{"name": "c.pdf", "content_base64": b64(&pdf(1))}],
+                    "recipients": [
+                        {"ref": "ed", "type": "editor", "name": "Ed Itor", "email": "ed@example.test", "routing_order": 1},
+                        {"ref": "s", "type": "signer", "name": "Si Gner", "email": "si@example.test", "routing_order": 2}],
+                    "fields": [
+                        {"recipient": "ed", "document": 0, "type": "signature", "page": 1, "x": 72, "y": 500, "width": 180, "height": 40, "required": true},
+                        {"recipient": "s", "document": 0, "type": "signature", "page": 1, "x": 72, "y": 600, "width": 180, "height": 40, "required": true}],
+                })),
+                &[],
+            )
+            .await,
+            StatusCode::CREATED,
+            "editor env",
+        )
+        .await;
+        let ted = invite(
+            api,
+            a,
+            e["id"].as_str().unwrap(),
+            e["recipients"][0]["id"].as_str().unwrap(),
+        )
+        .await;
+        let (_, hed) = open(api, &format!("/s/{ted}")).await;
+        let hed: Vec<(&str, &str)> = hed.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        ok(
+            api.call(
+                "POST",
+                &format!("/s/{ted}/consent"),
+                &Auth::None,
+                Some(json!({"ersd_version": "2026-1"})),
+                &hed,
+            )
+            .await,
+            StatusCode::OK,
+            "consent ed",
+        )
+        .await;
+        let placed = ok(
+            api.call(
+                "POST",
+                &format!("/s/{ted}/editor/fields"),
+                &Auth::None,
+                Some(json!({"fields": [{"recipient_id": e["recipients"][1]["id"],
+                    "document_id": e["documents"][0]["id"], "type": "text", "page": 1,
+                    "x": 300, "y": 600, "width": 120, "height": 24}]})),
+                &hed,
+            )
+            .await,
+            StatusCode::CREATED,
+            "editor places",
+        )
+        .await;
+        let f = placed["editable_fields"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|f| f["type"] == "text")
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        ok(
+            api.call(
+                "PATCH",
+                &format!("/s/{ted}/editor/fields/{f}"),
+                &Auth::None,
+                Some(json!({"y": 640})),
+                &hed,
+            )
+            .await,
+            StatusCode::OK,
+            "editor moves",
+        )
+        .await;
+        ok(
+            api.call(
+                "DELETE",
+                &format!("/s/{ted}/editor/fields/{f}"),
+                &Auth::None,
+                Some(json!({})),
+                &hed,
+            )
+            .await,
+            StatusCode::OK,
+            "editor removes",
+        )
+        .await;
+    })
+}
+
 /// Each personal-data operation once, as the signed-in administrator (who owns the
 /// organization, so may not erase themselves), against ids of no object where one is
 /// named. Boxed: the contract test's future is already large.
@@ -1429,6 +1681,17 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         (StatusCode::CONFLICT, "CS-API-0009"),
         "signer certificate before completion"
     );
+    // FG-013: signer 1 has finished; sign on paper is refused (and off on this envelope).
+    let paper = api
+        .call(
+            "POST",
+            &format!("{s1}/paper"),
+            &Auth::None,
+            Some(json!({"content_base64": "JVBERi0="})),
+            &h1,
+        )
+        .await;
+    assert!(paper.status.is_client_error(), "{:?}", paper.json());
     // WEB-08: a staff download of an attachment no field names (tests/lists.rs serves one).
     let none = api
         .call(
@@ -1921,6 +2184,9 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         .await;
         assert_eq!(t["sender_user_id"], to);
     }
+    slice6_operations(&api, k, reid).await;
+    conversion_operations(&api, k).await;
+    editor_operations(&api, &a, k).await;
     // The reassigned recipient's link was revoked in the same transaction.
     let revoked = api
         .call("GET", &format!("/s/{tre}"), &Auth::None, None, &hre)
@@ -2657,13 +2923,15 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
 /// certificate of completion, the combined PDF, the signer's certificate), checked with
 /// their `Content-Disposition` by `casual-sign-worker`'s `tests/end_to_end.rs`; and those
 /// another test of this crate answers through this harness, which checks every answer:
-/// a field's uploaded attachment (`tests/lists.rs`) and the organization log as CSV
+/// a field's uploaded attachment (`tests/lists.rs`), the evidence package
+/// (`tests/evidence_package.rs`) and the organization log as CSV
 /// (`tests/organizations.rs`).
 const FILES_ANSWERED_ELSEWHERE: &[(&str, &str)] = &[
     ("GET", "/api/v1/envelopes/{id}/certificate"),
     ("GET", "/api/v1/envelopes/{id}/documents/combined"),
     ("GET", "/s/{token}/certificate"),
     ("GET", "/api/v1/envelopes/{id}/attachments/{sha256}"),
+    ("GET", "/api/v1/envelopes/{id}/evidence-package"),
     ("GET", "/api/v1/organizations/me/audit"),
 ];
 

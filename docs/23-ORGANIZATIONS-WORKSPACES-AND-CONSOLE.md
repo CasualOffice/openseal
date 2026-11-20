@@ -521,8 +521,9 @@ design and is superseded by it.
   reaches every envelope of the workspace (as `envelopes.read_all`); another workspace's envelope is `404`. A
   `to_workspace` other than the session's, or a `to_user` who is not an enabled member of this workspace (or does not
   exist), is `422 CS-ORG-0009`. The envelope's `account_id`, rows, chain and blobs never change.
-- **Export.** The engine records `envelope.exported {by}` for `RecordAccess {EvidenceExported}` on a completed
-  envelope (staff only); `GET /envelopes/{id}/evidence-package`, which records it, and the import are `ORG-18`.
+- **Export.** The engine records `envelope.exported {by}` for `RecordAccess {EvidenceExported}` on an envelope that
+  is over (completed, or since `VS-06D` declined, voided or expired; staff only). `GET /envelopes/{id}/evidence-package`
+  records it and answers the package (docs/32 §6.1, `VS-06D`); the import is `ORG-18`'s remainder.
 - Both types are additive to ADR-010: earlier chains hash unchanged, and a verifier without them reports the chain
   valid and lists the two events as unrecognised (seen in `casual-sign-audit/tests/tamper.rs` against the verifier
   before the change). The transfer screen is `ORG-41`.
@@ -1118,7 +1119,7 @@ expiry alerts for sources other than keyd signer certificates (`CON-25`).
 /admin-events                             GET   workspace admin log
 /usage                                    GET   workspace usage against its plan
 /envelopes/{id}/transfer                  POST {to_user}
-/envelopes/{id}/evidence-package          GET   (completed envelopes; records envelope.exported)
+/envelopes/{id}/evidence-package          GET   (envelopes that are over; records envelope.exported; docs/32 §6.1)
 /archived-agreements                      GET, POST (import a package) ; /{id} GET
 /scim/v2/…                                SCIM 2.0 (Users, Groups), organization token
 ```
