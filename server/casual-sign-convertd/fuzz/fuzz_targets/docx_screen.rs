@@ -3,7 +3,7 @@
 //! child and the API server read from each other. Any panic, hang or out-of-memory is a
 //! finding.
 //!
-//!   cd server/casual-sign-convertd/fuzz && cargo +nightly fuzz run docx_screen ../../../fixtures/hostile/docx -- -max_total_time=600
+//!   cd server/casual-sign-convertd/fuzz && cargo +nightly fuzz run docx_screen corpus/docx_screen ../../../fixtures/hostile/docx -- -max_total_time=600
 #![no_main]
 
 use casual_sign_convertd::screen;
