@@ -140,8 +140,53 @@ function unb64(s) {
   return out;
 }
 async function sha256hex(text) {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  const d = await crypto.subtle.digest("SHA-256", typeof text === "string" ? new TextEncoder().encode(text) : text);
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/// CRC-32 (IEEE 802.3, as ZIP uses) of `bytes`.
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/// A ZIP of stored entries `[[name, bytes]]`, as the server's `storezip` writes it
+/// (VS-06D): local headers and bytes, the central directory, the end record; UTF-8
+/// names, the fixed 1980-01-01 date.
+function storeZip(entries) {
+  const enc = new TextEncoder();
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  const head = (sig, fields) => {
+    const b = new Uint8Array(4 + fields.reduce((n, [w]) => n + w, 0));
+    const v = new DataView(b.buffer);
+    v.setUint32(0, sig, true);
+    let at = 4;
+    for (const [w, x] of fields) { if (w === 2) v.setUint16(at, x, true); else v.setUint32(at, x, true); at += w; }
+    return b;
+  };
+  for (const [name, bytes] of entries) {
+    const n = enc.encode(name);
+    const crc = crc32(bytes);
+    const local = head(0x04034b50, [[2, 10], [2, 0x0800], [2, 0], [2, 0], [2, 0x21], [4, crc], [4, bytes.length], [4, bytes.length], [2, n.length], [2, 0]]);
+    parts.push(local, n, bytes);
+    central.push([head(0x02014b50, [[2, 20], [2, 10], [2, 0x0800], [2, 0], [2, 0], [2, 0x21], [4, crc], [4, bytes.length], [4, bytes.length], [2, n.length], [2, 0], [2, 0], [2, 0], [2, 0], [4, 0], [4, offset]]), n]);
+    offset += local.length + n.length + bytes.length;
+  }
+  const start = offset;
+  for (const [h, n] of central) { parts.push(h, n); offset += h.length + n.length; }
+  parts.push(head(0x06054b50, [[2, 0], [2, 0], [2, entries.length], [2, entries.length], [4, offset - start], [4, start], [2, 0]]));
+  const out = new Uint8Array(parts.reduce((x, p) => x + p.length, 0));
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
 }
 
 class Problem extends Error {
@@ -954,6 +999,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         // As the server's summary (envelopes.rs list): when it was sent and completed (UX-08).
         sent_at: e.sent_at || null, completed_at: e.status === "completed" ? e.ended_at || null : null,
         ...(e.folder_id ? { folder_id: e.folder_id } : {}), ...(waiting ? { my_recipient_id: myRecipient(e).id } : {}),
+        // As the server (ADR-031): the Deleted view says when each was removed.
+        ...(e.deleted_at ? { deleted_at: e.deleted_at } : {}),
       })),
       next_cursor: start + limit < all.length ? String(start + limit) : null,
     });
@@ -2124,12 +2171,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return json(204, null);
       }
     }
-    // UX-03, not on the server yet (api.js NOT_ON_SERVER.restoreEnvelope): back to the lists.
+    // As the server (ADR-031, `POST /envelopes/{id}/restore`): back to the lists, with
+    // `envelope.restored` after the `envelope.deleted`; not deleted (or purged) is 409.
     if (sub === "restore" && method === "POST") {
       if (!env.deleted_at) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      if (headers["if-match"] && headers["if-match"] !== `"v${env.version}"`) fail(412, "CS-WF-0002", "Stale version");
       delete env.deleted_at;
       env.version++;
-      // Not a casual-sign-audit type yet: ADR-031 (Proposed) adds it (NOT_ON_SERVER.restoreEnvelope).
       await audit(env, "envelope.restored", {}, { by: "sender" });
       return withEtag(env);
     }
@@ -2238,6 +2286,29 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "audit" && method === "GET") {
       const items = db.audit[env.id] || [];
       return json(200, { items, chain_head: items.length ? items[items.length - 1].hash : null });
+    }
+    if (sub === "evidence-package" && method === "GET") {
+      // As the server (VS-06D, `GET …/evidence-package`): an envelope that is over, its
+      // export recorded first (`envelope.exported`), then one ZIP: manifest.json, each
+      // document (the mock's delivered bytes), certificate.pdf, audit-trail.json.
+      if (!["completed", "declined", "voided", "expired"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      await audit(env, "envelope.exported", { by: env.sender_user_id }, { by: "sender" });
+      const enc = new TextEncoder();
+      const files = env.documents.map((d, i) => {
+        const base = (d.name || "document").replace(/\.pdf$/i, "").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 80) || "document";
+        return [`documents/${String(i + 1).padStart(2, "0")}-${base}.pdf`, unb64(db.blobs[d.id]), { kind: "document", document_id: d.id, sealed: env.status === "completed" }];
+      });
+      const certLines = [`Envelope ${env.id}`, `Subject: ${env.subject}`, `Outcome: ${env.status}`, "", "Mock mode: not a real certificate."];
+      files.push(["certificate.pdf", makePdf([{ title: env.status === "completed" ? "Certificate of completion" : "Envelope certificate", lines: certLines }]), { kind: "certificate" }]);
+      const items = db.audit[env.id] || [];
+      const trail = { items, chain_head: items.length ? items[items.length - 1].hash : null };
+      files.push(["audit-trail.json", enc.encode(JSON.stringify(trail, null, 2)), { kind: "audit_trail" }]);
+      const listed = [];
+      for (const [path, bytes, about] of files) listed.push({ path, sha256: await sha256hex(bytes), size: bytes.length, ...about });
+      const manifest = { format: "openseal.evidence-package", version: 1, envelope_id: env.id, status: env.status, exported_at: iso(), exported_by: env.sender_user_id, chain_head: trail.chain_head, entries: listed };
+      save();
+      const zip = storeZip([["manifest.json", enc.encode(JSON.stringify(manifest, null, 2))], ...files.map(([p, b]) => [p, b])]);
+      return new Response(zip, { status: 200, headers: { "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="evidence-${env.id}.zip"` } });
     }
     if (sub === "anchor-proof" && method === "GET") {
       // FG-158: the mock has no anchor job (no time-stamping authority), so nothing is
@@ -3257,6 +3328,24 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       }
       f.value = v;
       await audit(env, "recipient.field_completed", { recipient_id: rec.id, field_id: f.id, value_hash: await sha256hex(JSON.stringify(f.value)) });
+      return json(200, view(env, rec, token));
+    }
+    // As the server (FG-013, ADR-043, `POST /s/{token}/paper`): a signer, where the
+    // envelope allows it, completes with the scan of the documents printed and signed by
+    // hand; the scan joins the envelope fixed (sealed with it) and is recorded.
+    if (sub === "paper" && method === "POST") {
+      if (env.signing_options?.allow_sign_on_paper !== true) fail(409, "CS-WF-0012", "Sign on paper not allowed");
+      if (rec.type !== "signer") fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const bytes = unb64(String(body?.content_base64 || ""));
+      if (bytes.length < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/content_base64", code: "invalid" }]);
+      const printed = await docHashes(env);
+      const d = addDocument(env, "Signed on paper.pdf", bytes);
+      d.fixed = true;
+      await audit(env, "document.added", { document_id: d.id, upload_hash: await blobHash(d.id), bytes: d.bytes }, loc);
+      await audit(env, "document.admitted", { document_id: d.id, report_hash: await blobHash(d.id, ":admission"), findings: 0 }, loc);
+      await audit(env, "document.fixed", { document_id: d.id, delivered_hash: await blobHash(d.id), pages: d.pages }, loc);
+      await audit(env, "recipient.signed_on_paper", { recipient_id: rec.id, documents: printed, document_id: d.id, upload_hash: await blobHash(d.id) }, loc);
+      await complete(env, rec, loc, "paper");
       return json(200, view(env, rec, token));
     }
     if (sub === "finish" && method === "POST") {

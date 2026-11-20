@@ -218,6 +218,194 @@ fn delete_ended_takes_only_an_envelope_that_ended_without_completing_and_purges_
     assert_eq!(code(hx.run(sender(), c)), "CS-WF-0008");
 }
 
+#[test]
+fn restore_deleted_lists_a_deleted_envelope_again_and_only_while_deleted_and_not_purged() {
+    // ADR-031 (`UXW-02`).
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1)]);
+    hx.send();
+    hx.ok(sender(), Command::Void { reason: text("x") });
+    // Not deleted yet: nothing to restore.
+    assert_eq!(
+        code(hx.run(sender(), Command::RestoreDeleted)),
+        "CS-WF-0001"
+    );
+    hx.ok(sender(), Command::DeleteEnded);
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), Command::RestoreDeleted)),
+        "CS-WF-0003"
+    );
+    let before = hx.state().version;
+    let d = hx.ok(sender(), Command::RestoreDeleted);
+    assert_eq!(types(&d), ["envelope.restored"]);
+    assert!(d.effects.is_empty());
+    let s = hx.state();
+    assert!(s.deleted_at.is_none() && !s.purged);
+    assert_eq!(s.status, EnvelopeStatus::Voided);
+    assert!(s.version > before, "the lists see the change");
+    // A second restore is refused; it can be deleted and restored again.
+    assert_eq!(
+        code(hx.run(sender(), Command::RestoreDeleted)),
+        "CS-WF-0001"
+    );
+    hx.ok(sender(), Command::DeleteEnded);
+    // Purged while deleted: past retention, it cannot be restored.
+    hx.ok(
+        Principal::System,
+        Command::Purge {
+            policy: Text::new("retention.ended").unwrap(),
+        },
+    );
+    assert_eq!(
+        code(hx.run(sender(), Command::RestoreDeleted)),
+        "CS-WF-0001"
+    );
+}
+
+#[test]
+fn an_evidence_package_is_exported_once_the_envelope_is_over_never_while_in_flight() {
+    // VS-06D: a voided envelope's package (its documents as they ended) is recorded as
+    // `envelope.exported`; one in flight, or purged, is refused.
+    let export = Command::RecordAccess {
+        access: Access::EvidenceExported,
+    };
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1)]);
+    assert_eq!(code(hx.run(sender(), export.clone())), "CS-WF-0001");
+    hx.send();
+    assert_eq!(code(hx.run(sender(), export.clone())), "CS-WF-0001");
+    hx.ok(sender(), Command::Void { reason: text("x") });
+    let d = hx.ok(sender(), export.clone());
+    assert_eq!(types(&d), ["envelope.exported"]);
+    assert_eq!(
+        d.events[0].data,
+        EventData::EnvelopeExported { by: id("sender") }
+    );
+    hx.ok(
+        Principal::System,
+        Command::Purge {
+            policy: Text::new("retention.ended").unwrap(),
+        },
+    );
+    assert_eq!(code(hx.run(sender(), export)), "CS-WF-0001");
+}
+
+/// A draft of two signers in sequence with sign on paper `allowed` or not, sent.
+fn paper_envelope(allowed: bool) -> Harness {
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1), recipient("r2", Signer, 2)]);
+    hx.ok(
+        sender(),
+        Command::Edit {
+            changes: vec![Change::SetSigningOptions {
+                options: SigningOptions {
+                    allow_sign_on_paper: allowed,
+                    ..SigningOptions::default()
+                },
+            }],
+        },
+    );
+    hx.send();
+    hx
+}
+
+#[test]
+fn a_signer_signs_on_paper_with_the_scan_added_fixed_and_bound_to_what_was_printed() {
+    // FG-013, ADR-043.
+    let paper = |rid: &str, did: &str| Command::SignOnPaper {
+        recipient: id(rid),
+        document: document(did, 7, 3),
+    };
+    // Off by default: refused.
+    let mut hx = paper_envelope(false);
+    hx.get_ready("r1");
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), paper("r1", "scan-1"))),
+        "CS-WF-0012"
+    );
+
+    let mut hx = paper_envelope(true);
+    // Not their turn, or not ready: refused.
+    assert_eq!(
+        code(hx.run(as_recipient("r2"), paper("r2", "scan-1"))),
+        "CS-WF-0007"
+    );
+    // Another recipient's command, or the sender: refused.
+    hx.get_ready("r1");
+    assert_eq!(code(hx.run(sender(), paper("r1", "scan-1"))), "CS-WF-0003");
+    // A document id already in use: refused.
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), paper("r1", "doc-1"))),
+        "CS-WF-0010"
+    );
+    let delivered = hx.state().documents[0].hash();
+    let d = hx.ok(as_recipient("r1"), paper("r1", "scan-1"));
+    assert_eq!(
+        &types(&d)[..5],
+        [
+            "document.added",
+            "document.admitted",
+            "document.fixed",
+            "recipient.signed_on_paper",
+            "recipient.completed"
+        ]
+    );
+    assert_eq!(
+        d.events[3].data,
+        EventData::RecipientSignedOnPaper {
+            recipient_id: id("r1"),
+            documents: vec![delivered],
+            document_id: id("scan-1"),
+            upload_hash: h(7),
+        }
+    );
+    // The scan is a fixed document of the envelope; r1 is done and r2 invited.
+    let s = hx.state();
+    assert_eq!(s.documents.len(), 2);
+    assert!(s.documents[1].fixed);
+    assert_eq!(hx.rstatus("r1"), RecipientStatus::Completed);
+    assert_eq!(invited(&d), ["r2"]);
+    assert!(
+        hx.state().fields.0.iter().all(|f| f.value.is_none()),
+        "no electronic value was required of r1"
+    );
+    // Once done, a second time is refused.
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), paper("r1", "scan-2"))),
+        "CS-WF-0001"
+    );
+    // r2 signs electronically; the seal covers the scan with the rest.
+    hx.sign("r2");
+    assert_eq!(hx.status(), EnvelopeStatus::Completing);
+    hx.seal();
+    assert_eq!(hx.status(), EnvelopeStatus::Completed);
+    assert_eq!(hx.state().sealed.len(), 2);
+}
+
+#[test]
+fn only_a_signer_signs_on_paper() {
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("a1", Approver, 1)]);
+    hx.ok(
+        sender(),
+        Command::Edit {
+            changes: vec![Change::SetSigningOptions {
+                options: SigningOptions {
+                    allow_sign_on_paper: true,
+                    ..SigningOptions::default()
+                },
+            }],
+        },
+    );
+    hx.send();
+    hx.get_ready("a1");
+    let c = Command::SignOnPaper {
+        recipient: id("a1"),
+        document: document("scan-1", 7, 1),
+    };
+    assert_eq!(code(hx.run(as_recipient("a1"), c)), "CS-WF-0001");
+}
+
 // Routing -----------------------------------------------------------------------------
 
 #[test]
@@ -944,6 +1132,7 @@ fn signing_options_can_turn_off_decline_reassign_and_finish_later() {
                     allow_finish_later: false,
                     capture_location: false,
                     stamp_envelope_id: false,
+                    allow_sign_on_paper: false,
                 },
             }],
         },

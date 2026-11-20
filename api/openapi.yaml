@@ -166,6 +166,12 @@ components:
             signing page shows it and the sealed document carries it. Absent when off. On
             `POST /envelopes`, left out it takes the account's `stamp_envelope_id` setting.
             Changeable only while a draft (a correction that changes it is `409 CS-WF-0001`).
+        allow_sign_on_paper:
+          type: boolean
+          default: false
+          description: >-
+            A signer may sign on paper instead (FG-013, ADR-043): print the documents, sign by
+            hand and upload the scan (`POST /s/{token}/paper`). Absent when off.
     LocationRequest:
       type: object
       additionalProperties: false
@@ -706,6 +712,7 @@ components:
         send_at: {type: [string, 'null'], format: date-time, description: 'A draft scheduled to send itself at this time (WF-02)'}
         ended_at: {type: [string, 'null'], format: date-time}
         expires_at: {type: [string, 'null'], format: date-time}
+        deleted_at: {type: [string, 'null'], format: date-time, description: 'When it was removed from the lists (WEB-08); null once restored (ADR-031)'}
         reminders: {type: object}
         signing_options: {$ref: '#/components/schemas/SigningOptions'}
         seal_profile: {type: string, enum: [pades-b-t, pades-b-lt, pades-b-lta]}
@@ -725,6 +732,7 @@ components:
         completed_at: {type: [string, 'null'], format: date-time}
         expires_at: {type: [string, 'null'], format: date-time}
         folder_id: {type: [string, 'null'], description: "The caller's own folder it is filed in (UXW-02)"}
+        deleted_at: {type: [string, 'null'], format: date-time, description: 'Set in the Deleted view (`deleted=true`): when it was removed from the lists'}
         my_recipient_id: {type: [string, 'null'], description: "With waiting_for=me only: the recipient the caller is (UXW-01)"}
     BulkSendCreate:
       type: object
@@ -3580,6 +3588,37 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Envelope'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/restore:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: restoreEnvelope
+      summary: "Bring a deleted envelope back to the lists (ADR-031)"
+      description: >-
+        An envelope removed from the lists by `DELETE` (declined, voided or expired; in the
+        Deleted view, `GET /envelopes?deleted=true`) is listed again. Records
+        `envelope.restored` in its chain, after the `envelope.deleted` that removed it;
+        nothing in the agreement changes. `If-Match` is checked when sent. One that is
+        not deleted, or was purged meanwhile (past its retention), is `409 CS-WF-0001`.
+      x-permission: "envelopes.write"
+      x-level: workspace
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: The envelope's `ETag` as read; a stale one is `412 CS-WF-0002`.
+          schema: {type: string}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/correct:
     parameters:
       - name: id
@@ -3700,6 +3739,37 @@ paths:
           description: PDF
           content:
             application/pdf:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/evidence-package:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getEvidencePackage
+      summary: "One ZIP with everything that proves the agreement (VS-06D), recorded as envelope.exported"
+      description: >-
+        For an envelope that is over (completed, or declined, voided or expired): a ZIP of
+        stored entries holding `manifest.json`, each document as sealed (as it ended, with
+        the "not signed" banner, for one that ended without completing) under
+        `documents/`, `certificate.pdf` (the certificate of completion, or the envelope
+        certificate of UXW-30) and `audit-trail.json` (the events as `GET …/audit` gives
+        them, with `chain_head`). The manifest (`format: openseal.evidence-package`,
+        `version: 1`) names every other entry with its `sha256` and `size`, and the chain
+        head. The export is recorded first as `envelope.exported` (ORG-09), so the trail
+        in the package ends with it. In flight, a draft, or purged is `409 CS-WF-0001`; a
+        certificate not made yet `409 CS-API-0009` (an ended envelope asks the worker for
+        it, as `GET …/certificate` does).
+      x-permission: "envelopes.read"
+      x-level: workspace
+      responses:
+        '200':
+          description: ZIP
+          content:
+            application/zip:
               schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/attachments/{sha256}:
@@ -5820,6 +5890,46 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/FinishRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/paper:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonySignOnPaper
+      summary: "Sign on paper: upload the scan of the documents signed by hand (FG-013, ADR-043)"
+      description: >-
+        On an envelope whose `signing_options.allow_sign_on_paper` is on, a signer whose turn
+        it is, authenticated and consented, uploads the scan of the documents they printed
+        and signed by hand (a PDF, at most the document size limit). It is screened,
+        admitted and normalized like any upload and added to the envelope as a fixed
+        document named "Signed on paper.pdf", so the seal covers it; the chain records
+        `document.added`, `document.admitted`, `document.fixed`, then
+        `recipient.signed_on_paper {recipient_id, documents, document_id, upload_hash}` and
+        `recipient.completed`. Off is `409 CS-WF-0012`; not a signer, not their turn or
+        already finished `409`; not a PDF `422`.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [content_base64]
+              properties:
+                content_base64: {type: string, description: 'The scan, a PDF, base64'}
+                location: {$ref: '#/components/schemas/LocationRequest'}
       responses:
         '200':
           description: OK

@@ -688,6 +688,22 @@ pub fn table() -> Vec<Route> {
         r("GET", "/api/v1/envelopes/{id}", er, JSON, env::get),
         r("PATCH", "/api/v1/envelopes/{id}", ew, JSON, env::patch),
         r("DELETE", "/api/v1/envelopes/{id}", ew, JSON, env::delete),
+        // VS-06D: everything that proves the agreement, as one ZIP.
+        r(
+            "GET",
+            "/api/v1/envelopes/{id}/evidence-package",
+            er,
+            JSON,
+            env::evidence_package,
+        ),
+        // ADR-031 (UXW-02): back from the Deleted view.
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/restore",
+            ew,
+            JSON,
+            env::restore,
+        ),
         r(
             "GET",
             "/api/v1/envelopes/{id}/status",
@@ -1337,6 +1353,14 @@ pub fn table() -> Vec<Route> {
             ceremony::attach,
         ),
         r("POST", "/s/{token}/finish", Public, JSON, ceremony::finish),
+        // FG-013, ADR-043: the scan of what the signer signed by hand.
+        r(
+            "POST",
+            "/s/{token}/paper",
+            Public,
+            UPLOAD,
+            ceremony::sign_on_paper,
+        ),
         r(
             "POST",
             "/s/{token}/recipients",

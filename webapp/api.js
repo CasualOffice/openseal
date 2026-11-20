@@ -202,7 +202,6 @@ export const WEBHOOK_EVENT_TYPES = Object.freeze([
 /// `CS-NET-0002` (501), so the UI can say "not available yet" instead of hiding the
 /// control. `client.available(name)` tells which.
 export const NOT_ON_SERVER = Object.freeze({
-  restoreEnvelope: { row: "UXW-02", needs: "POST /envelopes/{id}/restore (a new workflow command and audit type envelope.restored, ADR-031 Proposed)" },
   clearField: { row: "UXW-35", needs: "DELETE /s/{token}/fields/{field} (a signer removes a value; a new audit type recipient.field_cleared, ADR-032 Proposed)" },
 });
 
@@ -440,9 +439,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     setCustomFields: (id, items) => data(request("PUT", `${E(id)}/custom-fields`, { body: { items } })),
     patchEnvelope: (id, etag, body) => data(request("PATCH", E(id), { body, ifMatch: etag })),
     deleteEnvelope: (id, etag) => data(request("DELETE", E(id), { ifMatch: etag })),
-    /// Bring a deleted envelope back to the lists (`NOT_ON_SERVER.restoreEnvelope`:
-    /// a new audit type, ADR-031 Proposed).
-    restoreEnvelope: unbuilt("restoreEnvelope", (id) => data(request("POST", `${E(id)}/restore`))),
+    /// Bring a deleted envelope back to the lists (ADR-031, recorded as
+    /// `envelope.restored`); answers the envelope. `etag` is checked when given.
+    restoreEnvelope: (id, etag) => data(request("POST", `${E(id)}/restore`, { ifMatch: etag || undefined })),
     sendEnvelope: (id) => data(request("POST", `${E(id)}/send`)),
     /// Schedule a sendable draft to send itself at `sendAt` (an ISO instant, WF-02);
     /// answers the draft with `send_at`. A scheduled draft is not edited (`CS-WF-0022`).
@@ -460,6 +459,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// expired one, the envelope certificate saying how it ended (UXW-30; 409 until the
     /// worker has made it).
     certificate: async (id) => (await request("GET", `${E(id)}/certificate`, { raw: true })).blob,
+    /// One ZIP with everything that proves the agreement (VS-06D): each document as
+    /// sealed or as it ended, the certificate, the audit trail and a manifest of SHA-256s.
+    /// Recorded on the server as `envelope.exported`; an envelope still in flight is 409.
+    evidencePackage: async (id) => (await request("GET", `${E(id)}/evidence-package`, { raw: true })).blob,
     /// The anchor proof of the envelope's latest anchored chain head (`FG-158`), as a
     /// Blob of `openseal.anchor-proof` JSON; null while nothing is anchored (`404
     /// CS-API-0017`). Other refusals throw.
@@ -846,6 +849,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       decline: (token, reason, location) =>
         data(request("POST", `${S(token)}/decline`, { body: withLocation(reason ? { reason } : {}, location), ceremony: true })),
       finishLater: (token) => data(request("POST", `${S(token)}/finish-later`, { body: {}, ceremony: true })),
+      /// Sign on paper (FG-013, ADR-043): the scan (a PDF, base64) of the documents the
+      /// signer printed and signed by hand; answers the view, this recipient completed.
+      signOnPaper: (token, contentBase64, location) =>
+        data(request("POST", `${S(token)}/paper`, { body: withLocation({ content_base64: contentBase64 }, location), ceremony: true })),
       /// An agent (or intermediary) names later recipients before finishing (VS-02):
       /// `[{id, name?, email?}]`, ids from the view's `later_recipients`.
       nameRecipients: (token, recipients, location) =>

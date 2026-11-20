@@ -211,6 +211,46 @@ fn slice6_operations<'a>(
         )
         .await;
         assert_eq!(got["scope"], "workspace");
+        // ADR-031 (UXW-02): the voided envelope deleted, then restored to the lists.
+        let tag = api
+            .call("GET", &format!("/api/v1/envelopes/{reid}"), k, None, &[])
+            .await
+            .etag();
+        let gone = api
+            .call(
+                "DELETE",
+                &format!("/api/v1/envelopes/{reid}"),
+                k,
+                None,
+                &[("if-match", &tag)],
+            )
+            .await;
+        assert_eq!(gone.status, StatusCode::NO_CONTENT);
+        let back = ok(
+            api.call(
+                "POST",
+                &format!("/api/v1/envelopes/{reid}/restore"),
+                k,
+                None,
+                &[],
+            )
+            .await,
+            StatusCode::OK,
+            "restore",
+        )
+        .await;
+        assert_eq!(back["status"], "voided");
+        // VS-06D: the voided envelope's evidence package waits for its certificate.
+        let r = api
+            .call(
+                "GET",
+                &format!("/api/v1/envelopes/{reid}/evidence-package"),
+                k,
+                None,
+                &[],
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::CONFLICT, "{:?}", r.json());
     })
 }
 
@@ -1574,6 +1614,17 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         (StatusCode::CONFLICT, "CS-API-0009"),
         "signer certificate before completion"
     );
+    // FG-013: signer 1 has finished; sign on paper is refused (and off on this envelope).
+    let paper = api
+        .call(
+            "POST",
+            &format!("{s1}/paper"),
+            &Auth::None,
+            Some(json!({"content_base64": "JVBERi0="})),
+            &h1,
+        )
+        .await;
+    assert!(paper.status.is_client_error(), "{:?}", paper.json());
     // WEB-08: a staff download of an attachment no field names (tests/lists.rs serves one).
     let none = api
         .call(
@@ -2805,13 +2856,15 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
 /// certificate of completion, the combined PDF, the signer's certificate), checked with
 /// their `Content-Disposition` by `casual-sign-worker`'s `tests/end_to_end.rs`; and those
 /// another test of this crate answers through this harness, which checks every answer:
-/// a field's uploaded attachment (`tests/lists.rs`) and the organization log as CSV
+/// a field's uploaded attachment (`tests/lists.rs`), the evidence package
+/// (`tests/evidence_package.rs`) and the organization log as CSV
 /// (`tests/organizations.rs`).
 const FILES_ANSWERED_ELSEWHERE: &[(&str, &str)] = &[
     ("GET", "/api/v1/envelopes/{id}/certificate"),
     ("GET", "/api/v1/envelopes/{id}/documents/combined"),
     ("GET", "/s/{token}/certificate"),
     ("GET", "/api/v1/envelopes/{id}/attachments/{sha256}"),
+    ("GET", "/api/v1/envelopes/{id}/evidence-package"),
     ("GET", "/api/v1/organizations/me/audit"),
 ];
 

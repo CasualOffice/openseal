@@ -230,8 +230,17 @@ objects concerned, never their content.
   completing (`declined`, `voided`, `expired`) from the lists. It records `envelope.deleted`, sets the state's
   `deleted_at`, and changes nothing else: no status change, no scrub, no effect; the chain and evidence stay and later
   access is still recorded. Any other status, a purged envelope, or a second time is `CS-WF-0001`.
-  Bringing one back to the lists is a planned command `RestoreDeleted` recording `envelope.restored` (ADR-031,
-  Proposed, `UXW-02`); until it is Accepted the server lists deleted envelopes (the Deleted view) but restores none.
+- **Sign on paper** (`SignOnPaper {recipient, document}`, ADR-043, `FG-013`): with `signing_options.allow_sign_on_paper`
+  on, a `signer` whose turn it is, authenticated and consented, completes with the admitted scan of what they printed
+  and signed by hand. The scan is added as a fixed document (`document.added`, `document.admitted`, `document.fixed`),
+  then `recipient.signed_on_paper {recipient_id, documents, document_id, upload_hash}` (the delivered documents
+  printed) and `recipient.completed`; routing moves on and the seal covers the scan. Off is `CS-WF-0012`; another
+  recipient type `CS-WF-0001`; a used document id `CS-WF-0010`; the envelope's document limit `CS-WF-0001`.
+- **Restore deleted** (`RestoreDeleted`, ADR-031, `UXW-43`): the sender or an administrator lists a deleted envelope
+  again. Allowed only while `deleted_at` is set and the envelope is not purged (a purged one is past its retention and
+  stays gone); records `envelope.restored` `{}` and clears `deleted_at`, nothing else: no status change, no effect.
+  Not deleted, purged, or a second time is `CS-WF-0001`. The trail keeps both `envelope.deleted` and
+  `envelope.restored`; it can be deleted and restored again.
 - **Transfer** (`Transfer {to_user}`, `ORG-09`, docs/23 §2.4, additive as ADR-027): an administrator principal (the
   server admits a member holding `envelopes.transfer`) passes the envelope's ownership to another member of the same
   workspace, in any status but purged. It records `envelope.transferred {from_user, to_user}`, sets the state's
@@ -265,7 +274,9 @@ objects concerned, never their content.
 | Send (validate for send returning every violation; `document.fixed`; first step invited; expiry, warning, reminders scheduled) | Built |
 | Delete draft | Built |
 | Delete an envelope that ended without completing from the lists (`envelope.deleted`, nothing purged; `WEB-08`) | Built |
-| Transfer ownership within the workspace (`envelope.transferred`; `ORG-09`) and record an evidence export (`envelope.exported`) | Built (the export route: `ORG-18`) |
+| Restore a deleted envelope to the lists (`envelope.restored`; ADR-031, `UXW-43`) | Built |
+| Sign on paper: the scan added as a fixed document, `recipient.signed_on_paper` (ADR-043, `FG-013`) | Built |
+| Transfer ownership within the workspace (`envelope.transferred`; `ORG-09`) and record an evidence export (`envelope.exported`, once the envelope is over: completed or ended) | Built (the export route `GET …/evidence-package`, `VS-06D`; the import: `ORG-18`) |
 | Deliver/open (`recipient.delivered`; envelope `delivered` per §2) | Built |
 | Consent to the current ERSD; withdraw | Built |
 | Authenticate: challenge, pass, fail with lockout after `max_auth_attempts`, unlock by resend; host-asserted | Built |

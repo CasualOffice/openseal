@@ -667,6 +667,16 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "getEvidencePackage": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/envelopes/{id}/evidence-package",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
   "getField": {
     "body": false,
     "body_required": false,
@@ -1521,6 +1531,16 @@ export const OPERATIONS = Object.freeze({
     "body_required": true,
     "method": "POST",
     "path": "/api/v1/users/{id}/second-factor/reset",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
+  "restoreEnvelope": {
+    "body": false,
+    "body_required": false,
+    "method": "POST",
+    "path": "/api/v1/envelopes/{id}/restore",
     "path_params": [
       "id"
     ],

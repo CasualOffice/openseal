@@ -42,6 +42,7 @@ pub mod routes;
 pub mod scan;
 mod security;
 mod state;
+mod storezip;
 pub mod totp;
 pub mod web;
 pub mod webauthn;

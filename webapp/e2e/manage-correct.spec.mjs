@@ -7,6 +7,7 @@
 // slice 6 demo (target/e2e-demo/vs06-*, uploaded as `slice-6-demo`). In mock mode the
 // seeded "Offer letter" (access code, signing token) is used. Then axe, light and dark,
 // on each new screen (mock mode).
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -442,3 +443,195 @@ for (const scheme of ["light", "dark"]) {
     });
   });
 }
+
+// ADR-031 (UXW-02): an envelope deleted from the lists is in the Deleted view; Restore
+// there brings it back, and its history shows both the removal and the return. Mock:
+// a seeded declined envelope; Compose stack: one sent and voided for the run. Axe,
+// light and dark, on the Deleted view (mock).
+test("ADR-031: a deleted envelope is restored from the Deleted view, with both events in its history", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 90_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  let id;
+  let subject;
+  if (REAL) {
+    subject = `ADR-031 restore ${run}`;
+    id = await inApp(page, async ({ subject, pdf, run }) => {
+      const api = window.__vs06;
+      const e = await api.createEnvelope({
+        subject, status: "sent",
+        documents: [{ name: "r.pdf", content_base64: pdf }],
+        recipients: [{ ref: "s", type: "signer", name: "Rae Restore", email: `adr031-${run}@example.com`, routing_order: 1 }],
+        fields: [{ recipient: "s", document: 0, type: "signature", page: 1, x: 72, y: 600, width: 180, height: 40, required: true }],
+      });
+      await api.voidEnvelope(e.id, "Wrong party");
+      return e.id;
+    }, { subject, pdf: Buffer.from(makePdf([{ title: subject, lines: ["Clause 1."] }])).toString("base64"), run });
+  } else {
+    ({ id, subject } = await page.evaluate(() => JSON.parse(sessionStorage.getItem("openseal.mock.v1")).envelopes.find((e) => e.status === "declined")));
+  }
+  // Deleted from its own page.
+  await page.goto(app(`#/envelopes/${encodeURIComponent(id)}`), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+  await more(page, "Delete");
+  await page.getByRole("dialog").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByText("Envelope deleted.")).toBeVisible();
+  // Only in the Deleted view.
+  await page.goto(app("#/agreements"), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Agreements" })).toBeVisible();
+  await expect(page.locator(".os-agr-row[data-id]").first()).toBeVisible();
+  await expect(row(page, subject)).toHaveCount(0);
+  await page.locator('#nav-views [data-view="deleted"]').click();
+  await expect(row(page, subject)).toBeVisible();
+  if (!REAL) {
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expectAccessible(page, `Deleted view (${scheme})`);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  await row(page, subject).click();
+  await page.getByTestId("inspector-primary").filter({ hasText: "Restore" }).click();
+  await expect(page.getByText("Envelope restored to the lists.")).toBeVisible();
+  await expect(row(page, subject)).toHaveCount(0);
+  // Back in the lists, with both events in its history.
+  await page.goto(app("#/agreements?folder=all"), { waitUntil: "domcontentloaded" });
+  await expect(row(page, subject)).toBeVisible();
+  await page.goto(app(`#/envelopes/${encodeURIComponent(id)}`), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+  await more(page, "History");
+  const hist = page.getByTestId("history-timeline");
+  await expect(hist.getByText("Removed from the lists").first()).toBeVisible();
+  await expect(hist.getByText("Restored to the lists").first()).toBeVisible();
+});
+
+/// The stored entries of a ZIP, from its central directory: `[{name, bytes}]`.
+function readZip(buf) {
+  const end = buf.length - 22;
+  if (buf.readUInt32LE(end) !== 0x06054b50) throw new Error("not a ZIP end record");
+  const count = buf.readUInt16LE(end + 10);
+  let at = buf.readUInt32LE(end + 16);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const size = buf.readUInt32LE(at + 24);
+    const nameLen = buf.readUInt16LE(at + 28);
+    const local = buf.readUInt32LE(at + 42);
+    const name = buf.subarray(at + 46, at + 46 + nameLen).toString("utf8");
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    out.push({ name, bytes: buf.subarray(start, start + size) });
+    at += 46 + nameLen + buf.readUInt16LE(at + 30) + buf.readUInt16LE(at + 32);
+  }
+  return out;
+}
+
+// VS-06D (UXW-20): the envelope page's "Download evidence package" saves one ZIP whose
+// manifest names every entry's SHA-256; the export shows in the history. Mock: the
+// seeded completed envelope; Compose stack: one voided for the run, once the worker
+// has made its envelope certificate.
+test("VS-06D: the evidence package downloads as one ZIP whose manifest hashes every entry", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 90_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  let id;
+  let subject;
+  if (REAL) {
+    subject = `VS-06D evidence ${run}`;
+    id = await inApp(page, async ({ subject, pdf, run }) => {
+      const api = window.__vs06;
+      const e = await api.createEnvelope({
+        subject, status: "sent",
+        documents: [{ name: "e.pdf", content_base64: pdf }],
+        recipients: [{ ref: "s", type: "signer", name: "Eve Evidence", email: `vs06d-${run}@example.com`, routing_order: 1 }],
+        fields: [{ recipient: "s", document: 0, type: "signature", page: 1, x: 72, y: 600, width: 180, height: 40, required: true }],
+      });
+      await api.voidEnvelope(e.id, "Wrong party");
+      // The worker makes the envelope certificate when it ends (UXW-30).
+      for (let i = 0; i < 60; i++) {
+        try { await api.certificate(e.id); return e.id; } catch { await new Promise((r) => setTimeout(r, 1000)); }
+      }
+      throw new Error("no envelope certificate within 60 s");
+    }, { subject, pdf: Buffer.from(makePdf([{ title: subject, lines: ["Clause 1."] }])).toString("base64"), run });
+  } else {
+    ({ id, subject } = await page.evaluate(() => JSON.parse(sessionStorage.getItem("openseal.mock.v1")).envelopes.find((e) => e.status === "completed")));
+  }
+  await page.goto(app(`#/envelopes/${encodeURIComponent(id)}`), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+  const [dl] = await Promise.all([page.waitForEvent("download"), more(page, "Download evidence package")]);
+  expect(dl.suggestedFilename()).toBe(`evidence-${id}.zip`);
+  const entries = readZip(fs.readFileSync(await dl.path()));
+  expect(entries[0].name).toBe("manifest.json");
+  const manifest = JSON.parse(entries[0].bytes.toString("utf8"));
+  expect(manifest.envelope_id).toBe(id);
+  expect(manifest.entries.map((e) => e.path)).toEqual(entries.slice(1).map((e) => e.name));
+  for (const [i, e] of manifest.entries.entries()) {
+    expect(e.sha256, e.path).toBe(crypto.createHash("sha256").update(entries[i + 1].bytes).digest("hex"));
+  }
+  expect(entries.map((e) => e.name)).toEqual(expect.arrayContaining(["certificate.pdf", "audit-trail.json"]));
+  const trail = JSON.parse(entries.find((e) => e.name === "audit-trail.json").bytes.toString("utf8"));
+  expect(trail.items.at(-1).type).toBe("envelope.exported");
+  expect(trail.chain_head).toBe(manifest.chain_head);
+});
+
+// FG-013 (ADR-043): sign on paper. The sender allows it; the signer opens their link,
+// chooses Sign on paper in More, uploads the scan of the signed pages, and is done; the
+// envelope gains the scan as a document and the trail records it. Mock: the link is
+// the mock's token; Compose stack: read from Mailpit. Axe, light and dark, on the
+// dialog (mock).
+test("FG-013: a signer signs on paper and the scan joins the envelope as evidence", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 90_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  const subject = `FG-013 paper ${run}`;
+  const signer = `fg013-${run}@example.com`;
+  const started = Date.now();
+  const made = await inApp(page, async ({ subject, signer, pdf }) => {
+    const api = window.__vs06;
+    const e = await api.createEnvelope({
+      subject, status: "sent", signing_options: { allow_sign_on_paper: true },
+      documents: [{ name: "paper.pdf", content_base64: pdf }],
+      recipients: [{ ref: "s", type: "signer", name: "Pat Paper", email: signer, routing_order: 1 }],
+      fields: [{ recipient: "s", document: 0, type: "signature", page: 1, x: 72, y: 600, width: 180, height: 40, required: true }],
+    });
+    return { id: e.id, token: e.recipients?.[0]?.mock_token || null };
+  }, { subject, signer, pdf: Buffer.from(makePdf([{ title: subject, lines: ["Clause 1."] }])).toString("base64") });
+  const link = REAL ? await emailedLink(signer, started) : signPage(made.token);
+  await page.goto(link, { waitUntil: "domcontentloaded" });
+  const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
+  const progress = page.locator("#guide-progress");
+  await expect(consent.or(progress).first()).toBeVisible();
+  if (await consent.isVisible()) {
+    await page.getByLabel("I agree to use electronic records and signatures.").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+  }
+  await expect(progress).toBeVisible();
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByTestId("menu-sign-on-paper").click();
+  const dialog = page.getByRole("dialog", { name: "Sign on paper" });
+  await expect(dialog).toBeVisible();
+  if (!REAL) {
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expectAccessible(page, `sign on paper dialog (${scheme})`);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  // Nothing chosen: said so, nothing sent.
+  await dialog.getByTestId("paper-confirm").click();
+  await expect(dialog.getByText("Choose the PDF of your signed pages.")).toBeVisible();
+  await dialog.getByTestId("paper-file").setInputFiles(pdfFile("signed-scan.pdf", "Signed by hand"));
+  await dialog.getByTestId("paper-confirm").click();
+  await expect(page.getByTestId("done-download")).toBeVisible({ timeout: 30_000 });
+  // The sender sees the scan among the documents and the event in the history.
+  await signIn(page, "home");
+  await page.goto(app(`#/envelopes/${encodeURIComponent(made.id)}`), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+  await expect(page.getByText("Signed on paper.pdf").first()).toBeVisible();
+  await more(page, "History");
+  await expect(page.getByTestId("history-timeline").getByText("Recipient signed on paper").first()).toBeVisible();
+});

@@ -251,6 +251,11 @@ pub struct SigningOptions {
     /// `capture_location`. It can change only while the envelope is a draft.
     #[serde(default, skip_serializing_if = "is_false")]
     pub stamp_envelope_id: bool,
+    /// A signer may sign on paper instead (FG-013, ADR-043): print the documents, sign
+    /// by hand and upload the scan. Off by default; absent from the wire when off, so
+    /// options written before it existed serialize, and hash, as they did.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub allow_sign_on_paper: bool,
 }
 
 fn yes() -> bool {
@@ -270,6 +275,7 @@ impl Default for SigningOptions {
             allow_finish_later: true,
             capture_location: false,
             stamp_envelope_id: false,
+            allow_sign_on_paper: false,
         }
     }
 }

@@ -451,6 +451,7 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
                 | EventData::RecipientConsented { recipient_id, .. }
                 | EventData::RecipientSignatureAdopted { recipient_id, .. }
                 | EventData::RecipientSigned { recipient_id, .. }
+                | EventData::RecipientSignedOnPaper { recipient_id, .. }
                 | EventData::RecipientApproved { recipient_id, .. }
                 | EventData::RecipientCompleted { recipient_id }
                 | EventData::RecipientDeclined { recipient_id, .. } => recipient_id == rid,
@@ -546,6 +547,14 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
                 }
                 EventData::RecipientSigned { .. } => {
                     outcome = Outcome::Signed(e.at);
+                    acted_context = Some(&e.context);
+                }
+                // FG-013, ADR-043: the scan is a document of the envelope, sealed with it.
+                EventData::RecipientSignedOnPaper { document_id, .. } => {
+                    outcome = Outcome::SignedOnPaper {
+                        at: e.at,
+                        document_id: document_id.to_string(),
+                    };
                     acted_context = Some(&e.context);
                 }
                 EventData::RecipientApproved { .. } => {

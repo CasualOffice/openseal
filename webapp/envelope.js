@@ -24,7 +24,7 @@ import { register, unregisterPrefix } from "./commands.js";
 import { button, busy, statusPill, errorState, skeletonLines, skeletonBlock, toast, toastError, emptyState, pdfPreview, menuButton } from "./ui/index.js";
 import {
   statusLine, auditTable, copyEnvelope, saveAsTemplate, deleteEnvelope, downloadCurrent, downloadSealed, downloadCertificate, hasCertificate,
-  correctPanel, historyPanel, voidEnvelopes, copyText, shortDate, DELETABLE, ENDED, customFieldsPanel, transferPanel,
+  correctPanel, historyPanel, voidEnvelopes, copyText, shortDate, DELETABLE, ENDED, customFieldsPanel, transferPanel, restoreEnvelope, downloadEvidencePackage,
 } from "./envactions.js";
 import { envelopeActions, pillOf } from "./managemodel.js";
 import { recipientsSection, evidenceSection, insightsSection, insightsAvailable } from "./agreementparts.js";
@@ -81,6 +81,7 @@ export function mount(view, ctx, [rawId]) {
       "download-ended": { label: t("envelope.download-ended"), icon: "download", title: t("envelope.download-ended-help"), run: guard(() => downloadCurrent(ctx, id, env)) },
       download: { label: t("envelope.download"), icon: "download", run: guard(() => downloadSealed(ctx, id, env)) },
       certificate: { label: t("envelope.certificate"), icon: "file-check", run: guard(() => downloadCertificate(ctx, id)) },
+      evidence: { label: t("envelope.evidence-package"), icon: "shield-check", testId: "envelope-evidence", run: guard(() => downloadEvidencePackage(ctx, id)) },
       "copy-resend": { label: t("envelope.copy-resend"), icon: "copy", title: t("envelope.copy-resend-help"), run: copyThen },
       copy: { label: t("agreements.copy"), icon: "copy", run: copyThen },
       template: { label: t("agreements.save-template"), icon: "layout-template", run: guard(() => saveAsTemplate(ctx, id)) },
@@ -89,6 +90,7 @@ export function mount(view, ctx, [rawId]) {
       transfer: { label: t("envelope.transfer"), icon: "user", testId: "envelope-transfer", panel: true, run: guard(async () => { if (await transferPanel(ctx, id)) load(); }) },
       void: { label: t("envelope.void"), icon: "ban", danger: true, panel: true, run: guard(async () => { if (await voidEnvelopes(ctx, [id])) load(); }) },
       delete: { label: t(e.status === "draft" ? "agreements.delete-draft" : "agreements.delete"), icon: "trash-2", danger: true, panel: true, run: guard(async () => { if (await deleteEnvelope(ctx, id, subject, e.status)) ctx.navigate("#/agreements"); }) },
+      restore: { label: t("agreements.restore"), icon: "undo-2", testId: "envelope-restore", run: guard(async () => { await restoreEnvelope(ctx, id); load(); }) },
     };
   }
 
@@ -100,7 +102,7 @@ export function mount(view, ctx, [rawId]) {
     const subject = e.subject || t("envelope.untitled");
     const back = h("a", { href: "#/agreements", class: "os-back" }, icon("chevron-left", { size: 16 }), h("span", { text: t("agreements.title") }));
     const v = verbs(e);
-    const plan = envelopeActions(e.status, { cert: hasCertificate(ctx, e.status), transfer: !!ctx.session?.admin, fields: custom !== null });
+    const plan = envelopeActions(e.status, { cert: hasCertificate(ctx, e.status), transfer: !!ctx.session?.admin, fields: custom !== null, deleted: !!e.deleted_at });
     // Every verb is a command (docs/47 principle 4): the buttons own theirs, the More
     // menu's are registered.
     for (const ids of plan.more) for (const a of ids) if (v[a]) register(`envelope.act.${a}`, { label: v[a].label, run: v[a].run });

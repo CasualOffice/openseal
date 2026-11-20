@@ -764,6 +764,7 @@ dependencies = [
  "casual-sign-secrets",
  "casual-sign-store",
  "casual-sign-workflow",
+ "crc32fast",
  "http-body-util",
  "jsonwebtoken",
  "maxminddb",
@@ -782,6 +783,7 @@ dependencies = [
  "tracing-subscriber",
  "ureq",
  "uuid",
+ "zip",
 ]
 
 [[package]]

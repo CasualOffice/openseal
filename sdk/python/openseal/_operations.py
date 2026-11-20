@@ -670,6 +670,16 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "getEvidencePackage": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/envelopes/{id}/evidence-package",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
     "getField": {
         "body": False,
         "body_required": False,
@@ -1524,6 +1534,16 @@ OPERATIONS = {
         "body_required": True,
         "method": "POST",
         "path": "/api/v1/users/{id}/second-factor/reset",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
+    "restoreEnvelope": {
+        "body": False,
+        "body_required": False,
+        "method": "POST",
+        "path": "/api/v1/envelopes/{id}/restore",
         "path_params": [
             "id"
         ],

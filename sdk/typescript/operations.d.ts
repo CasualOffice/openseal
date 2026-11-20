@@ -143,6 +143,8 @@ export interface Operations {
   getEnvelopeCustomFields(params: { "id": string | number | boolean }): Promise<any>;
   /** Envelope and recipient statuses — `GET /api/v1/envelopes/{id}/status` (envelopes.read) */
   getEnvelopeStatus(params: { "id": string | number | boolean }): Promise<any>;
+  /** One ZIP with everything that proves the agreement (VS-06D), recorded as envelope.exported — `GET /api/v1/envelopes/{id}/evidence-package` (envelopes.read) */
+  getEvidencePackage(params: { "id": string | number | boolean }): Promise<any>;
   /** A field — `GET /api/v1/envelopes/{id}/fields/{f}` (envelopes.read) */
   getField(params: { "id": string | number | boolean; "f": string | number | boolean }): Promise<any>;
   /** Every labelled field's value by data label — `GET /api/v1/envelopes/{id}/form-data` (envelopes.read) */
@@ -317,6 +319,8 @@ export interface Operations {
   resendEnvelope(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Reset the second factors of a member who lost them (ASVS-32, ASVS 2.5.7) — `POST /api/v1/users/{id}/second-factor/reset` (users.update) */
   resetMemberSecondFactor(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
+  /** Bring a deleted envelope back to the lists (ADR-031) — `POST /api/v1/envelopes/{id}/restore` (envelopes.write) */
+  restoreEnvelope(params: { "id": string | number | boolean }): Promise<any>;
   /** Bring a template of the Deleted view back, with everything it had (UXW-02) — `POST /api/v1/templates/{id}/restore` (templates.write) */
   restoreTemplate(params: { "id": string | number | boolean }): Promise<any>;
   /** Revoke an API client — `DELETE /api/v1/api-clients/{id}` (api_clients.manage) */

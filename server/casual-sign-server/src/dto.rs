@@ -300,6 +300,8 @@ pub(crate) struct SigningOptionsIn {
     capture_location: bool,
     #[serde(default)]
     stamp_envelope_id: Option<bool>,
+    #[serde(default)]
+    allow_sign_on_paper: bool,
 }
 
 fn yes() -> bool {
@@ -315,6 +317,7 @@ impl SigningOptionsIn {
             allow_finish_later: self.allow_finish_later,
             capture_location: self.capture_location,
             stamp_envelope_id: self.stamp_envelope_id.unwrap_or(stamp_default),
+            allow_sign_on_paper: self.allow_sign_on_paper,
         }
     }
 }
@@ -401,6 +404,7 @@ pub(crate) fn envelope(s: &EnvelopeState) -> Value {
         "send_at": s.send_at,
         "ended_at": s.ended_at,
         "expires_at": s.expires_at,
+        "deleted_at": s.deleted_at,
         "void_reason": s.void_reason.as_ref().map(|r| &r.0),
         "reminders": s.reminders,
         "signing_options": s.options,

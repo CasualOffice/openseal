@@ -175,7 +175,8 @@ pub(crate) async fn screen_and_convert(
 
 /// Admit and normalize an upload (docs/30 §2, §3), store the original and the
 /// delivered bytes, and record the document's rows. Signed input is kept as it is.
-async fn add_document(
+/// Also the signing page's scan of a document signed on paper (FG-013, ADR-043).
+pub(crate) async fn add_document(
     st: &AppState,
     tx: &mut TenantTx,
     env: EnvelopeId,
@@ -648,6 +649,7 @@ pub(crate) async fn list(c: Call, Query(q): Query<ListQuery>) -> Result<Response
                 "completed_at": e.completed_at.map(rfc3339),
                 "expires_at": e.expires_at.map(rfc3339),
                 "folder_id": l.folder.map(|f| f.to_string()),
+                "deleted_at": e.deleted_at.map(rfc3339),
             });
             if waiting && let Some(map) = item.as_object_mut() {
                 map.insert(
@@ -965,6 +967,21 @@ pub(crate) async fn delete(c: Call, Path(id): Path<String>) -> Result<Response, 
     Ok(StatusCode::NO_CONTENT.into_response())
 }
 
+/// `POST /envelopes/{id}/restore` (ADR-031, `UXW-02`): list again an envelope removed
+/// by `DELETE` (it is in the Deleted view). Recorded as `envelope.restored`; nothing in
+/// the agreement changes. `If-Match` is checked when sent. One that is not deleted, or
+/// was purged meanwhile (past its retention), is `409 CS-WF-0001`.
+pub(crate) async fn restore(c: Call, Path(id): Path<String>) -> Result<Response, ApiError> {
+    c.p.require("envelopes:write")?;
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let v = expected(&c, false)?;
+    let mut cmds = c.commands(&mut tx).await?;
+    command(&c, &mut tx, &mut cmds, &mut l, Command::RestoreDeleted, v).await?;
+    tx.commit().await?;
+    Ok(envelope_response(StatusCode::OK, &l.state))
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CustomFieldIn {
@@ -1265,9 +1282,14 @@ pub(crate) async fn audit(
             "the PDF audit report is built with the certificate (stage 2D)",
         ));
     }
-    // `chain` re-verifies every link; a broken chain is an error, never served.
-    let _ = tx.audit().chain(l.id).await?;
-    let events = tx.audit().events(l.id).await?;
+    Ok(json(StatusCode::OK, &audit_json(&mut tx, l.id).await?))
+}
+
+/// The audit trail as `GET …/audit` answers it: `{items, chain_head}`. `chain`
+/// re-verifies every link first; a broken chain is an error, never served.
+async fn audit_json(tx: &mut TenantTx, env: EnvelopeId) -> Result<Value, ApiError> {
+    let _ = tx.audit().chain(env).await?;
+    let events = tx.audit().events(env).await?;
     let items: Vec<Value> = events
         .iter()
         .map(|e| {
@@ -1281,10 +1303,173 @@ pub(crate) async fn audit(
             })
         })
         .collect();
-    Ok(json(
-        StatusCode::OK,
-        &json!({ "items": items, "chain_head": items.last().map(|e| e["hash"].clone()) }),
-    ))
+    Ok(json!({ "items": items, "chain_head": items.last().map(|e| e["hash"].clone()) }))
+}
+
+/// A document's name as a ZIP entry: its position, then the name with anything but
+/// ASCII letters, digits, `.`, `-` and `_` as `_`, at most 80 characters, ending `.pdf`.
+fn entry_name(i: usize, name: &str) -> String {
+    let mut base: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '_') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .take(80)
+        .collect();
+    let lower = base.to_ascii_lowercase();
+    if let Some(stem) = lower.strip_suffix(".pdf") {
+        base.truncate(stem.len());
+    }
+    let base = base.trim_matches('.');
+    let base = if base.is_empty() { "document" } else { base };
+    format!("documents/{:02}-{base}.pdf", i.saturating_add(1))
+}
+
+/// `GET /envelopes/{id}/evidence-package` (`VS-06D`, `UXW-20`, docs/32 §6): one ZIP with
+/// everything that proves the agreement, for an envelope that is over (completed, or
+/// declined, voided or expired): each document as sealed (or as it ended, with the "not
+/// signed" banner, for one that ended without completing), the certificate (of
+/// completion, or the envelope certificate of UXW-30), the audit trail as `GET …/audit`
+/// answers it with the chain head, and `manifest.json` naming every other entry with its
+/// SHA-256 and size. Recorded first as `envelope.exported` (ORG-09), so the trail in
+/// the package ends with its own export and the manifest's `chain_head` is that event's
+/// hash. In flight, a draft, or purged is `409 CS-WF-0001`; a certificate not made yet
+/// `409 CS-API-0009` (an ended one is asked of the worker, as `GET …/certificate` does).
+pub(crate) async fn evidence_package(
+    c: Call,
+    Path(id): Path<String>,
+) -> Result<Response, ApiError> {
+    let mut tx = c.tx().await?;
+    let mut l = find(&mut tx, &c.p, &id).await?;
+    let over = matches!(
+        l.state.status,
+        MStatus::Completed | MStatus::Declined | MStatus::Voided | MStatus::Expired
+    );
+    let cert = if over && !l.state.purged {
+        let cert = tx.envelopes().certificate(l.id).await?;
+        if cert.is_none() {
+            if l.state.status != MStatus::Completed {
+                // As `GET …/certificate`: an ended envelope's certificate is asked for.
+                let job = casual_sign_host::jobs::ended_certificate_job(
+                    casual_sign_store::JobId(Uuid::now_v7()),
+                    l.id,
+                    c.st.now(),
+                );
+                tx.jobs().enqueue(&job).await?;
+                tx.commit().await?;
+            }
+            return Err(ApiError::not_available(
+                "the certificate is not made yet; ask again shortly",
+            ));
+        }
+        cert
+    } else {
+        None
+    };
+    // Recorded before anything is read: the engine refuses an envelope that is not
+    // over, and the trail in the package then includes its own export.
+    let mut cmds = c.commands(&mut tx).await?;
+    command(
+        &c,
+        &mut tx,
+        &mut cmds,
+        &mut l,
+        Command::RecordAccess {
+            access: Access::EvidenceExported,
+        },
+        None,
+    )
+    .await?;
+    let cert = cert.ok_or_else(|| ApiError::internal("certificate"))?;
+    let mut entries: Vec<(String, Vec<u8>, Value)> = Vec::new();
+    let docs: Vec<(Id, String)> = l
+        .state
+        .documents
+        .iter()
+        .map(|d| (d.id().clone(), d.spec.name.0.as_str().to_owned()))
+        .collect();
+    for (i, (d, name)) in docs.iter().enumerate() {
+        let (bytes, sealed) = crate::preview::current(&c.st, &mut tx, &l.state, d).await?;
+        entries.push((
+            entry_name(i, name),
+            bytes,
+            json!({"kind": "document", "document_id": d, "sealed": sealed}),
+        ));
+    }
+    let cert_bytes =
+        c.st.0
+            .blobs
+            .get(&casual_sign_store::blob::BlobKey(cert))
+            .await?;
+    if sha256(&cert_bytes) != cert {
+        return Err(ApiError::internal("certificate"));
+    }
+    entries.push((
+        "certificate.pdf".to_owned(),
+        cert_bytes,
+        json!({"kind": "certificate"}),
+    ));
+    let trail = audit_json(&mut tx, l.id).await?;
+    let head = trail.get("chain_head").cloned().unwrap_or(Value::Null);
+    let trail_bytes =
+        serde_json::to_vec_pretty(&trail).map_err(|_| ApiError::internal("audit trail"))?;
+    entries.push((
+        "audit-trail.json".to_owned(),
+        trail_bytes,
+        json!({"kind": "audit_trail"}),
+    ));
+    let listed: Vec<Value> = entries
+        .iter()
+        .map(|(path, bytes, about)| {
+            let mut e = json!({
+                "path": path,
+                "sha256": Hash256::digest(bytes).hex(),
+                "size": bytes.len(),
+            });
+            if let (Some(m), Some(a)) = (e.as_object_mut(), about.as_object()) {
+                m.extend(a.clone());
+            }
+            e
+        })
+        .collect();
+    let manifest = json!({
+        "format": "openseal.evidence-package",
+        "version": 1,
+        "envelope_id": l.id.to_string(),
+        "status": l.state.status,
+        "exported_at": rfc3339(c.st.now()),
+        "exported_by": c.p.user.to_string(),
+        "chain_head": head,
+        "entries": listed,
+    });
+    let manifest =
+        serde_json::to_vec_pretty(&manifest).map_err(|_| ApiError::internal("manifest"))?;
+    let mut zip = crate::storezip::StoreZip::new();
+    zip.add("manifest.json", &manifest)
+        .map_err(|_| ApiError::internal("evidence package"))?;
+    for (path, bytes, _) in &entries {
+        zip.add(path, bytes)
+            .map_err(|_| ApiError::internal("evidence package"))?;
+    }
+    let body = zip
+        .finish()
+        .map_err(|_| ApiError::internal("evidence package"))?;
+    tx.commit().await?;
+    let mut r = (StatusCode::OK, body).into_response();
+    r.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/zip"),
+    );
+    let disposition = format!("attachment; filename=\"evidence-{}.zip\"", l.id);
+    r.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&disposition).map_err(|_| ApiError::internal("disposition"))?,
+    );
+    Ok(r)
 }
 
 /// `GET /envelopes/{id}/anchor-proof` (`FG-158`, docs/32 §5): the proof file

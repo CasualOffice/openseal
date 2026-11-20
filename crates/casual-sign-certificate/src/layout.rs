@@ -832,6 +832,13 @@ fn recipient(wr: &mut Writer, r: &crate::input::RecipientRow, o: &CertificateOpt
     };
     let (outcome_label, outcome) = match &r.outcome {
         Outcome::Signed(t) => ("Signed", datetime(*t, o)),
+        Outcome::SignedOnPaper { at, document_id } => (
+            "Signed on paper",
+            format!(
+                "{} \u{b7} scan uploaded as document {document_id}",
+                datetime(*at, o)
+            ),
+        ),
         Outcome::Approved(t) => ("Approved", datetime(*t, o)),
         Outcome::Declined { at, reason } => (
             "Declined",

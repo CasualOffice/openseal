@@ -80,10 +80,10 @@ recipient action (`recipient.delivered`, `recipient.viewed_document`, `recipient
 
 | Group | Events |
 | --- | --- |
-| Envelope | `envelope.created`, `envelope.sent`, `envelope.corrected`, `envelope.voided`, `envelope.declined`, `envelope.expired`, `envelope.completing`, `envelope.completed`, `envelope.purged`, `envelope.deleted` (an envelope that ended without completing removed from the lists; nothing purged, `WEB-08`), `envelope.transferred` (`{from_user, to_user}`: ownership passed to another member of the same workspace, `ORG-09`; additive as ADR-027); proposed: `envelope.restored` (one brought back to the lists, ADR-031, not recorded until Accepted) |
+| Envelope | `envelope.created`, `envelope.sent`, `envelope.corrected`, `envelope.voided`, `envelope.declined`, `envelope.expired`, `envelope.completing`, `envelope.completed`, `envelope.purged`, `envelope.deleted` (an envelope that ended without completing removed from the lists; nothing purged, `WEB-08`), `envelope.transferred` (`{from_user, to_user}`: ownership passed to another member of the same workspace, `ORG-09`; additive as ADR-027), `envelope.restored` (`{}`: one removed from the lists brought back, its `envelope.deleted` kept before it; ADR-031, additive as ADR-027) |
 | Document | `document.added` (for a Word upload converted to PDF, its upload hash is the `.docx`'s and the admission report it binds says `converted`, ADR-042), `document.admitted` (report hash), `document.fixed` (delivered hash at send), `document.replaced`, `document.flattened`, `document.sealed` (sealed hash, profile, certificate fingerprint, TSA time) |
-| Recipient | `invitation.sent`, `invitation.bounced`, `reminder.sent`, `recipient.delivered` (opened link), `recipient.auth_challenged`, `recipient.auth_passed` (for `sso`, `identity`: the ID token's issuer and the SHA-256 of its subject, never the subject; absent otherwise, so earlier chains hash as before; RAUTH-01), `recipient.auth_failed`, `recipient.consented` (ERSD version hash), `recipient.consent_withdrawn`, `recipient.viewed_document` (document hash, pages seen), `recipient.signature_adopted` (mark: `signature`, `initials`, `stamp` or `drawing`, the last two added by `VS-04A` and filling only a field of their own kind, never shown as the signer's mark in the certificate; method: draw/type/upload, image hash), `recipient.field_completed`, `recipient.signed` / `recipient.approved` / `recipient.completed`, `recipient.declined` (reason), `recipient.reassigned`, `recipient.finish_later`, `recipient.in_person_hosted` (host user); proposed (ADR-035, `WF-01`, not recorded until Accepted): `routing.evaluated` (rule, recipient, inputs as label and value hash, never the value, and `include` or `skip`), `recipient.skipped` (recipient, rule), `recipient.group_member_acted` (recipient, the group member who claimed it; recorded before `recipient.delivered`), and an optional `member_id` on `invitation.sent` for a group member's invitation |
-| Access | `envelope.viewed_by_sender`, `document.downloaded` (by whom), `certificate.downloaded`, `attachment.downloaded` (a signer's attachment: field and hash, by whom; `WEB-08`), `envelope.exported` (`{by}`: a completed envelope's evidence package exported, `ORG-09`; additive as ADR-027, an earlier verifier lists it and `envelope.transferred` as unrecognised, not failed) |
+| Recipient | `invitation.sent`, `invitation.bounced`, `reminder.sent`, `recipient.delivered` (opened link), `recipient.auth_challenged`, `recipient.auth_passed` (for `sso`, `identity`: the ID token's issuer and the SHA-256 of its subject, never the subject; absent otherwise, so earlier chains hash as before; RAUTH-01), `recipient.auth_failed`, `recipient.consented` (ERSD version hash), `recipient.consent_withdrawn`, `recipient.viewed_document` (document hash, pages seen), `recipient.signature_adopted` (mark: `signature`, `initials`, `stamp` or `drawing`, the last two added by `VS-04A` and filling only a field of their own kind, never shown as the signer's mark in the certificate; method: draw/type/upload, image hash), `recipient.field_completed`, `recipient.signed`, `recipient.signed_on_paper` (`{recipient_id, documents, document_id, upload_hash}`: a signer completed with the scan of the documents they printed and signed by hand, added before it as a fixed document so the seal covers it; ADR-043, additive as ADR-027) / `recipient.approved` / `recipient.completed`, `recipient.declined` (reason), `recipient.reassigned`, `recipient.finish_later`, `recipient.in_person_hosted` (host user); proposed (ADR-035, `WF-01`, not recorded until Accepted): `routing.evaluated` (rule, recipient, inputs as label and value hash, never the value, and `include` or `skip`), `recipient.skipped` (recipient, rule), `recipient.group_member_acted` (recipient, the group member who claimed it; recorded before `recipient.delivered`), and an optional `member_id` on `invitation.sent` for a group member's invitation |
+| Access | `envelope.viewed_by_sender`, `document.downloaded` (by whom), `certificate.downloaded`, `attachment.downloaded` (a signer's attachment: field and hash, by whom; `WEB-08`), `envelope.exported` (`{by}`: an envelope's evidence package exported once it is over, completed or ended, §6.1, `ORG-09`; additive as ADR-027, an earlier verifier lists it and `envelope.transferred` as unrecognised, not failed) |
 | Integration | `auth.asserted_by_host` (embedded host claims it authenticated the signer), `webhook.delivered` is **not** in the chain (operational log only) |
 
 `envelope.sent` carries `envelope_id_stamped: true` when every page is stamped with the envelope id (`FG-009`,
@@ -236,6 +236,29 @@ removed). The server queues the worker's `seal_ended_certificate` when the envel
 again when one is asked for before it exists); the worker renders it, seals it on its own with the platform key at the
 envelope's profile, stores it, reads it back and verifies it before recording it as the envelope's certificate. Making
 it does not extend the chain (it is not an act on the agreement); each download is recorded as `certificate.downloaded`.
+
+### 6.1 Evidence package (`VS-06D`, `UXW-20`)
+
+`GET /envelopes/{id}/evidence-package` answers everything that proves an agreement as one ZIP, for an envelope that
+is over: completed, or declined, voided or expired. Entries, stored (not compressed), names UTF-8, a fixed 1980-01-01
+date so the same entries give the same bytes (`casual-sign-server` `src/storezip.rs`):
+
+- `manifest.json`: `format: "openseal.evidence-package"`, `version: 1`, `envelope_id`, `status`, `exported_at`,
+  `exported_by`, `chain_head`, and `entries`: each other entry's `path`, `sha256`, `size` and `kind` (`document` with
+  `document_id` and `sealed`, `certificate`, `audit_trail`). The manifest is not signed: what makes the package
+  evidence is the sealed PDFs and the hash chain inside it, which verify offline on their own; the manifest says which
+  bytes belong together.
+- `documents/NN-<name>.pdf`: each document as sealed; for one that ended without completing, as it ended (the
+  "not signed" preview of `version=current`).
+- `certificate.pdf`: the certificate of completion, or the envelope certificate of an ended envelope (§6).
+- `audit-trail.json`: the events as `GET …/audit` gives them, with `chain_head`.
+
+The export is recorded first, as `envelope.exported {by}` (ORG-09), in the same transaction that reads the trail, so
+the trail in the package ends with its own export and the manifest's `chain_head` is that event's hash. An envelope in
+flight, a draft or a purged one is `409 CS-WF-0001` with nothing recorded; a certificate not made yet is
+`409 CS-API-0009` (an ended envelope's is asked of the worker). Importing a package as a read-only archived agreement
+is `ORG-18`'s remainder (docs/23 §2.4). Tests: server `tests/evidence_package.rs` (read back with the `zip` crate,
+every entry's hash checked against the manifest), web `slice6.test.mjs`, browser `manage-correct.spec.mjs`.
 
 ## 7. Retention
 

@@ -98,6 +98,14 @@ pub enum Outcome {
     Pending,
     /// Signed at.
     Signed(Timestamp),
+    /// Signed on paper, the scan uploaded at (FG-013, ADR-043): the certificate says so,
+    /// never "Signed" alone, and names the scan's document.
+    SignedOnPaper {
+        /// When the scan was uploaded.
+        at: Timestamp,
+        /// The scan's document id in this envelope.
+        document_id: String,
+    },
     /// Approved at.
     Approved(Timestamp),
     /// Declined at, with the reason given.

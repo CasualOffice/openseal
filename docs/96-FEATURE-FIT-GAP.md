@@ -30,7 +30,7 @@ instructions 8 and 9).
 | FG-010 | Document visibility per recipient | DS | Build | 6 | Works: engine, server (a hidden document is neither listed nor served to that recipient, `404`), editor's More options per recipient (`WF-02`) |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
 | FG-012 | Template matching on upload | DS | Build | 3 | Partial: uploads to a draft are matched against the workspace's template page hashes when template matching is on (`WEB-19`); not run on the real stack in a browser |
-| FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | — |
+| FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | Partial: built on a branch (`VS-06`, ADR-043 Accepted by owner instruction 78): the envelope option, `POST /s/{token}/paper` (admitted like any upload, added as a fixed document so the seal covers it, `recipient.signed_on_paper`), Sign on paper in the signing page's More, the certificate's "Signed on paper"; `Works` once `manage-correct.spec.mjs` is green on `main` |
 
 ## Recipients and routing
 
@@ -145,7 +145,7 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Partial: the Inbox (`UXW-01`), each member's own folders, the Deleted view of envelopes and of templates with template restore (`UXW-02`) served; restoring a deleted envelope awaits ADR-031 (owner question 2 in [77](77-SLICE-6-EVIDENCE.md)) |
+| FG-130 | Inbox, Sent, Drafts, Deleted, folders | DS | Build | 6 | Partial: the Inbox (`UXW-01`), each member's own folders, the Deleted view of envelopes and of templates with restore of both (`UXW-02`; envelope restore `UXW-43`, ADR-031 Accepted by owner instruction 77); the Compose-stack e2e on CI is left |
 | FG-131 | Quick views: action required, waiting, expiring, completed, auth failed | DS | Build | 6 | Partial: declined or expired, waiting, expiring soon (now also `?expires_before=` on the server), completed, with counts on Home and the rail (`UX-07`); waiting for me (`UXW-01`); Authentication failed (`?auth_failed=true`, the Agreements view; `tests/manage_views.rs`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
 | FG-132 | Search and filters incl. custom fields | DS | Build | 6 | Partial: text search (`UX-04`), status set, sender, ranges, five sorts (`WEB-04`, `WEB-08`, `UXW-03`); custom fields (`?custom_field=&custom_value=`, the Agreements filter; `tests/manage_views.rs`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
 | FG-133 | Correct | DS | Build | 6 | Partial: recipients, expiry and reminders in the Correct panel (`UX-07`); documents and fields in the editor's Correct mode (`UXW-19`, `tests/correct_documents.rs`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
@@ -162,7 +162,7 @@ instructions 8 and 9).
 
 | ID | Feature | From | Disp. | Slice | Status |
 | --- | --- | --- | --- | --- | --- |
-| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; every signer downloads it too, from the completion email's link (`VS-01`); a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`) |
+| FG-150 | Certificate of completion | DS, SN | Build | 1 | Works; every signer downloads it too, from the completion email's link (`VS-01`); a declined, voided or expired envelope gets a sealed envelope certificate saying how it ended, never claiming completion (`UXW-30`); one evidence package per envelope (documents, certificate, audit trail and a manifest of SHA-256s as one ZIP) built on a branch (`VS-06D`) |
 | FG-151 | Audit trail (history) download | DS, SN | Build | 1 | Works |
 | FG-152 | Tamper-evident seal on completed PDF | DS | Build | 1 | Works |
 | FG-153 | RFC 3161 trusted time (B-T) | — | Build | 1 | Works |
