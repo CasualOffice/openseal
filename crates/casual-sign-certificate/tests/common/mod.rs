@@ -213,6 +213,7 @@ pub fn chain_ending(n: usize, last: EventData) -> (Chain, Hash256, Timestamp) {
         EventData::EnvelopeSent {
             recipients: u32::try_from(n).unwrap(),
             documents: 1,
+            envelope_id_stamped: false,
         },
         &mut now,
     );

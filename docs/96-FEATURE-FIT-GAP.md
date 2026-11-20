@@ -26,7 +26,7 @@ instructions 8 and 9).
 | FG-008 | Convert existing PDF form fields to fields | DS (`transformPdfFields`) | Build | 4 | Partial: Detect fields suggests a PDF's own form fields (`source: acroform`, named after themselves), placed in the editor for the chosen signer (`fields.spec.mjs`; mock `slice4-mock.test.mjs`); filling in place (`FG-015`) is not offered as a send option; built on a branch (`VS-04`, [75](75-SLICE-4-EVIDENCE.md)); `Works` once `fields.spec.mjs` is green on `main` |
 | FG-014 | Dynamic XFA forms: render, fill and sign | — | Build | 4 | Engine (`XFA-01`; gaps `XFA-02`..`XFA-05`) |
 | FG-015 | Fill a PDF's own form fields in place and keep them fillable (alongside flattening) | — | Build | 4 | Engine |
-| FG-009 | Envelope id stamping in page header | DS | Build | 6 | — |
+| FG-009 | Envelope id stamping in page header | DS | Build | 6 | Built on a branch (`VS-06E1`, ADR-045): per envelope and account default, set in the editor's options and Admin; drawn on every page by the flattener, shown on the signing page, in the in-progress and sealed documents; `Works` once `vs06e-screens.spec.mjs` is green on `main` |
 | FG-010 | Document visibility per recipient | DS | Build | 6 | Works: engine, server (a hidden document is neither listed nor served to that recipient, `404`), editor's More options per recipient (`WF-02`) |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
 | FG-012 | Template matching on upload | DS | Build | 3 | Partial: uploads to a draft are matched against the workspace's template page hashes when template matching is on (`WEB-19`); not run on the real stack in a browser |
@@ -156,7 +156,7 @@ instructions 8 and 9).
 | FG-138 | History view | DS, SN | Build | 6 | Works (staff audit view; the signer's own `GET /s/{token}/history`, `WEB-07`) |
 | FG-139 | Envelope custom fields | DS | Build | 6 | Partial: `GET`/`PUT /envelopes/{id}/custom-fields`, the envelope page's card and panel, searched from Agreements; never in the evidence (`tests/manage_views.rs`); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
 | FG-140 | Reports and CSV export | DS | Build | 6 | Partial: the page's envelope report and CSV (`UX-08`); the server's envelope, recipient and usage reports as formula-safe CSV (`UXW-25`, `tests/reports.rs`, Full reports on the Reports page); built on a branch (`VS-06`, [77](77-SLICE-6-EVIDENCE.md)); `Works` once `manage-correct.spec.mjs` is green on `main` |
-| FG-141 | Insights dashboard | DS | Build | 6 | — |
+| FG-141 | Insights dashboard | DS | Build | 6 | Built on a branch (`VS-06E2`): `GET /insights` (counts, median and 90th-percentile time to complete, per day in the caller's day, top senders; the workspace's with `reports.read`, else one's own) and the Insights page from Reports (tiles, a chart with its table, outcomes, top senders, period and sender filters); `Works` once `vs06e-screens.spec.mjs` is green on `main` |
 
 ## Evidence and verification
 

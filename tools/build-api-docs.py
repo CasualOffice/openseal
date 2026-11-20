@@ -27,12 +27,12 @@ METHODS = ("get", "post", "put", "patch", "delete")
 GROUPS = {
     "auth": "Authentication and sessions", "oauth": "OAuth", ".well-known": "Discovery", "accounts": "Account",
     "users": "Users and invitations", "api-clients": "API clients", "envelopes": "Envelopes", "templates": "Templates",
-    "contacts": "Contacts", "reports": "Reports", "webhooks": "Webhooks", "retention": "Retention and legal hold", "s": "Signing ceremony (not public API)",
+    "contacts": "Contacts", "reports": "Reports", "insights": "Insights", "webhooks": "Webhooks", "retention": "Retention and legal hold", "s": "Signing ceremony (not public API)",
     "account": "Account settings", "admin-events": "Admin audit log", "ersd-versions": "Electronic disclosure",
     "folders": "Folders", "organizations": "Organizations", "groups": "Groups", "bulk-sends": "Bulk send",
     "permission-profiles": "Permission profiles",
 }
-ORDER = ["auth", "oauth", ".well-known", "envelopes", "folders", "templates", "groups", "bulk-sends", "contacts", "reports", "webhooks", "users", "permission-profiles", "api-clients",
+ORDER = ["auth", "oauth", ".well-known", "envelopes", "folders", "templates", "groups", "bulk-sends", "contacts", "reports", "insights", "webhooks", "users", "permission-profiles", "api-clients",
          "accounts", "account", "retention", "ersd-versions", "admin-events", "organizations", "s"]
 
 

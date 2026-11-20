@@ -849,3 +849,117 @@ async fn an_account_defaulting_to_b_lt_gets_long_term_seals_verified_by_pyhanko(
         "B-LT",
     );
 }
+
+/// `FG-009` (ADR-045): an envelope stamped with its id is sealed with "Envelope ID: <id>"
+/// on every page, read back from the sealed bytes; the seal verifies with ours and with
+/// pyHanko, the stamp being part of what the seal covers.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_envelope_stamped_with_its_id_is_sealed_with_the_stamp_on_every_page() {
+    let Some(env) = Env::new("end_to_end_envelope_id_stamp").await else {
+        return;
+    };
+    let st = AppState::new(
+        env.db.store.clone(),
+        Blobs::Fs(Arc::new(env.blob_store())),
+        JwtKeys::generate().unwrap(),
+        Arc::new(Shared(Arc::clone(&env.clock))),
+        Config {
+            public_url: "https://sign.example.test".into(),
+            ..Config::default()
+        },
+    )
+    .unwrap();
+    st.set_mfa_key(common::mfa_key());
+    let app = casual_sign_server::app(st);
+    let org = env.db.organization("Stamped").await;
+    casual_sign_server::bootstrap_workspace(
+        &env.db.store,
+        org,
+        "Stamped",
+        "admin@stamp.example.test",
+        "Admin",
+        PASSWORD,
+    )
+    .await
+    .unwrap();
+    let mut staff = Http {
+        app: app.clone(),
+        cookie: None,
+        csrf: None,
+    };
+    let login = staff
+        .call(
+            "POST",
+            "/api/v1/auth/login",
+            Some(json!({"email": "admin@stamp.example.test", "password": PASSWORD})),
+            &[],
+        )
+        .await;
+    assert_eq!(login.status, StatusCode::OK, "{:?}", login.json());
+    let set = login.headers["set-cookie"].to_str().unwrap();
+    staff.cookie = Some(set.split(';').next().unwrap().to_owned());
+    staff.csrf = Some(login.json()["csrf_token"].as_str().unwrap().to_owned());
+    common::pass_factor(
+        &staff.app,
+        staff.cookie.as_deref().unwrap(),
+        staff.csrf.as_deref().unwrap(),
+        env.clock.ms(),
+    )
+    .await;
+
+    let e = staff
+        .ok(
+            "POST",
+            "/api/v1/envelopes",
+            Some(json!({
+                "subject": "Stamped lease", "status": "sent",
+                "signing_options": {"stamp_envelope_id": true},
+                "documents": [{"name": "lease.pdf", "content_base64": b64(&env.original)}],
+                "recipients": [
+                    {"ref": "a", "type": "signer", "name": "Ada Lovelace", "email": "ada@stamp.example.test", "routing_order": 1},
+                ],
+                "fields": [{"recipient": "a", "document": 0, "type": "signature", "page": 1,
+                    "x": 72, "y": 100, "width": 180, "height": 30, "required": true}],
+            })),
+            StatusCode::CREATED,
+        )
+        .await;
+    assert_eq!(e["signing_options"]["stamp_envelope_id"], true, "{e}");
+    let id = e["id"].as_str().unwrap().to_owned();
+    let doc = e["documents"][0]["id"].as_str().unwrap().to_owned();
+    let f_sig = e["fields"][0]["id"].as_str().unwrap().to_owned();
+    let base = format!("/api/v1/envelopes/{id}");
+
+    let out = env.run().await;
+    assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    sign(&env, &app, "ada@stamp.example.test", &f_sig).await;
+    for _ in 0..2 {
+        let out = env.run().await;
+        assert!(out.iter().all(|(_, o)| *o == JobOutcome::Done), "{out:?}");
+    }
+    let done = staff.ok("GET", &base, None, StatusCode::OK).await;
+    assert_eq!(done["status"], "completed", "{done}");
+    let r = staff
+        .call(
+            "GET",
+            &format!("{base}/documents/{doc}/content?version=sealed"),
+            None,
+            &[],
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let sealed = r.body;
+
+    // Every page of the delivered document carries this envelope's id in the sealed
+    // bytes (the certificate of completion, appended after, is not stamped).
+    let line = format!("Envelope ID: {id}");
+    let delivered_pages = env.engine.page_texts(&env.original).unwrap().len();
+    let pages = env.engine.page_texts(&sealed).unwrap();
+    assert!(pages.len() > delivered_pages, "the certificate follows");
+    for (n, p) in pages.iter().take(delivered_pages).enumerate() {
+        assert_eq!(p.matches(&line).count(), 1, "page {}: {p}", n + 1);
+    }
+    ours(&env, &sealed);
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("end-to-end-envelope-id-stamp");
+    pyhanko(&dir, &[("fg009-stamped-sealed.pdf", &sealed)]);
+}

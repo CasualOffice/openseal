@@ -185,6 +185,10 @@ export const SIGN = {
   "sign.review.values": "Your values",
   "sign.fields.open": "Show fields",
   "sign.saved": "Saved",
+  // FG-009: the line the engine draws in each page's top margin (casual-sign-flatten),
+  // shown over the page as the sealed document will carry it. It is document content,
+  // drawn in English by the engine, so translations keep it as it is.
+  "sign.envelope-stamp": "Envelope ID: {id}",
   "sign.finish-reason": "{n} required fields left",
   "sign.finish-reason-one": "1 required field left",
   "sign.message": "Message from the sender",

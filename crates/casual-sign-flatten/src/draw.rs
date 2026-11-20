@@ -165,6 +165,31 @@ pub(crate) fn text(
     ))
 }
 
+/// The envelope id stamp (`FG-009`, ADR-045): `line` set on one line, left-aligned,
+/// grey, at most 7 pt, in a `w` × `h` box; it shrinks to fit a narrow page. `None` when
+/// a character is in no bundled face (an [`Id`] is ASCII, so never in practice).
+pub(crate) fn stamp(ctx: &mut Ctx<'_>, line: &str, w: f64, h: f64) -> Option<Drawing> {
+    let face = ctx.fonts.for_family(FontFamily::Helvetica)?;
+    let mapped = map(ctx.fonts, face, line).ok()?;
+    let setting = Setting {
+        face,
+        size: Some(STAMP_SIZE.min(h)),
+        shrink: true,
+        wrap: false,
+        align: Align::Left,
+        color: Color([0.25, 0.25, 0.25]),
+        padding: 0.0,
+        comb: None,
+        top: false,
+    };
+    let mut d = Drawing::default();
+    set(&mut d.canvas, ctx.uses, ctx.fonts, &mapped, w, h, &setting);
+    Some(d)
+}
+
+/// The stamp's text size in points (DocuSign's stamp is about this size).
+pub(crate) const STAMP_SIZE: f64 = 7.0;
+
 /// A checkmark filling most of the smaller side, centred.
 pub(crate) fn checkmark(canvas: &mut Canvas, w: f64, h: f64, color: Color) {
     let side = w.min(h) * 0.8;

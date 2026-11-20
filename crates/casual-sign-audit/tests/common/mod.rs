@@ -82,6 +82,7 @@ pub fn random_event(r: &mut Rng) -> (Actor, Context, EventData) {
             EventData::EnvelopeSent {
                 recipients: 3,
                 documents: 1,
+                envelope_id_stamped: false,
             },
         ),
         1 => (

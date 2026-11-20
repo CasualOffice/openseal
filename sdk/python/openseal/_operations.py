@@ -691,6 +691,19 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "getInsights": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/insights",
+        "path_params": [],
+        "query": [
+            "from",
+            "sender",
+            "to",
+            "utc_offset_minutes"
+        ]
+    },
     "getMe": {
         "body": False,
         "body_required": False,

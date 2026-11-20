@@ -75,7 +75,7 @@ seal profiles are not built yet.
 | `routing_mode` | enum | `sequential`, `parallel`, `mixed` (by routing order number) |
 | `expires_at` | timestamptz? | |
 | `reminder_policy` | json | First after N days, then every M days |
-| `signing_options` | json | Allow reassign, allow decline, allow finish-later, `capture_location` (GEO-01: record each recipient's location on every action; off by default, absent from the JSON when off; per envelope, see below), signer attachments, in-person, language |
+| `signing_options` | json | Allow reassign, allow decline, allow finish-later, `capture_location` (GEO-01: record each recipient's location on every action; off by default, absent from the JSON when off; per envelope, see below), `stamp_envelope_id` (`FG-009`, ADR-045: "Envelope ID: <id>" in every page's top margin; off by default, absent when off; the account setting `stamp_envelope_id` is the default; changeable only while a draft), signer attachments, in-person, language |
 | `seal_profile` | enum | `pades-b-t` default, `pades-b-lt`, `pades-b-lta`; when the create names none, the account's `settings.default_seal_profile` (`VS-07`) |
 | `completion_delivery` | json | Attach documents to completion email, combine with certificate |
 | `brand_id` | uuid? | |

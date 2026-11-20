@@ -797,7 +797,20 @@ pub(crate) async fn create_in(
             expires_at: Some(days_from(cmds.now, d)?),
         });
     }
-    if let Some(o) = req.signing_options {
+    let settings = tx.account().get().await?.settings;
+    // The envelope id stamp (FG-009): as the request says, else the account's default.
+    let stamp_default = settings
+        .get(super::admin::STAMP_ENVELOPE_ID)
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let options = match req.signing_options {
+        Some(o) => Some(o.resolve(stamp_default)),
+        None => stamp_default.then(|| casual_sign_model::SigningOptions {
+            stamp_envelope_id: true,
+            ..casual_sign_model::SigningOptions::default()
+        }),
+    };
+    if let Some(o) = options {
         changes.push(Change::SetSigningOptions { options: o });
     }
     // The envelope's own profile, else the account's default (VS-07, FG-154): a stored
@@ -805,11 +818,7 @@ pub(crate) async fn create_in(
     // engine's own default, B-T, stays.
     let profile = match req.seal_profile {
         Some(s) => Some(s),
-        None => tx
-            .account()
-            .get()
-            .await?
-            .settings
+        None => settings
             .get(super::admin::DEFAULT_SEAL_PROFILE)
             .and_then(|v| serde_json::from_value::<casual_sign_model::SealProfile>(v.clone()).ok())
             .filter(|p| *p != casual_sign_model::SealProfile::default()),

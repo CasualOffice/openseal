@@ -158,6 +158,14 @@ components:
             Record where each recipient was on every recipient action (row GEO-01, docs/32 §2):
             the device's location when the signer agrees, else an approximation from the
             request's IP address with the reason. Absent when off.
+        stamp_envelope_id:
+          type: boolean
+          default: false
+          description: >-
+            Stamp "Envelope ID: <id>" in the top margin of every page (FG-009, ADR-045): the
+            signing page shows it and the sealed document carries it. Absent when off. On
+            `POST /envelopes`, left out it takes the account's `stamp_envelope_id` setting.
+            Changeable only while a draft (a correction that changes it is `409 CS-WF-0001`).
     LocationRequest:
       type: object
       additionalProperties: false
@@ -360,7 +368,7 @@ components:
       required: [settings]
       additionalProperties: false
       properties:
-        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `mfa_policy` (ASVS-01) is `administrators` (the default, also when unset; ASVS-31), `everyone` or `optional`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`. A setting the organization''s policy governs (ORG-08) that changes to a locked or looser value is `422 CS-ORG-0002`, naming the setting and the key.'}
+        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `stamp_envelope_id` (FG-009) is a boolean: whether a new envelope whose request does not say stamps its id on every page. `mfa_policy` (ASVS-01) is `administrators` (the default, also when unset; ASVS-31), `everyone` or `optional`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`. A setting the organization''s policy governs (ORG-08) that changes to a locked or looser value is `422 CS-ORG-0002`, naming the setting and the key.'}
     User:
       type: object
       properties:
@@ -3017,6 +3025,73 @@ paths:
       x-level: workspace
       responses:
         '204': {description: Done}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/insights:
+    get:
+      operationId: getInsights
+      summary: "The Insights dashboard's figures over the envelopes created in a window (FG-141)"
+      description: >-
+        DocuSign's Insights. Over the envelopes created in `[from, to)` (any time by default),
+        Deleted left out: counts by how they stand, the median and 90th percentile of the
+        time from sent to completed (seconds, continuous percentiles), envelopes sent and
+        completed per day in the caller's day (`utc_offset_minutes`, -840 to 840, default 0;
+        days with neither are absent), and the ten senders who sent most. A holder of
+        `reports.read` sees the workspace (`scope: workspace`), of `sender` when given;
+        anyone else sees their own envelopes (`scope: own`), and naming another sender is
+        `403 CS-AUTH-0006`. Aggregates only: no subject, name or address.
+      x-permission: "envelopes.read"
+      x-level: workspace
+      parameters:
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: sender, in: query, required: false, description: "A user id, or `me`", schema: {type: string}}
+        - {name: utc_offset_minutes, in: query, required: false, schema: {type: integer, minimum: -840, maximum: 840, default: 0}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scope, totals, time_to_complete, days, top_senders]
+                properties:
+                  scope: {type: string, enum: [workspace, own]}
+                  from: {type: [string, 'null'], format: date-time}
+                  to: {type: [string, 'null'], format: date-time}
+                  sender: {type: [string, 'null']}
+                  utc_offset_minutes: {type: integer}
+                  totals:
+                    type: object
+                    properties:
+                      created: {type: integer}
+                      sent: {type: integer}
+                      completed: {type: integer}
+                      declined: {type: integer}
+                      voided: {type: integer}
+                      expired: {type: integer}
+                      in_progress: {type: integer}
+                  time_to_complete:
+                    type: object
+                    properties:
+                      completed: {type: integer}
+                      median_seconds: {type: [number, 'null']}
+                      p90_seconds: {type: [number, 'null']}
+                  days:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        day: {type: string, format: date}
+                        sent: {type: integer}
+                        completed: {type: integer}
+                  top_senders:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sender_user_id: {type: string}
+                        sent: {type: integer}
+                        completed: {type: integer}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/reports/{kind}:
     parameters:

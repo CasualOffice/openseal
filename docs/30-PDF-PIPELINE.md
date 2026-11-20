@@ -375,6 +375,8 @@ field's rectangle and none outside across every geometry and field type (32 docu
 check), pypdf extracts every value and reads back `/V`; 20 real corpus forms (up to 6,197 fields) flatten and fill with
 no failure. Not yet: text shaping and CJK or RTL faces (`FLT-01`).
 
+**Envelope id stamp (`FG-009`, ADR-045):** with `FlattenOptions::envelope_id_stamp`, the same update draws "Envelope ID: <id>" (7 pt Liberation Sans, grey, one line) in a 10 pt band 4 pt below the top edge of every page as displayed, inset 18 pt from the sides (5 % on a narrow page, shrinking to fit), placed through §4 for every rotation, crop box and UserUnit, as a Form XObject like a field's. The id must be an id (`CS-FLD-0005`). The delivered document is unchanged; the signing page shows the same line in the same place, and the worker and the in-progress preview flatten with the envelope's `signing_options.stamp_envelope_id`. Checked: every rotation, crop and user unit (the stamp read back from the top margin), three pages of three sizes, determinism, and the whole corpus (371 files, 10,692 pages, each stamp read back); a sealed stamped document passes pyHanko and pypdf reads the stamp.
+
 **Checkboxes (`FLT-04`):** a converted checkbox, checked, draws its widget's own on-state appearance (a cross, a filled
 square) in the field's box, the widget nearest the box when the sender moved it; our checkmark only when it has none.
 

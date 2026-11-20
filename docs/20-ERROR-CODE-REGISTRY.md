@@ -54,7 +54,7 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-FLD-0002 | Value fails validation; also a sender rule that cannot be used (a regex that does not compile or is over its limits, inverted min and max) |
 | CS-FLD-0003 | Group rule not satisfied |
 | CS-FLD-0004 | Field outside its page |
-| CS-FLD-0005 | Field references an unknown recipient, document, field id or data label, or two fields share an id |
+| CS-FLD-0005 | Field references an unknown recipient, document, field id or data label, or two fields share an id; also the envelope id to stamp (`FG-009`) is missing or not an id |
 | CS-FLD-0006 | Signer has no signature field (and free-form is off) |
 | CS-FLD-0010 | Anchor text not found (and not ignorable), or more than 500 matches |
 | CS-FLD-0011 | Text tag malformed |

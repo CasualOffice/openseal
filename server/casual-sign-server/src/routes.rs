@@ -662,6 +662,9 @@ pub fn table() -> Vec<Route> {
             JSON,
             admin::revoke_client,
         ),
+        // Insights (FG-141): the dashboard's figures; the workspace's with
+        // `reports.read`, else one's own (checked in the handler).
+        r("GET", "/api/v1/insights", er, JSON, reports::insights),
         // Workspace reports (VS-06, UXW-25).
         r(
             "GET",

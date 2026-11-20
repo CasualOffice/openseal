@@ -245,6 +245,12 @@ pub struct SigningOptions {
     /// serialize, and hash, as they did.
     #[serde(default, skip_serializing_if = "is_false")]
     pub capture_location: bool,
+    /// Stamp "Envelope ID: <id>" in the top margin of every page (DocuSign's envelope id
+    /// stamping, `FG-009`, ADR-045): shown to every signer and drawn into the sealed
+    /// document. Off by default, and absent from the wire when off, as
+    /// `capture_location`. It can change only while the envelope is a draft.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub stamp_envelope_id: bool,
 }
 
 fn yes() -> bool {
@@ -263,6 +269,7 @@ impl Default for SigningOptions {
             allow_decline: true,
             allow_finish_later: true,
             capture_location: false,
+            stamp_envelope_id: false,
         }
     }
 }
@@ -405,6 +412,20 @@ mod tests {
         };
         let s = serde_json::to_string(&on).unwrap();
         assert!(s.ends_with(r#""capture_location":true}"#), "{s}");
+        assert_eq!(serde_json::from_str::<SigningOptions>(&s).unwrap(), on);
+    }
+
+    #[test]
+    fn stamp_envelope_id_is_off_by_default_and_absent_when_off() {
+        let off = SigningOptions::default();
+        assert!(!off.stamp_envelope_id);
+        assert!(!serde_json::to_string(&off).unwrap().contains("stamp"));
+        let on = SigningOptions {
+            stamp_envelope_id: true,
+            ..off
+        };
+        let s = serde_json::to_string(&on).unwrap();
+        assert!(s.ends_with(r#""stamp_envelope_id":true}"#), "{s}");
         assert_eq!(serde_json::from_str::<SigningOptions>(&s).unwrap(), on);
     }
 }

@@ -158,6 +158,7 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Subject / message | 255 / 10,000 characters | CS-API-0001 |
 | Custom fields per envelope | 100 (a name 1–100 characters, a value at most 1,000; `VS-06`) | CS-API-0001 |
 | Rows in one report (`GET /reports/{kind}`, `VS-06`) | 10,000; more is `truncated`, never an error | — |
+| Insights (`GET /insights`, `FG-141`) | aggregates only, over every envelope of the window (no row cap); the ten top senders; `utc_offset_minutes` −840 to 840 (else `422`); the page draws at most 120 points (by week past 92 days) | CS-API-0001 |
 | Field id | 1–64 bytes of `[A-Za-z0-9_-]` | CS-FLD-0005 |
 | Data label | 255 bytes, NFC-normalized | CS-FLD-0002 |
 | Field rectangle | 0–14,400 points per coordinate; page 1–5,000 | CS-FLD-0004 |

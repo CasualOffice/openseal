@@ -269,7 +269,8 @@ function account(panel, ctx, part) {
           row(t("admin.expiry-days"), s().default_expiry_days),
           row(t("admin.reminder-days"), s().first_reminder_days ? s().first_reminder_days : t("admin.reminder-none")),
           h("dt", { text: t("admin.expiry-warning") }), h("dd", { attrs: { "data-testid": "expiry-warning" }, text: warningText(expiryWarningOf(s())) }),
-          h("dt", { text: t("admin.seal-profile") }), h("dd", { attrs: { "data-testid": "seal-profile" }, text: t(sealProfileLabel(s().default_seal_profile)) })),
+          h("dt", { text: t("admin.seal-profile") }), h("dd", { attrs: { "data-testid": "seal-profile" }, text: t(sealProfileLabel(s().default_seal_profile)) }),
+          h("dt", { text: t("admin.stamp-envelope-id") }), h("dd", { attrs: { "data-testid": "stamp-default" }, text: t(s().stamp_envelope_id === true ? "admin.stamp-on" : "admin.stamp-off") })),
         lockNote("first_reminder_days")));
   }
   function card(id, title, lede, editLabel, onEdit, ...body) {
@@ -295,6 +296,8 @@ function account(panel, ctx, part) {
         f.seal = h("select", { id: "a-seal", class: "os-input", attrs: { "aria-describedby": "a-seal-help" } },
           ...SEAL_PROFILES.map((p) => h("option", { value: p, text: t(sealProfileLabel(p)) })));
         f.seal.value = SEAL_PROFILES.includes(s().default_seal_profile) ? s().default_seal_profile : "pades-b-t";
+        // FG-009: whether new envelopes stamp their id on every page.
+        f.stamp = h("input", { id: "a-stamp", type: "checkbox", checked: s().stamp_envelope_id === true, attrs: { "aria-describedby": "a-stamp-help" } });
         f.err = h("p", { class: "os-field-error", attrs: { role: "alert" } });
         body.append(
           h("p", { class: "os-label", text: t("admin.account-name") }), h("p", { class: "os-muted", attrs: { "data-testid": "account-name" }, text: acct.name || t("admin.not-set") }),
@@ -304,7 +307,9 @@ function account(panel, ctx, part) {
           h("label", { class: "os-label", attrs: { for: "a-warn" }, text: t("admin.expiry-warning") }), f.warn,
           h("p", { id: "a-warn-help", class: "os-help", text: t("admin.expiry-warning-help") }),
           h("label", { class: "os-label", attrs: { for: "a-seal" }, text: t("admin.seal-profile") }), f.seal,
-          h("p", { id: "a-seal-help", class: "os-help", text: t("admin.seal-profile-help") }), f.err);
+          h("p", { id: "a-seal-help", class: "os-help", text: t("admin.seal-profile-help") }),
+          h("label", { class: "os-check", attrs: { for: "a-stamp" } }, f.stamp, h("span", { text: t("admin.stamp-envelope-id") })),
+          h("p", { id: "a-stamp-help", class: "os-help", text: t("admin.stamp-envelope-id-help") }), f.err);
       },
       actions: [
         { label: t("action.cancel"), value: null },
@@ -320,7 +325,9 @@ function account(panel, ctx, part) {
             // as it is now (its disclosure kept) goes back with the new warning days.
             // The seal level is sent only when it changes, so an unset default stays unset.
             const seal = f.seal.value !== (SEAL_PROFILES.includes(s().default_seal_profile) ? s().default_seal_profile : "pades-b-t") ? { default_seal_profile: f.seal.value } : {};
-            const patch = { default_expiry_days: expiry, first_reminder_days: remind || null, ...seal, ...(await expiryWarningPatch(ctx.api, warn)) };
+            // The stamp default is sent only when it changes; off removes the setting.
+            const stamp = f.stamp.checked !== (s().stamp_envelope_id === true) ? { stamp_envelope_id: f.stamp.checked ? true : null } : {};
+            const patch = { default_expiry_days: expiry, first_reminder_days: remind || null, ...seal, ...stamp, ...(await expiryWarningPatch(ctx.api, warn)) };
             const out = await ctx.api.patchAccountSettings(patch);
             acct = { ...acct, settings: out?.settings || acct.settings };
             return true;

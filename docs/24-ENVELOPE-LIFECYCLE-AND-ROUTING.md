@@ -75,6 +75,9 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - In-person signers are hosted by a staff user who authenticates first; the event records both. On the server
   (`UXW-36`), `POST /envelopes/{id}/recipients/{r}/host` runs `HostInPerson` as `InPersonHost` and returns a one-time
   link whose every command runs as that host (docs/40 As built); the signer's emailed link cannot act for them.
+- **Envelope id stamp (`FG-009`, ADR-045).** `signing_options.stamp_envelope_id` is set while a draft only: a
+  correction that turns it on or off is `CS-WF-0001`, since a signer may have seen the pages already. `envelope.sent`
+  records it (`envelope_id_stamped`).
 - **Signer location (GEO-01).** When the envelope's `signing_options.capture_location` is on, the signing page asks the
   signer for their device's location; every recipient action (`recipient.delivered`, `recipient.viewed_document`,
   `recipient.signed`, `recipient.approved`, `recipient.declined`) then carries a location in its context

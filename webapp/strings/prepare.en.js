@@ -116,6 +116,8 @@ export const PREPARE = {
   "prepare.auto-last_name": "Filled in with the recipient's name after its first word.",
   "prepare.back": "Back to agreements",
   "prepare.capture-location": "Ask signers for their location",
+  "prepare.stamp-envelope-id": "Stamp the envelope ID on every page",
+  "prepare.stamp-envelope-id-help": "Each page shows “Envelope ID” and this envelope's ID in its top margin, to signers and in the signed PDF. It can't be changed after sending.",
   "prepare.capture-location-help": "The signer's browser asks once. If they say no, the location is estimated from their network address, and the audit trail says which.",
   "prepare.copied": "Field copied.",
   "prepare.default-subject": "Please sign: {name}",

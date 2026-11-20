@@ -8,7 +8,7 @@
 use axum::extract::{Path, Query};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
-use casual_sign_store::repo::reports::{MAX_ROWS, Window};
+use casual_sign_store::repo::reports::{MAX_OFFSET_MINUTES, MAX_ROWS, Window};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use super::envelopes::rfc3339;
 use super::json;
+use crate::authz::Action;
 use crate::call::Call;
 use crate::error::ApiError;
 
@@ -235,6 +236,84 @@ pub(crate) async fn report(
         }
         _ => Err(ApiError::not_found()),
     }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct InsightsQuery {
+    /// Created at or after (RFC 3339); by default, any time.
+    from: Option<String>,
+    /// Created before (RFC 3339); by default, any time.
+    to: Option<String>,
+    /// A sender's user id, or `me`.
+    sender: Option<String>,
+    /// The caller's offset from UTC in minutes, for the days of the series (default 0).
+    utc_offset_minutes: Option<i32>,
+}
+
+/// `GET /insights?from&to&sender&utc_offset_minutes` (`FG-141`, DocuSign's Insights):
+/// the dashboard's figures over the envelopes created in the window. A holder of
+/// `reports.read` sees the workspace, of `sender` when given; anyone else their own
+/// envelopes only, and naming another sender is `403`. Aggregates only: no subject, name
+/// or address is in the answer.
+pub(crate) async fn insights(
+    c: Call,
+    Query(q): Query<InsightsQuery>,
+) -> Result<Response, ApiError> {
+    let from = instant(q.from.as_deref(), "/query/from")?.unwrap_or(OffsetDateTime::UNIX_EPOCH);
+    let to = instant(q.to.as_deref(), "/query/to")?
+        .unwrap_or_else(casual_sign_store::repo::envelopes::never_expires);
+    if to <= from {
+        return Err(ApiError::invalid("/query/to"));
+    }
+    let offset = q.utc_offset_minutes.unwrap_or(0);
+    if !(-MAX_OFFSET_MINUTES..=MAX_OFFSET_MINUTES).contains(&offset) {
+        return Err(ApiError::invalid("/query/utc_offset_minutes"));
+    }
+    let named = match q.sender.as_deref() {
+        None => None,
+        Some("me") => Some(c.p.user.0),
+        Some(s) => Some(Uuid::parse_str(s).map_err(|_| ApiError::invalid("/query/sender"))?),
+    };
+    // Without `reports.read`, one's own envelopes only.
+    let workspace = c.p.actions.contains(&Action::ReportsRead);
+    let sender = if workspace {
+        named
+    } else {
+        match named {
+            Some(s) if s != c.p.user.0 => return Err(ApiError::forbidden("reports.read")),
+            _ => Some(c.p.user.0),
+        }
+    };
+    let mut tx = c.tx().await?;
+    let i = tx
+        .reports()
+        .insights(Window { from, to, sender }, offset)
+        .await?;
+    Ok(json(
+        StatusCode::OK,
+        &json!({
+            "scope": if workspace { "workspace" } else { "own" },
+            "from": q.from.as_ref().map(|_| rfc3339(from)),
+            "to": q.to.as_ref().map(|_| rfc3339(to)),
+            "sender": sender.map(|s| s.to_string()),
+            "utc_offset_minutes": offset,
+            "totals": {
+                "created": i.created, "sent": i.sent, "completed": i.completed,
+                "declined": i.declined, "voided": i.voided, "expired": i.expired,
+                "in_progress": i.in_progress,
+            },
+            "time_to_complete": {
+                "completed": i.completed,
+                "median_seconds": i.median_seconds.map(f64::round),
+                "p90_seconds": i.p90_seconds.map(f64::round),
+            },
+            "days": i.days.iter().map(|d| json!({"day": d.day, "sent": d.sent, "completed": d.completed})).collect::<Vec<_>>(),
+            "top_senders": i.top_senders.iter().map(|t| json!({
+                "sender_user_id": t.sender_user_id.to_string(), "sent": t.sent, "completed": t.completed,
+            })).collect::<Vec<_>>(),
+        }),
+    ))
 }
 
 #[cfg(test)]

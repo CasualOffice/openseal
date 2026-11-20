@@ -70,6 +70,65 @@ pub struct RecipientRow {
     pub routing_order: i32,
 }
 
+/// The insights of a window (`FG-141`, DocuSign's Insights): how many envelopes were
+/// created, sent and how they stand, how long completing took, what was sent and
+/// completed each day, and who sent most.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Insights {
+    /// Envelopes created in the window (drafts included).
+    pub created: i64,
+    /// Of them, sent.
+    pub sent: i64,
+    /// Completed.
+    pub completed: i64,
+    /// Declined.
+    pub declined: i64,
+    /// Voided.
+    pub voided: i64,
+    /// Expired.
+    pub expired: i64,
+    /// Sent and not yet ended (`sent`, `delivered`, `completing`).
+    pub in_progress: i64,
+    /// Median seconds from sent to completed over the completed ones, when any.
+    pub median_seconds: Option<f64>,
+    /// 90th percentile of the same (continuous, as PostgreSQL's `percentile_cont`).
+    pub p90_seconds: Option<f64>,
+    /// Per day (the UTC date shifted by the caller's offset), oldest first: envelopes
+    /// sent that day and envelopes completed that day; days with neither are absent.
+    pub days: Vec<InsightDay>,
+    /// The senders who sent most, at most [`TOP_SENDERS`], most sent first.
+    pub top_senders: Vec<TopSender>,
+}
+
+/// One day of [`Insights::days`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InsightDay {
+    /// The day, as `YYYY-MM-DD`.
+    pub day: String,
+    /// Sent that day.
+    pub sent: i64,
+    /// Completed that day.
+    pub completed: i64,
+}
+
+/// One line of [`Insights::top_senders`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TopSender {
+    /// The sender.
+    pub sender_user_id: Uuid,
+    /// Envelopes of theirs sent in the window.
+    pub sent: i64,
+    /// Of them, completed.
+    pub completed: i64,
+}
+
+/// How many senders [`Insights::top_senders`] names.
+pub const TOP_SENDERS: i64 = 10;
+
+/// The widest offset from UTC a caller may ask days in, in minutes (UTC−14:00 to
+/// UTC+14:00).
+pub const MAX_OFFSET_MINUTES: i32 = 14 * 60;
+
 /// One sender's line of the usage report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UsageRow {
@@ -229,5 +288,122 @@ impl Reports<'_> {
                 expired: r.expired,
             })
             .collect())
+    }
+
+    /// The insights of the window (`FG-141`): counts, completion time percentiles,
+    /// sent and completed per day in the caller's day (`offset_minutes` from UTC, at
+    /// most [`MAX_OFFSET_MINUTES`] either way, clamped), and the top senders. Over the
+    /// same envelopes as the reports: created in the window, Deleted left out.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn insights(&mut self, w: Window, offset_minutes: i32) -> Result<Insights> {
+        let acct = self.tx.acct();
+        let offset = offset_minutes.clamp(-MAX_OFFSET_MINUTES, MAX_OFFSET_MINUTES);
+        let t = sqlx::query!(
+            "SELECT count(*) AS \"created!\", \
+                    count(*) FILTER (WHERE e.sent_at IS NOT NULL) AS \"sent!\", \
+                    count(*) FILTER (WHERE e.status = 'completed') AS \"completed!\", \
+                    count(*) FILTER (WHERE e.status = 'declined') AS \"declined!\", \
+                    count(*) FILTER (WHERE e.status = 'voided') AS \"voided!\", \
+                    count(*) FILTER (WHERE e.status = 'expired') AS \"expired!\", \
+                    count(*) FILTER (WHERE e.status IN ('sent', 'delivered', 'completing')) \
+                      AS \"in_progress!\", \
+                    percentile_cont(0.5) WITHIN GROUP (ORDER BY \
+                      extract(epoch FROM e.completed_at - e.sent_at)::float8) \
+                      FILTER (WHERE e.status = 'completed' AND e.sent_at IS NOT NULL \
+                              AND e.completed_at IS NOT NULL) AS median_seconds, \
+                    percentile_cont(0.9) WITHIN GROUP (ORDER BY \
+                      extract(epoch FROM e.completed_at - e.sent_at)::float8) \
+                      FILTER (WHERE e.status = 'completed' AND e.sent_at IS NOT NULL \
+                              AND e.completed_at IS NOT NULL) AS p90_seconds \
+               FROM envelopes AS e \
+              WHERE e.account_id = $1 AND e.deleted_at IS NULL \
+                AND EXISTS (SELECT 1 FROM envelope_states AS s \
+                             WHERE s.account_id = e.account_id AND s.envelope_id = e.id) \
+                AND e.created_at >= $2 AND e.created_at < $3 \
+                AND ($4::uuid IS NULL OR e.sender_user_id = $4)",
+            acct,
+            w.from,
+            w.to,
+            w.sender
+        )
+        .fetch_one(self.tx.conn())
+        .await
+        .map_err(db)?;
+        let days = sqlx::query!(
+            "WITH w AS ( \
+               SELECT e.sent_at, CASE WHEN e.status = 'completed' THEN e.completed_at END AS done_at \
+                 FROM envelopes AS e \
+                WHERE e.account_id = $1 AND e.deleted_at IS NULL \
+                  AND EXISTS (SELECT 1 FROM envelope_states AS s \
+                               WHERE s.account_id = e.account_id AND s.envelope_id = e.id) \
+                  AND e.created_at >= $2 AND e.created_at < $3 \
+                  AND ($4::uuid IS NULL OR e.sender_user_id = $4)), \
+             d AS ( \
+               SELECT to_char((sent_at AT TIME ZONE 'UTC') + make_interval(mins => $5), 'YYYY-MM-DD') AS day, \
+                      1 AS sent, 0 AS completed FROM w WHERE sent_at IS NOT NULL \
+               UNION ALL \
+               SELECT to_char((done_at AT TIME ZONE 'UTC') + make_interval(mins => $5), 'YYYY-MM-DD'), \
+                      0, 1 FROM w WHERE done_at IS NOT NULL) \
+             SELECT day AS \"day!\", sum(sent)::int8 AS \"sent!\", sum(completed)::int8 AS \"completed!\" \
+               FROM d GROUP BY day ORDER BY day",
+            acct,
+            w.from,
+            w.to,
+            w.sender,
+            offset
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        let top = sqlx::query!(
+            "SELECT e.sender_user_id, \
+                    count(*) AS \"sent!\", \
+                    count(*) FILTER (WHERE e.status = 'completed') AS \"completed!\" \
+               FROM envelopes AS e \
+              WHERE e.account_id = $1 AND e.deleted_at IS NULL AND e.sent_at IS NOT NULL \
+                AND EXISTS (SELECT 1 FROM envelope_states AS s \
+                             WHERE s.account_id = e.account_id AND s.envelope_id = e.id) \
+                AND e.created_at >= $2 AND e.created_at < $3 \
+                AND ($4::uuid IS NULL OR e.sender_user_id = $4) \
+              GROUP BY e.sender_user_id ORDER BY count(*) DESC, e.sender_user_id LIMIT $5",
+            acct,
+            w.from,
+            w.to,
+            w.sender,
+            TOP_SENDERS
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(Insights {
+            created: t.created,
+            sent: t.sent,
+            completed: t.completed,
+            declined: t.declined,
+            voided: t.voided,
+            expired: t.expired,
+            in_progress: t.in_progress,
+            median_seconds: t.median_seconds,
+            p90_seconds: t.p90_seconds,
+            days: days
+                .into_iter()
+                .map(|d| InsightDay {
+                    day: d.day,
+                    sent: d.sent,
+                    completed: d.completed,
+                })
+                .collect(),
+            top_senders: top
+                .into_iter()
+                .map(|r| TopSender {
+                    sender_user_id: r.sender_user_id,
+                    sent: r.sent,
+                    completed: r.completed,
+                })
+                .collect(),
+        })
     }
 }

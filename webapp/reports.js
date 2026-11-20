@@ -48,7 +48,9 @@ export function mount(view, ctx) {
   const who = selectField(t("reports.sender"), [["all", t("reports.sender-all")], ["me", t("reports.sender-me")]], { id: "rep-sender", size: "sm", value: sender, onChange: (v) => { sender = v; render(); } });
   const note = h("p", { class: "os-muted os-small os-reports__note", attrs: { "data-testid": "report-note", "aria-live": "polite" } });
   const tools = h("div", { class: "os-reports__tools" }, period.el, dates, who.el, note);
-  view.append(h("div", { class: "os-page-head" }, h("h1", { class: "os-page-title", text: t("reports.title") }), exportBtn),
+  // FG-141: the Insights dashboard, over every envelope of the period.
+  const insightsLink = h("a", { class: "os-btn os-btn--secondary", href: "#/insights", attrs: { "data-testid": "reports-insights" } }, icon("chart-column", { size: 16 }), h("span", { text: t("reports.insights") }));
+  view.append(h("div", { class: "os-page-head" }, h("h1", { class: "os-page-title", text: t("reports.title") }), h("div", { class: "os-actions" }, insightsLink, exportBtn)),
     h("p", { class: "os-muted os-lede", text: t("reports.lede") }), tools);
   const body = h("div", { class: "os-reports", attrs: { "aria-busy": "true", "aria-live": "polite" } }, reportSkeleton());
   view.append(body);

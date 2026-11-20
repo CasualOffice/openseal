@@ -165,6 +165,11 @@ pub struct FlattenOptions {
     /// When the AcroForm is removed, draw the appearance of widgets that were not
     /// converted (push buttons, unmapped fields) into the page.
     pub keep_unconverted_appearances: bool,
+    /// Stamp "Envelope ID: <id>" in the top margin of every page (DocuSign's envelope
+    /// id stamping, `FG-009`, ADR-045): one line of 7 pt Liberation Sans, grey, from the
+    /// displayed page's top-left corner, in every rotation. Needs
+    /// [`FlattenInput::envelope_id`]. Off by default.
+    pub envelope_id_stamp: bool,
 }
 
 impl Default for FlattenOptions {
@@ -175,6 +180,7 @@ impl Default for FlattenOptions {
             shrink_fixed_sizes: true,
             widget_frames: true,
             keep_unconverted_appearances: true,
+            envelope_id_stamp: false,
         }
     }
 }

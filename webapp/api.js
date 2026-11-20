@@ -605,6 +605,9 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     /// `{items, truncated}`.
     report: (kind, { from, to, sender } = {}) => data(request("GET", `/api/v1/reports/${encodeURIComponent(kind)}`, { query: { from, to, sender } })),
     /// The same report as the server's CSV: `{text, truncated}`.
+    /// `GET /insights` (FG-141): the dashboard's figures for the window, the workspace's
+    /// with `reports.read`, else the caller's own.
+    insights: ({ from, to, sender, utc_offset_minutes } = {}) => data(request("GET", "/api/v1/insights", { query: { from, to, sender, utc_offset_minutes } })),
     reportCsv: async (kind, { from, to, sender } = {}) => {
       const r = await request("GET", `/api/v1/reports/${encodeURIComponent(kind)}`, { query: { from, to, sender, format: "csv" }, raw: true, accept: "text/csv, application/problem+json" });
       return { text: await r.blob.text(), truncated: !!r.truncated };
