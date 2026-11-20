@@ -41,7 +41,8 @@ docs/04 rule 25). The external review is `SEC-REV-01`. Tracker row: `SEC-ASVS-01
 
 The largest gaps: personal-data controls (built 2026-11-19 on a worktree
 branch: export, erasure and retention, `ASVS-16`, `ASVS-18`; left: purged blobs' bytes until `HRD-09`, the operator
-privacy-notice template), unsigned release images (`ASVS-15`), and log shipping shown only as
+privacy-notice template), release integrity (`ASVS-15`: images have been signed with cosign since v0.1.0, `REL-04`,
+but 1.14.2, 10.3.2, 14.1.1 and 14.2.5 are not yet re-assessed, and the vendored web files have no SBOM), and log shipping shown only as
 configuration (`ASVS-08A`). Built and green on CI on `main` since the first assessment: the security event log
 (`ASVS-08`), anomaly alerting (`ASVS-13`; envelope and bulk sends counted since `ASVS-13A`), the backup and restore drill
 (`ASVS-14`, job `backup-drill`) and the administrators' TOTP default (`ASVS-31`); merged since: staff session idle and

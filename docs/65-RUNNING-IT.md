@@ -938,6 +938,11 @@ flow named.
 | 5 Recipient authentication and consent (`RAUTH-02`) | `slice-5-demo` (14303611682, 5.0 MB) | `compose-e2e`, `recipient-auth.spec.mjs` | `vs05-*-codes-on-a-phone.webm` (68–70 s, phone size): the email, SMS ("Text me a code", "Code sent") and voice ("Call me with a code") code steps. `vs05-*-identity-provider-sign-in.webm`: "Sign in to continue" through the OpenID Connect stub, the document, the Withdraw consent dialog and "You withdrew your consent" |
 | 7 Verify (`VS-07A`) | `slice-7-demo` (14304121907, 2.0 MB) | `e2e`, `verify-demo.spec.mjs` | `vs07-*-verify.webm` (7–8 s): `verify.html` in the browser, a trusted certificate added, a sealed PDF "Signed and unchanged" with every check passed, then a tampered one "Changed or broken" with the document digest failed. Recorded in the `e2e` job's mock mode (the page shows its "Demo mode" banner); the check itself is the WebAssembly verifier running in the page, as on a real server |
 
+Recorded but not yet watched (`DOC-016`): `main` run
+[44813535957](https://github.com/CasualOffice/openseal/actions/runs/44813535957) (`9c20a0e`, 2026-11-20, every job
+green, expiring 2027-02-18) carries `slice-3-demo-2`/`-4`, `slice-4-demo-1`/`-3`, `slice-6-demo-2`/`-4` and
+`slice-8-demo-2`/`-4`. Each moves into the table above once watched.
+
 Seen while checking: in the slice-1 and slice-2 sender videos the envelope page's Evidence card says "Audit trail
 links do not match" on a real envelope: the page read only bare hex, and the server writes `sha256:<hex>` (`S1-10`,
 fixed with a test; the evidence itself was never wrong, only its display).

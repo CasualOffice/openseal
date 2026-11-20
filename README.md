@@ -54,7 +54,7 @@ it shares.
 ## Run it
 
 You need Docker with Compose. One command builds and starts the whole stack (server and web app, job worker, signing
-key service, Postgres, object storage, a mail catcher and a development timestamp authority):
+key service, Word conversion service, Postgres, object storage, a mail catcher and a development timestamp authority):
 
 ```sh
 git clone https://github.com/CasualOffice/openseal && cd openseal
@@ -75,18 +75,21 @@ or try the same demo on the website with nothing installed.
 
 ## Status
 
-Docs are true as of 2026-11-20 (`main` at `f667422`, CI run 44610734814 green on every job). **Pre-alpha.**
+Docs are true as of `9c20a0e` (2026-11-21): `main`, CI run 44813535957 green on every job; slice 9 is on PR #40. **Pre-alpha.**
 **[v0.1.0](https://github.com/CasualOffice/openseal/releases/tag/v0.1.0)** is published (2026-11-20), the first signed pre-release: server, worker and key-service images on
 GHCR, each signed keyless with Sigstore, with build provenance and an SBOM, and a signed `SHA256SUMS`. It runs end to
 end on one machine with Docker Compose and is **not for production agreements**. **Phases D, 0, 1 and 2 are closed**
 and milestones M0 to M3 are reached (**M3, "first signature"**, 2026-11-19). **Slices closed: 1 (send and sign), 2
-(routing), 3 (templates), 4 (every field), 5 (authentication and consent) and 7 (verify)**, 6 of 35. Slice 8 (API and
-webhooks) is merged and awaits a green `main`; slice 6 (manage and correct) is being built; slice 9 (embedding: signing, prepare and correct views in a frame, the
-`<openseal-signing>` and `<openseal-prepare>` elements, per-workspace `frame-ancestors`) is built on a branch. Work follows one binding plan, one slice at a time
-([docs/06](docs/06-ROADMAP-AND-DELIVERY.md) §Execution plan). ML, the platform console, and plans and metering stay
-paused (`Paused` in the tracker). Each item's exact state is in [docs/14](docs/14-EXECUTION-TRACKER.md); slice
-evidence is in [docs/73](docs/73-M3-SLICE-EVIDENCE.md), [74](docs/74-SLICE-3-EVIDENCE.md) and
-[75](docs/75-SLICE-4-EVIDENCE.md).
+(routing), 3 (templates), 4 (every field), 5 (authentication and consent), 6 (manage and correct: quick views, search,
+correct, transfer, Word uploads converted, reports and insights), 7 (verify) and 8 (API and webhooks)**, 8 of 35.
+Slice 9 (embedding: signing, prepare and correct views in
+a frame, the `<openseal-signing>` and `<openseal-prepare>` elements, per-workspace `frame-ancestors`) is in review.
+Closing it reaches **M4, team beta**, except its "SDKs released as beta" item, which the owner has held back
+(the TypeScript and Python SDKs are built and tested in [`sdk/`](sdk/), not published). Work follows one binding plan,
+one slice at a time ([docs/06](docs/06-ROADMAP-AND-DELIVERY.md) §Execution plan). ML, the platform console, and plans
+and metering stay paused (`Paused` in the tracker). Each item's exact state is in
+[docs/14](docs/14-EXECUTION-TRACKER.md); slice evidence is in [docs/73](docs/73-M3-SLICE-EVIDENCE.md) to
+[78](docs/78-SLICE-9-EVIDENCE.md).
 
 **Proven by a green CI run on `main`** (runs 44001061169 and 44018844840, 2026-11-17, every job green, unless named):
 
@@ -102,15 +105,18 @@ evidence is in [docs/73](docs/73-M3-SLICE-EVIDENCE.md), [74](docs/74-SLICE-3-EVI
 - keyd signs only with a seal token the database issues for an envelope that still owes a seal (`KEYD-02`, ADR-036).
 - Slices 2 and 5 on the real stack: routing through an approver, a viewer, an agent and a signer, and every
   recipient authentication method with an SMS gateway and an OpenID Connect provider stub, with recorded demos
-  (`RAUTH-02`; the slice 2 demo `RTE-04` is still to be watched and linked).
+  (`RAUTH-02`, `RTE-04`).
 
 **Also proven on `main`:** Adobe Acrobat Reader reads the B-LTA seals as valid offline (`HRD-14`, `HRD-03`; acrobat
 run 44024248440); slice 7: the WebAssembly verifier in the browser, B-LT as an account's default seal level, public
 anchoring of audit chain heads with the proof served and checked on Verify (`VS-07`, `FG-158`, ADR-037; run 44419251440);
-every M3 screen's strings extracted (`I18N-01`).
+slices 3 and 4: templates with roles, folders and composite templates, every field kind with validation, conditions,
+formulas and linked fields (run 44610734814); slice 8: OAuth 2.1 with PKCE, the JWT grant, signed webhooks with a
+delivery log and redelivery, sandbox workspaces (run 44653889545); slice 6: correct, restore, sign on paper, Word
+conversion and the evidence package on the Compose stack (run 44813535957).
 
-Slices 1, 2, 3, 4, 5 and 7 are closed by the owner (2026-11-19 and 2026-11-20). [docs/96](docs/96-FEATURE-FIT-GAP.md) counts 52
-of 168 features working end to end, 42 in part and 5 with their engine built.
+[docs/96](docs/96-FEATURE-FIT-GAP.md) counts 80 of 169 features working end to end, 29 in part, 5 with their engine
+built and 23 designed.
 
 **Pre-release limits.** The development stack makes its own CA, software HSM and timestamp authority, so its seals
 validate only against that CA. Not yet done: the external penetration test (`HRD-05`), the accessibility audit
@@ -120,10 +126,10 @@ ASVS 4.0.3 self-assessment ([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md)) finds 1 
 self-assessment, not an audit or a certification. Nothing here states that a signature is legally valid or that
 OpenSeal is compliant or certified ([docs/09](docs/09-LEGAL-AND-COMPLIANCE.md)).
 
-**Next**, in the plan's order: slice 6 (manage and correct: quick views, search, correct, transfer, reports, Office
-conversion), then 9 (embedding) for M4, team beta; then remote signing providers, PKI validation and accessibility
-checks; then organization admin
-and SSO, bulk send, brand and language, data controls and operations for M5.
+**Next**, in the plan's order: close slice 9 for M4, team beta; then remote signing providers (a CSC API v2
+adapter for DigiCert and A-Trust, then India eSign through a licensed ESP; designs ADR-046 and ADR-047 accepted),
+production PKI validation, and accessibility and mobile checks; then organization admin and SSO, bulk send, brand and
+language, data controls and operations for M5.
 
 | Phase | Exit gate | State |
 | --- | --- | --- |
@@ -132,10 +138,12 @@ and SSO, bulk send, brand and language, data controls and operations for M5.
 | 1 — PDF and evidence core | **Closed** (7 of 7) | Every admitted corpus PDF (417 of 417) filled, flattened, sealed and verified by ours, pyHanko and EU DSS; tamper and signature-wrapping fixtures detected by all three; WASM byte-identical to native; 24 h of fuzzing per target with no finding. Signed off 2026-11-11 |
 | 2 — Envelope engine and server | **Closed** (5 of 5) | Workflow engine, persistence, API server, job worker, keyd and the Docker Compose deployment; end-to-end on the stack green in CI; crash tests with real process kills; tenant isolation over every operation; every access and web threat with a test seen red. Signed off 2026-11-12 |
 | Release 1 (v0.0.1) | Published 2026-11-12 | Send and sign with routing, templates, decline and void, access code and email code, sealed PDF and certificate, verify, API and webhooks, single-node Compose. Left in `REL-01`: public container packages and the recorded manual walkthrough |
-| Release v0.1.0 | Prepared 2026-11-19 | Hardening and M3 since v0.0.1; the first release through the signed workflow (cosign signatures, SBOMs, provenance, signed `SHA256SUMS`; `REL-04`) |
+| Release v0.1.0 | Published 2026-11-20 | Hardening and M3 since v0.0.1; the first release through the signed workflow (cosign signatures, SBOMs, provenance, signed `SHA256SUMS`; `REL-04`). Since then: [CHANGELOG.md](CHANGELOG.md) §Unreleased |
 | Hardening release | Open (4 of 7) | `HRD-01` to `HRD-04` met on CI (Acrobat Reader reads B-LTA seals valid offline; load numbers published); the pen test, production hardening and the ASVS "Not met" items left |
 | Slices 1, 2, 5, 7 | **Closed** 2026-11-19 | M3 reached; run 44419251440; every gate item and its evidence in [docs/73](docs/73-M3-SLICE-EVIDENCE.md) |
-| Other slices | Not closed | Slices 3, 4, 6, 8 and 9 lead to M4, team beta |
+| Slices 3, 4, 8 | **Closed** 2026-11-20 | Runs 44610734814 and 44653889545; evidence in [docs/74](docs/74-SLICE-3-EVIDENCE.md), [75](docs/75-SLICE-4-EVIDENCE.md), [76](docs/76-SLICE-8-EVIDENCE.md) |
+| Slice 6 | **Closed** 2026-11-21 | Run 44813535957; evidence in [docs/77](docs/77-SLICE-6-EVIDENCE.md) |
+| Slice 9 | In review (PR #40) | [docs/78](docs/78-SLICE-9-EVIDENCE.md); closing it reaches M4, team beta, but for the SDK release |
 
 **What the engine does today** (Rust, `crates/`, each part tested against hostile files and real documents):
 
@@ -174,10 +182,10 @@ The design, research and plan:
 | Research: DocuSign, SignNow, open-source competitors, law and standards | [docs/48](docs/48-DOCUSIGN-STUDY.md), [49](docs/49-SIGNNOW-STUDY.md), [52](docs/52-COMPETITOR-STUDY.md), [09](docs/09-LEGAL-AND-COMPLIANCE.md) |
 | Security | [docs/07](docs/07-SECURITY-THREAT-MODEL.md) |
 | Roadmap and tracker | [docs/06](docs/06-ROADMAP-AND-DELIVERY.md), [docs/14](docs/14-EXECUTION-TRACKER.md) |
-| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 168 features tracked; 50 work end to end, 27 in part, 15 more have their engine built |
+| Feature parity with DocuSign and SignNow | [docs/96](docs/96-FEATURE-FIT-GAP.md): 169 features tracked; 80 work end to end, 29 in part, 5 more have their engine built |
 
 The plan: the headless engine (Phase 1) and the envelope engine, server and API (Phase 2) are done; **35 vertical
-slices** now deliver user-visible features, starting with send-and-sign. Milestones: M0 ready to build, M1
+slices** deliver user-visible features, 8 closed so far (send and sign, routing, templates, every field, authentication, manage and correct, verify, API and webhooks). Milestones: M0 ready to build, M1
 engine alpha, M2 service alpha, M3 first signature (private preview), M4 team beta, **M5 1.0 GA**, M6 regulated
 industries, M7 ecosystem, M8 agreement platform ([roadmap](docs/06-ROADMAP-AND-DELIVERY.md#milestones)).
 
