@@ -397,6 +397,7 @@ pub fn input(chain: &Chain, delivered: Hash256, n: usize) -> CertificateInput<'_
                     hash: Hash256::digest(ERSD.as_bytes()),
                     accepted: t(base + 5_000),
                 }),
+                remote: None,
             }
         })
         .collect();

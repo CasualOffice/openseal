@@ -97,7 +97,8 @@ pub mod evidence {
     };
     pub use casual_sign_certificate::{
         AuthStep, Consent, CopyKind, CopyRow, Disclosure, DisclosurePlacement, DocumentRow,
-        EmailMask, EnvelopeSummary, Mark, Outcome, PageSize, Party, RecipientRow, Role, SealInfo,
+        EmailMask, EnvelopeSummary, Mark, Outcome, PageSize, Party, RecipientRow, RemoteSignature,
+        Role, SealInfo,
     };
 }
 

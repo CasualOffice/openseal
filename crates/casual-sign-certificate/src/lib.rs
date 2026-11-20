@@ -42,7 +42,7 @@ pub use error::CertificateError;
 pub use input::{
     AttachmentRow, AuthStep, CertificateInput, CertificateOptions, Consent, CopyKind, CopyRow,
     Disclosure, DisclosurePlacement, DocumentRow, EmailMask, EndKind, Ending, EnvelopeSummary,
-    Mark, Outcome, PageSize, Party, RecipientRow, Role, SealInfo,
+    Mark, Outcome, PageSize, Party, RecipientRow, RemoteSignature, Role, SealInfo,
 };
 
 /// Bounds on certificate input (`CS-AUD-0020`, `CS-AUD-0021`). Decisions of `T-1I`

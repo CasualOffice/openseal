@@ -5,7 +5,9 @@
 //! audit chain was written from. The chain itself is passed alongside: the certificate
 //! prints its head and embeds it whole.
 
-use casual_sign_audit::{AdoptionMethod, AuthMethod, Chain, Hash256, Location, Timestamp};
+use casual_sign_audit::{
+    AdoptionMethod, AuthMethod, Chain, Hash256, Location, NameMatch, Timestamp,
+};
 use casual_sign_flatten::Art;
 use casual_sign_model::DateFormat;
 
@@ -158,6 +160,40 @@ pub struct RecipientRow {
     pub outcome: Outcome,
     /// Consent to electronic records.
     pub consent: Option<Consent>,
+    /// A signature a remote provider created with the signer's own certificate
+    /// (`RSP-01`); `None` for a simple signature.
+    pub remote: Option<RemoteSignature>,
+}
+
+/// A remote provider's signature (`RSP-01`, ADR-046), as the certificate states it: only
+/// the facts docs/09 §2a allows, each attributed to the provider or the certificate,
+/// never a legal level in OpenSeal's own voice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteSignature {
+    /// The provider's name, from the operator's catalogue.
+    pub provider: String,
+    /// The certificate subject's common name: personal data.
+    pub subject: String,
+    /// The issuer's distinguished name.
+    pub issuer: String,
+    /// The serial number, hex.
+    pub serial: String,
+    /// Validity start.
+    pub not_before: Timestamp,
+    /// Validity end.
+    pub not_after: Timestamp,
+    /// SHA-256 of the certificate's DER.
+    pub certificate_sha256: Hash256,
+    /// The CSC `signatureQualifier` as the provider stated it.
+    pub qualifier: Option<String>,
+    /// The ETSI QC statements found in the certificate, as found.
+    pub qc_statements: Vec<String>,
+    /// The certificate's name against the recipient's.
+    pub name_match: NameMatch,
+    /// The PAdES level the signature was completed to (`B-LT`).
+    pub level: String,
+    /// Our signature time-stamp's time.
+    pub timestamp: Option<Timestamp>,
 }
 
 /// Whether a copy went to a carbon-copy recipient or a viewer.

@@ -28,7 +28,7 @@ use casual_sign_keyd::{DEV_REASON, DigestSigner, Endpoint, KeydError, RemoteKey,
 use casual_sign_model::{EnvelopeStatus, Field, FieldValue, Id, RecipientType, SealProfile};
 use casual_sign_sdk::evidence::{
     AuthStep, Consent, CopyKind, CopyRow, DocumentRow, EnvelopeSummary, Mark, Outcome, Party,
-    RecipientRow, Role, SealInfo,
+    RecipientRow, RemoteSignature, Role, SealInfo,
 };
 use casual_sign_sdk::verify::{Check, Indication, ModificationClass, SubIndication};
 use casual_sign_sdk::{
@@ -500,6 +500,7 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
         let mut marks: BTreeMap<&'static str, Mark> = BTreeMap::new();
         let mut outcome = Outcome::Pending;
         let mut consent = None;
+        let mut remote = None;
         let mut acted_context = None;
         for c in &mine {
             let e = &c.event;
@@ -553,6 +554,30 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
                 EventData::RecipientSigned { .. } => {
                     outcome = Outcome::Signed(e.at);
                     acted_context = Some(&e.context);
+                }
+                // RSP-01: the provider's signature, as docs/09 §2a lets the certificate
+                // state it.
+                EventData::RecipientRemoteSigned {
+                    provider,
+                    certificate,
+                    name_match,
+                    documents,
+                    ..
+                } => {
+                    remote = Some(RemoteSignature {
+                        provider: provider.name.clone(),
+                        subject: certificate.subject_cn.get().clone(),
+                        issuer: certificate.issuer.clone(),
+                        serial: certificate.serial.clone(),
+                        not_before: certificate.not_before,
+                        not_after: certificate.not_after,
+                        certificate_sha256: certificate.sha256,
+                        qualifier: certificate.qualifier.clone(),
+                        qc_statements: certificate.qc_statements.clone(),
+                        name_match: *name_match,
+                        level: "B-LT".to_owned(),
+                        timestamp: documents.iter().find_map(|d| d.timestamp_time),
+                    });
                 }
                 // FG-013, ADR-043: the scan is a document of the envelope, sealed with it.
                 EventData::RecipientSignedOnPaper { document_id, .. } => {
@@ -611,6 +636,7 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
             }),
             outcome,
             consent,
+            remote,
         });
     }
     rows.sort_by_key(|r| r.routing_order);

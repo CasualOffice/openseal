@@ -290,6 +290,7 @@ pub fn certificate_input<'a>(
             viewed: Some(t(300_000)),
             outcome: RowOutcome::Signed(t(120_000)),
             consent: None,
+            remote: None,
         }],
         copies: Vec::new(),
         attachments: Vec::new(),
