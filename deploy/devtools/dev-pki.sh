@@ -106,8 +106,12 @@ leaf worker-client "/O=OpenSeal development/CN=worker" \
     "keyUsage=critical,digitalSignature" "extendedKeyUsage=clientAuth"
 leaf seal "/O=OpenSeal development/CN=OpenSeal development seal" \
     "keyUsage=critical,digitalSignature,nonRepudiation"
+# The TSA's certificate names the root's CRL, which dev-tsa serves (`/ca.crl`), so a
+# signature completed to B-LT here (a remote signer's, RSP-01) has revocation data for
+# its time-stamp too.
 leaf tsa "/O=OpenSeal development/CN=OpenSeal development TSA" \
-    "keyUsage=critical,digitalSignature" "extendedKeyUsage=critical,timeStamping"
+    "keyUsage=critical,digitalSignature" "extendedKeyUsage=critical,timeStamping" \
+    "crlDistributionPoints=URI:http://tsa:8318/ca.crl"
 cat seal.pem ca.pem > seal-chain.pem
 cat keyd-tls.pem ca.pem > keyd-tls-chain.pem
 cat worker-client.pem ca.pem > worker-client-chain.pem

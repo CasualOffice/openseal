@@ -46,6 +46,10 @@ use crate::geo::DeviceLocation;
 use crate::net::ClientIp;
 use crate::state::AppState;
 
+/// The longest authorization code taken (docs/21): sealed with the PKCE verifier as
+/// JSON, it stays within a sealed value's 2,048 bytes whatever it escapes to.
+const MAX_CODE: usize = 900;
+
 fn no_session() -> ApiError {
     ApiError::remote(StatusCode::CONFLICT, "CS-RSP-0003", None)
 }
@@ -323,7 +327,7 @@ pub(crate) async fn callback(
         }
         let code = req
             .code
-            .filter(|c| !c.is_empty() && c.len() <= 2048)
+            .filter(|c| !c.is_empty() && c.len() <= MAX_CODE)
             .ok_or_else(|| ApiError::invalid("/code"))?;
         let acct = uuid::Uuid::parse_str(o.l.state.account_id.as_str())
             .map_err(|_| ApiError::internal("account"))?;

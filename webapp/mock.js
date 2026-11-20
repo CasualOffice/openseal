@@ -629,6 +629,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     void access_code; void auth_passed; void token; void otp_open; void sso_state; void viewed_to_end; void hosted;
     return { ...rest, authenticated: r.auth.every((m) => r.auth_passed.includes(m)) };
   };
+  /// RSP-01: the view with the recipient's remote signing session, as the server's.
+  const remoteView = (env, rec, token, s) => ({ ...view(env, rec, token), remote_signing: s ? { session: s.id, status: s.status, failure: s.failure || null, provider: REMOTE_PROVIDER.name, documents: s.status === "prepared" ? env.documents.map((d) => d.id) : [] } : null });
   const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map((r) => ({ ...publicRecipient(r), mock_token: r.token || null })) });
 
   // ---- Seed ------------------------------------------------------------------
@@ -3242,6 +3244,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!d) fail(404, "CS-API-0002", "Not found");
       return pdf(unb64(db.blobs[d.id]));
     }
+    // RSP-01, as the server: the session stays readable once the signer is done.
+    if (sub === "remote-signing" && !parts[4] && method === "GET") {
+      if (rec.signature?.type !== "remote") return json(200, remoteView(env, rec, token, null));
+      return json(200, remoteView(env, rec, token, db.remote?.[rec.id] || null));
+    }
     if (TERMINAL.has(env.status) || rec.status === "completed" || rec.status === "declined") fail(409, "CS-WF-0001", "Not allowed in the current state");
     if (sub === "authenticate" && method === "POST") {
       const n = (db.attempts[token] || 0);
@@ -3437,9 +3444,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (sub === "remote-signing") {
       if (rec.signature?.type !== "remote") fail(409, "CS-RSP-0007", "Not a remote signer");
       const rs = (db.remote ||= {})[rec.id];
-      const state = (s) => ({ ...view(env, rec, token), remote_signing: s ? { session: s.id, status: s.status, failure: s.failure || null, provider: REMOTE_PROVIDER.name, documents: s.status === "prepared" ? env.documents.map((d) => d.id) : [] } : null });
+      const state = (s) => remoteView(env, rec, token, s);
       const back = (s) => { s.state = uid(); return `/s/rsp?state=${encodeURIComponent(s.state)}&code=mock-rsp-code`; };
-      if (!parts[4] && method === "GET") return json(200, state(rs));
       if (!parts[4] && method === "POST") {
         if (rs && !["completed", "failed"].includes(rs.status)) fail(409, "CS-RSP-0007", "A remote signing session is open");
         checkRequired(env, rec);

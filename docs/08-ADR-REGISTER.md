@@ -453,6 +453,33 @@ catalogue and account enablement. Documents: docs/19, 20, 21, 22, 24, 30, 31, 32
 - **Accounts (§3.11).** `account_signing_providers` and `GET`/`PUT /signing-providers` as designed; an account's own
   client secret sealed AES-256-GCM (`casual-sign-csc` `sealing`), each change a
   `workspace.signing_provider_changed` admin event.
+- **The return from the provider (§3.4), a decision.** The redirect URI is the signing page's
+  `{OPENSEAL_PUBLIC_URL}/s/rsp`, not `GET /rsp/callback/{provider}`: as RAUTH-01's `/s/oidc`, the page keeps the
+  signing link in the tab's session storage and posts `state` and `code` (or `error`) to
+  `POST /s/{token}/remote-signing/callback`, so the link's cookie binding and rate limits cover the answer and no
+  unauthenticated endpoint takes provider answers. The state is checked against the open session's SHA-256 for its
+  step and spent in one statement; the code (at most 900 bytes) is sealed with the PKCE verifier for the worker's
+  `remote_signing` job (`prepare` after scope `service`, `sign` after scope `credential`; three attempts, idempotent
+  per session and phase). docs/40 §6.
+- **The worker (§3.4 to §3.6).** `remote_signing` jobs exchange the code (the account's own client secret, else the
+  operator's), list and read credentials, keep the eligible ones, and prepare every document the signer sees from
+  its current revision: the lock point's R0 when the document has none yet (final values flattened by the
+  engine, unfinished fields materialized, one unsigned slot per remote signer, `Remote_<recipient id>`), then the
+  signer's fill in place with the slot's appearance, then `prepare` at B-LT. After the second redirect: `signHash`
+  with the authorized hashes, one value per hash in order, `complete` (our B-T and the DSS at once) against the
+  operator's anchors plus the provider's and the chain's intermediates; the revisions are stored and
+  `CompleteRemoteSigning` records `recipient.remote_signed` with the certificate facts and the name match.
+  Failures close the session with their reason (`recipient.remote_signing_failed`); nothing falls back to a simple
+  signature. At completion the seal job seals each locked document over its latest revision (remaining materialized
+  fields filled in place) and the certificate of completion stays a separate sealed PDF, its remote signer block in
+  docs/09 §2a's words. HTTP to providers goes through `ureq` with the worker's address policy (no redirects, 30 s,
+  plain HTTP only to loopback). docs/31 §3.1 As built.
+- **Still to build in `RSP-01`.** The signer's choice among several eligible credentials (the first eligible one is
+  used; the session's `choosing` step exists unused); `multisign` batches when a signer has more documents than
+  their credential's `multisign` (one `signHash` today); P-384 and RSA-PSS credentials (P-256 and RSA PKCS#1 v1.5
+  with SHA-256 are accepted; others are not eligible); the webhook topic `recipient.remote_signing_failed`;
+  template roles' signature type. keyd's `csc` backend (§3.10) is its own row, `RSP-01B`: it serves a platform seal
+  key held at a QTSP and has no consumer in the per-recipient flow.
 
 ### ADR-047 — India eSign through a licensed ESP, as an ASP (`RSP-02`)
 

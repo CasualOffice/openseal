@@ -45,12 +45,14 @@ mentions them.
   `POST /oauth2/token` checks the client secret (`OPENSEAL_E2E_CSC_SECRET`), the redirect
   URI and the PKCE S256 verifier, `POST /csc/v2/credentials/list` and `/credentials/info`
   answer one P-256 credential whose certificate the development root issues at start
-  (`--issue-from`, `--signer-name`), and `POST /csc/v2/signatures/signHash` signs each
+  (`--issue-from`, `--signer-name`; `--crl-url` names the root's CRL, dev-tsa's
+  `/ca.crl`, so the worker can complete the signature to B-LT), and `POST /csc/v2/signatures/signHash` signs each
   hash the credential token authorized (SCAL2: exactly the authorized hashes, else
   `invalid_request`) with `openssl pkeyutl`, never with OpenSeal's code.
 
     python3 -I tools/e2e/auth_stubs.py csc --issue-from /secrets --listen 0.0.0.0:8091 \\
-        --redirect-uri http://localhost:8080/s/rsp --signer-name "Remote Signer"
+        --redirect-uri http://localhost:8080/s/rsp --signer-name "Remote Signer" \\
+        --crl-url http://tsa:8318/ca.crl
 
 Standard library only (and the `openssl` command for keys and signatures). Exits
 non-zero and names the problem when it cannot start.
@@ -544,7 +546,8 @@ EC_KEY_OID = "1.2.840.10045.2.1"
 class Csc:
     """One credential, its codes and tokens."""
 
-    def __init__(self, ca_dir: Path, work: Path, signer_name: str, redirect_uri: str, secret: str) -> None:
+    def __init__(self, ca_dir: Path, work: Path, signer_name: str, redirect_uri: str, secret: str,
+                 crl_url: str | None = None) -> None:
         self.redirect_uri = redirect_uri
         self.secret = secret
         self.lock = threading.Lock()
@@ -559,7 +562,7 @@ class Csc:
             "keyUsage=critical,digitalSignature,nonRepudiation",
             "subjectKeyIdentifier=hash",
             "authorityKeyIdentifier=keyid",
-        ]) + "\n")
+        ] + ([f"crlDistributionPoints=URI:{crl_url}"] if crl_url else [])) + "\n")
         openssl("x509", "-req", "-in", str(csr), "-CA", str(ca_dir / "ca.pem"), "-CAkey", str(ca_dir / "ca.key"),
                 "-sha256", "-days", "2", "-set_serial", "0x" + secrets.token_hex(16), "-extfile", str(ext), "-out", str(cert))
         self.chain = [
@@ -695,6 +698,7 @@ def main(argv: list[str] | None = None) -> None:
     c.add_argument("--issue-from", type=Path, required=True, help="directory holding ca.pem and ca.key")
     c.add_argument("--redirect-uri", required=True, help="the server's redirect URI: {OPENSEAL_PUBLIC_URL}/s/rsp")
     c.add_argument("--signer-name", default="Remote Signer")
+    c.add_argument("--crl-url", help="the issuing root's CRL, named in the signer's certificate")
     args = ap.parse_args(argv)
 
     work = Path(tempfile.mkdtemp(prefix="auth-stubs-"))
@@ -718,7 +722,7 @@ def main(argv: list[str] | None = None) -> None:
             secret = os.environ.get("OPENSEAL_E2E_CSC_SECRET", "")
             if not secret:
                 fail("OPENSEAL_E2E_CSC_SECRET is not set")
-            csc = Csc(args.issue_from, work, args.signer_name, args.redirect_uri, secret)
+            csc = Csc(args.issue_from, work, args.signer_name, args.redirect_uri, secret, args.crl_url)
             servers = (ThreadingHTTPServer(args.listen, csc_handler(csc)),)
         else:
             servers = (oidc_server(args.listen, Provider(args.providers, args.redirect_uri, Signer(work))),)

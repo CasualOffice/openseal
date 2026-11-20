@@ -102,6 +102,8 @@ test("the mock's remote signer: start, a refusal, start again, prepared, authori
     r = await api.ceremony.remoteCallback(tok, back(r).get("state"), "c");
     assert.equal(r.remote_signing.status, "completed");
     assert.equal(r.recipient.status, "completed");
+    // Still readable once done (the page polls it after its return).
+    assert.equal((await api.ceremony.remoteStatus(tok)).remote_signing.status, "completed");
   } finally {
     withProviders(false);
   }

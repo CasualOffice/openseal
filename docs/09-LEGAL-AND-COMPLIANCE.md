@@ -41,8 +41,12 @@ Standards: ETSI EN 319 142-1 (PAdES baseline), EN 319 142-2, EN 319 102-1 (creat
 
 ## 2a. Remote-provider signatures: what may be said (designed, ADR-046 and ADR-047)
 
-Not built; the wording below binds the product's copy, the certificate of completion, the site and these documents
-once it is, and counsel reviews it first (`LEG-02`, `LEG-03`; docs/69 question 9). A signer whose recipient has
+Built in part for CSC (`RSP-01`): the signing page's "Sign with <provider>" and the certificate of completion's remote
+signer block ("Created by <provider> with the signer's certificate", the certificate's subject, issuer, serial,
+validity and SHA-256, "<qualifier> (as stated by <provider>)", "The certificate states", the name match; a test
+holds that it never says "qualified electronic signature", "advanced electronic signature", "qualified signature" or
+"legally", `casual-sign-certificate` `tests/certificate.rs`) use the wording below. It binds the product's copy, the
+certificate of completion, the site and these documents, and counsel reviews it before a real provider is enabled (`LEG-02`, `LEG-03`; docs/69 question 9). A signer whose recipient has
 signature type `remote` signs with a certificate in their own name that **a provider** holds or issues: a QTSP or
 other remote signing provider over the CSC API (ADR-046), or an Indian eSign Service Provider for which OpenSeal acts
 as the Application Service Provider (ADR-047).

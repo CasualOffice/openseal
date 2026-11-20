@@ -129,7 +129,7 @@ services:
     user: tsa
     command: ["python3", "-I", "/opt/e2e/auth_stubs.py", "csc", "--issue-from", "/secrets",
               "--listen", "0.0.0.0:8091", "--redirect-uri", "http://localhost:8080/s/rsp",
-              "--signer-name", "Remote Signer"]
+              "--signer-name", "Remote Signer", "--crl-url", "http://tsa:8318/ca.crl"]
     environment:
       OPENSEAL_E2E_CSC_SECRET: ci-only-csc-client-secret
     network_mode: "service:worker"

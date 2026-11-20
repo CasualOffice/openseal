@@ -1623,7 +1623,7 @@ components:
       required: [state]
       properties:
         state: {type: string, maxLength: 256}
-        code: {type: string, maxLength: 2048}
+        code: {type: string, maxLength: 900}
         error: {type: string, maxLength: 256}
     SsoVerifyRequest:
       description: What the identity provider sent the browser back with (RAUTH-01).

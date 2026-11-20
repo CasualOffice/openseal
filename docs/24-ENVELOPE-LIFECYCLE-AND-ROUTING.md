@@ -102,6 +102,10 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
   nothing. `crates/casual-sign-workflow/tests/remote.rs`, `tests/remote_session.rs` (each rule seen red with its
   check removed). The `recipient.remote_signed` event's actor is the platform (the worker embeds the signature), the
   signer named by `recipient_id`.
+  **As built (`RSP-01`, hosts):** the server's ceremony runs `BeginRemoteSigning` at `POST /s/{token}/remote-signing`
+  and `FailRemoteSigning` at a refusal at the provider, a cancel and a session found past its time (`expired`); the
+  worker's `remote_signing` job runs `RemoteSigningPrepared`, `CompleteRemoteSigning` and, on any failure,
+  `FailRemoteSigning` with its reason (docs/40 §6, `casual-sign-server` `tests/ceremony_rsp.rs`).
 - **Signer location (GEO-01).** When the envelope's `signing_options.capture_location` is on, the signing page asks the
   signer for their device's location; every recipient action (`recipient.delivered`, `recipient.viewed_document`,
   `recipient.signed`, `recipient.approved`, `recipient.declined`) then carries a location in its context

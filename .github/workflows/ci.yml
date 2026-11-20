@@ -435,6 +435,19 @@ jobs:
           path: target/e2e-demo/vs06-*
           if-no-files-found: error
           retention-days: 90
+      # The RSP-01 demo: remote-signing.spec.mjs's run recorded (a remote signer at the CSC
+      # stub of tools/e2e/compose.e2e.yml: refused at the provider once, then signs in,
+      # sees the prepared documents and authorizes them), kept with the sealed PDF and the
+      # certificate of completion.
+      - if: success() && hashFiles('target/e2e-demo/rsp01-*') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rsp-01-demo-${{ matrix.shard }}
+          path: |
+            target/e2e-demo/rsp01-*
+            target/e2e-sealed/rsp01-*
+          if-no-files-found: error
+          retention-days: 90
       - if: failure()
         run: mkdir -p target && docker compose logs --no-color > target/compose.log 2>&1
       - if: failure()
