@@ -168,6 +168,7 @@ As built (`VS-04E`): the API takes `anchor` on a field in create and `POST /fiel
 | `hyperlink` | Shown, never followed automatically |
 | `payment` | Amount, currency, line items; via `PaymentGateway` (slice 13) |
 | `drawing` | Free drawing area (slice 4) |
+| `strikethrough` | A line through the middle of its box, drawn by the seal; no value; an editor strikes text out at the ceremony (`FG-080`, ADR-044) |
 
 ## 7. Template
 

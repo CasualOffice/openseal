@@ -842,6 +842,7 @@ dependencies = [
  "casual-sign-keyd",
  "casual-sign-model",
  "casual-sign-modeld",
+ "casual-sign-pdf",
  "casual-sign-pii",
  "casual-sign-sdk",
  "casual-sign-seal",

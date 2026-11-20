@@ -706,6 +706,11 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
   deletes the stored code; an agent changing the methods is refused by the engine (`403 CS-WF-0003`).
   `later_recipients` now carries each one's `phone` and `auth` (never a code). The review step's later-recipient form
   offers the link only, an access code, an emailed code or a text-message code.
+- **Strike-through by an editor** (`FG-080`, ADR-044). A field of type `strikethrough` (no value; drawn by the seal
+  as a line through the middle of its box) placed through the editor endpoints above; every recipient's view adds
+  `strikes` (`{id, document_id, placement, recipient_id}`, each strike on a document they see, hidden ones left out),
+  drawn on the signing and review pages. The edit mode's arrow keys with Alt resize a field, so a strike is made as
+  long as the words.
 - Tests: `-server` `tests/manage_views.rs`, `tests/correct_documents.rs`, `tests/editor_intermediary.rs`,
   `tests/reports.rs`; the contract test calls every new operation; `webapp/tests/editfields.test.mjs`;
   `manage-correct.spec.mjs` (`VS-06A`, mock mode and the Compose stack).

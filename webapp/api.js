@@ -70,6 +70,8 @@ export const FIELD_TYPES = Object.freeze([
   "signature", "initials", "stamp", "date_signed", "name", "first_name", "last_name", "email", "company", "title",
   "envelope_id", "text", "number", "date", "email_address", "phone", "ssn", "zip", "checkbox", "radio_group",
   "dropdown", "multi_select", "formula", "attachment", "note", "approve", "decline", "hyperlink", "payment", "drawing",
+  // FG-080 (ADR-044): an editor's strike-through, placed at the ceremony.
+  "strikethrough",
 ]);
 /// The types the ceremony fills or shows and the flattener draws today (docs/40 As built,
 /// `WEB-06`); the rest are taken and stored, their signer side a later row.

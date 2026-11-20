@@ -281,6 +281,40 @@ test("VS-06A: an editor adds, moves and removes a later signer's fields during t
   expect(env.fields.filter((f) => f.type === "signature").map((f) => f.recipient_id)).not.toContain(s2);
 });
 
+// FG-080 (ADR-044, DocuSign's polyline overlay used by an editor): an editor strikes a
+// line through text with the keyboard, lengthens it, and is done; the line is on their
+// page and on the page of the signer acting beside them. The worker's end-to-end test
+// seals it and has pyHanko verify the result.
+test("FG-080: an editor strikes text through, and the other signer sees the line", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 60_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  const { links } = await sentFor(page, `FG-080 strike ${run}`, [
+    { ref: "ed", type: "editor", name: "Eda Editor", email: `fg080-ed-${run}@example.com`, routing_order: 1 },
+    { ref: "p", type: "signer", name: "Pat Parallel", email: `fg080-p-${run}@example.com`, routing_order: 1 },
+  ], ["ed", "p"], ["ed", "p"]);
+  await openSigning(page, links.ed);
+  await page.getByTestId("edit-fields").click();
+  const bar = page.getByTestId("edit-bar");
+  await bar.getByLabel("Field").selectOption({ label: "Strike-through" });
+  await bar.getByTestId("edit-add").click();
+  const line = page.locator(".os-efield--strikethrough");
+  await expect(line).toBeFocused();
+  const before = await line.boundingBox();
+  for (let i = 0; i < 4; i++) await page.keyboard.press("Alt+Shift+ArrowRight");
+  await expect(page.locator("#edit-live")).toHaveText("Field moved.");
+  expect((await line.boundingBox()).width).toBeGreaterThan(before.width);
+  await bar.getByTestId("edit-done").click();
+  await expect(page.getByTestId("strike")).toHaveCount(1);
+  await expect(page.getByRole("img", { name: "Text struck through" })).toHaveCount(1);
+  // The signer beside them sees it on their page.
+  await openSigning(page, links.p);
+  await expect(page.getByTestId("strike")).toHaveCount(1);
+  if (!REAL) await expectAccessible(page, "signing page with a strike-through");
+});
+
 // VS-06A (DocuSign's "Update recipients"): an intermediary asks the signer after them for
 // an access code they choose; the signer must then enter it. Mock mode and, on the
 // Compose stack, through the links emailed to each.

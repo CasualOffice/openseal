@@ -632,6 +632,40 @@ impl Open {
                 .collect();
             o.insert("later_recipients".into(), Value::Array(later));
         }
+        // FG-080 (ADR-044): every strike-through on a document this recipient sees, whoever
+        // drew it, as the seal will draw it (hidden by a condition: left out), so each
+        // later recipient sees the text struck through before they act on it.
+        if let (true, Some(r), Some(o)) = (shown, me, v.as_object_mut()) {
+            let strikes: Vec<&casual_sign_model::Field> = s
+                .fields
+                .0
+                .iter()
+                .filter(|f| {
+                    f.field_type == casual_sign_model::FieldType::Strikethrough
+                        && r.spec.sees(&f.document_id)
+                })
+                .collect();
+            let hidden = if strikes.is_empty() {
+                Vec::new()
+            } else {
+                casual_sign_fields::evaluate_envelope(
+                    &s.fields.0,
+                    &casual_sign_fields::Values::new(),
+                )
+                .hidden
+            };
+            let list: Vec<Value> = strikes
+                .into_iter()
+                .filter(|f| !hidden.contains(&f.id))
+                .map(|f| {
+                    json!({
+                        "id": f.id, "document_id": f.document_id, "placement": f.placement,
+                        "recipient_id": f.recipient_id,
+                    })
+                })
+                .collect();
+            o.insert("strikes".into(), Value::Array(list));
+        }
         // VS-06A: an editor's view also lists the fields of later recipients they may
         // move or remove (their own are in `fields`); nobody else's view has it.
         if let (true, Some(r), Some(o)) = (

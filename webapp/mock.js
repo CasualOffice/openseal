@@ -58,6 +58,8 @@ const FIELD_TYPES = new Set([
   "signature", "initials", "stamp", "date_signed", "name", "first_name", "last_name", "email", "company", "title",
   "envelope_id", "text", "number", "date", "email_address", "phone", "ssn", "zip", "checkbox", "radio_group",
   "dropdown", "multi_select", "formula", "attachment", "note", "approve", "decline", "hyperlink", "payment", "drawing",
+  // FG-080 (ADR-044): an editor's strike-through.
+  "strikethrough",
 ]);
 /// The members of an engine `Field` besides its ids, type and place (api.js `FIELD_MEMBERS`).
 const FIELD_MEMBERS = ["required", "read_only", "locked", "label", "value", "default", "validation", "format", "group", "conditional", "formula", "options", "allow_custom", "tooltip", "placeholder"];
@@ -505,6 +507,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       // VS-02, as the server: an agent, intermediary or editor sees the later
       // recipients not yet reached, which `POST /s/{token}/recipients` may name.
       ...(shown && NAMES_LATER.has(rec.type) ? { later_recipients: laterOf(env, rec) } : {}),
+      // FG-080, as the server: every strike-through on a document they see, whoever drew it.
+      ...(shown ? { strikes: env.fields.filter((f) => f.type === "strikethrough" && !(rec.excluded_documents || []).includes(f.document_id)).map((f) => ({ id: f.id, document_id: f.document_id, placement: f.placement, recipient_id: f.recipient_id })) } : {}),
       // VS-06A, as the server: an editor also sees the later recipients' fields, which
       // `PATCH`/`DELETE /s/{token}/editor/fields/{field}` may change.
       ...(shown && rec.type === "editor" ? { editable_fields: env.fields.filter((f) => !holds(f, rec.id) && editableField(env, rec, f)) } : {}),

@@ -94,7 +94,9 @@ or cancelled (`send_at`, `WF-02`; dropped by the platform when the draft can no 
 clears a bounce or an authentication lock (`recipients.{id}.status`, `recipients.{id}.auth_lock`). Document visibility
 and delayed routing add no type: a recipient's hidden documents are absent from the documents their act records, and
 a routing delay ending changes nothing observable (the invitation's own `invitation.sent` follows). `email_otp` is an
-`AuthMethod` (added after the others, so earlier chains hash as before).
+`AuthMethod` (added after the others, so earlier chains hash as before). An editor's field changes at the ceremony
+(`VS-06A`), a strike-through among them (`FG-080`, ADR-044), are `envelope.corrected` with the editor as actor, naming
+`fields.<id>`; no new type.
 
 ### As built (stage 1I)
 

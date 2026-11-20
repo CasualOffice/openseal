@@ -690,6 +690,7 @@ async function documents() {
       for (const f of editable.filter((x) => x.document_id === p.key && x.p.page === p.n)) overlay.append(editBox(f, p));
       return;
     }
+    overlay.append(...strikesOn(p));
     const mine = fields.filter((f) => f.document_id === p.key && f.p.page === p.n).sort((a, b) => a.p.y - b.p.y || a.p.x - b.p.x);
     for (const f of mine) overlay.append(fieldNode(f, p));
   });
@@ -806,7 +807,7 @@ function editBox(f, pg) {
     const step = keyStep(e);
     if (step) {
       e.preventDefault();
-      r = moved(r, step[0], step[1], pg);
+      r = moved(r, step[0], step[1], pg, step[2], step[3]);
       placeBox(box, r, pg);
       clearTimeout(timer);
       timer = setTimeout(save, 400);
@@ -855,7 +856,21 @@ function editBox(f, pg) {
 /// recipient must fill it.
 const ownRequired = (f) => (f.required && f.recipient_id && view.recipient?.id && f.recipient_id !== view.recipient.id ? { ...f, required: false } : f);
 function myFields() {
-  return (view.fields || []).map((f) => ({ ...ownRequired(f), p: fromWire(f.placement) })).filter((f) => f.p);
+  // FG-080: a strike-through is not filled; it is drawn with everyone's (`strikes`).
+  return (view.fields || []).filter((f) => f.type !== "strikethrough").map((f) => ({ ...ownRequired(f), p: fromWire(f.placement) })).filter((f) => f.p);
+}
+
+/// FG-080 (ADR-044): the strike-throughs on page `p` (`view.strikes`, whoever drew them),
+/// as lines over the text, as the seal will draw them.
+function strikesOn(p) {
+  return (view.strikes || [])
+    .map((s) => ({ ...s, p: fromWire(s.placement) }))
+    .filter((s) => s.p && s.document_id === p.key && s.p.page === p.n)
+    .map((s) => {
+      const el = h("div", { class: "os-strike", attrs: { role: "img", "aria-label": t("sign.strike"), "data-testid": "strike" } });
+      placeBox(el, s.p, p);
+      return el;
+    });
 }
 
 /// Phones: how much each field grows while in use, at the current zoom (zoom.js).
@@ -1826,6 +1841,7 @@ function review() {
     el.setAttribute("aria-label", t("sign.review.page", { n: p.n, total: p.total, name: p.name }));
     el.setAttribute("data-testid", "review-page");
     overlay.setAttribute("aria-hidden", "true");
+    overlay.append(...strikesOn(p));
     for (const f of fields.filter((x) => x.document_id === p.key && x.p.page === p.n)) overlay.append(flat(f, p));
   });
   rzc.sync();

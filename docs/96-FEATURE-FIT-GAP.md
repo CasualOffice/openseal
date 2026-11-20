@@ -93,7 +93,7 @@ instructions 8 and 9).
 | FG-077 | Anchor text auto-place | DS | Build | 4 | Partial: `anchor` on a field in create and `POST /fields`, one field per match in the delivered document (server `tests/anchors_tags.rs`, seen red); not offered in the editor (the editor places by hand or by Detect fields); built on a branch (`VS-04`, [75](75-SLICE-4-EVIDENCE.md)); `Works` once `fields.spec.mjs` is green on `main` |
 | FG-078 | Text tags in documents | SN | Build | 4 | Partial: `"text_tags": true` on create places the tags' fields; Detect fields suggests each tag in the editor (`tests/anchors_tags.rs`, seen red; `fields.spec.mjs`); the tag text stays visible; built on a branch (`VS-04`, [75](75-SLICE-4-EVIDENCE.md)); `Works` once `fields.spec.mjs` is green on `main` |
 | FG-079 | Custom (saved) field presets | DS | Build | 4 | — |
-| FG-080 | Strike-through by editor | DS | Build | 6 | — |
+| FG-080 | Strike-through by editor | DS | Build | 6 | Partial: a `strikethrough` field kind (ADR-044) an editor places, lengthens and moves at the ceremony; every later recipient sees it; the seal draws it (verified by ours and pyHanko, `-worker` `tests/end_to_end.rs`); built on a branch (`VS-06A`, `VS-06E`); `Works` once `manage-correct.spec.mjs` is green on `main` |
 | FG-081 | Responsive signing (smart sections) | DS | Build | 23 | — |
 | FG-082 | 3,000 fields per envelope | DS | Build | 4 | Designed |
 

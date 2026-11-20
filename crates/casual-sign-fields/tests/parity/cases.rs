@@ -457,6 +457,21 @@ fn envelope_cases() -> Vec<EnvelopeCase> {
             vec![field("a", FieldType::Text)],
             vec![("zz", text("x"))],
         ),
+        // FG-080, ADR-044: a strike-through holds only its mark; a client's text is a
+        // mismatch, and it is never required.
+        (
+            "strike",
+            vec![
+                check("a", "A"),
+                when(
+                    field("st", FieldType::Strikethrough),
+                    "A",
+                    Condition::Checked,
+                ),
+                field("st2", FieldType::Strikethrough),
+            ],
+            vec![("a", FieldValue::Checked(true)), ("st2", text("x"))],
+        ),
     ]
 }
 

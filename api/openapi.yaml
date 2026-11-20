@@ -1371,6 +1371,16 @@ components:
               email: {type: string}
               phone: {type: [string, 'null']}
               auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}, description: 'VS-06A: the methods asked of them; an access code itself is never shown'}
+        strikes:
+          type: array
+          description: 'FG-080 (ADR-044): every strike-through on a document this recipient sees, whoever drew it, as the seal will draw it; once authenticated'
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              document_id: {type: string}
+              placement: {type: object}
+              recipient_id: {type: string}
         editable_fields:
           type: array
           description: >-

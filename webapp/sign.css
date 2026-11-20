@@ -235,6 +235,12 @@
 .os-efield.is-mine { background: var(--os-accent-soft); box-shadow: inset 0 0 0 0.09375rem var(--os-accent-fill); }
 .os-efield:focus-visible { outline: 0.125rem solid var(--os-focus); outline-offset: 0.125rem; }
 .os-efield__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.os-efield--strikethrough { overflow: visible; background-image: linear-gradient(currentColor, currentColor); background-size: 100% 0.125rem; background-position: 0 50%; background-repeat: no-repeat; }
+.os-efield--strikethrough .os-efield__label { position: absolute; left: 0; bottom: 100%; padding: 0 0.25rem; border-radius: 0.25rem; background: var(--os-raised); }
+/* FG-080: a strike-through drawn over the page, as the seal draws it (a line through the
+   middle of its box, the ink of the document). */
+.os-strike { position: absolute; pointer-events: none; }
+.os-strike::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 0.0625rem; min-height: 1px; transform: translateY(-50%); background: var(--os-sign-ink, var(--os-text)); }
 @media (max-width: 47.999em) {
   .os-editbar { left: 0.5rem; right: 0.5rem; bottom: 0.5rem; max-width: none; }
 }

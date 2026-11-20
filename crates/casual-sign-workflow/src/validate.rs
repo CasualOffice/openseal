@@ -12,7 +12,11 @@ use crate::state::EnvelopeState;
 
 /// Whether a recipient of `rtype` may hold a field of `ft`.
 fn field_allowed(rtype: RecipientType, ft: FieldType) -> bool {
-    let display = matches!(ft, FieldType::Note | FieldType::Hyperlink);
+    // A strike-through is a mark on the document, not a value (FG-080, ADR-044).
+    let display = matches!(
+        ft,
+        FieldType::Note | FieldType::Hyperlink | FieldType::Strikethrough
+    );
     if rtype.signs() {
         return true;
     }

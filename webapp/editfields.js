@@ -6,11 +6,13 @@
 //
 // Pure: no DOM, so `tests/editfields.test.mjs` runs it under Node.
 
-import { placeAt, freeSpot, nudge, toWire, fromWire, formatPoints, requiredByDefault, DEFAULT_SIZE } from "./geometry.js";
+import { placeAt, freeSpot, nudge, resize, toWire, fromWire, formatPoints, requiredByDefault, DEFAULT_SIZE } from "./geometry.js";
 
 /// The field types an editor places on the signing page, in menu order: the common
 /// ones (the full palette is the sender's editor).
-export const EDIT_TYPES = ["signature", "initials", "date_signed", "name", "text", "checkbox", "date"];
+/// `strikethrough` (FG-080, ADR-044) is a line the seal draws through the middle of
+/// its box: the editor strikes out text they do not accept.
+export const EDIT_TYPES = ["signature", "initials", "date_signed", "name", "text", "checkbox", "date", "strikethrough"];
 
 /// Whether this view's recipient may change fields now: an editor whose view lists the
 /// later recipients' fields (the server adds the member only for an authenticated editor).
@@ -52,22 +54,26 @@ export function newField({ type, recipientId, documentId, pageNo, page, existing
   return { recipient_id: recipientId, document_id: documentId, type, required: requiredByDefault(type), ...toWire(pageNo, r) };
 }
 
-/// The step an arrow key moves a field, in points: 1, or 10 with Shift; null for any
-/// other key.
-export function keyStep({ key, shiftKey = false }) {
+/// What an arrow key does to a field, in points: `[dx, dy, dw, dh]`. It moves it 1
+/// point, or 10 with Shift; with Alt it resizes it instead (Right and Down grow it, so a
+/// strike-through can be made as long as the words). Null for any other key.
+export function keyStep({ key, shiftKey = false, altKey = false }) {
   const n = shiftKey ? 10 : 1;
   const steps = { ArrowLeft: [-n, 0], ArrowRight: [n, 0], ArrowUp: [0, -n], ArrowDown: [0, n] };
-  return steps[key] || null;
+  const s = steps[key];
+  if (!s) return null;
+  return altKey ? [0, 0, s[0], s[1]] : [s[0], s[1], 0, 0];
 }
 
-/// Rectangle `r` moved by (dx, dy) points, kept on `page`.
-export function moved(r, dx, dy, page) {
-  return { ...r, ...nudge(r, dx, dy, page) };
+/// Rectangle `r` moved by (dx, dy) points and resized by (dw, dh), kept on `page`.
+export function moved(r, dx, dy, page, dw = 0, dh = 0) {
+  const m = { ...r, ...nudge(r, dx, dy, page) };
+  return dw || dh ? { ...m, ...resize(m, dw, dh, page) } : m;
 }
 
-/// The `PATCH` body for a field now at `r` (only where it is; the size is unchanged).
+/// The `PATCH` body for a field now at `r`: where it is and its size.
 export function movePatch(r) {
-  return { x: formatPoints(r.x), y: formatPoints(r.y) };
+  return { x: formatPoints(r.x), y: formatPoints(r.y), width: formatPoints(r.width), height: formatPoints(r.height) };
 }
 
 /// The ways an intermediary or editor may ask a later recipient to prove who they are,

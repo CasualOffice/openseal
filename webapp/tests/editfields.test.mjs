@@ -37,10 +37,13 @@ test("a new field lands on the page clear of the others; arrows move it 1 point,
   const r = { x: Number(w.x), y: Number(w.y), width: Number(w.width), height: Number(w.height) };
   const again = newField({ type: "signature", recipientId: "s2", documentId: "d", pageNo: 2, page, existing: [r] });
   assert.notEqual(again.y, w.y, "a second field does not cover the first");
-  assert.deepEqual(keyStep({ key: "ArrowLeft" }), [-1, 0]);
-  assert.deepEqual(keyStep({ key: "ArrowDown", shiftKey: true }), [0, 10]);
+  assert.deepEqual(keyStep({ key: "ArrowLeft" }), [-1, 0, 0, 0]);
+  assert.deepEqual(keyStep({ key: "ArrowDown", shiftKey: true }), [0, 10, 0, 0]);
   assert.equal(keyStep({ key: "a" }), null);
-  assert.deepEqual(movePatch(moved({ x: 1, y: 5, width: 10, height: 10 }, -10, 2.5, page)), { x: "0", y: "7.5" });
+  assert.deepEqual(movePatch(moved({ x: 1, y: 5, width: 10, height: 10 }, -10, 2.5, page)), { x: "0", y: "7.5", width: "10", height: "10" });
+  // FG-080: Alt resizes, so a strike-through is made as long as the words it strikes.
+  assert.deepEqual(keyStep({ key: "ArrowRight", altKey: true, shiftKey: true }), [0, 0, 10, 0]);
+  assert.deepEqual(movePatch(moved({ x: 600, y: 5, width: 10, height: 10 }, 0, 0, page, 10, 0)), { x: "592", y: "5", width: "20", height: "10" });
 });
 
 /// A sent envelope in the mock: an editor and a parallel signer at order 1, a signer
@@ -128,4 +131,19 @@ test("the mock, as the server: an intermediary sets an access code the signer mu
   await assert.rejects(c.ceremony.authenticate(signer.mock_token, "access_code", "guess"));
   const ok = await c.ceremony.authenticate(signer.mock_token, "access_code", "set-by-ian");
   assert.deepEqual(ok.auth_required, []);
+});
+
+test("FG-080, the mock as the server: an editor's strike-through is listed to everyone who sees the document", async () => {
+  const { c, env, tokens } = await sent();
+  const [ed] = env.recipients.map((r) => r.id);
+  const doc = env.documents[0].id;
+  let v = await ready(c, tokens[0]);
+  assert.deepEqual(v.strikes, []);
+  v = await c.ceremony.placeFields(tokens[0], [{ recipient_id: ed, document_id: doc, type: "strikethrough", page: 1, x: "72", y: "400", width: "200", height: "10" }]);
+  assert.equal(v.strikes.length, 1);
+  assert.equal(v.strikes[0].placement.width, "200");
+  assert.ok(editableFields(v).some((f) => f.type === "strikethrough"), "the editor may move it");
+  const other = await ready(c, tokens[1]);
+  assert.equal(other.strikes.length, 1, "the parallel signer sees it too");
+  assert.ok(!other.fields.some((f) => f.type === "strikethrough"));
 });

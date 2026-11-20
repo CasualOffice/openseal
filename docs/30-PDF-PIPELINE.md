@@ -375,6 +375,12 @@ field's rectangle and none outside across every geometry and field type (32 docu
 check), pypdf extracts every value and reads back `/V`; 20 real corpus forms (up to 6,197 fields) flatten and fill with
 no failure. Not yet: text shaping and CJK or RTL faces (`FLT-01`).
 
+**Strike-throughs (`FG-080`, ADR-044):** a visible `strikethrough` field is drawn as one line through the vertical
+middle of its box, as wide as it, 1 point (`0 J`, the field's colour), in the same update as every other field; its
+value is the implied `{checked: true}`, anything else is `CS-FLD-0002`. Tested in every rotation, crop and UserUnit
+(`tests/flatten.rs`, which `tools/check_render.py` renders with PDFium) and end to end, sealed and verified by pyHanko
+(`-worker` `tests/end_to_end.rs`).
+
 **Checkboxes (`FLT-04`):** a converted checkbox, checked, draws its widget's own on-state appearance (a cross, a filled
 square) in the field's box, the widget nearest the box when the sender moved it; our checkmark only when it has none.
 

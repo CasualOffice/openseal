@@ -297,6 +297,15 @@ fn samples() -> (Vec<Sample>, BTreeMap<Id, Capture>) {
             true,
             None,
         ),
+        // FG-080, ADR-044: an editor's strike-through, a line across its box.
+        sample(
+            "strike",
+            FieldType::Strikethrough,
+            [260.0, 480.0, 180.0, 12.0],
+            Some(FieldValue::Checked(true)),
+            true,
+            None,
+        ),
     ];
     (v, caps)
 }
@@ -512,6 +521,66 @@ fn a_value_that_does_not_suit_its_field_is_refused() {
         &FlattenOptions::default(),
     );
     assert_eq!(e.unwrap_err().code(), "CS-FLD-0004");
+}
+
+/// The content of every Form XObject in `out`, decoded.
+fn forms(out: &[u8]) -> Vec<String> {
+    let mut a = admit(out, &Limits::default(), &never).unwrap();
+    let nums: Vec<u32> = a.document.object_numbers().collect();
+    let mut all = Vec::new();
+    for n in nums {
+        if let Ok(Object::Stream(s)) = a.document.object(n, &never)
+            && s.dict.name(b"Subtype") == Some(b"Form")
+        {
+            let ops = a.document.decode_stream(n, &never).unwrap();
+            all.push(String::from_utf8_lossy(&ops).into_owned());
+        }
+    }
+    all
+}
+
+#[test]
+fn a_strike_through_is_one_line_across_the_middle_of_its_box_and_takes_no_other_value() {
+    // FG-080, ADR-044: from the left edge to the right at half the height, butt caps,
+    // in the field's colour; a value other than the mark is refused, never guessed at.
+    let base = delivered(&page_pdf(&cases()[0], "", "", Vec::new()));
+    let mut f = field(
+        "st",
+        FieldType::Strikethrough,
+        1,
+        [40.0, 100.0, 200.0, 10.0],
+    );
+    f.format = Some(Format {
+        color: Some(Rgb([200, 0, 0])),
+        ..Format::default()
+    });
+    let values = BTreeMap::from([(id("st"), FieldValue::Checked(true))]);
+    let out = run(
+        &base,
+        std::slice::from_ref(&f),
+        &values,
+        &BTreeMap::new(),
+        &FlattenOptions::default(),
+    )
+    .unwrap();
+    assert!(out.bytes.starts_with(&base));
+    assert_eq!(out.report.drawn, vec![id("st")]);
+    let all = forms(&out.bytes).join("\n");
+    assert!(all.contains("1 w 0 J"), "{all}");
+    assert!(all.contains("0 5 m"), "{all}");
+    assert!(all.contains("200 5 l"), "{all}");
+    assert!(all.contains("0.7843 0 0 RG"), "{all}");
+    for wrong in [FieldValue::Checked(false), text("x")] {
+        let values = BTreeMap::from([(id("st"), wrong)]);
+        let e = run(
+            &base,
+            std::slice::from_ref(&f),
+            &values,
+            &BTreeMap::new(),
+            &FlattenOptions::default(),
+        );
+        assert_eq!(e.unwrap_err().code(), "CS-FLD-0002");
+    }
 }
 
 #[test]

@@ -138,6 +138,7 @@ export const COMMON = {
   "ftype.first_name": "First name",
   "ftype.last_name": "Last name",
   "ftype.signature": "Signature",
+  "ftype.strikethrough": "Strike-through",
   "ftype.text": "Text",
 
   "sandbox.banner": "Sandbox workspace: for testing. Nothing sent, signed or sealed here is an agreement.",
