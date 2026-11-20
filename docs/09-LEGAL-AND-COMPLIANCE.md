@@ -31,13 +31,44 @@ Regulation (EU) 910/2014 as amended by (EU) 2024/1183.
 | Level | Requirement | OpenSeal | Status |
 | --- | --- | --- | --- |
 | **SES** — simple electronic signature | Data attached to or associated with other data, used to sign. Admissible; cannot be denied effect solely for being electronic (Art. 25(1)) | The default ceremony | Designed in from slice 1 |
-| **AES** — advanced (Art. 26) | (a) uniquely linked to the signatory; (b) capable of identifying them; (c) created with signature-creation data under their **sole control**; (d) linked so any change is detectable | (d) by the seal. (a)–(c) need a per-signer key: **remote signing through a QTSP over the CSC API**, or a signer's own certificate (smart card, eID) through a browser bridge | Slice 18 |
-| **QES** — qualified | AES by a **QSCD**, on a **qualified certificate**; equivalent to handwritten (Art. 25(2)); recognized across member states | Only through a QTSP (CSC API v2 or ETSI TS 119 432). Software alone can never produce a QES | Slice 18 |
+| **AES** — advanced (Art. 26) | (a) uniquely linked to the signatory; (b) capable of identifying them; (c) created with signature-creation data under their **sole control**; (d) linked so any change is detectable | (d) by the seal. (a)–(c) need a per-signer key: **remote signing through a QTSP over the CSC API**, or a signer's own certificate (smart card, eID) through a browser bridge | CSC remote signing designed for slice 5r (ADR-046 Proposed, `RSP-01`; §2a); the browser bridge in slice 18 |
+| **QES** — qualified | AES by a **QSCD**, on a **qualified certificate**; equivalent to handwritten (Art. 25(2)); recognized across member states | Only through a QTSP (CSC API v2 or ETSI TS 119 432). Software alone can never produce a QES | Designed for slice 5r (ADR-046 Proposed, `RSP-01`; §2a); whether a given signature is a QES is the QTSP's and the law's, never OpenSeal's to state |
 | Qualified electronic **seal** (legal person) | As QES, for organisations | The platform seal can be a qualified seal if the operator's seal certificate is qualified and held in a QSCD | Operator choice |
 | Qualified **timestamp** (Art. 41–42) | From a qualified TSA | The `TimestampSource` accepts a qualified TSA | Operator choice |
 
 Standards: ETSI EN 319 142-1 (PAdES baseline), EN 319 142-2, EN 319 102-1 (creation and validation), EN 319 122
 (CAdES), TS 119 312 (cryptographic suites), TS 119 144-4 (PAdES conformance testing). Trusted Lists: the EU LOTL.
+
+## 2a. Remote-provider signatures: what may be said (designed, ADR-046 and ADR-047)
+
+Not built; the wording below binds the product's copy, the certificate of completion, the site and these documents
+once it is, and counsel reviews it first (`LEG-02`, `LEG-03`; docs/69 question 9). A signer whose recipient has
+signature type `remote` signs with a certificate in their own name that **a provider** holds or issues: a QTSP or
+other remote signing provider over the CSC API (ADR-046), or an Indian eSign Service Provider for which OpenSeal acts
+as the Application Service Provider (ADR-047).
+
+**The facts OpenSeal may state**, because the design establishes them: the signature was created by the named
+provider with the named certificate (issuer, serial, fingerprint) over the SHA-256 digest of the exact bytes the
+signer was shown; the provider authenticated the signer, by the means the provider reports or the certificate states;
+the signature, its time-stamp and its validation data verify, and no later change other than form filling, further
+signatures and validation data was made; what the provider and the certificate themselves state (a CSC
+`signatureQualifier` such as `eu_eidas_qes`, the ETSI QC statements present, an eSign certificate's class and
+authentication type), always attributed: "as stated by <provider>" or "the certificate states".
+
+**What OpenSeal never states in its own voice**: that a signature is an advanced or qualified electronic signature,
+that it is "legally binding" or "legally valid", that it is equivalent to a handwritten signature, that it meets
+eIDAS, the IT Act 2000 or any other law, or that a provider is qualified, licensed or accredited (the EU trusted
+lists and the CCA's register say that, and an operator may cite them). Product copy says "Sign with <provider>",
+"signed with a certificate issued by <CA>", "signed with eSign through <ESP>"; never "QES", "qualified signature",
+"Aadhaar-verified" or "legally valid eSign".
+
+**Who is responsible for what**: the provider identifies the signer, holds or generates the key, issues the
+certificate and answers for its trust service under its own supervision (eIDAS for a QTSP, the CCA for an ESP); the
+operator holds the contract with the provider (and, for eSign, the ASP registration and its obligations); OpenSeal
+supplies the ceremony, the exact bytes, the checks, the evidence and the platform seal. **OpenSeal never receives an
+Aadhaar number, VID, OTP or biometric**: the signer gives them to the ESP on the ESP's page. The eSign certificate,
+which the ESP issues for one signing, may carry e-KYC attributes; it is inside the signed PDF because a validator needs
+it, and its handling is for counsel (ADR-047 §3.7).
 
 ## 3. Life sciences: FDA 21 CFR Part 11
 
@@ -63,7 +94,9 @@ customer needs for their own validation.
 
 Recorded for the fit-gap, not yet studied in depth (`LEG-03`): UK (Electronic Communications Act 2000, eIDAS as
 retained), Switzerland (ZertES), India (IT Act 2000: Aadhaar eSign and DSC; OpenSeal's operator is in India, so this
-is likely to matter early), Canada (PIPEDA Part 2), Australia (ETA 1999), Brazil (MP 2.200-2, ICP-Brasil), Singapore
+is likely to matter early; eSign through a licensed ESP is designed for slice 5r, ADR-047 Proposed, `RSP-02`, with
+the wording of §2a: OpenSeal acts as an ASP and never states that an eSign signature is valid under section 3A or the
+Second Schedule), Canada (PIPEDA Part 2), Australia (ETA 1999), Brazil (MP 2.200-2, ICP-Brasil), Singapore
 (ETA 2010). Each mostly accepts SES with exceptions and has a qualified or certificate-based tier reachable through the
 `RemoteSigner` seam.
 

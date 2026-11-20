@@ -233,6 +233,8 @@ endpoints are rate-limited per token and per IP and audited on every state chang
 The signer cannot judge whether a request is genuine without knowing who sent it (UX-01 audit, signer P1). The
 members above and `/disclosure` are served (`UXW-34`, As built below); the mock answers them the same way.
 
+**Remote signing (designed, ADR-046 and ADR-047 Proposed; not built).** A recipient may carry `signature: {type: "remote", provider_id}`; `GET /signing-providers` lists the providers the account may use, `GET`/`PUT /signing-providers/{id}` sets the account's options and its own credentials (write-only, `account:admin`). Ceremony: `POST /s/{token}/remote-signing` (start), `GET …/remote-signing` (state), `GET …/remote-signing/documents/{id}` (the exact prepared bytes), `POST …/remote-signing/cancel`; the OAuth redirect URI `GET /rsp/callback/{provider}` and the eSign `responseUrl` `POST /rsp/esign/{provider}/response`. Webhook topic `recipient.remote_signing_failed`; errors `CS-RSP-*` ([20](20-ERROR-CODE-REGISTRY.md)).
+
 ## 7. SDKs
 
 - **TypeScript** client generated from the OpenAPI document, plus the custom elements (`sdk/`).

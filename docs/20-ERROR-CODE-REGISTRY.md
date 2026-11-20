@@ -420,3 +420,20 @@ a dead ML job means only "no suggestions" and never blocks sending or sealing.
 | CS-ML-0013 | Inference failed inside the runtime, or a span would not fall on a UTF-8 boundary of the text sent |
 | CS-ML-0014 | The raster child exited abnormally (signal, memory limit) other than by the time cap; counted in the op log. Reported per page. Also the refusal to open a document on any platform but Linux, where the child's limits cannot be enforced (docs/33 §3.3) |
 | CS-ML-0015 | The caller's client certificate chains to the client CA but its SHA-256 fingerprint is not on modeld's allow list; recorded in the op log as a `connect` refusal; its first frame is never held (docs/21 §ML). *Final* (an operator must add the fingerprint) |
+
+## Remote signing providers (reserved, ADR-046 and ADR-047 Proposed; `RSP-01`, `RSP-02`)
+
+Reserved; none returned until built. Messages carry session, envelope, recipient and document ids, a provider's id and
+its own error code (`ESP-944`, an OAuth `error`), never a provider's message text, a certificate's subject, a token, a
+code or a hash value.
+
+| Code | Meaning |
+| --- | --- |
+| CS-RSP-0001 | The provider is not in the catalogue, not offered to the account, or not enabled by it (`422` at send, `409` at the ceremony) |
+| CS-RSP-0002 | The provider could not be reached or failed before or during the session (session `provider_unavailable`; the signer may try later) |
+| CS-RSP-0003 | No open session for this answer: a callback, `state` or `txn` that is unknown, already used, or arrives after the session closed (logged as a security event; nothing embedded) |
+| CS-RSP-0004 | The provider's answer does not hold: an XML Signature that does not verify under the configured certificate or does not cover the root, a wrong number of values, a value or CMS that does not verify over our digest, another certificate, a chain that does not reach the configured anchors, a revoked or expired certificate, a weak algorithm, a BER CMS (session `response_invalid`) |
+| CS-RSP-0005 | The provider's CMS is larger than the planned `/Contents` placeholder; never re-laid out (session `placeholder_overflow`) |
+| CS-RSP-0006 | The signer has no credential the account accepts (status, algorithm, required qualifier) (session `no_eligible_credential`) |
+| CS-RSP-0007 | Not allowed with remote signatures: two remote signers at one routing order (`422` at send); a field, document or stamp change after a document's lock point, or a signature type changed after the recipient started (`409`); another remote session already open in the envelope (`409`) |
+| CS-RSP-0008 | The provider refused the request itself (an ESP's `ESP-901` to `ESP-911`, `ESP-922`, `ESP-992`; an OAuth `invalid_client`): a configuration or registration problem, alerted to the operator (session `provider_refused`) |
