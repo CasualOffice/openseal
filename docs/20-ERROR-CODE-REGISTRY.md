@@ -429,7 +429,7 @@ a dead ML job means only "no suggestions" and never blocks sending or sealing.
 | CS-ML-0014 | The raster child exited abnormally (signal, memory limit) other than by the time cap; counted in the op log. Reported per page. Also the refusal to open a document on any platform but Linux, where the child's limits cannot be enforced (docs/33 §3.3) |
 | CS-ML-0015 | The caller's client certificate chains to the client CA but its SHA-256 fingerprint is not on modeld's allow list; recorded in the op log as a `connect` refusal; its first frame is never held (docs/21 §ML). *Final* (an operator must add the fingerprint) |
 
-## Remote signing providers (reserved, ADR-046 and ADR-047 Proposed; `RSP-01`, `RSP-02`)
+## Remote signing providers (reserved, ADR-046 and ADR-047 Accepted, owner instruction 82; `RSP-01`, `RSP-02`)
 
 Reserved; none returned until built. Messages carry session, envelope, recipient and document ids, a provider's id and
 its own error code (`ESP-944`, an OAuth `error`), never a provider's message text, a certificate's subject, a token, a

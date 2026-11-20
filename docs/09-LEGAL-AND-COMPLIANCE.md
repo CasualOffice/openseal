@@ -31,8 +31,8 @@ Regulation (EU) 910/2014 as amended by (EU) 2024/1183.
 | Level | Requirement | OpenSeal | Status |
 | --- | --- | --- | --- |
 | **SES** — simple electronic signature | Data attached to or associated with other data, used to sign. Admissible; cannot be denied effect solely for being electronic (Art. 25(1)) | The default ceremony | Designed in from slice 1 |
-| **AES** — advanced (Art. 26) | (a) uniquely linked to the signatory; (b) capable of identifying them; (c) created with signature-creation data under their **sole control**; (d) linked so any change is detectable | (d) by the seal. (a)–(c) need a per-signer key: **remote signing through a QTSP over the CSC API**, or a signer's own certificate (smart card, eID) through a browser bridge | CSC remote signing designed for slice 5r (ADR-046 Proposed, `RSP-01`; §2a); the browser bridge in slice 18 |
-| **QES** — qualified | AES by a **QSCD**, on a **qualified certificate**; equivalent to handwritten (Art. 25(2)); recognized across member states | Only through a QTSP (CSC API v2 or ETSI TS 119 432). Software alone can never produce a QES | Designed for slice 5r (ADR-046 Proposed, `RSP-01`; §2a); whether a given signature is a QES is the QTSP's and the law's, never OpenSeal's to state |
+| **AES** — advanced (Art. 26) | (a) uniquely linked to the signatory; (b) capable of identifying them; (c) created with signature-creation data under their **sole control**; (d) linked so any change is detectable | (d) by the seal. (a)–(c) need a per-signer key: **remote signing through a QTSP over the CSC API**, or a signer's own certificate (smart card, eID) through a browser bridge | CSC remote signing designed for slice 5r (ADR-046 Accepted, `RSP-01`; §2a); the browser bridge in slice 18 |
+| **QES** — qualified | AES by a **QSCD**, on a **qualified certificate**; equivalent to handwritten (Art. 25(2)); recognized across member states | Only through a QTSP (CSC API v2 or ETSI TS 119 432). Software alone can never produce a QES | Designed for slice 5r (ADR-046 Accepted, `RSP-01`; §2a); whether a given signature is a QES is the QTSP's and the law's, never OpenSeal's to state |
 | Qualified electronic **seal** (legal person) | As QES, for organisations | The platform seal can be a qualified seal if the operator's seal certificate is qualified and held in a QSCD | Operator choice |
 | Qualified **timestamp** (Art. 41–42) | From a qualified TSA | The `TimestampSource` accepts a qualified TSA | Operator choice |
 
@@ -94,7 +94,7 @@ customer needs for their own validation.
 
 Recorded for the fit-gap, not yet studied in depth (`LEG-03`): UK (Electronic Communications Act 2000, eIDAS as
 retained), Switzerland (ZertES), India (IT Act 2000: Aadhaar eSign and DSC; OpenSeal's operator is in India, so this
-is likely to matter early; eSign through a licensed ESP is designed for slice 5r, ADR-047 Proposed, `RSP-02`, with
+is likely to matter early; eSign through a licensed ESP is designed for slice 5r, ADR-047 Accepted, `RSP-02`, with
 the wording of §2a: OpenSeal acts as an ASP and never states that an eSign signature is valid under section 3A or the
 Second Schedule), Canada (PIPEDA Part 2), Australia (ETA 1999), Brazil (MP 2.200-2, ICP-Brasil), Singapore
 (ETA 2010). Each mostly accepts SES with exceptions and has a qualified or certificate-based tier reachable through the
