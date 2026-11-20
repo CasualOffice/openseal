@@ -122,6 +122,9 @@ jobs:
       # fixtures/sealed, online (--online, --network host) for the HRD-02 interop steps below.
       - run: docker build -q -t openseal-eu-dss tools/eu-dss
       - run: /tmp/v/bin/python -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
+      # RSP-01 gates 2 and 3 (and CLAUDE.md's list): pyHanko and EU DSS over the committed
+      # seals, the remote-signature revisions and their tampered counterpart included.
+      - run: /tmp/v/bin/python -I tools/verify-sealed.py fixtures/sealed --dss openseal-eu-dss
       # HRD-02: a real-style PKI (offline root, issuing CA, OCSP responder, CRLs, an RFC 3161
       # TSA) served on 127.0.0.1; the CLI seals at B-T and B-LTA through it; ours, pyHanko
       # (hard-fail) and EU DSS (--online, the host's network) validate with revocation and

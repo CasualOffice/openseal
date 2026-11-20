@@ -18,3 +18,6 @@ p256-augmented-bt-to-blta.pdf	intact	sealed at B-T, augmented to B-LTA later (do
 p256-renewed-blta.pdf	intact	B-LTA renewed: DSS for the first document timestamp, then a second	B-LTA	TOTAL_PASSED
 valid-normalized-blta.pdf	intact	fixtures/hostile/valid.pdf normalized (Table xref), B-LTA	B-LTA	TOTAL_PASSED
 valid-xrefstream-normalized-blt.pdf	intact	fixtures/hostile/valid_xrefstream.pdf normalized (Stream xref), B-LT	B-LT	TOTAL_PASSED
+remote-csc-simple-remote-simple-blt.pdf	intact	simple signer flattened, remote signer (P-256, B-LT) over the materialized form, later simple signer filled in place, platform seal B-LT	B-LT	TOTAL_PASSED
+remote-csc-page-changed-after-signing-blt.pdf	tampered	a value drawn into page content after the remote signature (B-LT): disallowed	B-LT	TOTAL_FAILED:DISALLOWED_MODIFICATION
+remote-csc-two-remote-blta.pdf	intact	two remote signers (P-256, RSA-3072; each B-LT) with a simple signer filled between them, platform seal B-LTA	B-LTA	TOTAL_PASSED

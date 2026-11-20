@@ -85,7 +85,7 @@ struct FormWidget {
 
 /// The cm mapping a form XObject's transformed `/BBox` onto `rect` (ISO 32000-2
 /// §12.5.5); the XObject's own `/Matrix` is applied by `Do`.
-fn appearance_matrix(bbox: &Rect, m: [f64; 6], rect: &Rect) -> Option<[f64; 6]> {
+pub(crate) fn appearance_matrix(bbox: &Rect, m: [f64; 6], rect: &Rect) -> Option<[f64; 6]> {
     let [a, b, c, d, e, f] = m;
     let corners = [
         (bbox.llx, bbox.lly),

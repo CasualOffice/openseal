@@ -67,6 +67,7 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-FLT-0004 | More fields on one page than the flattening limit |
 | CS-FLT-0005 | A font face supplied by the host cannot be read |
 | CS-FLT-0006 | An optional content visibility expression (`/VE`) nested deeper than 32 or over 4,096 terms |
+| CS-FLT-0007 | A document's catalog, form or page cannot take a materialized field at a remote signature's lock point, or a field to fill in place was not materialized (ADR-046 §3.2) |
 
 ## XFA layout (`casual-sign-xfa`, `XFA-01`)
 

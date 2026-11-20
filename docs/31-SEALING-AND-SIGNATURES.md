@@ -97,6 +97,21 @@ an existing form) through `seal()` and through a frozen copy of the pre-split co
 answers and compares the bytes (seen red with a one-character change to the writer). Tests:
 `crates/casual-sign-seal/tests/remote.rs`, `src/golden.rs`.
 
+**As built (`RSP-01` gate 2, the revisions).** The lock point's form and the fills are docs/30 §7 "Remote-signature
+revisions". `crates/casual-sign-seal/tests/remote_revisions.rs` builds, with the engine alone, an envelope of a
+simple signer flattened, a remote signer over the materialized form (P-256, B-LT: B-T then the DSS at once) and a
+later simple signer filled in place, platform seal B-LT last; and one of two remote signers (P-256, RSA-3072) with a
+simple signer filled between them, platform seal B-LTA last. Every signature passes and every later revision
+classifies as form filling, signing or DSS data in our verifier; a page-content change after the remote signature
+is `TOTAL_FAILED/DISALLOWED_MODIFICATION`. The same files are `fixtures/sealed/remote-csc-*.pdf` (written by
+`gen_sealed` with the test key in the provider's place): **pyHanko 0.38.1** reports `FORM_FILLING` after each remote
+signature and **EU DSS 6.5.1** `TOTAL_PASSED` with **0 undefined changes** for every signature (2026-11-21, `python3
+tools/verify-sealed.py fixtures/sealed --dss openseal-eu-dss`, now a step of the validators job); for the tampered
+copy pyHanko says `OTHER` and EU DSS counts 5 undefined changes, so all three refuse it. The first build, which wrote
+a remote signer's widget appearance in a revision of its own and empty appearances without the fill's filter, was
+`OTHER` to pyHanko and 3 to 4 undefined changes to EU DSS; both were fixed in the engine before anything else was
+built on it.
+
 ## 4. The sealing algorithm
 
 All in `casual-sign-seal`, pure, given the document bytes, supplied time, a `KeyProvider`, a `TimestampSource` answer

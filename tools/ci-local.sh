@@ -34,6 +34,7 @@ VENV=target/tools-venv
 [ -x "$VENV/bin/python" ] || { ~/.local/bin/uv venv -q -p 3.12 "$VENV" && ~/.local/bin/uv pip install -q -p "$VENV/bin/python" "pyhanko==0.38.1" cryptography; }
 docker build -q -t openseal-eu-dss tools/eu-dss >/dev/null
 "$VENV/bin/python" -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
+"$VENV/bin/python" -I tools/verify-sealed.py fixtures/sealed --dss openseal-eu-dss
 # HRD-02, as ci.yml's validators job: the interop PKI, sealed through the CLI (built by the
 # script), validated online; then the committed packet with its revocation data replayed.
 "$VENV/bin/python" -I tools/interop/interop.py check --dss openseal-eu-dss
