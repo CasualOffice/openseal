@@ -175,6 +175,8 @@ export interface Operations {
   getRetention(params?: Record<string, never>): Promise<any>;
   /** Who the credential is — `GET /api/v1/auth/session` (signing-in) */
   getSession(params?: Record<string, never>): Promise<any>;
+  /** A provider's settings for this account (404 when not offered) — `GET /api/v1/signing-providers/{id}` (settings.signing) */
+  getSigningProvider(params: { "id": string | number | boolean }): Promise<any>;
   /** A template and its roles — `GET /api/v1/templates/{id}` (templates.read) */
   getTemplate(params: { "id": string | number | boolean }): Promise<any>;
   /** The template document's newest analysis — `GET /api/v1/templates/{id}/documents/{doc}/analysis` (templates.read) */
@@ -233,6 +235,8 @@ export interface Operations {
   listPermissionProfiles(params?: Record<string, never>): Promise<any>;
   /** Recipients — `GET /api/v1/envelopes/{id}/recipients` (envelopes.read) */
   listRecipients(params: { "id": string | number | boolean }): Promise<any>;
+  /** Signing providers the operator offers this account (RSP-01, ADR-046) — `GET /api/v1/signing-providers` (envelopes.write) */
+  listSigningProviders(params?: Record<string, never>): Promise<any>;
   /** Suggestions of the envelope's analyses (docs/33 §6, WEB-19) — `GET /api/v1/envelopes/{id}/suggestions` (envelopes.read) */
   listSuggestions(params: { "id": string | number | boolean; "cursor"?: string | number | boolean; "kind"?: string | number | boolean; "limit"?: string | number | boolean; "state"?: string | number | boolean }): Promise<any>;
   /** A template's fields (WEB-06) — `GET /api/v1/templates/{id}/fields` (templates.read) */
@@ -289,6 +293,8 @@ export interface Operations {
   publishErsdVersion(params: { body: unknown }): Promise<any>;
   /** Purge an envelope now, at the controller's request (ASVS-16, ASVS-18) — `POST /api/v1/envelopes/{id}/purge` (retention.manage) */
   purgeEnvelope(params: { "id": string | number | boolean }): Promise<any>;
+  /** Enable or disable a provider and set its options — `PUT /api/v1/signing-providers/{id}` (settings.signing) */
+  putSigningProvider(params: { "id": string | number | boolean; body: unknown }): Promise<any>;
   /** Prove the password again before a sensitive action (ASVS-07) — `POST /api/v1/auth/reauthenticate` */
   reauthenticate(params: { body: unknown }): Promise<any>;
   /** Deliver one delivery's event again (UXW-33) — `POST /api/v1/webhooks/{id}/deliveries/{delivery}/redeliver` (webhooks.manage) */
