@@ -3,7 +3,8 @@
 //! (R0), each remote signer's fill-in-place revision and their signature through
 //! `prepare`/`complete` (the test key standing in for the provider's `signHash`), later
 //! fills, and the platform seal last. Shared by `tests/remote_revisions.rs` and the
-//! `gen_sealed` example (`fixtures/sealed/remote-csc-*.pdf`).
+//! `gen_sealed` example (`fixtures/sealed/remote-csc-*.pdf`), each including it beside
+//! `common` (it needs `casual-sign-flatten`, which other users of `common` lack).
 
 use std::collections::BTreeMap;
 
@@ -20,7 +21,7 @@ use casual_sign_seal::{
 };
 use rust_decimal::Decimal;
 
-use super::*;
+use crate::common::*;
 
 fn never() -> bool {
     false

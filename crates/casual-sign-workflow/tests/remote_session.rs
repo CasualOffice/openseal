@@ -117,7 +117,7 @@ fn complete(hx: &mut Harness, session: &str) -> Result<Decision, WorkflowError> 
             session: id(session),
             provider: provider(),
             provider_reference: Some("tx-1".into()),
-            certificate: certificate(),
+            certificate: Box::new(certificate()),
             name_match: NameMatch::Exact,
             documents: vec![RemoteSignedDocument {
                 document_id: id("doc-1"),

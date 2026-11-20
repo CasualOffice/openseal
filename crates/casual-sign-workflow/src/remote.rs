@@ -170,7 +170,7 @@ pub(crate) fn complete(
         session: c.session.clone(),
         provider: c.provider.clone(),
         provider_reference: c.provider_reference.map(str::to_owned),
-        certificate: c.certificate.clone(),
+        certificate: Box::new(c.certificate.clone()),
         name_match: c.name_match,
         documents: c.documents.to_vec(),
     });

@@ -18,8 +18,6 @@
     missing_docs
 )]
 
-pub mod remote;
-
 use std::cell::Cell;
 use std::sync::OnceLock;
 use std::time::Duration;

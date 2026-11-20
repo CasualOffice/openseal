@@ -605,7 +605,7 @@ pub enum Command {
         /// The provider's transaction id, where it has one.
         provider_reference: Option<String>,
         /// The certificate the signature was made with.
-        certificate: casual_sign_audit::RemoteCertificate,
+        certificate: Box<casual_sign_audit::RemoteCertificate>,
         /// Its name against the recipient's.
         name_match: casual_sign_audit::NameMatch,
         /// Each document signed.

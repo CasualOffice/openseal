@@ -24,6 +24,8 @@
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+#[path = "../tests/common/remote.rs"]
+mod remote;
 
 use std::path::{Path, PathBuf};
 
@@ -343,24 +345,24 @@ fn main() {
     for (name, scenario, p, why) in [
         (
             "remote-csc-simple-remote-simple-blt.pdf",
-            common::remote::Scenario::SimpleRemoteSimple,
+            remote::Scenario::SimpleRemoteSimple,
             Profile::BaselineLt,
             "simple signer flattened, remote signer (P-256, B-LT) over the materialized form, later simple signer filled in place, platform seal B-LT",
         ),
         (
             "remote-csc-two-remote-blta.pdf",
-            common::remote::Scenario::TwoRemote,
+            remote::Scenario::TwoRemote,
             Profile::BaselineLta,
             "two remote signers (P-256, RSA-3072; each B-LT) with a simple signer filled between them, platform seal B-LTA",
         ),
     ] {
-        let built = common::remote::build(scenario, p);
+        let built = remote::build(scenario, p);
         out.put(name, &[], &built.bytes, p, why);
-        if scenario == common::remote::Scenario::SimpleRemoteSimple {
+        if scenario == remote::Scenario::SimpleRemoteSimple {
             // The tampered counterpart every validator must refuse (rule 26): a later
             // signer's value drawn into page content after the remote signature.
             let changed =
-                common::remote::page_content_change(&built.after_first_remote, &built.later_field);
+                remote::page_content_change(&built.after_first_remote, &built.later_field);
             out.put_tampered(
                 "remote-csc-page-changed-after-signing-blt.pdf",
                 &built.after_first_remote,

@@ -15,11 +15,13 @@
 )]
 
 mod common;
+#[path = "common/remote.rs"]
+mod remote;
 
 use casual_sign_seal::Profile;
 use casual_sign_verify::{Indication, ModificationClass, SignatureKind, VerifyOptions, verify};
-use common::remote::{Scenario, build, page_content_change};
 use common::*;
+use remote::{Scenario, build, page_content_change};
 
 fn check(bytes: &[u8], signatures: usize) {
     let report = verify(bytes, &trust(), &VerifyOptions::at(VALIDATION_TIME));

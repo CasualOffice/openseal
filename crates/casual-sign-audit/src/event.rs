@@ -731,8 +731,8 @@ pub enum EventData {
         /// The provider's transaction id, where it has one.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         provider_reference: Option<String>,
-        /// The certificate.
-        certificate: RemoteCertificate,
+        /// The certificate (boxed: the largest member of any event).
+        certificate: Box<RemoteCertificate>,
         /// The certificate's name against the recipient's.
         name_match: NameMatch,
         /// Each document signed.
