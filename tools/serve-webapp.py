@@ -13,7 +13,11 @@ started. Also:
   ceremony's JSON lives at the same path for `Accept: application/json`, which only
   the real server answers; with `?mock=1` the page never calls it).
 - Sends the CSP of docs/47 as a header too, with `frame-ancestors 'none'`, which a
-  meta tag cannot carry.
+  meta tag cannot carry; but the mock's embedded views (VS-09: `/s/demo-embed-…` and
+  `/e/{token}`, which serves embed.html) may be framed by the mock's host page,
+  `http://localhost:<port + 1>` (mock.js `embedOriginFor`), as the real server lets a
+  view's host page frame it.
+- Serves `openseal-elements.js` to any origin (CORS), as the real server does.
 - Never binds a public interface: this is not a deployment.
 """
 import http.server
@@ -30,6 +34,8 @@ CSP = (
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
 SIGN = re.compile(r"^/s/[^/?#]+/?$")
+EMBED_PAGE = re.compile(r"^/e/[^/?#]+/?$")
+EMBED_SIGN = re.compile(r"^/s/demo-embed-[^/?#]+/?$")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -52,8 +58,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
         # verify.html runs the WASM verifier, which needs 'wasm-unsafe-eval' (docs/47).
-        verify = self.path.split("?", 1)[0] == "/verify.html"
-        self.send_header("Content-Security-Policy", CSP.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'") if verify else CSP)
+        path = getattr(self, "asked", None) or self.path.split("?", 1)[0]
+        verify = path == "/verify.html"
+        csp = CSP.replace("script-src 'self'", "script-src 'self' 'wasm-unsafe-eval'") if verify else CSP
+        if EMBED_PAGE.match(path) or EMBED_SIGN.match(path):
+            # mock.js `embedOriginFor`: the other loopback name, the next port.
+            host = "localhost" if (self.headers.get("Host") or "").startswith("127.0.0.1") else "127.0.0.1"
+            csp = csp.replace("frame-ancestors 'none'", f"frame-ancestors http://{host}:{self.server.server_port + 1}")
+        else:
+            self.send_header("X-Frame-Options", "DENY")
+        if path == "/openseal-elements.js":
+            self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Security-Policy", csp)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
         self.send_header("Permissions-Policy", "geolocation=(self), camera=(), microphone=()")
@@ -69,8 +85,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+        self.asked = path
         if SIGN.match(path):
             self.path = "/sign.html"
+        elif EMBED_PAGE.match(path):
+            self.path = "/embed.html"
         elif path == "/":
             self.path = "/index.html"
         super().do_GET()

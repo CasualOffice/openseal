@@ -29,6 +29,7 @@ import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
 import { initTheme } from "./theme.js";
 import { illustration } from "./illustrations.js";
+import { hostChannel } from "./embedframe.js";
 
 const store = (() => { try { return sessionStorage; } catch { return null; } })();
 const mock = isMockMode();
@@ -67,6 +68,9 @@ const moreMenu = document.getElementById("more-menu");
 const declineBtn = document.getElementById("decline-btn");
 
 let view = null;          // the CeremonyView
+// VS-09: an embedded view's channel to the page that frames it (embedframe.js); inactive
+// for any other link, so nothing is posted.
+let channel = hostChannel({ embed: null });
 let location_ = null;     // GEO-01 member, once asked
 const adoptions = {};     // mark → {id, dataUrl}
 const values = new Map(); // field id → value as sent
@@ -244,6 +248,13 @@ async function start() {
   try {
     view = await api.ceremony.open(token);
   } catch (err) { return fail(err); }
+  // VS-09: an embedded view's first answer carries its binding (a cross-site frame gets
+  // no first-party cookie) and where its events go.
+  if (view.binding) api.setBinding(view.binding);
+  if (view.embed && !channel.active) {
+    channel = hostChannel({ embed: view.embed });
+    channel.post("ready", { envelope_id: view.envelope?.id, recipient_id: view.recipient?.id });
+  }
   // Back from the identity provider (RAUTH-01): the address bar shows the link again,
   // then the sign-in is checked; a refusal shows the sign-in step with why.
   let ssoFailed = false;
@@ -1724,6 +1735,7 @@ function everyoneSigned(status) {
 /// shown only when the view carries one; today's view does not, so it is not shown.
 function done(everyone, celebrate = false) {
   loader.hide();
+  channel.end("completed", { envelope_id: view?.envelope?.id, recipient_id: view?.recipient?.id });
   guide.hidden = true;
   // Finished: More keeps what still applies (a copy, history, help).
   buildMenu("ended");
@@ -1858,6 +1870,7 @@ async function decline() {
   try {
     view = await api.ceremony.decline(token, reason, location_);
     message({ kind: "declined", title: t("sign.declined.title"), text: t("sign.declined.text"), testId: "sign-declined" });
+    channel.end("declined", { envelope_id: view?.envelope?.id, recipient_id: view?.recipient?.id });
   } catch (ex) { toastError(ex); }
 }
 
@@ -1870,6 +1883,7 @@ async function withdrawConsent() {
   try {
     view = await api.ceremony.withdrawConsent(token, location_);
     message({ kind: "declined", title: t("sign.withdrawn.title"), text: t("sign.withdrawn.text"), testId: "sign-withdrawn" });
+    channel.end("declined", { envelope_id: view?.envelope?.id, recipient_id: view?.recipient?.id });
   } catch (ex) { toastError(ex); }
 }
 
@@ -1877,6 +1891,7 @@ async function finishLater() {
   closeMore();
   try {
     await api.ceremony.finishLater(token);
+    channel.end("finish_later", { envelope_id: view?.envelope?.id, recipient_id: view?.recipient?.id });
     // G-S4: the way back in is right here, not only in the email.
     const again = button(t("sign.later.continue"), { icon: "arrow-right", variant: "primary", size: "lg", onClick: () => start(), attrs: { "data-testid": "later-continue" } });
     const until = dateOnly(view?.envelope?.expires_at);

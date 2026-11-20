@@ -13,8 +13,9 @@ import { PREPARE } from "./strings/prepare.en.js";
 import { SIGN } from "./strings/sign.en.js";
 import { MANAGE } from "./strings/manage.en.js";
 import { ADMIN } from "./strings/admin.en.js";
+import { EMBED } from "./strings/embed.en.js";
 
 /// Every part, by name: for the test that a key is defined only once.
-export const PARTS = { COMMON, SHELL, PREPARE, SIGN, MANAGE, ADMIN };
+export const PARTS = { COMMON, SHELL, PREPARE, SIGN, MANAGE, ADMIN, EMBED };
 
-export const EN = { ...COMMON, ...SHELL, ...PREPARE, ...SIGN, ...MANAGE, ...ADMIN };
+export const EN = { ...COMMON, ...SHELL, ...PREPARE, ...SIGN, ...MANAGE, ...ADMIN, ...EMBED };

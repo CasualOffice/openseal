@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Example host page · OpenSeal embedding</title>
+  <!--
+    An example of a page on your own site embedding OpenSeal (slice 9, VS-09; docs/40 §5).
+
+    1. An administrator adds this page's origin to Admin → Account → Embedding (the
+       workspace's `embedding_origins`); OpenSeal refuses to be framed by any other site.
+    2. Your server asks OpenSeal for a view with its API key or token, naming this page:
+         POST /api/v1/envelopes/{id}/views/signing  {recipient_id, frame_origin, return_url?, state?}
+         POST /api/v1/envelopes/{id}/views/prepare  {frame_origin, state?}   (a draft)
+         POST /api/v1/envelopes/{id}/views/correct  {frame_origin, state?}   (a sent envelope)
+       and hands the page the `url` it answers. It opens once, within five minutes.
+    3. The page loads OpenSeal's elements from your OpenSeal server and shows the view:
+         <script type="module" src="https://sign.example.com/openseal-elements.js"></script>
+         <openseal-signing src="{url}" origin="https://sign.example.com"></openseal-signing>
+    4. It listens for openseal:ready, openseal:complete, openseal:decline, openseal:cancel
+       and openseal:error, each with `detail.event` and your `detail.state`. Treat an event
+       as a hint to refresh: your server confirms the envelope's status by the API or a
+       webhook before acting on it.
+
+    This page takes its view from its own address, for trying it out and for the e2e suite:
+      ?view=signing|prepare&src=<view url>&origin=<OpenSeal origin>[&timeout=<seconds>]
+  -->
+  <style>
+    body { margin: 0; font: 15px/1.5 system-ui, sans-serif; color: #1b1b1f; background: #f6f6f8; }
+    header { padding: 12px 20px; background: #20232a; color: #fff; }
+    main { display: grid; grid-template-columns: minmax(0, 1fr) 18rem; gap: 16px; padding: 16px 20px; }
+    .view { min-height: 640px; height: 75vh; background: #fff; border: 1px solid #d6d6dc; border-radius: 8px; overflow: hidden; }
+    aside { background: #fff; border: 1px solid #d6d6dc; border-radius: 8px; padding: 12px 16px; }
+    ol { padding-left: 1.25rem; font-family: ui-monospace, monospace; font-size: 13px; }
+    @media (max-width: 48em) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header><h1 style="margin:0;font-size:18px">Example shop: checkout</h1></header>
+  <main>
+    <section class="view" id="view" aria-label="Agreement"></section>
+    <aside aria-labelledby="events-h">
+      <h2 id="events-h" style="font-size:15px;margin:4px 0">What the view told this page</h2>
+      <ol id="events" data-testid="host-events"></ol>
+    </aside>
+  </main>
+  <script type="module">
+    const q = new URLSearchParams(location.search);
+    const kind = q.get("view") === "prepare" ? "openseal-prepare" : "openseal-signing";
+    const origin = q.get("origin") || new URL(q.get("src") || location.href).origin;
+    const list = document.getElementById("events");
+    const note = (text) => {
+      const li = document.createElement("li");
+      li.textContent = text;
+      list.append(li);
+    };
+    try {
+      await import(`${origin}/openseal-elements.js`);
+    } catch {
+      note("could not load openseal-elements.js");
+    }
+    const el = document.createElement(kind);
+    if (q.get("timeout")) el.setAttribute("timeout", q.get("timeout"));
+    el.setAttribute("origin", origin);
+    el.setAttribute("title", kind === "openseal-prepare" ? "Prepare the agreement" : "Sign the agreement");
+    el.style.height = "100%";
+    for (const type of ["openseal:ready", "openseal:complete", "openseal:decline", "openseal:cancel", "openseal:error"]) {
+      el.addEventListener(type, (e) => note([type, e.detail.event, e.detail.state || "", e.detail.code || ""].filter(Boolean).join(" ")));
+    }
+    el.setAttribute("src", q.get("src") || "");
+    document.getElementById("view").append(el);
+  </script>
+</body>
+</html>

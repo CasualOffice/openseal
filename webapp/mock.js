@@ -15,6 +15,7 @@ import { rulesFor, finishProblems } from "./fieldrules.js";
 import { checkList } from "./bulkmodel.js";
 import { mergeTemplates, roleKey } from "./templatemodel.js";
 import { redirectUriOk, publicKeyProblem } from "./adminmodel.js";
+import { normalOrigin, MAX_ORIGINS as EMBED_MAX } from "./embedmodel.js";
 
 /// Fixed demo values; the e2e specs read them from here.
 export const MOCK = {
@@ -36,7 +37,27 @@ export const MOCK = {
   // A member with this email also belongs to another account (SEC-ID-01): only they may
   // change their name or password, so an administrator's change is 403 CS-API-0015.
   sharedEmail: "shared@openseal.test",
+  // VS-09: embedded views, as a host page would get them from its server (`POST
+  // /envelopes/{id}/views/…`); made when first opened, so the seeded lists stay as they
+  // were. Each opens once. Their host page is `embedOriginFor` this page's.
+  embedSignToken: "demo-embed-sign",
+  embedDeclineToken: "demo-embed-decline",
+  embedPrepareToken: "demo-embed-prepare",
+  embedCorrectToken: "demo-embed-correct",
+  embedState: "order-7781",
 };
+const EMBED_TOKENS = [MOCK.embedSignToken, MOCK.embedDeclineToken, MOCK.embedPrepareToken, MOCK.embedCorrectToken];
+/// The host page allowed to frame the mock's embedded views when served from `loc`: the
+/// next port on the other loopback name (`localhost` for `127.0.0.1` and back), another
+/// site to the browser and, being loopback too, one it lets load the elements (Private
+/// Network Access); as tools/serve-webapp.py's `frame-ancestors` says, and where the
+/// e2e suite serves its host page. Without a port: a placeholder.
+export function embedOriginFor(loc = globalThis.location) {
+  if (!loc?.port) return "http://embed-host.test";
+  return `${loc.protocol}//${loc.hostname === "localhost" ? "127.0.0.1" : "localhost"}:${Number(loc.port) + 1}`;
+}
+/// What an embedded view answers its page (VS-09, the server's `embed` member).
+const embedTarget = () => ({ frame_origin: embedOriginFor(), frame_origins: [embedOriginFor()], return_url: null, state: MOCK.embedState });
 
 const KEY = "openseal.mock.v1";
 const TERMINAL = new Set(["completed", "declined", "voided", "expired"]);
@@ -519,7 +540,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map((r) => ({ ...publicRecipient(r), mock_token: r.token || null })) });
 
   // ---- Seed ------------------------------------------------------------------
-  async function seed({ fieldKinds = false } = {}) {
+  async function seed({ fieldKinds = false, embed = false } = {}) {
     const doc = (title, n = 2) => makePdf(Array.from({ length: n }, (_, i) => ({
       title: i === 0 ? title : `${title} (continued)`,
       lines: [
@@ -549,6 +570,27 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       { type: "signature", page: 1, x: 72, y, width: 160, height: 44, required: true },
       { type: "date_signed", page: 1, x: 340, y: y + 22, width: 110, height: 22 },
     ];
+    // VS-09: the embedded views' envelopes, made when one of their links is first
+    // opened: an embedded signer, one who may decline, a draft to prepare and a sent
+    // envelope to correct.
+    if (embed) {
+      db.embedSeeded = true;
+      db.embedTargets ||= {};
+      db.embedViews ||= {};
+      const embedded = { name: "Casey Embedded", email: "casey@contoso.example", routing_order: 1, embedded_client_user_id: "host-user-1" };
+      await mk("Embedded order — Contoso", 5, [embedded], [sigFields(600)],
+        async (env, recs) => { recs[0].token = MOCK.embedSignToken; await send(env); });
+      await mk("Embedded renewal — Contoso", 5, [{ ...embedded, email: "casey.renewal@contoso.example" }], [sigFields(600)],
+        async (env, recs) => { recs[0].token = MOCK.embedDeclineToken; env.signing_options = { allow_decline: true }; await send(env); });
+      db.embedTargets[MOCK.embedSignToken] = embedTarget();
+      db.embedTargets[MOCK.embedDeclineToken] = embedTarget();
+      const prep = await mk("Embedded draft — Contoso", 2, [{ name: "Riley Prepared", email: "riley@contoso.example", routing_order: 1 }], [sigFields(600)]);
+      db.embedViews[MOCK.embedPrepareToken] = { kind: "prepare", env: prep.id, used: false };
+      const cor = await mk("Embedded sent — Contoso", 30, [{ name: "Jamie Corrected", email: "jamie@contoso.example", routing_order: 1 }], [sigFields(600)],
+        async (env) => { await send(env); });
+      db.embedViews[MOCK.embedCorrectToken] = { kind: "correct", env: cor.id, used: false };
+      return;
+    }
     // Every field kind a signer fills or reads (WEB-06), made only when its link is
     // first opened, so the sender's seeded lists and counts stay as they were.
     if (fieldKinds) {
@@ -1751,7 +1793,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "webhooks" && !id && method === "POST") return true;
     if (res === "webhooks" && id && !sub && method === "PATCH" && body && "url" in body) return true;
     if (res === "accounts" && id === "me" && method === "PATCH" && body?.settings
-      && ["mfa_policy", "session_idle", "session_max_age"].some((k) => k in body.settings)) return true;
+      && ["mfa_policy", "session_idle", "session_max_age", "embedding_origins"].some((k) => k in body.settings)) return true;
     if (res === "organizations" && id === "me" && !sub && method === "PATCH" && body && "policy" in body) return true;
     if (res === "organizations" && id === "me" && sub === "admins" && (method === "POST" || method === "PATCH")) return true;
     if (res === "permission-profiles" && (method === "POST" || method === "PATCH")) return true;
@@ -1822,7 +1864,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
 
   async function staff(method, parts, query, headers, body) {
     if (!db.session) fail(401, "CS-AUTH-0001", "Not authenticated");
-    if (method !== "GET" && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
+    // As the server: a bearer credential (an embedded view's session, VS-09) carries no CSRF token.
+    const bearer = /^Bearer osv_/.test(headers.authorization || "");
+    if (method !== "GET" && !bearer && headers["x-csrf-token"] !== db.session.csrf) fail(403, "CS-AUTH-0008", "CSRF token missing or wrong");
     const [, , , res, id, sub, subId, subSub] = parts; // "", api, v1, res, …
     // Workspace switching (ORG-04), as the server: the demo user belongs to two
     // workspaces of one organization. The mock keeps one set of envelopes for both; the
@@ -1872,6 +1916,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if ("workflow_policy" in body.settings && body.settings.workflow_policy !== null && !policyOk(body.settings.workflow_policy)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/workflow_policy", code: "CS-API-0001" }]);
         // As the server (VS-07): the default seal profile is one of the three PAdES levels.
         if ("default_seal_profile" in body.settings && body.settings.default_seal_profile !== null && !SEAL_PROFILES.includes(body.settings.default_seal_profile)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/default_seal_profile", code: "CS-API-0001" }]);
+        // As the server (VS-09): the websites that may embed views, each an origin.
+        if ("embedding_origins" in body.settings && body.settings.embedding_origins !== null) {
+          const v = body.settings.embedding_origins;
+          if (!Array.isArray(v) || v.length > EMBED_MAX || new Set(v).size !== v.length || v.some((o) => normalOrigin(o) !== o)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/embedding_origins", code: "CS-API-0001" }]);
+        }
         const before = db.account.settings;
         const next = { ...before };
         for (const [k, v] of Object.entries(body.settings)) { if (v === null) delete next[k]; else next[k] = v; }
@@ -2823,15 +2872,25 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const token = decodeURIComponent(parts[2] || "");
     const sub = parts[3];
     if (token === MOCK.fieldsToken && !db.tokens[token]) await seed({ fieldKinds: true });
+    if (EMBED_TOKENS.includes(token) && !db.embedSeeded) await seed({ embed: true });
     const t = db.tokens[token];
     if (!t) fail(404, "CS-API-0002", "Not found");
     const env = envOr404(t.env);
     const rec = env.recipients.find((r) => r.id === t.rid);
     if (!rec) fail(404, "CS-API-0002", "Not found");
     const loc = body?.location ? { location: body.location } : {};
-    if (!sub && method === "GET") return json(200, view(env, rec, token));
+    // VS-09, as the server: an embedded view says where its events go, and its first
+    // opening answers the binding a cross-site frame sends back in a header.
+    const embedded = db.embedTargets?.[token] || null;
+    if (!sub && method === "GET") return json(200, { ...view(env, rec, token), ...(embedded ? { embed: embedded } : {}) });
     if (sub === "session" && method === "POST") {
-      if (!db.opened.includes(token)) db.opened.push(token);
+      const first = !db.opened.includes(token);
+      if (embedded && !first) fail(403, "CS-AUTH-0009", "Ceremony link bound to another browser");
+      if (first) db.opened.push(token);
+      if (embedded) {
+        if (rec.status === "sent") { rec.status = "delivered"; if (env.status === "sent") env.status = "delivered"; await audit(env, "recipient.delivered", { recipient_id: rec.id }); }
+        return json(200, { ...view(env, rec, token), embed: embedded, binding: `mock-binding-${uid()}` });
+      }
       if (rec.status === "sent") {
         rec.status = "delivered";
         if (env.status === "sent") env.status = "delivered";
@@ -3186,6 +3245,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       let res;
       if (parts[1] === "api" && parts[2] === "v1") res = await staff(method, parts, url.searchParams, headers, body);
       else if (parts[1] === "s") res = await ceremony(method, parts, body, url.searchParams);
+      else if (parts[1] === "e" && parts[3] === "session" && method === "POST") res = await embedSession(decodeURIComponent(parts[2] || ""));
       else fail(404, "CS-API-0002", "Not found");
       if (method !== "GET") save();
       return res;
@@ -3193,6 +3253,17 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (e instanceof Problem) { if (method !== "GET") save(); return problem(e); }
       return problem({ status: 500, code: "CS-API-0010", title: "Internal error" });
     }
+  }
+
+  /// VS-09, as the server's `POST /e/{token}/session`: a prepare or correct link opens
+  /// once, for a session on its envelope (the mock signs the page in for it).
+  async function embedSession(token) {
+    if (EMBED_TOKENS.includes(token) && !db.embedSeeded) await seed({ embed: true });
+    const v = db.embedViews?.[token];
+    if (!v || v.used) fail(401, "CS-AUTH-0002", "Token expired or revoked");
+    v.used = true;
+    db.session ||= { csrf: uid(), id: uid(), reauth: now().getTime(), at: iso(), client: "Embedded view" };
+    return json(200, { session: `osv_mock-${uid()}`, envelope_id: v.env, kind: v.kind, expires_at: iso(60), embed: embedTarget() });
   }
 
   /// This backend also serves the calls api.js lists in `NOT_ON_SERVER` (UX-03).
