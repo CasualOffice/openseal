@@ -366,7 +366,7 @@ inside the child before the converter reads the archive (`src/screen.rs`). Every
 | Jobs at once | 2 (`OPENSEAL_CONVERTD_SLOTS`); a request beyond them is refused at once, never queued | CS-CNV-0005 (`busy`) | none: `daemon::tests::slots_are_taken_and_given_back` |
 | The server's wait for one conversion | 90 s (`OPENSEAL_CONVERTD_TIMEOUT`), connecting and moving the bytes included | CS-CNV-0003 (`time`) | none: server `tests/convert.rs` |
 
-## Remote signing providers (designed, ADR-046 and ADR-047 Proposed; not built)
+## Remote signing providers (designed, ADR-046 and ADR-047 Accepted, owner instruction 82; not built)
 
 | Limit | Default | Code |
 | --- | ---: | --- |

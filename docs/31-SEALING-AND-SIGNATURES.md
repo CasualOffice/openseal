@@ -48,7 +48,7 @@ through the CCA eSign API. Each document is locked at its first such signature, 
 other, and the certificate of completion and audit trail are **separate PDFs** so the signed PDF stays untouched by
 our additions (the same choice Documenso made [V]).
 
-### 3.1 Remote-provider signatures (designed: ADR-046 and ADR-047, Proposed; `RSP-01`, `RSP-02`)
+### 3.1 Remote-provider signatures (designed: ADR-046 and ADR-047, Accepted by owner instruction 82; `RSP-01`, `RSP-02`)
 
 Not built. The decisions are in [08](08-ADR-REGISTER.md) §Full records; this is the map.
 

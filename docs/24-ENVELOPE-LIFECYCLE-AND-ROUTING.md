@@ -86,7 +86,7 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - **Envelope id stamp (`FG-009`, ADR-045).** `signing_options.stamp_envelope_id` is set while a draft only: a
   correction that turns it on or off is `CS-WF-0001`, since a signer may have seen the pages already. `envelope.sent`
   records it (`envelope_id_stamped`).
-- **Remote-provider signatures (designed, ADR-046 and ADR-047 Proposed; `RSP-01`, `RSP-02`).** A `signer` with a
+- **Remote-provider signatures (designed, ADR-046 and ADR-047 Accepted, owner instruction 82; `RSP-01`, `RSP-02`).** A `signer` with a
   `remote` signature type ends their turn through `BeginRemoteSigning` (values frozen, a sub-state `signing_remotely`)
   and the provider's answer (`recipient.remote_signed`, then `recipient.signed` and `recipient.completed` as today), or a
   failed session that reopens their fields. Two remote signers never share a routing order (`CS-RSP-0007` at send); one
