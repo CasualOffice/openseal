@@ -67,16 +67,16 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `9c20a0e` (2026-11-21): `main`, CI run 44813535957 green on every job; slice 9 is on PR #40.
+Docs are true as of `9b9acab` (2026-11-21): `main`, CI run 44823112331 green on every job; slice 9 is closed; `RSP-01` is on its branch.
 
 **Phases D, 0, 1 and 2 are closed** and milestones M0 to M3 are reached (M3 on 2026-11-19, instruction 59).
-**Slices 1, 2, 3, 4, 5, 6, 7 and 8 are closed** (instructions 59, 66, 68, 73, 83), 8 of 35. **v0.1.0 is published**
+**Slices 1 to 9 are closed** (instructions 59, 66, 68, 73, 83, 85), 9 of 35. **v0.1.0 is published**
 (2026-11-20, tag at `f667422`, release run 44615842313: signed images, provenance, SBOMs, signed `SHA256SUMS`; the
 owner makes the GHCR packages public); slices 3 and 4 are in its tag, the rest since then in `CHANGELOG.md`
-§Unreleased. Slice 9 (embedding, docs/78) is the current slice of the binding Execution plan (docs/06, instruction 62,
-`tools/check-plan.py`), in PR #40; closing it reaches M4, team beta, except its "SDKs released as beta" item, held
-back by instruction 70 (`VS-08J`). Next in the plan: remote signing providers (`RSP-01`, `RSP-02`; ADR-046 and
-ADR-047 Accepted, instruction 82), `PKI-VAL-01`, `UX-TEST-01`, then the M5 slices. It is not for production
+§Unreleased. Every M4 slice is closed; M4, team beta, waits only for its "SDKs released as beta" item, held back by
+instruction 70 (`VS-08J`). Current in the binding Execution plan (docs/06, instruction 62, `tools/check-plan.py`):
+remote signing providers (`RSP-01`, then `RSP-02`; ADR-046 and ADR-047 Accepted, instruction 82); then `PKI-VAL-01`,
+`UX-TEST-01` and the M5 slices. It is not for production
 agreements. A fix for a red `main` is checked locally and pushed to `main` directly; other work goes through one pull
 request at a time whose CI must be green before it is merged.
 Commits carry no Claude attribution or e-mail (instruction 57).

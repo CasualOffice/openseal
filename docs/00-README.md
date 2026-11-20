@@ -5,7 +5,7 @@ document plays the same role, so the siblings read alike, and are never reused.
 
 Read in this order: 03 → 01 → 02 → 05 → 06 → 14 → 07. Then the pillar you are working on.
 
-Docs are true as of `9c20a0e` (2026-11-21): `main`, CI run 44813535957 green on every job; slice 9 is on PR #40. **Phases D, 0, 1 and 2 are closed, M0 to M3 are reached, and slices 1 to 8 are closed** (8 of 35); v0.1.0 is published (2026-11-20); slice 9 (embedding) is in review and leads to M4, team beta. State per row: [14](14-EXECUTION-TRACKER.md). Outside `docs/`: [README](../README.md)
+Docs are true as of `9b9acab` (2026-11-21): `main`, CI run 44823112331 green on every job; slice 9 is closed; `RSP-01` is on its branch. **Phases D, 0, 1 and 2 are closed, M0 to M3 are reached, and slices 1 to 9 are closed** (9 of 35); v0.1.0 is published (2026-11-20); every M4 slice is closed and M4, team beta, waits for the SDK release (`VS-08J`); `RSP-01` (CSC remote signing) is current. State per row: [14](14-EXECUTION-TRACKER.md). Outside `docs/`: [README](../README.md)
 (what it is and its status), [AGENTS.md](../AGENTS.md) (the contract and current state), [CLAUDE.md](../CLAUDE.md)
 (working rules and engineering standards), [NOTICE](../NOTICE) with [THIRD-PARTY.md](../THIRD-PARTY.md) and
 [THIRD-PARTY-LICENSES.txt](../THIRD-PARTY-LICENSES.txt) (third-party attributions, inventory and licence texts, generated

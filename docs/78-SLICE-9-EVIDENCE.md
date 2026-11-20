@@ -86,3 +86,8 @@ Nothing here states that any signature is legally valid or that the product is c
 
 
 **Owner answers (2026-11-21):** plain `http://` origins are also allowed for intranet (private-network) hosts, not only development hosts; prepare and correct views stay API-client only. To be recorded as owner instruction 81 and built before the slice 9 PR.
+
+**Owner decision: closed 2026-11-21** under owner instruction 85, on `main` run 44823112331 (commit `9b9acab`), green on every
+job: "Slice 9 (Embedding) closed on main run 44823112331 (9b9acab), green on every job." The follow-ups stay Open: `VS-09F`
+(the template edit view), `VS-09G` (the elements' sizing) and `WF-06`. With slices 3, 4, 6 and 8, every M4 slice is
+closed; M4 is not reached while the SDK beta release is held by instruction 70 (`VS-08J`).
