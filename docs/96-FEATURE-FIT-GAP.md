@@ -173,7 +173,7 @@ instructions 8 and 9).
 | FG-158 | Public anchoring of chain heads | — (ours) | Build | 7 | Works: built in the worker, store and CLI (docs/32 §5 As built, migration 0041): a daily per-account Merkle tree of changed heads, an RFC 3161 token over its root and size, anchors and proofs stored insert-only, published to `OPENSEAL_ANCHOR_LOG`; `openseal anchor verify` proves a head offline (`casual-sign-worker/tests/anchoring.rs`, `casual-sign-sdk/tests/anchor.rs`, CLI `anchor_verify_proves_a_head_and_detects_a_tampered_one`). Served by `GET /api/v1/envelopes/{id}/anchor-proof` (`tests/anchor_proof.rs`) and checked in the browser by the Verify pages (`casual-sign-wasm` `verify_anchor`; `verify-anchor.spec.mjs`, `site.spec.mjs`): "History anchored on <day> by <TSA>" or why not. Not yet: the proof in the sealed PDF or a signer's downloads; a green CI run of the browser specs |
 | FG-159 | Per-signer seals; certification signature | — | Build | 16 | Engine |
 | FG-160 | PDF/A-3 output | — | Build | 17 | Designed |
-| FG-161 | AES / QES via QTSP (CSC API) | DS (EU Advanced, Qualified) | Plugin | 5r (owner instruction 75; was 18) | Designed (ADR-046 Proposed, `RSP-01`) |
+| FG-161 | AES / QES via QTSP (CSC API) | DS (EU Advanced, Qualified) | Plugin | 5r (owner instruction 75; was 18) | In progress (ADR-046 Accepted; `RSP-01`: the engine's `prepare`/`complete`, the per-signer signature type, the providers API and the editor built) |
 | FG-218 | India eSign through a licensed ESP (Aadhaar e-KYC or a CA e-KYC account), OpenSeal as the ASP | — (owner instruction 75) | Plugin | 5r | Designed (ADR-047 Proposed, `RSP-02`) |
 | FG-162 | 21 CFR Part 11 mode | DS | Build | 19 | Designed |
 

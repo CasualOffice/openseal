@@ -9,7 +9,7 @@ use casual_sign_model::{EnvelopeStatus, Field, Id, RecipientStatus, RecipientTyp
 use crate::command::{Change, limits};
 use crate::effect::EffectKind;
 use crate::engine::Out;
-use crate::error::{ObjectKind, Problem, Violation, WorkflowError};
+use crate::error::{ObjectKind, Problem, RemoteRule, Violation, WorkflowError};
 use crate::state::{DocumentState, EnvelopeState, RecipientSpec, RecipientState};
 
 /// Who is editing, which bounds what may change.
@@ -150,6 +150,18 @@ fn check_field_owner(
     }
 }
 
+/// After a document's lock point its layout is frozen (ADR-046 §3.2): no field on it,
+/// and the document itself, may be added, changed or removed (`CS-RSP-0007`).
+fn check_unlocked(s: &EnvelopeState, document: &Id) -> Result<(), WorkflowError> {
+    if s.locked_documents.contains(document) {
+        return Err(WorkflowError::Remote {
+            rule: RemoteRule::DocumentLocked,
+            object: Some(document.clone()),
+        });
+    }
+    Ok(())
+}
+
 /// Applies `changes` in order. On error nothing is kept (the caller drops the state).
 pub(crate) fn apply_changes(
     s: &mut EnvelopeState,
@@ -203,6 +215,13 @@ pub(crate) fn apply_changes(
                     .get(i)
                     .ok_or_else(|| unknown(ObjectKind::Recipient, &recipient.id))?;
                 let old = existing.spec.clone();
+                // ADR-046 §3.1: the signature type is not changed under an open session.
+                if old.signature != recipient.signature && existing.remote.is_some() {
+                    return Err(WorkflowError::Remote {
+                        rule: RemoteRule::SignatureTypeInSession,
+                        object: Some(recipient.id.clone()),
+                    });
+                }
                 match scope {
                     Scope::Draft => {}
                     Scope::Correct => {
@@ -255,6 +274,12 @@ pub(crate) fn apply_changes(
                         }
                     }
                 }
+                if r.remote.is_some() {
+                    return Err(WorkflowError::Remote {
+                        rule: RemoteRule::SignatureTypeInSession,
+                        object: Some(id.clone()),
+                    });
+                }
                 if r.status.is_active() {
                     out.effect(EffectKind::RevokeTokens {
                         recipient: id.clone(),
@@ -266,6 +291,7 @@ pub(crate) fn apply_changes(
             }
             Change::AddField { field } => {
                 let field: &Field = &field.0;
+                check_unlocked(s, &field.document_id)?;
                 check_field_owner(s, scope, field.recipient_id.as_ref(), &mut report)?;
                 if s.fields.0.iter().any(|f| f.id == field.id) {
                     return Err(WorkflowError::DuplicateId {
@@ -291,6 +317,10 @@ pub(crate) fn apply_changes(
                     .iter()
                     .position(|f| f.id == field.id)
                     .ok_or_else(|| unknown(ObjectKind::Field, &field.id))?;
+                if let Some(old) = s.fields.0.get(i) {
+                    check_unlocked(s, &old.document_id)?;
+                }
+                check_unlocked(s, &field.document_id)?;
                 let old_owner = s.fields.0.get(i).and_then(|f| f.recipient_id.clone());
                 check_field_owner(s, scope, old_owner.as_ref(), &mut report)?;
                 check_field_owner(s, scope, field.recipient_id.as_ref(), &mut report)?;
@@ -306,6 +336,9 @@ pub(crate) fn apply_changes(
                     .iter()
                     .position(|f| f.id == *id)
                     .ok_or_else(|| unknown(ObjectKind::Field, id))?;
+                if let Some(old) = s.fields.0.get(i) {
+                    check_unlocked(s, &old.document_id)?;
+                }
                 let owner = s.fields.0.get(i).and_then(|f| f.recipient_id.clone());
                 check_field_owner(s, scope, owner.as_ref(), &mut report)?;
                 s.fields.0.remove(i);
@@ -354,6 +387,7 @@ pub(crate) fn apply_changes(
             }
             Change::RemoveDocument { id } => {
                 sender_only(scope)?;
+                check_unlocked(s, id)?;
                 let i = s
                     .documents
                     .iter()
@@ -370,6 +404,7 @@ pub(crate) fn apply_changes(
             }
             Change::ReplaceDocument { document } => {
                 sender_only(scope)?;
+                check_unlocked(s, &document.id)?;
                 let d = s
                     .documents
                     .iter_mut()

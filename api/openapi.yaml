@@ -574,6 +574,66 @@ components:
         excluded_documents: {type: array, items: {type: string}, description: 'Documents hidden from this recipient (WF-02): never listed or served to them'}
         route_delay_hours: {type: integer, minimum: 0, maximum: 720, description: 'Delayed routing (WF-02): hours routing waits, once this recipient''s turn comes, before inviting them'}
         held_until: {type: [string, 'null'], format: date-time, description: 'Delayed routing (WF-02): their turn came and they are invited at this time; until then their link does not open (`409 CS-WF-0007`)'}
+        signature:
+          oneOf: [{$ref: '#/components/schemas/SignatureType'}, {type: 'null'}]
+          description: 'How they sign (ADR-046): `null` for a simple signature'
+        remote_signing:
+          type: [object, 'null']
+          description: 'Their open remote signing session (ADR-046 §3.4), if any'
+          properties:
+            session: {type: string}
+            provider_id: {type: string}
+            prepared: {type: boolean}
+    SignatureType:
+      type: object
+      required: [type]
+      additionalProperties: false
+      description: >-
+        How a signer signs (ADR-046 §3.1, `RSP-01`). Absent or `{"type": "simple"}`: an adopted mark under the
+        platform seal. `{"type": "remote", "provider_id": "…"}`: the signer signs with their own certificate at a
+        provider the account enabled (`GET /signing-providers`); only for a `signer`, and two remote signers never
+        share a routing order (`422 CS-RSP-0007`). A provider not in the operator's catalogue, not offered to the
+        account or not enabled is `422 CS-RSP-0001`; changing the type while the recipient's session is open is
+        `409 CS-RSP-0007`.
+      properties:
+        type: {type: string, enum: [simple, remote]}
+        provider_id: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,31}$'}
+    SigningProvider:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [csc]}
+        enabled: {type: boolean}
+    SigningProviderList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SigningProvider'}}
+    SigningProviderSettings:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [csc]}
+        enabled: {type: boolean}
+        required_qualifiers: {type: array, items: {type: string}, description: 'signatureQualifier values one of which a credential must state, as the provider states them'}
+        refuse_name_mismatch: {type: boolean, description: 'A certificate name that differs from the recipient name refuses the signature (default: recorded)'}
+        session_minutes: {type: integer, minimum: 5, maximum: 60}
+        own_client_secret: {type: boolean, description: 'The account set its own OAuth client secret (never returned)'}
+    SigningProviderIn:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      properties:
+        enabled: {type: boolean}
+        required_qualifiers: {type: array, maxItems: 8, items: {type: string, pattern: '^[a-z0-9_-]{1,64}$'}}
+        refuse_name_mismatch: {type: boolean}
+        session_minutes: {type: integer, minimum: 5, maximum: 60}
+        client_secret:
+          type: [string, 'null']
+          writeOnly: true
+          maxLength: 2048
+          description: 'The account''s own OAuth client secret for this provider: stored sealed with AES-256-GCM, never returned; `null` removes it'
     RecipientList:
       type: object
       properties:
@@ -600,6 +660,7 @@ components:
           items: {oneOf: [{type: string}, {type: integer, minimum: 0}]}
           description: "Documents hidden from this recipient (WF-02): document ids, or in a create the index of a document of the same request. A recipient sees at least one document (`422 CS-WF-0004`), never a field on a hidden one (`422 CS-WF-0021`)."
         route_delay_hours: {type: integer, minimum: 0, maximum: 65535, default: 0, description: "Delayed routing (WF-02): hours routing waits, once this recipient's turn comes, before inviting them. At most 720 at send (`422 CS-WF-0023`); not on a carbon copy (`422 CS-WF-0004`)."}
+        signature: {$ref: '#/components/schemas/SignatureType'}
     RecipientCreate:
       oneOf:
         - $ref: '#/components/schemas/RecipientIn'
@@ -625,6 +686,7 @@ components:
           description: "A new access code, stored only as Argon2id. Needed when `auth` gains `access_code`; refused when the resulting `auth` lacks it. Removing `access_code` from `auth` deletes the stored code. Draft or correcting envelopes only."
         excluded_documents: {type: array, items: {type: string}, description: 'Document ids hidden from this recipient (WF-02); `[]` shows every document'}
         route_delay_hours: {type: integer, minimum: 0, maximum: 65535, description: 'Delayed routing (WF-02): hours to wait once their turn comes; `0` invites at once'}
+        signature: {$ref: '#/components/schemas/SignatureType'}
     Field:
       type: object
       description: The model's field (docs/22 §6); `placement` in displayed page points, origin top-left.
@@ -5303,6 +5365,61 @@ paths:
       x-level: workspace
       responses:
         '204': {description: Deleted}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/signing-providers:
+    get:
+      operationId: listSigningProviders
+      summary: "Signing providers the operator offers this account (RSP-01, ADR-046)"
+      description: >-
+        The providers of the operator's catalogue offered to this account, each with whether the account
+        enabled it. A sender may name an enabled one as a signer's `signature.provider_id`.
+      x-permission: "envelopes.write"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningProviderList'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/signing-providers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The catalogue's provider id
+        schema: {type: string}
+    get:
+      operationId: getSigningProvider
+      summary: "A provider's settings for this account (404 when not offered)"
+      x-permission: "settings.signing"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningProviderSettings'}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      operationId: putSigningProvider
+      summary: "Enable or disable a provider and set its options"
+      description: >-
+        Each change is a `workspace.signing_provider_changed` admin event; an own client secret is recorded only as
+        `rotated` or `removed`.
+      x-permission: "settings.signing"
+      x-level: workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SigningProviderIn'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningProviderSettings'}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/webhooks:
     get:

@@ -105,6 +105,14 @@ pub enum Problem {
     /// envelope, one who does not sign, the field's own recipient, or named twice
     /// (`CS-WF-0004`, `VS-04D`).
     SharedWithInvalid,
+    /// Two remote signers share a routing order: their signatures must be made one over
+    /// the other's bytes (`CS-RSP-0007`, ADR-046 §3.1). Reported on each, naming the other.
+    RemoteSignersShareOrder {
+        /// The other remote signer at the same routing order.
+        with: Id,
+    },
+    /// A remote signature type on a recipient who is not a `signer` (`CS-RSP-0007`).
+    RemoteNotForType,
     /// A field rule failed (`CS-FLD-*`).
     Field(FieldError),
 }
@@ -130,6 +138,7 @@ impl Violation {
             | Problem::ExcludedUnknownDocument => "CS-WF-0008",
             Problem::FieldOnHiddenDocument => "CS-WF-0021",
             Problem::RouteDelayOutOfRange => "CS-WF-0023",
+            Problem::RemoteSignersShareOrder { .. } | Problem::RemoteNotForType => "CS-RSP-0007",
             Problem::Field(e) => e.code(),
             _ => "CS-WF-0004",
         }
@@ -293,6 +302,34 @@ pub enum WorkflowError {
     },
     /// A model value was out of its bounds (the model's code).
     Model(ModelError),
+    /// Not allowed with remote signatures (`CS-RSP-0007`, ADR-046 §3.1, §3.2).
+    Remote {
+        /// What the rule protects.
+        rule: RemoteRule,
+        /// The recipient, document or field concerned.
+        object: Option<Id>,
+    },
+}
+
+/// Which remote-signature rule a command broke (`CS-RSP-0007`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RemoteRule {
+    /// A document past its lock point: its layout is frozen (no field, document or
+    /// stamp change).
+    DocumentLocked,
+    /// The recipient's signature type cannot change while their remote session is open.
+    SignatureTypeInSession,
+    /// Another remote session is already open in the envelope.
+    SessionOpen,
+    /// The recipient is not a remote signer, or the provider is not theirs.
+    NotRemote,
+    /// The recipient's values are frozen while their remote session is open.
+    ValuesFrozen,
+    /// A remote signer finishes through their provider, never with a plain finish.
+    FinishThroughProvider,
+    /// No such open session for this recipient (`CS-RSP-0003`).
+    NoSession,
 }
 
 impl WorkflowError {
@@ -303,6 +340,14 @@ impl WorkflowError {
             Self::NotAllowed { .. } | Self::NotAllowedForRecipient { .. } => "CS-WF-0001",
             Self::StaleVersion { .. } => "CS-WF-0002",
             Self::NotPermitted { .. } => "CS-WF-0003",
+            // A send refused only by remote-signature rules is `CS-RSP-0007` (ADR-046
+            // §3.1); with any other violation, the general `CS-WF-0004`.
+            Self::Invalid { violations }
+                if !violations.is_empty()
+                    && violations.iter().all(|v| v.code() == "CS-RSP-0007") =>
+            {
+                "CS-RSP-0007"
+            }
             Self::Invalid { .. } => "CS-WF-0004",
             Self::Unreachable { .. } => "CS-WF-0005",
             Self::CommandIdReused => "CS-WF-0006",
@@ -328,6 +373,11 @@ impl WorkflowError {
             Self::ConsentRequired { .. } => "CS-AUTH-0005",
             Self::Fields { issues } => issues.first().map_or("CS-FLD-0002", Issue::code),
             Self::Model(e) => e.code(),
+            Self::Remote {
+                rule: RemoteRule::NoSession,
+                ..
+            } => "CS-RSP-0003",
+            Self::Remote { .. } => "CS-RSP-0007",
         }
     }
 }
@@ -415,6 +465,10 @@ impl fmt::Display for WorkflowError {
             }
             Self::Fields { issues } => write!(f, "{code}: {} field issue(s)", issues.len()),
             Self::Model(e) => write!(f, "{e}"),
+            Self::Remote { rule, object } => match object {
+                Some(id) => write!(f, "{code}: {rule:?} ({id})"),
+                None => write!(f, "{code}: {rule:?}"),
+            },
         }
     }
 }

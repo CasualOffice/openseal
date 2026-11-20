@@ -421,6 +421,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!Array.isArray(r.excluded_documents)) fail(400, "CS-API-0001", "Malformed request", [{ pointer: "/excluded_documents", code: "CS-API-0001" }]);
       rec.excluded_documents = r.excluded_documents.map((d) => (Number.isInteger(d) ? env.documents[d]?.id : d)).filter(Boolean);
     }
+    // RSP-01: a remote signature with a provider the account enabled (the mock's one).
+    if (r.signature != null) {
+      if (r.signature.type === "simple") delete rec.signature;
+      else if (r.signature.type === "remote" && mockProviders().some((p) => p.id === r.signature.provider_id && p.enabled)) rec.signature = { type: "remote", provider_id: r.signature.provider_id };
+      else fail(422, "CS-RSP-0001", "Signing provider not available", [{ pointer: "/signature/provider_id", code: "CS-RSP-0001" }]);
+    }
   }
   function placementOf(f) {
     const p = f.placement || f;
@@ -552,6 +558,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const r = env.recipients.find((x) => x.id === f.recipient_id);
       if (r && !fieldAllowed(r.type, f.type)) violations.push({ pointer: `/fields/${f.id}`, code: "field_not_allowed" });
     }
+    // RSP-01: two remote signers never share a step (`CS-RSP-0007`, naming both).
+    for (const r of env.recipients) {
+      if (r.signature?.type === "remote" && env.recipients.some((q) => q !== r && q.signature?.type === "remote" && q.routing_order === r.routing_order)) violations.push({ pointer: `/recipients/${r.id}`, code: "CS-RSP-0007" });
+    }
     for (const r of env.recipients) {
       if ((r.route_delay_hours || 0) > 720) violations.push({ pointer: `/recipients/${r.id}`, code: "CS-WF-0023" });
       const hidden = r.excluded_documents || [];
@@ -561,7 +571,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const r = env.recipients.find((x) => x.id === f.recipient_id);
       if (r && (r.excluded_documents || []).includes(f.document_id)) violations.push({ pointer: `/fields/${f.id}`, code: "CS-WF-0021" });
     }
-    if (violations.length) fail(422, "CS-WF-0004", "Envelope invalid for sending", violations);
+    if (violations.length) fail(422, violations.every((v) => v.code === "CS-RSP-0007") ? "CS-RSP-0007" : "CS-WF-0004", "Envelope invalid for sending", violations);
     env.send_at = null;
     env.status = "sent";
     env.sent_at = at || iso();
@@ -2469,7 +2479,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         checkIfMatch(env, headers);
         const correcting = editable(env);
         if (correcting && settled(r)) fail(409, "CS-WF-0001", "Recipient has already acted");
-        for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "type", "auth", "access_code", "route_delay_hours", "excluded_documents"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+        for (const k of Object.keys(body || {})) if (!["name", "email", "routing_order", "type", "auth", "access_code", "route_delay_hours", "excluded_documents", "signature"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
         // A type change is a draft's only (UX-12): a correction keeps the type.
         if (body?.type != null && body.type !== r.type && correcting) fail(409, "CS-WF-0001", "Not allowed in the current state");
         if (body?.name != null && !String(body.name).trim()) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/name", code: "CS-API-0001" }]);
@@ -3560,6 +3570,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // UX-04, served by the server since UXW-39 (empty until SSO): no session and no state,
     // so answered before the state is loaded; the sign-in form asks on arrival, and an
     // early load would let this tab's copy go stale under another writer (the e2e seed).
+    // RSP-01. Test hook: `sessionStorage["openseal.mock.rsp"] = "1"` offers one enabled
+    // CSC provider, as an operator's catalogue and an account's choice would.
+    if (url.pathname === "/api/v1/signing-providers" && method === "GET") return json(200, { items: mockProviders() });
     if (url.pathname === "/api/v1/auth/providers" && method === "GET") {
       // Test hook: `sessionStorage["openseal.mock.idp"] = "Acme SSO"` configures one.
       let idp = null;
@@ -3638,4 +3651,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   handle.state = () => db;
   handle.reset = () => { db = null; try { store?.removeItem(KEY); } catch { /* off */ } };
   return handle;
+}
+
+/// RSP-01: the mock's signing providers (`sessionStorage["openseal.mock.rsp"] = "1"`).
+function mockProviders() {
+  let on = false;
+  try { on = globalThis.sessionStorage?.getItem("openseal.mock.rsp") === "1"; } catch { on = false; }
+  return on ? [{ id: "csc-demo", name: "Demo CSC provider", kind: "csc", enabled: true }] : [];
 }

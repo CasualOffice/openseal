@@ -64,7 +64,7 @@ ADRs whose reasoning is too long for a table row are written out here; the row a
 
 ### ADR-046 — Remote-provider signatures per recipient, and the CSC API v2 adapter (`RSP-01`)
 
-**Status: Proposed, 2026-11-21.** Owner instruction 75 brought it forward from slice 18 to right after slice 9 (M4).
+**Status: Accepted 2026-11-21 (owner instruction 82); proposed 2026-11-21.** Owner instruction 75 brought it forward from slice 18 to right after slice 9 (M4).
 It touches the public API, the persisted PDF format (new revisions before the seal), the audit event schema, the
 envelope and recipient state machines, key custody and a legal property, so it needs an Accepted ADR before any code.
 ADR-047 (India eSign, below) builds on the shared parts
@@ -440,6 +440,19 @@ catalogue and account enablement. Documents: docs/19, 20, 21, 22, 24, 30, 31, 32
    the signature? Recommendation: record by default, refusal as an account option.
 6. **Remote signers in parallel**: this design refuses two remote signers at one routing order. Acceptable, or should
    the second wait while the first finishes? Recommendation: refuse at send; it keeps every signature over a known base.
+
+#### 9. As built (`RSP-01`, recorded as each part lands)
+
+- **Status.** Accepted 2026-11-21 (owner instruction 82, with the recommended answers to §8).
+- **Engine (§3.3).** `prepare` and `complete` as designed; `seal()` shares their revision writer and its bytes are
+  unchanged (a test against a frozen copy of the pre-split code). docs/31 §3.1 As built.
+- **Catalogue (§3.11), a decision.** The console is paused (owner instruction 51), so the catalogue is the operator's
+  JSON file `OPENSEAL_SIGNING_PROVIDERS_FILE`, read by the server and the worker at start, as RAUTH-01's identity
+  providers are; client secrets by reference (`client_secret_ref`), trust anchors as a PEM file. The table
+  `platform.signing_providers` with two-custodian changes is `RSP-01A`, the file staying the fallback.
+- **Accounts (§3.11).** `account_signing_providers` and `GET`/`PUT /signing-providers` as designed; an account's own
+  client secret sealed AES-256-GCM (`casual-sign-csc` `sealing`), each change a
+  `workspace.signing_provider_changed` admin event.
 
 ### ADR-047 — India eSign through a licensed ESP, as an ASP (`RSP-02`)
 

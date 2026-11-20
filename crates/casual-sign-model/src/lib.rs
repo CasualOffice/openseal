@@ -20,7 +20,7 @@ mod text;
 
 pub use envelope::{
     Delivery, EnvelopeStatus, RecipientStatus, RecipientType, ReminderPolicy, RoutingOrder,
-    SealProfile, SigningOptions,
+    SealProfile, SignatureType, SigningOptions,
 };
 pub use error::ModelError;
 pub use field::{

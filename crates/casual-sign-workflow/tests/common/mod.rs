@@ -70,6 +70,7 @@ pub fn recipient(rid: &str, rtype: RecipientType, order: u32) -> RecipientSpec {
         witness_for: None,
         excluded_documents: Vec::new(),
         route_delay_hours: 0,
+        signature: casual_sign_model::SignatureType::Simple,
     }
 }
 

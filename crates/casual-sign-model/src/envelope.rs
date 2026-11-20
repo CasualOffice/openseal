@@ -146,6 +146,40 @@ impl RecipientType {
     }
 }
 
+/// How a signer's signature is made (ADR-046 §3.1). On the wire it is absent for
+/// [`SignatureType::Simple`] and `{"type": "remote", "provider_id": "…"}` for a remote
+/// one, so earlier envelopes and events hash as before (the additive rule of ADR-027).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum SignatureType {
+    /// An adopted mark under the platform seal: today's behaviour and the default.
+    #[default]
+    Simple,
+    /// A signature made with the signer's own certificate at a remote provider the
+    /// account has enabled (a CSC service, ADR-046; an eSign Service Provider, ADR-047).
+    Remote {
+        /// The provider, from the operator's catalogue.
+        provider_id: crate::Id,
+    },
+}
+
+impl SignatureType {
+    /// Whether this is the default simple signature (serialized as absent).
+    #[must_use]
+    pub fn is_simple(&self) -> bool {
+        matches!(self, Self::Simple)
+    }
+
+    /// The provider of a remote signature.
+    #[must_use]
+    pub fn provider(&self) -> Option<&crate::Id> {
+        match self {
+            Self::Simple => None,
+            Self::Remote { provider_id } => Some(provider_id),
+        }
+    }
+}
+
 /// A routing order: recipients with equal numbers act in parallel, distinct numbers in
 /// sequence (docs/24 §4). 1 to 999, as DocuSign's `routingOrder`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

@@ -312,6 +312,7 @@ fn create(
         sealed: Vec::new(),
         purged: false,
         deleted_at: None,
+        locked_documents: std::collections::BTreeSet::new(),
         book,
     };
     let mut out = Out::new(ctx, actor_for(&ctx.principal, &state));

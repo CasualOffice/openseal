@@ -785,6 +785,20 @@ async fn main() -> ExitCode {
             Err(e) => return fail(&format!("OPENSEAL_RECIPIENT_IDPS_FILE: {e}")),
         }
     }
+    // Remote-provider signatures (`RSP-01`, ADR-046 §3.11): the operator's catalogue,
+    // secrets by reference, and the key that seals an account's own client secret and a
+    // session's PKCE verifier and code. A catalogue without the key does not start.
+    match casual_sign_csc::Catalogue::from_env(&public_url) {
+        Ok(c) if c.is_empty() => {}
+        Ok(c) => match casual_sign_csc::ProviderSecretsKey::from_env() {
+            Ok(Some(k)) => state.set_signing_providers(c, k),
+            Ok(None) => {
+                return fail("OPENSEAL_SIGNING_PROVIDERS_FILE needs OPENSEAL_PROVIDER_SECRETS_KEY");
+            }
+            Err(e) => return fail(&format!("OPENSEAL_PROVIDER_SECRETS_KEY: {e}")),
+        },
+        Err(e) => return fail(&format!("OPENSEAL_SIGNING_PROVIDERS_FILE: {e}")),
+    }
     if let Ok(dir) = std::env::var("OPENSEAL_WEBAPP_DIR") {
         match casual_sign_server::web::WebApp::load(std::path::Path::new(&dir)) {
             Ok(w) => state.set_webapp(w),

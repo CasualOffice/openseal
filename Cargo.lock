@@ -522,6 +522,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-csc"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "casual-sign-secrets",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "casual-sign-fields"
 version = "0.1.0"
 dependencies = [
@@ -753,6 +764,7 @@ dependencies = [
  "base64 0.22.1",
  "casual-sign-audit",
  "casual-sign-convertd",
+ "casual-sign-csc",
  "casual-sign-fields",
  "casual-sign-host",
  "casual-sign-model",

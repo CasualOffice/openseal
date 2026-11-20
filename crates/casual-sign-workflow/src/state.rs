@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use casual_sign_audit::{AuthMethod, DocumentHash, Hash256, MarkKind, Personal, Timestamp};
 use casual_sign_model::{
     DateFormat, Delivery, EnvelopeStatus, Field, Id, RecipientStatus, RecipientType,
-    ReminderPolicy, RoutingOrder, SealProfile, SigningOptions, Text,
+    ReminderPolicy, RoutingOrder, SealProfile, SignatureType, SigningOptions, Text,
 };
 use serde::{Deserialize, Serialize};
 
@@ -66,11 +66,22 @@ pub struct RecipientSpec {
     /// carbon copy (`CS-WF-0004`).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub route_delay_hours: u16,
+    /// How a signer signs (ADR-046 §3.1): simple (absent) or remote with a provider.
+    /// Only a `signer` may be remote; two remote signers never share a routing order
+    /// (`CS-RSP-0007`).
+    #[serde(default, skip_serializing_if = "SignatureType::is_simple")]
+    pub signature: SignatureType,
 }
 
 // serde's skip_serializing_if passes a reference.
 #[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_zero(n: &u16) -> bool {
+    *n == 0
+}
+
+// serde's skip_serializing_if passes a reference.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero_u32(n: &u32) -> bool {
     *n == 0
 }
 
@@ -89,6 +100,23 @@ pub struct ConsentRecord {
     pub ersd_version: Text,
     /// SHA-256 of the disclosure text shown.
     pub ersd_hash: Hash256,
+}
+
+/// A remote signing session open for a recipient (ADR-046 §3.4): the recipient's
+/// `signing_remotely` sub-state. Their values are frozen while it is open; it closes when
+/// the provider's signature is embedded, or fails and reopens their fields.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteSession {
+    /// The session id, minted by the host.
+    pub session: Id,
+    /// The provider, as the recipient's signature type names it.
+    pub provider_id: Id,
+    /// When it opened.
+    pub started_at: Timestamp,
+    /// The documents were prepared (their hashes recorded in
+    /// `recipient.remote_signing_prepared`).
+    #[serde(default)]
+    pub prepared: bool,
 }
 
 /// A recipient and how far they have come (docs/22 §5, docs/24 §3).
@@ -143,6 +171,13 @@ pub struct RecipientState {
     /// when they go out of turn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub held_until: Option<Timestamp>,
+    /// Their open remote signing session (ADR-046 §3.4), if any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote: Option<RemoteSession>,
+    /// Remote signing sessions that failed for them, for the sender's notice after the
+    /// third (ADR-046 §3.12).
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub remote_failures: u32,
 }
 
 impl RecipientState {
@@ -166,6 +201,8 @@ impl RecipientState {
             reassigned_to: None,
             reassigned_from: None,
             held_until: None,
+            remote: None,
+            remote_failures: 0,
         }
     }
 
@@ -345,6 +382,10 @@ pub struct EnvelopeState {
     /// lists (`Command::DeleteEnded`, WEB-08); its evidence stays.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deleted_at: Option<Timestamp>,
+    /// Documents past their lock point (ADR-046 §3.2): a remote signature was prepared
+    /// over them, so their layout is frozen (`CS-RSP-0007`).
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub locked_documents: BTreeSet<Id>,
     /// The engine's own records.
     #[serde(default)]
     pub book: Bookkeeping,

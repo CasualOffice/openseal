@@ -190,6 +190,9 @@ export function recipientPatch(server, want) {
   if (patch.type === "cc" && (server.auth || []).length) patch.auth = [];
   // Delayed routing and document visibility (WF-02): absent in `want` means none.
   if (server && (server.route_delay_hours || 0) !== (want.route_delay_hours || 0)) patch.route_delay_hours = want.route_delay_hours || 0;
+  // RSP-01: the signature type; absent in `want` means simple.
+  const provider = (s) => (s && s.type === "remote" ? s.provider_id : "");
+  if (server && provider(server.signature) !== provider(want.signature)) patch.signature = want.signature || { type: "simple" };
   const hidden = (list) => [...(list || [])].sort().join("\n");
   if (server && hidden(server.excluded_documents) !== hidden(want.excluded_documents)) patch.excluded_documents = want.excluded_documents || [];
   return Object.keys(patch).length ? patch : null;

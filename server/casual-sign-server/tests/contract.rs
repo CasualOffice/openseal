@@ -965,6 +965,57 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     )
     .await;
 
+    // Signing providers (RSP-01): the operator's catalogue offers one; the account
+    // enables it.
+    api.st.set_signing_providers(
+        casual_sign_csc::Catalogue::parse(
+            json!({"providers": [{"id": "csc-ci", "kind": "csc", "name": "CI provider",
+                "base_uri": "https://csc.example.test/csc/v2",
+                "authorization_endpoint": "https://csc.example.test/oauth2/authorize",
+                "token_endpoint": "https://csc.example.test/oauth2/token",
+                "client_id": "openseal", "client_secret_ref": "CSC_SECRET",
+                "trust_anchors_file": "/anchors.pem", "accounts": ["*"]}]})
+            .to_string()
+            .as_bytes(),
+            "https://sign.example.test",
+            &|_| {
+                Ok(Some(casual_sign_secrets::Secret::new(
+                    "operator".to_owned(),
+                )))
+            },
+            &|_| Some(b"-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n".to_vec()),
+        )
+        .unwrap(),
+        casual_sign_csc::ProviderSecretsKey::new(&[7; 32]).unwrap(),
+    );
+    ok(
+        api.call("GET", "/api/v1/signing-providers", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "signing providers",
+    )
+    .await;
+    ok(
+        api.call(
+            "PUT",
+            "/api/v1/signing-providers/csc-ci",
+            k,
+            Some(json!({"enabled": true, "session_minutes": 20})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "enable provider",
+    )
+    .await;
+    ok(
+        api.call("GET", "/api/v1/signing-providers/csc-ci", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "provider",
+    )
+    .await;
+
     // Webhooks.
     let w = ok(
         api.call("POST", "/api/v1/webhooks", k, Some(json!({"url": "https://hooks.example.com/os", "event_types": ["envelope.completed"], "secret_refs": ["primary"]})), &[]).await,
