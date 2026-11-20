@@ -15,8 +15,8 @@ use crate::form::{self, FieldSpec, never};
 
 /// The ByteRange placeholder: four values, each of the last three written in ten
 /// digits, so any file under 10^10 bytes fits (docs/66 pitfall 5).
-const BR_PLACEHOLDER: &[u8] = b"[0 9999999999 9999999999 9999999999]";
-const BR_FILLER: i64 = 9_999_999_999;
+pub(crate) const BR_PLACEHOLDER: &[u8] = b"[0 9999999999 9999999999 9999999999]";
+pub(crate) const BR_FILLER: i64 = 9_999_999_999;
 /// Largest value a ByteRange field of ten digits holds.
 const BR_MAX: u64 = 9_999_999_999;
 
@@ -24,7 +24,7 @@ const BR_MAX: u64 = 9_999_999_999;
 pub(crate) const MARGIN: usize = 64;
 
 /// Largest `/Contents` placeholder: the crypto crate's CMS bound (`MAX_CMS_LEN`).
-const MAX_PLACEHOLDER: usize = casual_sign_crypto::cms::MAX_CMS_LEN;
+pub(crate) const MAX_PLACEHOLDER: usize = casual_sign_crypto::cms::MAX_CMS_LEN;
 
 /// A written signature revision.
 #[derive(Debug, Clone)]
@@ -81,7 +81,7 @@ pub(crate) fn admit_for_update<'a>(
 }
 
 /// The position of `needle` in `hay`, if it occurs exactly once; else how many times.
-fn find_once(hay: &[u8], needle: &[u8]) -> Result<usize, usize> {
+pub(crate) fn find_once(hay: &[u8], needle: &[u8]) -> Result<usize, usize> {
     let mut found = None;
     let mut count = 0usize;
     if needle.is_empty() || hay.len() < needle.len() {
@@ -145,14 +145,61 @@ pub(crate) fn fill_byte_range(
     Ok(())
 }
 
+/// A revision laid out with its `/ByteRange` filled and its `/Contents` still zero: the
+/// bytes a signature will cover (ADR-046 §3.3 `prepare`).
+#[derive(Debug, Clone)]
+pub(crate) struct Laid {
+    /// The whole file: input and the update, the placeholder zero.
+    pub(crate) bytes: Vec<u8>,
+    /// Offset of the placeholder's `<`.
+    pub(crate) a: usize,
+    /// Offset just after its `>`.
+    pub(crate) b: usize,
+    /// Bytes reserved.
+    pub(crate) placeholder: usize,
+}
+
+impl Laid {
+    /// The signed bytes and their ranges.
+    pub(crate) fn to_sign(&self) -> ToSign<'_> {
+        ToSign {
+            bytes: &self.bytes,
+            ranges: [0..self.a, self.b..self.bytes.len()],
+        }
+    }
+
+    /// `[0, a, b, c]`.
+    pub(crate) fn byte_range(&self) -> [u64; 4] {
+        let to_u64 = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
+        [
+            0,
+            to_u64(self.a),
+            to_u64(self.b),
+            to_u64(self.bytes.len().saturating_sub(self.b)),
+        ]
+    }
+}
+
 /// Write one revision with a `/Contents` placeholder of `placeholder` bytes, and fill it
-/// with the DER `content` returns for the signed bytes.
+/// with the DER `content` returns for the signed bytes: [`lay_out`] then [`embed`].
 fn write_once(
     input: &[u8],
     spec: &RevisionSpec<'_>,
     placeholder: usize,
     content: &mut dyn FnMut(ToSign<'_>) -> Result<Vec<u8>, SealError>,
 ) -> Result<Written, SealError> {
+    let laid = lay_out(input, spec, placeholder)?;
+    let der = content(laid.to_sign())?;
+    embed(laid, &der)
+}
+
+/// Write one revision with a `/Contents` placeholder of `placeholder` bytes and fill its
+/// `/ByteRange` in place.
+pub(crate) fn lay_out(
+    input: &[u8],
+    spec: &RevisionSpec<'_>,
+    placeholder: usize,
+) -> Result<Laid, SealError> {
     let mut admitted = admit_for_update(input, spec.limits, spec.archival)?;
     let plan = form::plan(&mut admitted, spec.field)?;
     let mut u = IncrementalUpdate::new(&admitted, Change::FillAndSign)?;
@@ -194,28 +241,41 @@ fn write_once(
     let c = out.len().saturating_sub(b);
     let to_u64 = |v: usize| u64::try_from(v).unwrap_or(u64::MAX);
     fill_byte_range(&mut out, br_at, [to_u64(a), to_u64(b), to_u64(c)])?;
+    Ok(Laid {
+        bytes: out,
+        a,
+        b,
+        placeholder,
+    })
+}
 
-    let der = content(ToSign {
-        bytes: &out,
-        ranges: [0..a, b..out.len()],
-    })?;
+/// Write `der` into a laid-out revision's placeholder (ADR-046 §3.3 `complete`). DER
+/// larger than the placeholder is [`SealError::Overflow`]; nothing is re-laid out here.
+pub(crate) fn embed(laid: Laid, der: &[u8]) -> Result<Written, SealError> {
+    let byte_range = laid.byte_range();
+    let Laid {
+        bytes: mut out,
+        a,
+        placeholder,
+        ..
+    } = laid;
     if der.len() > placeholder {
         return Err(SealError::Overflow {
             reserved: placeholder,
             needed: der.len(),
         });
     }
-    let hex = crate::text::hex_upper(&der);
+    let hex = crate::text::hex_upper(der);
     let slot = out
         .get_mut(a.saturating_add(1)..a.saturating_add(1).saturating_add(hex.len()))
         .ok_or(SealError::Layout(LayoutProblem::Placeholder(0)))?;
     slot.copy_from_slice(hex.as_bytes());
-    let mut contents = der.clone();
+    let mut contents = der.to_vec();
     contents.resize(placeholder, 0);
     Ok(Written {
         bytes: out,
         contents,
-        byte_range: [0, to_u64(a), to_u64(b), to_u64(c)],
+        byte_range,
         placeholder,
         der_len: der.len(),
         attempts: 1,

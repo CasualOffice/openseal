@@ -20,6 +20,13 @@
 //! OCSP was unavailable at completion), and [`renew_lta`] adds validation data for the
 //! last document timestamp and a new one over it (the renewal job, slice 17).
 //!
+//! [`prepare`] and [`complete`] split a signature in two for a key the platform does not
+//! hold (ADR-046 §3.3): `prepare` lays out the revision and returns the DER signed
+//! attributes and their digest, the hash a remote provider signs; `complete` checks the
+//! provider's value, time-stamps it, embeds it without re-laying out (`CS-RSP-0005`) and
+//! adds its DSS at B-LT. [`seal`] uses the same revision writer and its output is
+//! unchanged by the split.
+//!
 //! **Every output is verified with `casual-sign-verify` before it is returned**
 //! (docs/31 §4 step 8); a failure is `CS-SEAL-0010`. The input is always a prefix of
 //! the output (docs/30 §1).
@@ -30,10 +37,23 @@
 //! CMS signature value and the TSA's token: ECDSA is randomized unless the provider uses
 //! RFC 6979 (the test provider, aws-lc-rs, does not); RSA PKCS#1 v1.5 is deterministic.
 
+// The test PKI and sources are shared with the integration tests (`tests/common`),
+// which name this crate; let the unit tests do the same.
+#[cfg(test)]
+extern crate self as casual_sign_seal;
+
 mod check;
+#[cfg(test)]
+#[path = "../tests/common/mod.rs"]
+mod common;
 mod dss;
 mod error;
 mod form;
+#[cfg(test)]
+mod golden;
+#[cfg(test)]
+mod legacy;
+mod remote;
 mod revision;
 mod source;
 mod text;
@@ -50,8 +70,10 @@ pub use casual_sign_pdf::{Dictionary, Limits, Rect};
 pub use casual_sign_verify::{TrustStore, VerificationReport};
 pub use dss::{DssReport, vri_key};
 pub use error::{
-    CheckName, LayoutProblem, RequestProblem, RevocationProblem, SealError, SelfCheckFailure,
+    CheckName, LayoutProblem, RemoteProblem, RequestProblem, RevocationProblem, SealError,
+    SelfCheckFailure,
 };
+pub use remote::{CompleteOptions, ExternalSigner, Prepared, complete, prepare};
 pub use source::{
     CrlQuery, NoRevocation, NoTimestamps, OcspQuery, RevocationSource, SourceError, TimestampSource,
 };

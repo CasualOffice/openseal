@@ -48,9 +48,10 @@ through the CCA eSign API. Each document is locked at its first such signature, 
 other, and the certificate of completion and audit trail are **separate PDFs** so the signed PDF stays untouched by
 our additions (the same choice Documenso made [V]).
 
-### 3.1 Remote-provider signatures (designed: ADR-046 and ADR-047, Proposed; `RSP-01`, `RSP-02`)
+### 3.1 Remote-provider signatures (ADR-046 and ADR-047, Accepted by owner instruction 82; `RSP-01` in progress, `RSP-02` not built)
 
-Not built. The decisions are in [08](08-ADR-REGISTER.md) §Full records; this is the map.
+The decisions are in [08](08-ADR-REGISTER.md) §Full records; this is the map. What is built is listed under
+"As built" at the end of this section; everything else here is design.
 
 - **Who signs what.** A `signer` recipient with signature type `remote` signs with a certificate in their own name,
   held by a provider: a CSC API v2 provider (DigiCert Document Trust Manager, A-Trust; ADR-046) or an eSign Service
@@ -78,6 +79,23 @@ Not built. The decisions are in [08](08-ADR-REGISTER.md) §Full records; this is
 - **Evidence and claims**: four additive audit types (`recipient.remote_signing_started`, `_prepared`, `_failed`,
   `recipient.remote_signed`) in [32](32-AUDIT-TRAIL-AND-EVIDENCE.md) §3; what may be said about these signatures is
   [09](09-LEGAL-AND-COMPLIANCE.md) §2a.
+
+**As built (`RSP-01` step 1, the engine).** `casual-sign-seal` has `prepare(input, &SealRequest, &ExternalSigner,
+timestamp_token_bound) -> Prepared` and `complete(&Prepared, value, &dyn TimestampSource, &dyn RevocationSource,
+&CompleteOptions) -> Sealed`. `prepare` lays out the revision through the same writer `seal()` uses (the
+`/Contents` placeholder planned from the provider's chain and key with `max_der_len_for`, the TSA bound and the
+margin), digests the ByteRange, and returns the DER signed attributes (explicit `SET OF`, RFC 5652 §5.4) and their
+digest, the hash a provider signs. `Prepared` is plain data. `complete` re-checks the prepared ByteRange, placeholder
+and `message-digest` against the bytes (`CS-RSP-0004` when altered), checks the value under the certificate's key
+over those attributes (`casual_sign_crypto::cms::external_signature`; a raw `r‖s` ECDSA value is re-encoded as DER;
+another document's hash or another key is `CS-RSP-0004`), adds our signature time-stamp (B-T), embeds the CMS
+without ever re-laying out (larger than the placeholder: `CS-RSP-0005`), adds the DSS for that signature at B-LT, and
+runs the §4 step 8 self-check. B-LTA is refused at `prepare` (`CS-SEAL-0006`): the account's B-LTA is applied once at
+completion. `seal()` shares the revision writer (`lay_out` then `embed`) and writes the same bytes as before the
+split: a unit test seals 24 cases (P-256 and RSA-3072; B-B to B-LTA, certification, a visible widget; a plain page and
+an existing form) through `seal()` and through a frozen copy of the pre-split code with replayed key, TSA and OCSP
+answers and compares the bytes (seen red with a one-character change to the writer). Tests:
+`crates/casual-sign-seal/tests/remote.rs`, `src/golden.rs`.
 
 ## 4. The sealing algorithm
 

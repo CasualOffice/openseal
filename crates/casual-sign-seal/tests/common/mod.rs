@@ -363,6 +363,25 @@ pub fn rsa() -> TestProvider {
     }
 }
 
+/// A P-256 key that is not the test signer's, presenting the signer's chain: its values
+/// are "another certificate's" (ADR-046 §3.6 refusals).
+pub fn other_p256_key() -> TestProvider {
+    static KEY: OnceLock<KeyPair> = OnceLock::new();
+    let key = KEY.get_or_init(|| KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap());
+    TestProvider { key, ..p256() }
+}
+
+/// An RSA-3072 key that is not the test signer's, presenting the signer's chain.
+pub fn other_rsa_key() -> TestProvider {
+    static KEY: OnceLock<KeyPair> = OnceLock::new();
+    let key = KEY.get_or_init(|| {
+        let rsa = RsaKeyPair::generate(KeySize::Rsa3072).unwrap();
+        let pkcs8 = AsDer::<Pkcs8V1Der>::as_der(&rsa).unwrap().as_ref().to_vec();
+        KeyPair::from_pkcs8_der_and_sign_algo(&pkcs8.as_slice().into(), &PKCS_RSA_SHA256).unwrap()
+    });
+    TestProvider { key, ..rsa() }
+}
+
 // ---------------------------------------------------------------- TSA
 
 fn alg(oid: ObjectIdentifier) -> AlgorithmIdentifierOwned {

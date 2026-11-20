@@ -379,6 +379,36 @@ fn rsa_verify(_: &[u8], _: Scheme, _: &[u8], _: &[u8]) -> Result<(), CryptoError
     Err(CryptoError::UnsupportedAlgorithm)
 }
 
+/// An ECDSA signature value as DER `Ecdsa-Sig-Value`: a DER value is returned as it is,
+/// a raw `r‖s` of the curve's width is re-encoded (CSC providers return either form,
+/// ADR-046 §2). RSA values are returned unchanged.
+///
+/// # Errors
+/// [`CryptoError::SignatureInvalid`] when an ECDSA value is neither form.
+pub(crate) fn normalize_ecdsa(
+    algorithm: SignatureAlgorithm,
+    value: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    let bad = |_| CryptoError::SignatureInvalid;
+    match algorithm {
+        SignatureAlgorithm::EcdsaP256Sha256 => {
+            if p256::ecdsa::Signature::from_der(value).is_ok() {
+                return Ok(value.to_vec());
+            }
+            let sig = p256::ecdsa::Signature::from_slice(value).map_err(bad)?;
+            Ok(sig.to_der().as_bytes().to_vec())
+        }
+        SignatureAlgorithm::EcdsaP384Sha384 => {
+            if p384::ecdsa::Signature::from_der(value).is_ok() {
+                return Ok(value.to_vec());
+            }
+            let sig = p384::ecdsa::Signature::from_slice(value).map_err(bad)?;
+            Ok(sig.to_der().as_bytes().to_vec())
+        }
+        _ => Ok(value.to_vec()),
+    }
+}
+
 /// Encode helper used by the builders.
 pub(crate) fn to_der<T: Encode>(value: &T) -> Result<Vec<u8>, CryptoError> {
     value.to_der().map_err(|_| CryptoError::Encoding)

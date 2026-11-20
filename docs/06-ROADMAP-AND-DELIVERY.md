@@ -110,7 +110,7 @@ current slice starts unless the owner asks for it. Work already started is finis
 Current, Finishing or Paused line below. A slice moves to Current only when the one before it is closed; its new
 rows go on the Current line in the same commit.
 
-- Current: `VS-06` `VS-06A` `VS-06B` `VS-06C` `VS-06D` `VS-06E` `VS-06E1` `VS-06E2` `VS-06F` `UXW-02` `UXW-19` `UXW-20` `UXW-25` `UXW-42` `UXW-43` `ORG-18` `ORG-41` `WEB-07` `VS-09` `VS-09A` `VS-09B` `VS-09C` `VS-09D` `VS-09E`
+- Current: `VS-06` `VS-06A` `VS-06B` `VS-06C` `VS-06D` `VS-06E` `VS-06E1` `VS-06E2` `VS-06F` `UXW-02` `UXW-19` `UXW-20` `UXW-25` `UXW-42` `UXW-43` `ORG-18` `ORG-41` `WEB-07` `VS-09` `VS-09A` `VS-09B` `VS-09C` `VS-09D` `VS-09E` `RSP-01`
 - Finishing (started before 2026-11-19; each closes or goes back to Open by 2026-11-21; slice 8's rows await CI on PR #37 and the owner's sign-off): `VS-08` `VS-08A` `VS-08B` `VS-08C` `VS-08D` `VS-08E` `VS-08F` `UXW-10` `UXW-31` `UXW-32` `UXW-33` `VS-03C` `TSH-04` `TSH-05` `TSH-06` `UXW-05` `UXW-15` `UXW-49` `WEB-23` `UX-08C` `UX-08F` `UX-11A` `TSH-02` `VS-01` `VS-02` `VS-05` `VS-07` `VS-07B` `VS-07C` `S1-10` `I18N-01` `E2E-04` `E2E-05` `E2E-10` `E2E-11` `E2E-12` `E2E-13` `WEB-12` `FRZ-01` `REL-01` `LEG-01` `SITE-08` `SITE-09` `HRD-06` `HRD-11` `HRD-12` `DEP-07` `ASVS-01` `ASVS-03` `ASVS-06` `ASVS-07` `ASVS-10` `ASVS-13A` `ASVS-13B` `ASVS-19` `ASVS-22` `ASVS-28` `ASVS-29` `ASVS-16` `ASVS-18` `CON-13` `ASVS-32` `SITE-12`
 - Paused (owner instruction 51, until M4): `ML-02` `ML-05` `ML-07` `ML-08` `ML-09` `ML-21` `CON-01` `CON-02` `CON-04` `CON-05` `CON-15` `CON-17` `PLAN-01` `WEB-19`
 
@@ -122,7 +122,7 @@ rows go on the Current line in the same commit.
 | 3 | **8 API and webhooks** (finishing: awaits CI on PR #37 and sign-off; [76](76-SLICE-8-EVIDENCE.md)) | Developers integrating signing | 2026-11-27 | `UXW-10` `UXW-31` `UXW-32` `UXW-33` |
 | 4 | **6 Manage and correct** (current, 2026-11-20; [77](77-SLICE-6-EVIDENCE.md)) | Daily senders: folders, search, correct, resend | 2026-12-01 | `UXW-02` `UXW-20` `UXW-42` `WEB-07` |
 | 5 | **9 Embedding** (built on a branch 2026-11-21; [78](78-SLICE-9-EVIDENCE.md)) | Developers embedding signing in their app → **M4** | 2026-12-03 | — |
-| 5r | Remote signing providers (from slice 18, brought forward; owner instruction 75) | Customers who need a CSC provider (DigiCert Document Trust Manager, A-Trust) or India eSign (Aadhaar OTP or eKYC through a licensed ESP) | after M4 | `RSP-01` `RSP-02` |
+| 5r | Remote signing providers (from slice 18, brought forward; owner instruction 75; `RSP-01` building on a branch after slice 9, 2026-11-21) | Customers who need a CSC provider (DigiCert Document Trust Manager, A-Trust) or India eSign (Aadhaar OTP or eKYC through a licensed ESP) | after M4 | `RSP-01` `RSP-02` |
 | 5a | Production PKI validation (owner instruction 74) | Operators going live: seal chain, OCSP and CRL, TSA, HSM or KMS key checked before go-live | after M4 | `PKI-VAL-01` |
 | 5b | Accessibility and mobile checks (owner instruction 74) | Keyboard-only and screen-reader users, phone signers | after M4 | `UX-TEST-01` |
 | 6 | 10 Organization admin and SSO | Mid-size and large companies | 2026-12-08 | `ORG-01` `ORG-06` `UXW-09` `UXW-37` `UXW-38` `UXW-39` |
