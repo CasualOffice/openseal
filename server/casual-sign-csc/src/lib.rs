@@ -9,9 +9,11 @@
 //! it.
 
 pub mod catalogue;
+pub mod client;
 mod error;
 pub mod sealing;
 
 pub use catalogue::{Catalogue, Kind, Provider};
+pub use client::{Client, CredentialInfo, Scope, Transport};
 pub use error::CscError;
 pub use sealing::ProviderSecretsKey;
