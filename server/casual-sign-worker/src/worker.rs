@@ -268,7 +268,13 @@ pub struct Worker<B: BlobStore> {
     anchors_queued: std::sync::Mutex<Option<time::Date>>,
     /// The latest day this process queued retention jobs for.
     retention_queued: std::sync::Mutex<Option<time::Date>>,
+    /// Remote-provider signatures (`RSP-01`), when configured.
+    rsp: Option<Arc<rsp::RemoteSigning>>,
 }
+
+/// The worker's half of a remote signing session (`RSP-01`).
+#[path = "rsp.rs"]
+pub mod rsp;
 
 impl<B: BlobStore> core::fmt::Debug for Worker<B> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -375,6 +381,7 @@ impl<B: BlobStore + 'static> Worker<B> {
             anchor_sink: None,
             anchors_queued: std::sync::Mutex::new(None),
             retention_queued: std::sync::Mutex::new(None),
+            rsp: None,
         }
     }
 
@@ -610,6 +617,9 @@ impl<B: BlobStore + 'static> Worker<B> {
         }
         if job.kind == casual_sign_host::jobs::SEAL_ENDED_CERTIFICATE {
             return self.ended_certificate(job, lease).await;
+        }
+        if job.kind == casual_sign_host::jobs::REMOTE_SIGNING {
+            return self.remote_signing(job, lease).await;
         }
         if job.kind == casual_sign_host::jobs::ANCHOR_CHAIN_HEADS {
             return self.anchor_heads(job, lease).await;
@@ -2340,6 +2350,7 @@ impl<B: BlobStore + 'static> Worker<B> {
         state: EnvelopeState,
         documents: bool,
     ) -> Result<SealInput> {
+        let account_id = account;
         let mut tx = self.store.for_account(account).begin().await?;
         let chain = tx.audit().chain(envelope).await?;
         let account = tx.account().get().await?;
@@ -2349,6 +2360,27 @@ impl<B: BlobStore + 'static> Worker<B> {
             .await?
             .ok_or(WorkerError::SealInput { what: "sender" })?;
         tx.commit().await?;
+        // RSP-01: each locked document's current revision and what is left to fill.
+        let mut remote = BTreeMap::new();
+        if documents && !state.locked_documents.is_empty() {
+            let mut tx = self.store.for_account(account_id).begin().await?;
+            let completed = tx.signing().completed_for(envelope).await?;
+            tx.commit().await?;
+            for (doc, cur) in rsp::current_revisions(&completed) {
+                let Some(signed) = cur.signed.as_deref() else {
+                    continue;
+                };
+                let key = BlobKey::parse(signed).map_err(|_| WorkerError::StateUnreadable)?;
+                let bytes = self.blob_or(&key, "document").await?;
+                let unfilled: Vec<String> = cur
+                    .materialized
+                    .iter()
+                    .filter(|m| !cur.filled.contains(m))
+                    .cloned()
+                    .collect();
+                remote.insert(doc, (bytes, unfilled));
+            }
+        }
         let mut delivered = Vec::with_capacity(state.documents.len());
         for d in state.documents.iter().filter(|_| documents) {
             let bytes = self
@@ -2418,6 +2450,7 @@ impl<B: BlobStore + 'static> Worker<B> {
             captures,
             now: ts(self.now())?,
             keyd_token: None,
+            remote,
         })
     }
 

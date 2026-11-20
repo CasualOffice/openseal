@@ -514,6 +514,58 @@ impl Signing<'_> {
         Ok(r.rows_affected() > 0)
     }
 
+    /// Close a session `completed`, recording what was embedded (`prepared` with each
+    /// document's signed revision). Returns whether it was open.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` a value out of bounds.
+    pub async fn complete(
+        &mut self,
+        id: Uuid,
+        prepared: &serde_json::Value,
+        now: OffsetDateTime,
+    ) -> Result<bool> {
+        let acct = self.tx.acct();
+        let r = sqlx::query!(
+            "UPDATE remote_signing_sessions SET status = 'completed', prepared = $3, \
+             closed_at = $4, state_sha256 = NULL, pkce_sealed = NULL, code_sealed = NULL \
+             WHERE account_id = $1 AND id = $2 AND closed_at IS NULL",
+            acct,
+            id,
+            prepared,
+            now
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(r.rows_affected() > 0)
+    }
+
+    /// The envelope's completed sessions, newest first: each one's `prepared` names the
+    /// revisions it embedded, so the newest naming a document holds its current bytes.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`; `CS-DB-0010` a corrupt row.
+    pub async fn completed_for(&mut self, envelope: EnvelopeId) -> Result<Vec<RemoteSession>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query_as!(
+            SessionRow,
+            "SELECT id, envelope_id, recipient_id, provider_id, status, state_sha256, \
+             pkce_sealed, code_sealed, credential_id, credentials, prepared, failure, \
+             provider_code, created_at, expires_at, closed_at FROM remote_signing_sessions \
+             WHERE account_id = $1 AND envelope_id = $2 AND status = 'completed' \
+             ORDER BY closed_at DESC, id DESC",
+            acct,
+            envelope.0
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        rows.into_iter().map(SessionRow::into_session).collect()
+    }
+
     /// Sessions of the envelope still open.
     ///
     /// # Errors

@@ -47,6 +47,7 @@ pub const KINDS: &[&str] = &[
     SEND_PASSWORD_RESET,
     SEND_SECURITY_NOTICE,
     SEAL_ENDED_CERTIFICATE,
+    REMOTE_SIGNING,
     ANCHOR_CHAIN_HEADS,
     RETENTION_SWEEP,
     // Advisory, not effects (docs/33 §2, WEB-19): claimed so a worker with a model
@@ -82,6 +83,43 @@ pub fn ended_certificate_job(id: JobId, envelope: EnvelopeId, now: time::OffsetD
         payload: serde_json::json!({ "envelope_id": envelope.0 }),
         run_at: now,
         max_attempts: 15,
+    }
+}
+
+/// Not an effect (`RSP-01`, ADR-046 §3.4): the worker's half of a remote signing session
+/// once the provider sent the signer back: in status `preparing`, exchange the code, find
+/// the credential and prepare the documents; in `signing`, exchange the code, have the
+/// provider sign the prepared hashes and embed the signatures. Payload [`RemoteSigningJob`].
+pub const REMOTE_SIGNING: &str = "remote_signing";
+
+/// The payload of a [`REMOTE_SIGNING`] job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteSigningJob {
+    /// The envelope.
+    pub envelope_id: Uuid,
+    /// The session.
+    pub session: Uuid,
+}
+
+/// Job `id` running `session`'s `phase` (`prepare` or `sign`), due at `now`; one per
+/// session and phase.
+#[must_use]
+pub fn remote_signing_job(
+    id: JobId,
+    envelope: EnvelopeId,
+    session: Uuid,
+    phase: &str,
+    now: time::OffsetDateTime,
+) -> NewJob {
+    NewJob {
+        id,
+        envelope_id: Some(envelope),
+        kind: REMOTE_SIGNING.to_owned(),
+        idempotency_key: format!("rsp:{session}:{phase}"),
+        payload: serde_json::json!({ "envelope_id": envelope.0, "session": session }),
+        run_at: now,
+        max_attempts: 3,
     }
 }
 
@@ -370,7 +408,7 @@ pub fn max_attempts(kind: &str) -> i32 {
     match kind {
         ALERT_OPERATOR | TIMER => 20,
         SEND_WEBHOOK_DELIVERY => 5,
-        SEND_PASSWORD_RESET => 3,
+        SEND_PASSWORD_RESET | REMOTE_SIGNING => 3,
         _ => 15,
     }
 }

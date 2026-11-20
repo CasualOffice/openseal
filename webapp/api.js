@@ -853,6 +853,14 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// Remove this recipient's value from a field before finishing (`NOT_ON_SERVER.clearField`).
       clearField: unbuilt("clearField", (token, field) => data(request("DELETE", `${S(token)}/fields/${encodeURIComponent(field)}`, { ceremony: true }))),
       open: (token) => data(request("POST", `${S(token)}/session`, { body: {}, ceremony: true })),
+      /// RSP-01: start signing with the recipient's remote provider (the view with
+      /// `remote_authorization_url`), the provider's return, the session's state, the
+      /// prepared documents' authorization, and cancel.
+      remoteStart: (token, location) => data(request("POST", `${S(token)}/remote-signing`, { body: withLocation({}, location), ceremony: true })),
+      remoteCallback: (token, state, code, error) => data(request("POST", `${S(token)}/remote-signing/callback`, { body: error ? { state, error } : { state, code }, ceremony: true })),
+      remoteStatus: (token) => data(request("GET", `${S(token)}/remote-signing`, { ceremony: true })),
+      remoteAuthorize: (token) => data(request("POST", `${S(token)}/remote-signing/authorize`, { body: {}, ceremony: true })),
+      remoteCancel: (token) => data(request("POST", `${S(token)}/remote-signing/cancel`, { body: {}, ceremony: true })),
       consent: (token, ersdVersion, location) =>
         data(request("POST", `${S(token)}/consent`, { body: withLocation({ ersd_version: ersdVersion }, location), ceremony: true })),
       authenticate: (token, method, code) =>

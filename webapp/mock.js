@@ -27,6 +27,9 @@ export const MOCK = {
   ceremonyToken: "demo-sign",
   declineToken: "demo-decline",
   fieldsToken: "demo-fields",
+  // RSP-01: a signer who signs with their own certificate at the mock's provider (offered
+  // with `sessionStorage["openseal.mock.rsp"] = "1"`); made when the link is first opened.
+  remoteSignToken: "demo-remote-sign",
   // The demo user's own link to an envelope another member sent them (the Inbox, UX-03).
   inboxToken: "demo-inbox",
   accessCode: "2468",
@@ -599,6 +602,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       auth_required: rec.auth.filter((m) => !rec.auth_passed.includes(m)),
       ...(rec.auth.includes("sso") && !rec.auth_passed.includes("sso") ? { sso_providers: [MOCK.ssoProvider] } : {}),
       sender: { name: sender?.name || "", email: sender?.email || "", organisation: acct.settings?.branding?.name || acct.name },
+      // RSP-01, as the server: a remote signer's provider, by name.
+      ...(rec.signature?.type === "remote" ? { remote_provider_name: REMOTE_PROVIDER.name } : {}),
       // ADR-041: an envelope sent from a sandbox workspace.
       sandbox: env.sandbox === true,
       // VS-02, as the server: an agent, intermediary or editor sees the later
@@ -627,7 +632,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map((r) => ({ ...publicRecipient(r), mock_token: r.token || null })) });
 
   // ---- Seed ------------------------------------------------------------------
-  async function seed({ fieldKinds = false, embed = false } = {}) {
+  async function seed({ fieldKinds = false, embed = false, remote = false } = {}) {
     const doc = (title, n = 2) => makePdf(Array.from({ length: n }, (_, i) => ({
       title: i === 0 ? title : `${title} (continued)`,
       lines: [
@@ -657,6 +662,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       { type: "signature", page: 1, x: 72, y, width: 160, height: 44, required: true },
       { type: "date_signed", page: 1, x: 340, y: y + 22, width: 110, height: 22 },
     ];
+    // RSP-01: a signer whose signature is made at the mock's remote provider.
+    if (remote) {
+      await mk("Supply agreement — Fabrikam", 10, [{ name: "Robin Remote", email: "robin@fabrikam.example", routing_order: 1 }], [sigFields(600)],
+        async (env, recs) => { recs[0].token = MOCK.remoteSignToken; recs[0].signature = { type: "remote", provider_id: "csc-demo" }; await send(env); });
+      return;
+    }
     // VS-09: the embedded views' envelopes, made when one of their links is first
     // opened: an embedded signer, one who may decline, a draft to prepare and a sent
     // envelope to correct.
@@ -3167,6 +3178,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const token = decodeURIComponent(parts[2] || "");
     const sub = parts[3];
     if (token === MOCK.fieldsToken && !db.tokens[token]) await seed({ fieldKinds: true });
+    if (token === MOCK.remoteSignToken && !db.tokens[token]) await seed({ remote: true });
     if (EMBED_TOKENS.includes(token) && !db.embedSeeded) await seed({ embed: true });
     const t = db.tokens[token];
     if (!t) fail(404, "CS-API-0002", "Not found");
@@ -3418,6 +3430,56 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       await complete(env, rec, loc, "paper");
       return json(200, view(env, rec, token));
     }
+    // RSP-01, as the server (ceremony_rsp.rs): start answers `remote_authorization_url`
+    // (here straight back to `/s/rsp` with the state and a code, no provider page); the
+    // callback spends the state and "prepares" at once; authorize answers a second URL
+    // whose return completes the signer, as the worker's signature does.
+    if (sub === "remote-signing") {
+      if (rec.signature?.type !== "remote") fail(409, "CS-RSP-0007", "Not a remote signer");
+      const rs = (db.remote ||= {})[rec.id];
+      const state = (s) => ({ ...view(env, rec, token), remote_signing: s ? { session: s.id, status: s.status, failure: s.failure || null, provider: REMOTE_PROVIDER.name, documents: s.status === "prepared" ? env.documents.map((d) => d.id) : [] } : null });
+      const back = (s) => { s.state = uid(); return `/s/rsp?state=${encodeURIComponent(s.state)}&code=mock-rsp-code`; };
+      if (!parts[4] && method === "GET") return json(200, state(rs));
+      if (!parts[4] && method === "POST") {
+        if (rs && !["completed", "failed"].includes(rs.status)) fail(409, "CS-RSP-0007", "A remote signing session is open");
+        checkRequired(env, rec);
+        const s = { id: uid(), status: "authorizing_service" };
+        db.remote[rec.id] = s;
+        await audit(env, "recipient.remote_signing_started", { recipient_id: rec.id, session: s.id, provider: { id: REMOTE_PROVIDER.id, kind: "csc", name: REMOTE_PROVIDER.name } }, loc);
+        return json(200, { ...state(s), remote_authorization_url: back(s) });
+      }
+      if (parts[4] === "callback" && method === "POST") {
+        if (!rs || !rs.state || body?.state !== rs.state || !["authorizing_service", "authorizing_credential"].includes(rs.status)) fail(409, "CS-RSP-0003", "No remote signing session for this state");
+        rs.state = null;
+        if (body?.error) {
+          rs.status = "failed"; rs.failure = "cancelled";
+          await audit(env, "recipient.remote_signing_failed", { recipient_id: rec.id, session: rs.id, reason: "cancelled" });
+          return json(200, state(rs));
+        }
+        if (rs.status === "authorizing_service") {
+          rs.status = "prepared";
+          await audit(env, "recipient.remote_signing_prepared", { recipient_id: rec.id, session: rs.id });
+          return json(200, state(rs));
+        }
+        rs.status = "completed";
+        for (const f of env.fields) if (f.recipient_id === rec.id && f.type === "date_signed") f.value = { text: iso().slice(0, 10) };
+        await audit(env, "recipient.remote_signed", { recipient_id: rec.id, session: rs.id });
+        await complete(env, rec, loc, "signed");
+        return json(200, state(rs));
+      }
+      if (parts[4] === "authorize" && method === "POST") {
+        if (!rs || rs.status !== "prepared") fail(409, "CS-RSP-0003", "No remote signing session for this state");
+        rs.status = "authorizing_credential";
+        return json(200, { ...state(rs), remote_authorization_url: back(rs) });
+      }
+      if (parts[4] === "cancel" && method === "POST") {
+        if (!rs || ["completed", "failed"].includes(rs.status)) fail(409, "CS-RSP-0003", "No remote signing session for this state");
+        rs.status = "failed"; rs.failure = "cancelled"; rs.state = null;
+        await audit(env, "recipient.remote_signing_failed", { recipient_id: rec.id, session: rs.id, reason: "cancelled" });
+        return json(200, state(rs));
+      }
+      fail(405, "CS-API-0012", "Method not allowed");
+    }
     if (sub === "finish" && method === "POST") {
       // As the engine's `finish`: an approver approves and a copy has nothing to finish;
       // a viewer finishes once every document was viewed to the end.
@@ -3653,9 +3715,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   return handle;
 }
 
+/// RSP-01: the mock's one remote signing provider.
+const REMOTE_PROVIDER = { id: "csc-demo", name: "Demo CSC provider" };
+
 /// RSP-01: the mock's signing providers (`sessionStorage["openseal.mock.rsp"] = "1"`).
 function mockProviders() {
   let on = false;
   try { on = globalThis.sessionStorage?.getItem("openseal.mock.rsp") === "1"; } catch { on = false; }
-  return on ? [{ id: "csc-demo", name: "Demo CSC provider", kind: "csc", enabled: true }] : [];
+  return on ? [{ ...REMOTE_PROVIDER, kind: "csc", enabled: true }] : [];
 }

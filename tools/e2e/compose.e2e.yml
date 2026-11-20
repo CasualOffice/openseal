@@ -30,6 +30,16 @@
 #   subscription names; the receiver checks each signature with the same value. The
 #   browser spec reads what it received on 127.0.0.1:${OPENSEAL_E2E_HOOKS_PORT:-8027}.
 
+# - `csc` (RSP-01, ADR-046 §4): a CSC API v2 signing provider (auth_stubs.py `csc`) for the
+#   one provider in tools/e2e/signing-providers.json, the server's and the worker's
+#   OPENSEAL_SIGNING_PROVIDERS_FILE. It shares the worker's network namespace, so the worker
+#   reaches its token and CSC endpoints on the loopback address (the only plain-HTTP
+#   provider endpoints allowed) and the browser reaches its consent page on localhost:8091,
+#   published by the worker's container. Its signer's certificate is issued at start by
+#   the development root, which the providers file names as the provider's trust anchor;
+#   it signs with `openssl pkeyutl`. The provider secrets key and client secret here are
+#   test values for this throwaway stack only.
+
 services:
   worker:
     environment:
@@ -41,6 +51,11 @@ services:
       # only the platform roots plus this file (SSL_CERT_FILE is not read for webhooks).
       OPENSEAL_WEBHOOK_EXTRA_ROOTS: /secrets/ca.pem
       OPENSEAL_E2E_WEBHOOK_SECRET: whsec_Y2ktb25seS13ZWJob29rLXNpZ25pbmctc2VjcmV0
+      OPENSEAL_SIGNING_PROVIDERS_FILE: /opt/e2e/signing-providers.json
+      OPENSEAL_PROVIDER_SECRETS_KEY: Y2ktb25seS1wcm92aWRlci1zZWNyZXRzLWtleS0zMmI=
+      OPENSEAL_E2E_CSC_SECRET: ci-only-csc-client-secret
+    volumes: [./tools/e2e:/opt/e2e:ro]
+    ports: [127.0.0.1:8091:8091]
     depends_on:
       sms-gateway: {condition: service_healthy}
       hooks: {condition: service_healthy}
@@ -69,6 +84,9 @@ services:
   server:
     environment:
       OPENSEAL_RECIPIENT_IDPS_FILE: /opt/e2e/recipient-idps.json
+      OPENSEAL_SIGNING_PROVIDERS_FILE: /opt/e2e/signing-providers.json
+      OPENSEAL_PROVIDER_SECRETS_KEY: Y2ktb25seS1wcm92aWRlci1zZWNyZXRzLWtleS0zMmI=
+      OPENSEAL_E2E_CSC_SECRET: ci-only-csc-client-secret
     volumes: ["./tools/e2e:/opt/e2e:ro"]
     ports: ["127.0.0.1:8090:8090"]
 
@@ -102,5 +120,24 @@ services:
     depends_on: {server: {condition: service_started}}
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8090/healthz', timeout=2)"]
+      interval: 3s
+      retries: 20
+
+  csc:
+    image: openseal-devtools:dev
+    restart: unless-stopped
+    user: tsa
+    command: ["python3", "-I", "/opt/e2e/auth_stubs.py", "csc", "--issue-from", "/secrets",
+              "--listen", "0.0.0.0:8091", "--redirect-uri", "http://localhost:8080/s/rsp",
+              "--signer-name", "Remote Signer"]
+    environment:
+      OPENSEAL_E2E_CSC_SECRET: ci-only-csc-client-secret
+    network_mode: "service:worker"
+    volumes:
+      - {type: volume, source: secrets, target: /secrets, read_only: true}
+      - ./tools/e2e:/opt/e2e:ro
+    depends_on: {worker: {condition: service_started}}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/healthz', timeout=2)"]
       interval: 3s
       retries: 20

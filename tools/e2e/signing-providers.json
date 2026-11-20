@@ -1,0 +1,13 @@
+{"providers": [{
+  "id": "csc-ci",
+  "kind": "csc",
+  "name": "OpenSeal CI signing provider",
+  "base_uri": "http://127.0.0.1:8091/csc/v2",
+  "authorization_endpoint": "http://localhost:8091/oauth2/authorize",
+  "token_endpoint": "http://127.0.0.1:8091/oauth2/token",
+  "client_id": "openseal-ci",
+  "client_secret_ref": "OPENSEAL_E2E_CSC_SECRET",
+  "trust_anchors_file": "/secrets/ca.pem",
+  "accounts": ["*"],
+  "redirect_uri": "http://localhost:8080/s/rsp"
+}]}

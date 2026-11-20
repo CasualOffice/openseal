@@ -336,5 +336,126 @@ class Overlay(unittest.TestCase):
         self.assertTrue(conf["authorization_endpoint"].startswith("http://localhost:8090/"))
 
 
+CSC_REDIRECT = "http://localhost:8080/s/rsp"
+CSC_SECRET = "test-csc-secret"
+
+
+class CscProvider(unittest.TestCase):
+    """The CSC stub through both redirects as the server and worker run them (RSP-01)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.TemporaryDirectory()
+        d = pathlib.Path(cls.dir.name)
+        make_root(d)
+        cls.root = d / "ca.pem"
+        cls.csc = st.Csc(d, d, "Remote Signer", CSC_REDIRECT, CSC_SECRET)
+        cls.server = st.ThreadingHTTPServer(("127.0.0.1", 0), st.csc_handler(cls.csc))
+        start(cls.server)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.server.server_close()
+        cls.dir.cleanup()
+
+    def call(self, method, path, body=b"", headers=None):
+        c = http.client.HTTPConnection("127.0.0.1", self.server.server_address[1], timeout=10)
+        c.request(method, path, body=body, headers=headers or {})
+        r = c.getresponse()
+        data = r.read()
+        c.close()
+        return r.status, dict(r.getheaders()), data
+
+    def authorize(self, scope, extra=None, decision="allow"):
+        verifier = secrets.token_urlsafe(32)
+        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        q = {"response_type": "code", "client_id": "openseal", "redirect_uri": CSC_REDIRECT, "scope": scope,
+             "state": "st-1", "code_challenge": challenge, "code_challenge_method": "S256", **(extra or {})}
+        status, _, page = self.call("GET", "/oauth2/authorize?" + urlencode(q))
+        self.assertEqual(status, 200, page)
+        status, h, _ = self.call("POST", "/oauth2/authorize", urlencode({**q, "decision": decision}).encode(),
+                                 {"Content-Type": "application/x-www-form-urlencoded"})
+        self.assertEqual(status, 302)
+        back = parse_qs(urlsplit(h["Location"]).query)
+        self.assertTrue(h["Location"].startswith(CSC_REDIRECT))
+        self.assertEqual(back["state"], ["st-1"])
+        return back, verifier
+
+    def token(self, code, verifier, secret=CSC_SECRET):
+        form = urlencode({"grant_type": "authorization_code", "code": code, "redirect_uri": CSC_REDIRECT,
+                          "client_id": "openseal", "client_secret": secret, "code_verifier": verifier}).encode()
+        status, _, data = self.call("POST", "/oauth2/token", form, {"Content-Type": "application/x-www-form-urlencoded"})
+        return status, json.loads(data)
+
+    def api(self, path, token, body):
+        status, _, data = self.call("POST", f"/csc/v2/{path}", json.dumps(body).encode(),
+                                    {"Content-Type": "application/json", "Authorization": f"Bearer {token}"})
+        return status, json.loads(data)
+
+    def test_both_redirects_end_in_a_signature_that_verifies_under_the_issued_certificate(self):
+        back, verifier = self.authorize("service")
+        status, tok = self.token(back["code"][0], verifier)
+        self.assertEqual(status, 200)
+        status, listed = self.api("credentials/list", tok["access_token"], {})
+        self.assertEqual(listed["credentialIDs"], ["ci-signer"])
+        status, info = self.api("credentials/info", tok["access_token"], {"credentialID": "ci-signer"})
+        self.assertEqual(info["SCAL"], "2")
+        leaf = base64.b64decode(info["cert"]["certificates"][0])
+        digest = hashlib.sha256(b"signed attributes").digest()
+        hashes = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+        back, verifier = self.authorize("credential", {"credentialID": "ci-signer", "numSignatures": "1",
+                                                       "hashes": hashes, "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"})
+        status, cred = self.token(back["code"][0], verifier)
+        # Another hash than the authorized one is refused (SCAL2).
+        other = base64.b64encode(hashlib.sha256(b"other").digest()).decode()
+        status, _ = self.api("signatures/signHash", cred["access_token"],
+                             {"credentialID": "ci-signer", "hashes": [other], "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"})
+        self.assertEqual(status, 400)
+        status, signed = self.api("signatures/signHash", cred["access_token"],
+                                  {"credentialID": "ci-signer", "hashes": [base64.b64encode(digest).decode()],
+                                   "hashAlgorithmOID": "2.16.840.1.101.3.4.2.1"})
+        self.assertEqual(status, 200)
+        sig = base64.b64decode(signed["signatures"][0])
+        with tempfile.TemporaryDirectory() as t:
+            t = pathlib.Path(t)
+            (t / "leaf.der").write_bytes(leaf)
+            subprocess.run(["openssl", "x509", "-inform", "DER", "-in", str(t / "leaf.der"), "-pubkey", "-noout",
+                            "-out", str(t / "pub.pem")], check=True, capture_output=True)
+            (t / "msg").write_bytes(b"signed attributes")
+            (t / "sig").write_bytes(sig)
+            ok = subprocess.run(["openssl", "dgst", "-sha256", "-verify", str(t / "pub.pem"), "-signature",
+                                 str(t / "sig"), str(t / "msg")], capture_output=True)
+            self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+            subprocess.run(["openssl", "x509", "-inform", "DER", "-in", str(t / "leaf.der"), "-out",
+                            str(t / "leaf.pem")], check=True, capture_output=True)
+            chain = subprocess.run(["openssl", "verify", "-CAfile", str(self.root), str(t / "leaf.pem")],
+                                   capture_output=True)
+            self.assertEqual(chain.returncode, 0, chain.stdout + chain.stderr)
+        # The token is spent with the signature.
+        status, _ = self.api("signatures/signHash", cred["access_token"], {"credentialID": "ci-signer", "hashes": []})
+        self.assertEqual(status, 401)
+
+    def test_a_denial_a_wrong_verifier_or_secret_and_a_reused_code_are_refused(self):
+        back, _ = self.authorize("service", decision="deny")
+        self.assertEqual(back["error"], ["access_denied"])
+        back, verifier = self.authorize("service")
+        self.assertEqual(self.token(back["code"][0], verifier + "x")[0], 400)
+        back, verifier = self.authorize("service")
+        self.assertEqual(self.token(back["code"][0], verifier, secret="wrong")[0], 400)
+        back, verifier = self.authorize("service")
+        self.assertEqual(self.token(back["code"][0], verifier)[0], 200)
+        self.assertEqual(self.token(back["code"][0], verifier)[0], 400)
+
+    def test_the_providers_file_is_the_one_the_server_worker_and_stub_share(self):
+        overlay = (HERE / "compose.e2e.yml").read_text()
+        conf = json.loads((HERE / "signing-providers.json").read_text())["providers"][0]
+        self.assertEqual(conf["redirect_uri"], CSC_REDIRECT)
+        self.assertIn('"--redirect-uri", "http://localhost:8080/s/rsp"', overlay)
+        for k in ("base_uri", "token_endpoint"):
+            self.assertTrue(conf[k].startswith("http://127.0.0.1:8091/"), k)
+        self.assertTrue(conf["authorization_endpoint"].startswith("http://localhost:8091/"))
+
+
 if __name__ == "__main__":
     unittest.main()

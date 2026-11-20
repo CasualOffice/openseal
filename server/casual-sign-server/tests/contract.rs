@@ -1565,6 +1565,39 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             "{path}"
         );
     }
+    // RSP-01: remote signing is refused to a simple signer, whatever the step (the
+    // session itself: tests/ceremony_rsp.rs, and the real stack's remote-signing spec).
+    let none = api
+        .call(
+            "GET",
+            &format!("{s1}/remote-signing"),
+            &Auth::None,
+            None,
+            &h1,
+        )
+        .await;
+    assert_eq!(none.status, StatusCode::OK);
+    assert_eq!(none.json()["remote_signing"], Value::Null);
+    for (method, path, body) in [
+        ("POST", "remote-signing", Some(json!({}))),
+        (
+            "POST",
+            "remote-signing/callback",
+            Some(json!({"state": "s", "code": "c"})),
+        ),
+        ("POST", "remote-signing/authorize", Some(json!({}))),
+        ("POST", "remote-signing/cancel", Some(json!({}))),
+        ("GET", "remote-signing/documents/d1", None),
+    ] {
+        let r = api
+            .call(method, &format!("{s1}/{path}"), &Auth::None, body, &h1)
+            .await;
+        assert!(
+            r.status.is_client_error(),
+            "{method} {path}: {:?}",
+            r.status
+        );
+    }
     ok(
         api.call(
             "POST",
@@ -2975,8 +3008,9 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
 /// their `Content-Disposition` by `casual-sign-worker`'s `tests/end_to_end.rs`; and those
 /// another test of this crate answers through this harness, which checks every answer:
 /// a field's uploaded attachment (`tests/lists.rs`), the evidence package
-/// (`tests/evidence_package.rs`) and the organization log as CSV
-/// (`tests/organizations.rs`).
+/// (`tests/evidence_package.rs`), the organization log as CSV
+/// (`tests/organizations.rs`) and a remote signer's prepared document
+/// (`tests/ceremony_rsp.rs`).
 const FILES_ANSWERED_ELSEWHERE: &[(&str, &str)] = &[
     ("GET", "/api/v1/envelopes/{id}/certificate"),
     ("GET", "/api/v1/envelopes/{id}/documents/combined"),
@@ -2984,6 +3018,7 @@ const FILES_ANSWERED_ELSEWHERE: &[(&str, &str)] = &[
     ("GET", "/api/v1/envelopes/{id}/attachments/{sha256}"),
     ("GET", "/api/v1/envelopes/{id}/evidence-package"),
     ("GET", "/api/v1/organizations/me/audit"),
+    ("GET", "/s/{token}/remote-signing/documents/{id}"),
 ];
 
 /// ASVS 14.4.2, `ASVS-10`: each operation `api/openapi.yaml` says answers a file (a

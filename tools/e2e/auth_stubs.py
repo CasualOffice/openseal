@@ -37,6 +37,21 @@ mentions them.
     python3 -I tools/e2e/auth_stubs.py hooks --issue-from /secrets --tls-name hooks.e2e.test \\
         --listen 0.0.0.0:8443 --read 0.0.0.0:8027
 
+- `csc` (RSP-01, ADR-046 §4): a Cloud Signature Consortium API v2 provider for the one
+  provider in tools/e2e/signing-providers.json: `GET /oauth2/authorize` shows a consent
+  page (Allow or Deny) for scope `service` or scope `credential` (the credential, the
+  number of signatures and the hashes it binds), `POST /oauth2/authorize` sends the
+  browser back to the redirect URI with a code (or `error=access_denied`),
+  `POST /oauth2/token` checks the client secret (`OPENSEAL_E2E_CSC_SECRET`), the redirect
+  URI and the PKCE S256 verifier, `POST /csc/v2/credentials/list` and `/credentials/info`
+  answer one P-256 credential whose certificate the development root issues at start
+  (`--issue-from`, `--signer-name`), and `POST /csc/v2/signatures/signHash` signs each
+  hash the credential token authorized (SCAL2: exactly the authorized hashes, else
+  `invalid_request`) with `openssl pkeyutl`, never with OpenSeal's code.
+
+    python3 -I tools/e2e/auth_stubs.py csc --issue-from /secrets --listen 0.0.0.0:8091 \\
+        --redirect-uri http://localhost:8080/s/rsp --signer-name "Remote Signer"
+
 Standard library only (and the `openssl` command for keys and signatures). Exits
 non-zero and names the problem when it cannot start.
 """
@@ -520,6 +535,127 @@ def hooks_servers(listen: tuple[str, int], read: tuple[str, int], chain: Path, k
 # ---------------------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------------------
+# CSC API v2 provider (RSP-01)
+
+EC_KEY_OID = "1.2.840.10045.2.1"
+
+
+class Csc:
+    """One credential, its codes and tokens."""
+
+    def __init__(self, ca_dir: Path, work: Path, signer_name: str, redirect_uri: str, secret: str) -> None:
+        self.redirect_uri = redirect_uri
+        self.secret = secret
+        self.lock = threading.Lock()
+        self.codes: dict[str, dict] = {}
+        self.tokens: dict[str, dict] = {}
+        self.key = work / "signer.key"
+        csr, ext, cert = work / "signer.csr", work / "signer.ext", work / "signer.pem"
+        openssl("genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", str(self.key))
+        openssl("req", "-new", "-key", str(self.key), "-subj", f"/O=OpenSeal CI provider/CN={signer_name}", "-out", str(csr))
+        ext.write_text("\n".join([
+            "basicConstraints=critical,CA:FALSE",
+            "keyUsage=critical,digitalSignature,nonRepudiation",
+            "subjectKeyIdentifier=hash",
+            "authorityKeyIdentifier=keyid",
+        ]) + "\n")
+        openssl("x509", "-req", "-in", str(csr), "-CA", str(ca_dir / "ca.pem"), "-CAkey", str(ca_dir / "ca.key"),
+                "-sha256", "-days", "2", "-set_serial", "0x" + secrets.token_hex(16), "-extfile", str(ext), "-out", str(cert))
+        self.chain = [
+            openssl("x509", "-in", str(cert), "-outform", "DER"),
+            openssl("x509", "-in", str(ca_dir / "ca.pem"), "-outform", "DER"),
+        ]
+
+    def sign(self, digest: bytes) -> bytes:
+        return openssl("pkeyutl", "-sign", "-inkey", str(self.key), data=digest)
+
+
+def csc_handler(csc: Csc) -> type[BaseHTTPRequestHandler]:
+    class Handler(_Handler):
+        def page(self, q: dict) -> None:
+            scope = q.get("scope", "")
+            what = ("Log in to sign with your certificate" if scope == "service" else
+                    f"Authorize {html.escape(q.get('numSignatures', '?'))} signature(s) with credential "
+                    f"{html.escape(q.get('credentialID', ''))}")
+            hidden = "".join(f'<input type="hidden" name="{html.escape(k)}" value="{html.escape(v)}">' for k, v in q.items())
+            body = (f"<!doctype html><title>CI signing provider</title><h1>CI signing provider</h1>"
+                    f"<p>{what}</p><form method=post action=/oauth2/authorize>{hidden}"
+                    f"<button name=decision value=allow>Allow</button> "
+                    f"<button name=decision value=deny>Deny</button></form>").encode()
+            self.answer(200, body, content_type="text/html; charset=utf-8")
+
+        def do_GET(self) -> None:  # noqa: N802
+            u = urlsplit(self.path)
+            if u.path == "/healthz":
+                return self.answer(200, {"ok": True})
+            if u.path != "/oauth2/authorize":
+                return self.answer(404, {"error": "not found"})
+            q = {k: v[0] for k, v in parse_qs(u.query).items()}
+            if (q.get("response_type") != "code" or q.get("redirect_uri") != csc.redirect_uri
+                    or q.get("code_challenge_method") != "S256" or not q.get("code_challenge")
+                    or q.get("scope") not in ("service", "credential") or not q.get("state")):
+                return self.answer(400, {"error": "invalid_request"})
+            self.page(q)
+
+        def do_POST(self) -> None:  # noqa: N802
+            u = urlsplit(self.path)
+            raw = self.body(MAX_FORM * 8)
+            if raw is None:
+                return
+            if u.path == "/oauth2/authorize":
+                q = {k: v[0] for k, v in parse_qs(raw.decode()).items()}
+                state = q.get("state", "")
+                if q.get("decision") != "allow":
+                    return self.answer(302, None, {"Location": f"{csc.redirect_uri}?{urlencode({'error': 'access_denied', 'state': state})}"})
+                code = secrets.token_urlsafe(24)
+                with csc.lock:
+                    csc.codes[code] = {"q": q, "at": time.time()}
+                return self.answer(302, None, {"Location": f"{csc.redirect_uri}?{urlencode({'code': code, 'state': state})}"})
+            if u.path == "/oauth2/token":
+                f = {k: v[0] for k, v in parse_qs(raw.decode()).items()}
+                with csc.lock:
+                    c = csc.codes.pop(f.get("code", ""), None)
+                if (c is None or time.time() - c["at"] > CODE_SECONDS or f.get("client_secret") != csc.secret
+                        or f.get("redirect_uri") != csc.redirect_uri or f.get("grant_type") != "authorization_code"
+                        or b64url(hashlib.sha256(f.get("code_verifier", "").encode()).digest()) != c["q"].get("code_challenge")):
+                    return self.answer(400, {"error": "invalid_grant"})
+                token = secrets.token_urlsafe(24)
+                with csc.lock:
+                    csc.tokens[token] = {"q": c["q"], "at": time.time()}
+                return self.answer(200, {"access_token": token, "token_type": "Bearer", "expires_in": TOKEN_SECONDS})
+            bearer = self.headers.get("Authorization", "").removeprefix("Bearer ")
+            with csc.lock:
+                t = csc.tokens.get(bearer)
+            if t is None or time.time() - t["at"] > TOKEN_SECONDS:
+                return self.answer(401, {"error": "invalid_token"})
+            try:
+                req = json.loads(raw or b"{}")
+            except ValueError:
+                return self.answer(400, {"error": "invalid_request"})
+            if u.path == "/csc/v2/credentials/list":
+                return self.answer(200, {"credentialIDs": ["ci-signer"]})
+            if u.path == "/csc/v2/credentials/info":
+                return self.answer(200, {
+                    "key": {"status": "enabled", "algo": [EC_KEY_OID], "len": 256, "curve": "1.2.840.10045.3.1.7"},
+                    "cert": {"status": "valid", "certificates": [base64.b64encode(c).decode() for c in csc.chain]},
+                    "SCAL": "2", "multisign": 5, "auth": {"mode": "oauth2code"}})
+            if u.path == "/csc/v2/signatures/signHash":
+                q = t["q"]
+                hashes = req.get("hashes") or []
+                authorized = [base64.urlsafe_b64encode(base64.b64decode(h)).rstrip(b"=").decode() for h in hashes]
+                if (q.get("scope") != "credential" or req.get("credentialID") != q.get("credentialID")
+                        or ",".join(authorized) != q.get("hashes")):
+                    return self.answer(400, {"error": "invalid_request"})
+                with csc.lock:
+                    csc.tokens.pop(bearer, None)
+                sigs = [base64.b64encode(csc.sign(base64.b64decode(h))).decode() for h in hashes]
+                return self.answer(200, {"signatures": sigs})
+            return self.answer(404, {"error": "not found"})
+
+    return Handler
+
+
 def address(s: str) -> tuple[str, int]:
     host, _, port = s.rpartition(":")
     try:
@@ -554,6 +690,11 @@ def main(argv: list[str] | None = None) -> None:
     w.add_argument("--read", type=address, default=("0.0.0.0", 8027))
     w.add_argument("--issue-from", type=Path, required=True, help="directory holding ca.pem and ca.key")
     w.add_argument("--tls-name", default="hooks.e2e.test")
+    c = sub.add_parser("csc", help="a CSC API v2 signing provider (RSP-01)")
+    c.add_argument("--listen", type=address, default=("0.0.0.0", 8091))
+    c.add_argument("--issue-from", type=Path, required=True, help="directory holding ca.pem and ca.key")
+    c.add_argument("--redirect-uri", required=True, help="the server's redirect URI: {OPENSEAL_PUBLIC_URL}/s/rsp")
+    c.add_argument("--signer-name", default="Remote Signer")
     args = ap.parse_args(argv)
 
     work = Path(tempfile.mkdtemp(prefix="auth-stubs-"))
@@ -573,6 +714,12 @@ def main(argv: list[str] | None = None) -> None:
                 fail(f"OPENSEAL_E2E_WEBHOOK_SECRET: {e}")
             chain, key = issue_tls(args.issue_from, args.tls_name, work)
             servers = hooks_servers(args.listen, args.read, chain, key, secret)
+        elif args.stub == "csc":
+            secret = os.environ.get("OPENSEAL_E2E_CSC_SECRET", "")
+            if not secret:
+                fail("OPENSEAL_E2E_CSC_SECRET is not set")
+            csc = Csc(args.issue_from, work, args.signer_name, args.redirect_uri, secret)
+            servers = (ThreadingHTTPServer(args.listen, csc_handler(csc)),)
         else:
             servers = (oidc_server(args.listen, Provider(args.providers, args.redirect_uri, Signer(work))),)
     except (OSError, RuntimeError) as e:
