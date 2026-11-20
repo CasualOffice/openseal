@@ -635,6 +635,10 @@ impl Envelopes<'_> {
         };
         let deleted = filter.deleted;
         let waiting = filter.waiting;
+        let auth_failed = filter.auth_failed;
+        let expires_before = filter.expires_before;
+        let cf_name = filter.custom_field.map(|(n, _)| n.to_owned());
+        let cf_value = filter.custom_field.and_then(|(_, v)| v).map(like_contains);
         let lim = i64::from(limit.min(1000));
         let after_id = after.map(|a| a.id.0);
         let has = after.is_some();
@@ -706,6 +710,18 @@ impl Envelopes<'_> {
                                     AND r.type NOT IN ('cc', 'in_person_signer') \
                                     AND r.embedded_client_user_id IS NULL \
                                     AND lower(r.email) = lower(u.email)))) \
+                       AND (NOT $18::bool OR (status IN ('sent', 'delivered') \
+                            AND EXISTS (SELECT 1 FROM envelope_states AS st, \
+                                  jsonb_array_elements(st.state->'recipients') AS rs \
+                                  WHERE st.account_id = e.account_id AND st.envelope_id = e.id \
+                                    AND (COALESCE((rs->>'auth_locked')::bool, false) \
+                                         OR (COALESCE((rs->>'auth_failures')::int, 0) > 0 \
+                                             AND rs->>'status' IN ('sent', 'delivered')))))) \
+                       AND ($19::timestamptz IS NULL OR (expires_at IS NOT NULL AND expires_at < $19)) \
+                       AND ($20::text IS NULL OR EXISTS (SELECT 1 FROM envelope_custom_fields AS cf \
+                                  WHERE cf.account_id = e.account_id AND cf.envelope_id = e.id \
+                                    AND cf.name = $20 \
+                                    AND ($21::text IS NULL OR cf.value ILIKE $21 ESCAPE '\\'))) \
                        AND (NOT $7::bool OR ("
                         + $key
                         + ", id) "
@@ -733,7 +749,11 @@ impl Envelopes<'_> {
                     folder_mode,
                     folder_id,
                     deleted,
-                    waiting
+                    waiting,
+                    auth_failed,
+                    expires_before,
+                    cf_name,
+                    cf_value
                 )
                 .fetch_all(self.tx.conn())
                 .await
@@ -880,6 +900,17 @@ pub struct ListFilter<'a> {
     /// recipient whose turn it is and who acts through a link (not a copy, not an
     /// in-person or embedded signer). Each row reports that recipient.
     pub waiting: bool,
+    /// The Authentication failed quick view (`VS-06`): only envelopes in progress
+    /// (`sent`, `delivered`) in which a recipient is locked out after failed
+    /// authentication, or has failed it and not yet passed (docs/48: DocuSign's
+    /// "Authentication Failed").
+    pub auth_failed: bool,
+    /// Only envelopes expiring before this (the Expiring soon quick view, `VS-06`); an
+    /// envelope that never expires is outside it.
+    pub expires_before: Option<OffsetDateTime>,
+    /// Only envelopes with this custom field (`VS-06`, FG-132, FG-139): its exact name,
+    /// and, when given, a value containing the text, ignoring case.
+    pub custom_field: Option<(&'a str, Option<&'a str>)>,
 }
 
 /// Which date a list's range bounds (UXW-03).
@@ -1007,4 +1038,83 @@ pub(crate) fn like_contains(s: &str) -> String {
     }
     p.push('%');
     p
+}
+
+/// An envelope custom field (`VS-06`, FG-139, docs/22 `custom_fields`): sender and
+/// integrator metadata, searchable by name and value. Not part of the agreement: never
+/// shown to a recipient, never in the audit chain, the sealed PDF or the certificate,
+/// so changing it changes nothing a party saw.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CustomField {
+    /// Its name (1 to 100 characters), unique on the envelope.
+    pub name: String,
+    /// Its value (at most 1,000 characters; user content, never logged).
+    pub value: Personal<String>,
+}
+
+/// The most custom fields one envelope holds (docs/21).
+pub const MAX_CUSTOM_FIELDS: usize = 100;
+
+impl Envelopes<'_> {
+    /// The envelope's custom fields, by name (`VS-06`).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn custom_fields(&mut self, id: EnvelopeId) -> Result<Vec<CustomField>> {
+        let acct = self.tx.acct();
+        let rows = sqlx::query!(
+            "SELECT name, value FROM envelope_custom_fields \
+             WHERE account_id = $1 AND envelope_id = $2 ORDER BY name",
+            acct,
+            id.0
+        )
+        .fetch_all(self.tx.conn())
+        .await
+        .map_err(db)?;
+        Ok(rows
+            .into_iter()
+            .map(|r| CustomField {
+                name: r.name,
+                value: Personal(r.value),
+            })
+            .collect())
+    }
+
+    /// Replace the envelope's custom fields with `fields` (`VS-06`). The caller checks
+    /// the limits; the table's checks refuse a name or value out of bounds and a
+    /// repeated name.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn set_custom_fields(
+        &mut self,
+        id: EnvelopeId,
+        fields: &[CustomField],
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        sqlx::query!(
+            "DELETE FROM envelope_custom_fields WHERE account_id = $1 AND envelope_id = $2",
+            acct,
+            id.0
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        for f in fields {
+            sqlx::query!(
+                "INSERT INTO envelope_custom_fields (account_id, envelope_id, name, value) \
+                 VALUES ($1, $2, $3, $4)",
+                acct,
+                id.0,
+                f.name,
+                f.value.0
+            )
+            .execute(self.tx.conn())
+            .await
+            .map_err(db)?;
+        }
+        Ok(())
+    }
 }

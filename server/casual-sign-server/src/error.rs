@@ -236,6 +236,25 @@ impl ApiError {
         e
     }
 
+    /// A Word upload not converted (ADR-042, docs/20 §Conversion): `CS-CNV-0001` 422
+    /// (malformed or failed), `CS-CNV-0002` 415 (not a Word document, a template,
+    /// encrypted, or conversion off), `CS-CNV-0003` 422 (over a conversion limit),
+    /// `CS-CNV-0004` 415 (macros), `CS-CNV-0005` 503 with `Retry-After: 30` (the converter
+    /// cannot take it now). `detail` is the reason.
+    pub fn conversion(e: casual_sign_convertd::ConvertError) -> Self {
+        use casual_sign_convertd::ConvertError as C;
+        let status = match e {
+            C::Unsupported(_) | C::Macros => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            C::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            _ => StatusCode::UNPROCESSABLE_ENTITY,
+        };
+        let mut err = Self::new(status, e.code()).detail(e.reason().as_str());
+        if matches!(e, C::Unavailable(_)) {
+            err.retry_after = Some(30);
+        }
+        err
+    }
+
     /// `CS-ML-0011` 403: the document-analysis feature is not in effect for the workspace
     /// (not installed, not in its plan, or off; docs/33 §6, §7).
     pub fn ml_off() -> Self {
@@ -425,6 +444,11 @@ impl ApiError {
             "CS-PLAN-0005" => "Organization suspended",
             "CS-SCAN-0001" => "Malware found in the upload",
             "CS-SCAN-0002" => "Malware scanner unavailable",
+            "CS-CNV-0001" => "Document could not be converted",
+            "CS-CNV-0002" => "Format not supported",
+            "CS-CNV-0003" => "Document over a conversion limit",
+            "CS-CNV-0004" => "Macro-enabled document refused",
+            "CS-CNV-0005" => "Converter unavailable",
             c if c.starts_with("CS-WF") => "Workflow refused the command",
             c if c.starts_with("CS-FLD") => "Field rules refused the value",
             c if c.starts_with("CS-PDF") || c.starts_with("CS-WRT") => "Document refused",

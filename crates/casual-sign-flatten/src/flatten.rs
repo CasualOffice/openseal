@@ -43,6 +43,20 @@ fn cm(m: [f64; 6]) -> String {
     )
 }
 
+/// Where the envelope id stamp goes on a page of `(width, height)` displayed points:
+/// a 10 pt band 4 pt below the top edge, inset 18 pt from the sides (less on a page
+/// too small for that), so it sits in the margin where DocuSign puts its stamp.
+fn stamp_rect((w, h): (f64, f64)) -> DisplayRect {
+    let inset = 18.0_f64.min(w * 0.05);
+    let band = 10.0_f64.min(h * 0.5);
+    DisplayRect {
+        x: inset,
+        y: 4.0_f64.min((h - band).max(0.0)),
+        width: (w - 2.0 * inset).max(1.0),
+        height: band,
+    }
+}
+
 /// A box of marks to place on a page.
 #[derive(Debug)]
 struct Placed {
@@ -633,6 +647,33 @@ pub fn flatten(
                     drawing,
                 });
             }
+        }
+    }
+
+    // The envelope id stamp (`FG-009`, ADR-045): one line in the top margin of every
+    // page as displayed, drawn like a field so it follows rotation, crop and UserUnit.
+    if options.envelope_id_stamp {
+        let id = input.envelope_id.and_then(|e| Id::new(e).ok()).ok_or(
+            FlattenError::StampIdInvalid {
+                bytes: input.envelope_id.map_or(0, str::len),
+            },
+        )?;
+        let line = format!("Envelope ID: {}", id.as_str());
+        for page in 0..pages.len() {
+            let Some(g) = page_geometry(&pages, page) else {
+                continue;
+            };
+            let rect = stamp_rect(g.displayed_size());
+            let Some(drawing) = draw::stamp(&mut ctx, &line, rect.width, rect.height) else {
+                return Err(FlattenError::StampIdInvalid { bytes: line.len() });
+            };
+            placed.push(Placed {
+                page,
+                w: rect.width,
+                h: rect.height,
+                matrix: field_matrix(&g, &rect),
+                drawing,
+            });
         }
     }
 

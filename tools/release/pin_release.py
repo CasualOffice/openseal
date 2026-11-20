@@ -37,6 +37,8 @@ SERVICES: dict[str, tuple[str, ...]] = {
     # Both server replicas behind the profile's proxy (HRD-11).
     "server": ("migrate", "server", "server-2"),
     "worker": ("worker",),
+    # Word to PDF (ADR-042, VS-06C).
+    "convertd": ("convertd",),
 }
 VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
 # registry/path/name[:tag]@sha256:<hex>; lowercase, as OCI requires of repositories.

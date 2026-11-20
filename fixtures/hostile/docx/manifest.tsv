@@ -1,0 +1,15 @@
+file	limit	code	note
+docx_valid.docx	control	-	Two paragraphs, a page break, two more: converts to a two-page PDF
+docx_macro.docm	Macros	CS-CNV-0004	A macro-enabled main part and a VBA project: refused, macros never run or kept
+docx_vba_part.docx	Macros	CS-CNV-0004	An ordinary content type with a word/vbaProject.bin part: refused
+docx_template.dotx	Package kind	CS-CNV-0002	A Word template main part (.dotx): refused as unsupported (`template`)
+docx_not_word.docx	Package kind	CS-CNV-0002	A ZIP with no content types: not a Word document (`not_word`)
+docx_zip_bomb.docx	Expansion ratio per part	CS-CNV-0003	60 MiB of zeros in about 60 KiB, under the part cap: refused from the central directory (`ratio`) before anything is expanded
+docx_part_70mib.docx	Part size (declared)	CS-CNV-0003	The main part's header declares 70 MiB: refused from the directory (`part`)
+docx_expanded_300mib.docx	Expanded size of all parts (declared)	CS-CNV-0003	Five parts each declaring 60 MiB from 1 MiB: under the part and ratio caps, over the total (`expanded`)
+docx_lying_size.docx	Part size (read)	CS-CNV-0001	The main part declares 10 bytes and expands to more: refused when read past its declared size (`malformed`)
+docx_encrypted.docx	Package kind	CS-CNV-0002	Every entry flagged encrypted: refused (`encrypted`)
+docx_entries_4097.docx	Archive entries	CS-CNV-0003	4,100 entries: refused from the directory (`entries`)
+docx_pages_5001.docx	Pages (estimated before rendering)	CS-CNV-0003	5,001 explicit page breaks: refused before rendering (`pages`)
+docx_malformed_xml.docx	Main part well-formed	CS-CNV-0001	The main part is cut off mid-element: the converter refuses it (`malformed`)
+docx_external_picture.docx	External references	-	A picture and a hyperlink linked to http://127.0.0.1:47391/: converts, two external references counted, nothing fetched

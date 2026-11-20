@@ -46,6 +46,8 @@ export const DEFAULT_SIZE = {
   hyperlink: { width: 160, height: 22 },
   approve: { width: 100, height: 30 },
   decline: { width: 100, height: 30 },
+  // FG-080: an editor's strike-through, a line through the middle of a low box.
+  strikethrough: { width: 160, height: 10 },
 };
 
 /// The field types the editor places, in palette order (wire names of casual-sign-model

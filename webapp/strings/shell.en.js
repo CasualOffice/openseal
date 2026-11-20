@@ -98,6 +98,7 @@ export const SHELL = {
   "cmd.nav.agreements": "Go to Agreements",
   "cmd.nav.templates": "Go to Templates",
   "cmd.nav.reports": "Go to Reports",
+  "cmd.nav.insights": "Go to Insights",
   "cmd.nav.admin": "Go to Admin",
 
   "nav.reports": "Reports",

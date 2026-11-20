@@ -75,7 +75,7 @@ seal profiles are not built yet.
 | `routing_mode` | enum | `sequential`, `parallel`, `mixed` (by routing order number) |
 | `expires_at` | timestamptz? | |
 | `reminder_policy` | json | First after N days, then every M days |
-| `signing_options` | json | Allow reassign, allow decline, allow finish-later, `capture_location` (GEO-01: record each recipient's location on every action; off by default, absent from the JSON when off; per envelope, see below), signer attachments, in-person, language |
+| `signing_options` | json | Allow reassign, allow decline, allow finish-later, `allow_sign_on_paper` (FG-013, ADR-043: a signer may sign on paper and upload the scan; off by default, absent when off), `capture_location` (GEO-01: record each recipient's location on every action; off by default, absent from the JSON when off; per envelope, see below), `stamp_envelope_id` (`FG-009`, ADR-045: "Envelope ID: <id>" in every page's top margin; off by default, absent when off; the account setting `stamp_envelope_id` is the default; changeable only while a draft), signer attachments, in-person, language |
 | `seal_profile` | enum | `pades-b-t` default, `pades-b-lt`, `pades-b-lta`; when the create names none, the account's `settings.default_seal_profile` (`VS-07`) |
 | `completion_delivery` | json | Attach documents to completion email, combine with certificate |
 | `brand_id` | uuid? | |
@@ -168,6 +168,7 @@ As built (`VS-04E`): the API takes `anchor` on a field in create and `POST /fiel
 | `hyperlink` | Shown, never followed automatically |
 | `payment` | Amount, currency, line items; via `PaymentGateway` (slice 13) |
 | `drawing` | Free drawing area (slice 4) |
+| `strikethrough` | A line through the middle of its box, drawn by the seal; no value; an editor strikes text out at the ceremony (`FG-080`, ADR-044) |
 
 ## 7. Template
 
@@ -248,7 +249,7 @@ advisory lock serializes migrators. Thirty-six tables:
 | Document, DocumentVersion | `documents`, `document_versions` | `TenantTx::documents` |
 | Recipient, AuthRequirement, invitation tokens, SignatureAdoption | `recipients`, `recipient_auth_requirements`, `recipient_tokens`, `signature_adoptions` | `TenantTx::recipients` (recipients, tokens) |
 | Field and its value | `fields`, `field_values` | `TenantTx::fields` |
-| RoutingRule, CustomField, Comment | `routing_rules`, `envelope_custom_fields`, `comments` | schema only |
+| RoutingRule, CustomField, Comment | `routing_rules`, `envelope_custom_fields`, `comments` | custom fields served (`VS-06`: read, replaced whole, searched; not in the chain); the others schema only |
 | AuditEvent, purge tombstone | `audit_events`, `envelope_tombstones` | `TenantTx::audit` (append, read, verify) |
 | Anchor of chain heads, its leaves (`FG-158`) | `chain_anchors`, `chain_anchor_leaves` | `TenantTx::anchors` (the day's heads, insert, by period, an envelope's leaves); queued through `EntryPoints::enqueue_anchor_jobs` |
 | BulkSend, BulkSendRow | `bulk_sends`, `bulk_send_rows` | `TenantTx::bulk_sends` (`UXW-04`): a batch with its rows (`input` holds the row's recipients and problems, personal data); a row is claimed `FOR UPDATE SKIP LOCKED`, marked sent with its envelope (which then names the batch in `envelopes.bulk_send_id`) or failed with a code; `settle` completes a batch once no row is pending; cancel leaves pending rows unsent. No migration was needed |
@@ -433,8 +434,8 @@ they are (the Inbox's `sign-link`), and `host_user_id` is set exactly for `in_pe
 which date a range bounds (`updated_at`, `created_at`, `sent_at`, `completed_at`), by the member's folder (or none),
 by the Deleted view (`deleted_at` set) and by the Inbox (sent envelopes where the member is, by their email, a
 recipient whose turn it is and who acts through a link: not a copy, an in-person signer or an embedded recipient), and
-reports the member's filing and, in the Inbox, the recipient they are. Restoring a deleted envelope needs a workflow
-command and audit type (ADR-031, Proposed), so 0022 adds nothing for it. `templates` gains `deleted_at`: deleting a
+reports the member's filing and, in the Inbox, the recipient they are. Restoring a deleted envelope is a workflow
+command and audit type (ADR-031, Accepted): it clears `deleted_at` through the state projection, so 0022 adds nothing for it. `templates` gains `deleted_at`: deleting a
 live template sets it (the template keeps its roles, documents and fields, leaves every read, edit and the list, and
 `Templates::list_deleted`, `get_deleted` and `restore` serve the Deleted view); deleting it there removes it for good.
 A template has no audit chain, so neither step is evidence. Fifty-four tables with `0022`.

@@ -158,6 +158,20 @@ components:
             Record where each recipient was on every recipient action (row GEO-01, docs/32 §2):
             the device's location when the signer agrees, else an approximation from the
             request's IP address with the reason. Absent when off.
+        stamp_envelope_id:
+          type: boolean
+          default: false
+          description: >-
+            Stamp "Envelope ID: <id>" in the top margin of every page (FG-009, ADR-045): the
+            signing page shows it and the sealed document carries it. Absent when off. On
+            `POST /envelopes`, left out it takes the account's `stamp_envelope_id` setting.
+            Changeable only while a draft (a correction that changes it is `409 CS-WF-0001`).
+        allow_sign_on_paper:
+          type: boolean
+          default: false
+          description: >-
+            A signer may sign on paper instead (FG-013, ADR-043): print the documents, sign by
+            hand and upload the scan (`POST /s/{token}/paper`). Absent when off.
     LocationRequest:
       type: object
       additionalProperties: false
@@ -360,7 +374,7 @@ components:
       required: [settings]
       additionalProperties: false
       properties:
-        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `mfa_policy` (ASVS-01) is `administrators` (the default, also when unset; ASVS-31), `everyone` or `optional`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`. A setting the organization''s policy governs (ORG-08) that changes to a locked or looser value is `422 CS-ORG-0002`, naming the setting and the key.'}
+        settings: {type: object, description: 'Merged; `null` removes a key. `workflow_policy` must be a valid policy. `stamp_envelope_id` (FG-009) is a boolean: whether a new envelope whose request does not say stamps its id on every page. `mfa_policy` (ASVS-01) is `administrators` (the default, also when unset; ASVS-31), `everyone` or `optional`: who must sign in with a second factor; requiring one is `409 CS-API-0009` while the server has no `OPENSEAL_MFA_KEY`. A setting the organization''s policy governs (ORG-08) that changes to a locked or looser value is `422 CS-ORG-0002`, naming the setting and the key.'}
     User:
       type: object
       properties:
@@ -698,6 +712,7 @@ components:
         send_at: {type: [string, 'null'], format: date-time, description: 'A draft scheduled to send itself at this time (WF-02)'}
         ended_at: {type: [string, 'null'], format: date-time}
         expires_at: {type: [string, 'null'], format: date-time}
+        deleted_at: {type: [string, 'null'], format: date-time, description: 'When it was removed from the lists (WEB-08); null once restored (ADR-031)'}
         reminders: {type: object}
         signing_options: {$ref: '#/components/schemas/SigningOptions'}
         seal_profile: {type: string, enum: [pades-b-t, pades-b-lt, pades-b-lta]}
@@ -717,6 +732,7 @@ components:
         completed_at: {type: [string, 'null'], format: date-time}
         expires_at: {type: [string, 'null'], format: date-time}
         folder_id: {type: [string, 'null'], description: "The caller's own folder it is filed in (UXW-02)"}
+        deleted_at: {type: [string, 'null'], format: date-time, description: 'Set in the Deleted view (`deleted=true`): when it was removed from the lists'}
         my_recipient_id: {type: [string, 'null'], description: "With waiting_for=me only: the recipient the caller is (UXW-01)"}
     BulkSendCreate:
       type: object
@@ -1009,6 +1025,21 @@ components:
         status: {$ref: '#/components/schemas/EnvelopeStatus'}
         version: {type: integer}
         recipients: {type: array, items: {type: object}}
+    CustomFields:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, value]
+            properties:
+              name: {type: string, minLength: 1, maxLength: 100}
+              value: {type: string, maxLength: 1000}
     TransferRequest:
       type: object
       required: [to_user]
@@ -1354,6 +1385,26 @@ components:
               routing_order: {type: integer}
               name: {type: string}
               email: {type: string}
+              phone: {type: [string, 'null']}
+              auth: {type: array, items: {$ref: '#/components/schemas/AuthMethod'}, description: 'VS-06A: the methods asked of them; an access code itself is never shown'}
+        strikes:
+          type: array
+          description: 'FG-080 (ADR-044): every strike-through on a document this recipient sees, whoever drew it, as the seal will draw it; once authenticated'
+          items:
+            type: object
+            properties:
+              id: {type: string}
+              document_id: {type: string}
+              placement: {type: object}
+              recipient_id: {type: string}
+        editable_fields:
+          type: array
+          description: >-
+            Only for an editor who has authenticated (VS-06A): the fields of recipients
+            later in the routing order not yet reached, which `PATCH` and `DELETE
+            /s/{token}/editor/fields/{field}` may change (the editor's own are in `fields`).
+            Absent for every other recipient.
+          items: {type: object}
         sso_providers:
           type: array
           description: 'While `sso` is still to pass (RAUTH-01): the identity providers the signer may sign in with; empty when the server has none'
@@ -1387,6 +1438,12 @@ components:
               id: {type: string, description: 'A recipient in `later_recipients`'}
               name: {type: string, minLength: 1, maxLength: 255}
               email: {type: string, minLength: 3, maxLength: 320}
+              phone: {type: string, description: 'VS-06A: an intermediary or editor sets the number (E.164) a code by SMS or voice call is sent to'}
+              auth:
+                type: array
+                items: {$ref: '#/components/schemas/AuthMethod'}
+                description: 'VS-06A: an intermediary or editor replaces the authentication the recipient must pass (an agent is refused, 403). An emailed code or sso needs an email, sms_otp or voice_otp a phone (422 at /recipients/{i}/auth)'
+              access_code: {type: string, maxLength: 255, description: 'VS-06A: a new access code, stored only as Argon2id and never answered; required when auth gains access_code and none was set, refused without it (422 at /recipients/{i}/access_code); dropping access_code from auth deletes the stored code'}
         location: {$ref: '#/components/schemas/DeviceLocation'}
     CeremonyDisclosure:
       type: object
@@ -3003,6 +3060,111 @@ paths:
       responses:
         '204': {description: Done}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/insights:
+    get:
+      operationId: getInsights
+      summary: "The Insights dashboard's figures over the envelopes created in a window (FG-141)"
+      description: >-
+        DocuSign's Insights. Over the envelopes created in `[from, to)` (any time by default),
+        Deleted left out: counts by how they stand, the median and 90th percentile of the
+        time from sent to completed (seconds, continuous percentiles), envelopes sent and
+        completed per day in the caller's day (`utc_offset_minutes`, -840 to 840, default 0;
+        days with neither are absent), and the ten senders who sent most. A holder of
+        `reports.read` sees the workspace (`scope: workspace`), of `sender` when given;
+        anyone else sees their own envelopes (`scope: own`), and naming another sender is
+        `403 CS-AUTH-0006`. Aggregates only: no subject, name or address.
+      x-permission: "envelopes.read"
+      x-level: workspace
+      parameters:
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: sender, in: query, required: false, description: "A user id, or `me`", schema: {type: string}}
+        - {name: utc_offset_minutes, in: query, required: false, schema: {type: integer, minimum: -840, maximum: 840, default: 0}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [scope, totals, time_to_complete, days, top_senders]
+                properties:
+                  scope: {type: string, enum: [workspace, own]}
+                  from: {type: [string, 'null'], format: date-time}
+                  to: {type: [string, 'null'], format: date-time}
+                  sender: {type: [string, 'null']}
+                  utc_offset_minutes: {type: integer}
+                  totals:
+                    type: object
+                    properties:
+                      created: {type: integer}
+                      sent: {type: integer}
+                      completed: {type: integer}
+                      declined: {type: integer}
+                      voided: {type: integer}
+                      expired: {type: integer}
+                      in_progress: {type: integer}
+                  time_to_complete:
+                    type: object
+                    properties:
+                      completed: {type: integer}
+                      median_seconds: {type: [number, 'null']}
+                      p90_seconds: {type: [number, 'null']}
+                  days:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        day: {type: string, format: date}
+                        sent: {type: integer}
+                        completed: {type: integer}
+                  top_senders:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        sender_user_id: {type: string}
+                        sent: {type: integer}
+                        completed: {type: integer}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/reports/{kind}:
+    parameters:
+      - name: kind
+        in: path
+        required: true
+        description: "`envelopes` (one row per envelope), `recipients` (one row per recipient) or `usage` (one row per sender); another is `404`"
+        schema: {type: string, enum: [envelopes, recipients, usage]}
+    get:
+      operationId: getReport
+      summary: "A workspace report over the envelopes created in a window (VS-06, UXW-25)"
+      description: >-
+        DocuSign's envelope, recipient and usage reports. Envelopes created in `[from, to)`
+        (any time by default), of `sender` when given, newest first, at most `limit`;
+        `truncated` (or the `x-truncated` header on CSV) says the limit was reached.
+        Envelopes in the Deleted view are left out. `format=csv` answers `text/csv`
+        (RFC 4180, CRLF); a cell a spreadsheet would read as a formula starts with `'`.
+      x-permission: "reports.read"
+      x-level: workspace
+      parameters:
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: sender, in: query, required: false, description: "A user id, or `me`", schema: {type: string}}
+        - {name: format, in: query, required: false, schema: {type: string, enum: [json, csv], default: json}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 10000, default: 10000}}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, truncated]
+                properties:
+                  items: {type: array, items: {type: object}}
+                  truncated: {type: boolean}
+            text/csv:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/contacts:
     get:
       operationId: listContacts
@@ -3118,6 +3280,29 @@ paths:
           required: false
           description: "`me`: the Inbox (UXW-01)."
           schema: {type: string, enum: [me]}
+        - name: auth_failed
+          in: query
+          required: false
+          description: >-
+            `true`: the Authentication failed quick view (VS-06): envelopes in progress in
+            which a recipient is locked out after failed authentication, or failed it and has
+            not passed since. A resend clears it.
+          schema: {type: string, enum: ["true", "false"], default: "false"}
+        - name: expires_before
+          in: query
+          required: false
+          description: "RFC 3339: only envelopes expiring before it, the Expiring soon quick view (VS-06); one that never expires is outside it."
+          schema: {type: string, format: date-time}
+        - name: custom_field
+          in: query
+          required: false
+          description: "Only envelopes with a custom field of exactly this name (VS-06, FG-132)."
+          schema: {type: string, maxLength: 100}
+        - name: custom_value
+          in: query
+          required: false
+          description: "With `custom_field`: text that field's value contains, ignoring case; `%` and `_` match themselves."
+          schema: {type: string, maxLength: 200}
       responses:
         '200':
           description: OK
@@ -3326,6 +3511,50 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/Envelope'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/custom-fields:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getEnvelopeCustomFields
+      summary: "The envelope's custom fields, by name (VS-06, FG-139)"
+      description: >-
+        Sender and integrator metadata, searchable with `GET /envelopes?custom_field=`. Not
+        part of the agreement: never shown to a recipient, never in the audit chain, the
+        sealed PDF or the certificate.
+      x-permission: "envelopes.read"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CustomFields'}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      operationId: setEnvelopeCustomFields
+      summary: "Replace the envelope's custom fields (VS-06)"
+      description: >-
+        At most 100; a name is 1 to 100 characters, a value at most 1,000, neither with
+        control characters; a repeated name is `422` with the member code `exists`. A
+        purged envelope is `409 CS-API-0009`. Nothing is recorded in the audit chain.
+      x-permission: "envelopes.write"
+      x-level: workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CustomFields'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CustomFields'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/transfer:
     parameters:
       - name: id
@@ -3352,6 +3581,37 @@ paths:
         content:
           application/json:
             schema: {$ref: '#/components/schemas/TransferRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Envelope'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/restore:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: restoreEnvelope
+      summary: "Bring a deleted envelope back to the lists (ADR-031)"
+      description: >-
+        An envelope removed from the lists by `DELETE` (declined, voided or expired; in the
+        Deleted view, `GET /envelopes?deleted=true`) is listed again. Records
+        `envelope.restored` in its chain, after the `envelope.deleted` that removed it;
+        nothing in the agreement changes. `If-Match` is checked when sent. One that is
+        not deleted, or was purged meanwhile (past its retention), is `409 CS-WF-0001`.
+      x-permission: "envelopes.write"
+      x-level: workspace
+      parameters:
+        - name: If-Match
+          in: header
+          required: false
+          description: The envelope's `ETag` as read; a stale one is `412 CS-WF-0002`.
+          schema: {type: string}
       responses:
         '200':
           description: OK
@@ -3481,6 +3741,37 @@ paths:
             application/pdf:
               schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/evidence-package:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    get:
+      operationId: getEvidencePackage
+      summary: "One ZIP with everything that proves the agreement (VS-06D), recorded as envelope.exported"
+      description: >-
+        For an envelope that is over (completed, or declined, voided or expired): a ZIP of
+        stored entries holding `manifest.json`, each document as sealed (as it ended, with
+        the "not signed" banner, for one that ended without completing) under
+        `documents/`, `certificate.pdf` (the certificate of completion, or the envelope
+        certificate of UXW-30) and `audit-trail.json` (the events as `GET …/audit` gives
+        them, with `chain_head`). The manifest (`format: openseal.evidence-package`,
+        `version: 1`) names every other entry with its `sha256` and `size`, and the chain
+        head. The export is recorded first as `envelope.exported` (ORG-09), so the trail
+        in the package ends with it. In flight, a draft, or purged is `409 CS-WF-0001`; a
+        certificate not made yet `409 CS-API-0009` (an ended envelope asks the worker for
+        it, as `GET …/certificate` does).
+      x-permission: "envelopes.read"
+      x-level: workspace
+      responses:
+        '200':
+          description: ZIP
+          content:
+            application/zip:
+              schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/attachments/{sha256}:
     parameters:
       - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
@@ -3546,22 +3837,45 @@ paths:
         default: {$ref: '#/components/responses/Problem'}
     post:
       operationId: addDocument
-      summary: "Upload a document: admitted and normalized"
+      summary: "Upload a document, a PDF or a Word document (.docx, converted to PDF, ADR-042): admitted and normalized; JSON, or the file itself with ?name="
       x-permission: "envelopes.write"
       x-level: workspace
       parameters:
         - $ref: '#/components/parameters/idempotencyKey'
+        - {name: name, in: query, required: false, description: "The document's name, when the body is the file itself", schema: {type: string}}
       requestBody:
         required: true
         content:
           application/json:
             schema: {$ref: '#/components/schemas/DocumentUpload'}
+          application/pdf:
+            schema: {type: string, format: binary}
+          application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+            schema: {type: string, format: binary}
       responses:
         '201':
           description: OK
           content:
             application/json:
               schema: {$ref: '#/components/schemas/Document'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/conversions:
+    post:
+      operationId: convertDocument
+      summary: "Convert a Word document (.docx) to PDF and admit it as an upload would be, nothing stored: the editor's preview (ADR-042)"
+      x-permission: "envelopes.write"
+      x-level: workspace
+      requestBody:
+        required: true
+        content:
+          application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+            schema: {type: string, format: binary}
+      responses:
+        '200':
+          description: The admitted PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/documents/{doc}:
     parameters:
@@ -3611,16 +3925,18 @@ paths:
         schema: {type: string}
     get:
       operationId: getDocumentContent
-      summary: "Document bytes: original, normalized or sealed"
+      summary: "Document bytes: original (a converted upload's original is its Word document), normalized or sealed"
       x-permission: "envelopes.read"
       x-level: workspace
       parameters:
         - $ref: '#/components/parameters/version'
       responses:
         '200':
-          description: PDF
+          description: PDF (or, for the original of a converted upload, the Word document)
           content:
             application/pdf:
+              schema: {type: string, format: binary}
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
               schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
   /api/v1/envelopes/{id}/documents/{doc}/detect-fields:
@@ -4249,7 +4565,7 @@ paths:
       - {name: id, in: path, required: true, description: Object id (UUIDv7), schema: {type: string}}
     post:
       operationId: addTemplateDocument
-      summary: "Add a document {name, content_base64}, admitted and normalized as an upload (WEB-06)"
+      summary: "Add a document {name, content_base64}, a PDF or a Word document (converted, ADR-042), admitted and normalized as an upload (WEB-06)"
       x-permission: "templates.write"
       x-level: workspace
       parameters:
@@ -5418,6 +5734,84 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyView'}
         default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/editor/fields:
+    parameters:
+      - {name: token, in: path, required: true, description: Ceremony link token (secret), schema: {type: string}}
+    post:
+      operationId: ceremonyPlaceFields
+      summary: "Add fields (editor, VS-06A)"
+      description: >-
+        An editor ("Allow to edit") adds fields during their turn, each in the API's
+        wire form (`recipient_id`, `document_id`, `type`, the rectangle), for themself or
+        for a recipient later in the routing order not yet reached (the view's
+        `later_recipients`), on a document they see; at most 100 per call. Recorded as
+        `envelope.corrected` with the recipient as actor. Any other recipient type, or a
+        field for a recipient routing has reached, is refused (`409 CS-WF-0001`).
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fields]
+              additionalProperties: false
+              properties:
+                fields: {type: array, minItems: 1, maxItems: 100, items: {type: object}}
+                location: {type: object}
+      responses:
+        '201':
+          description: The ceremony view
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/editor/fields/{field}:
+    parameters:
+      - {name: token, in: path, required: true, description: Ceremony link token (secret), schema: {type: string}}
+      - {name: field, in: path, required: true, description: Field id, schema: {type: string}}
+    patch:
+      operationId: ceremonyEditField
+      summary: "Move or change a field (editor, VS-06A)"
+      description: >-
+        An editor ("Allow to edit") moves, resizes or changes a field of their own or of
+        a recipient later in the routing order not yet reached, as a JSON merge of the
+        field's wire form; `page`, `x`, `y`, `width` and `height` may be given flat and
+        merge into the placement. Recorded as `envelope.corrected` with the recipient as
+        actor. Any other recipient type, or a field naming a recipient routing has
+        reached, is refused (`409 CS-WF-0001`); a field not found or on a document hidden
+        from them is `404`.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200':
+          description: The ceremony view
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+    delete:
+      operationId: ceremonyRemoveField
+      summary: "Remove a field (editor, VS-06A)"
+      description: >-
+        An editor removes a field of their own or of a recipient later in the routing
+        order not yet reached; refused as `PATCH` is. `application/json` like every
+        ceremony write; the body may be `{}`.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: The ceremony view
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
   /s/{token}/fields/{field}:
     parameters:
       - name: token
@@ -5503,6 +5897,46 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyView'}
         default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/paper:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonySignOnPaper
+      summary: "Sign on paper: upload the scan of the documents signed by hand (FG-013, ADR-043)"
+      description: >-
+        On an envelope whose `signing_options.allow_sign_on_paper` is on, a signer whose turn
+        it is, authenticated and consented, uploads the scan of the documents they printed
+        and signed by hand (a PDF, at most the document size limit). It is screened,
+        admitted and normalized like any upload and added to the envelope as a fixed
+        document named "Signed on paper.pdf", so the seal covers it; the chain records
+        `document.added`, `document.admitted`, `document.fixed`, then
+        `recipient.signed_on_paper {recipient_id, documents, document_id, upload_hash}` and
+        `recipient.completed`. Off is `409 CS-WF-0012`; not a signer, not their turn or
+        already finished `409`; not a PDF `422`.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [content_base64]
+              properties:
+                content_base64: {type: string, description: 'The scan, a PDF, base64'}
+                location: {$ref: '#/components/schemas/LocationRequest'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
   /s/{token}/recipients:
     parameters:
       - name: token
@@ -5518,7 +5952,9 @@ paths:
         have not been reached yet (the view's `later_recipients`), then finishes with
         `POST /s/{token}/finish`. An intermediary or editor may call it too. Any other
         recipient type is refused (`409`); a recipient of the caller's own order or
-        earlier, or one already reached, is refused by the workflow (`403`). The change is
+        earlier, or one already reached, is refused by the workflow (`403`). An
+        intermediary or editor may also set `phone`, `auth` and an `access_code` (VS-06A;
+        the code stored as Argon2id, never answered). The change is
         recorded as `envelope.corrected` with the recipient as actor. At most 100
         recipients per call.
       security: []

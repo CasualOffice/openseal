@@ -143,11 +143,14 @@ services:
       # Malware scanning (ASVS-11): `clamav:3310` with the `production` profile below;
       # empty (the default) scans nothing.
       OPENSEAL_CLAMD_ADDR: ${OPENSEAL_CLAMD_ADDR:-}
+      # Word uploads converted to PDF by convertd over its socket (ADR-042).
+      OPENSEAL_CONVERTD_SOCKET: /run/convertd/convertd.sock
     ports: ["127.0.0.1:${OPENSEAL_HTTP_PORT:-8080}:8080"]
-    volumes: [*secrets]
+    volumes: [*secrets, convertd:/run/convertd]
     depends_on:
       migrate: {condition: service_completed_successfully}
       s3: {condition: service_healthy}
+      convertd: {condition: service_healthy}
       clamav: {condition: service_healthy, required: false}
 
   worker:
@@ -182,6 +185,25 @@ services:
       keyd: {condition: service_healthy}
       tsa: {condition: service_healthy}
       mailpit: {condition: service_healthy}
+
+  # Word (.docx) uploads converted to PDF (ADR-042, docs/07 SEC-P13, docs/65): docxide-pdf
+  # (Apache-2.0) in a fresh child process per job, under address-space, CPU and time
+  # limits. No network at all (`network_mode: none`), no secrets, a read-only root and
+  # no capabilities; the server reaches it over a Unix socket on the `convertd` volume.
+  convertd:
+    build: {context: ., dockerfile: deploy/Dockerfile, target: convertd}
+    image: ${OPENSEAL_IMAGE_PREFIX:-openseal}-convertd:${OPENSEAL_VERSION:-dev}
+    restart: unless-stopped
+    network_mode: none
+    volumes: [convertd:/run/convertd]
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    mem_limit: 3g
+    cpus: 2
+    pids_limit: 64
+    ulimits: {core: 0}
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
 
   # Malware scanning of every upload (ASVS-11, docs/65 §Malware scanning): ClamAV's clamd
   # in its own container, reached by the server only over INSTREAM on port 3310 (never
@@ -253,3 +275,4 @@ volumes:
   modeld:
   modeld-secrets:
   clamav:
+  convertd:

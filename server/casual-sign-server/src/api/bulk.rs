@@ -29,7 +29,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use super::envelopes::{create_in, rfc3339};
+use super::envelopes::{Screened, create_in, rfc3339};
 use super::{json, path_id};
 use crate::call::Call;
 use crate::dto::{EnvelopeCreate, parse};
@@ -638,7 +638,7 @@ pub(crate) async fn send(c: Call, Path(id): Path<String>) -> Result<Response, Ap
                     .blobs
                     .get(&casual_sign_store::blob::BlobKey(d.sha256))
                     .await?;
-            docs.push((d.name.clone(), bytes.to_vec(), None));
+            docs.push((d.name.clone(), bytes.to_vec(), Screened::default()));
         }
     }
     tx.commit().await?;
@@ -647,8 +647,8 @@ pub(crate) async fn send(c: Call, Path(id): Path<String>) -> Result<Response, Ap
     // Malware sends nothing; each envelope's admission report records the verdict. A
     // batch with nothing pending sends nothing and is not scanned.
     if let (Some(t), true) = (&t, b.pending > 0) {
-        for (_, bytes, note) in &mut docs {
-            *note = crate::scan::screen(
+        for (_, bytes, screened) in &mut docs {
+            screened.scan = crate::scan::screen(
                 &c.st,
                 c.uploader(),
                 casual_sign_store::UploadKind::TemplateDocument,

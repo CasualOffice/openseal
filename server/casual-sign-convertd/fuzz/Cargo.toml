@@ -1,0 +1,28 @@
+# cargo-fuzz workspace for casual-sign-convertd (VS-06C, ADR-042; the pattern of modeld's
+# fuzz/): its own workspace, kept out of the product graph because libfuzzer-sys needs
+# nightly. The `screen` feature is the archive screen alone, without the converter.
+#
+#   cd server/casual-sign-convertd/fuzz && cargo +nightly fuzz run docx_screen corpus/docx_screen ../../../fixtures/hostile/docx -- -max_total_time=600
+[package]
+name = "casual-sign-convertd-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Its own workspace root, so the product workspace above never includes it.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+casual-sign-convertd = { path = "..", default-features = false, features = ["screen"] }
+
+[[bin]]
+name = "docx_screen"
+path = "fuzz_targets/docx_screen.rs"
+test = false
+doc = false
+bench = false

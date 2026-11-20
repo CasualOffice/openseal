@@ -82,6 +82,7 @@ authorities (`CON-03` to `CON-07`, `CON-16`, `CON-17`, `PLAN-02` to `PLAN-04`), 
 | Milestones | M0, M1, M2, M3 **reached** | M0–M2: owner, instruction 38; M3 "first signature": 2026-11-19, instruction 59, its slices closed on `main` run 44419251440 (`MS-0`–`MS-3` in [14](14-EXECUTION-TRACKER.md)). Next: M4 team beta |
 | Release 1 / v0.0.1 | **Published** 2026-11-12 | Tagged at `4780d84` after GitHub CI run 43123420112 was green on all 14 jobs; images with SBOM and provenance; pre-release on GitHub. Left in `REL-01`: GHCR packages public, the manual walkthrough in [65](65-RUNNING-IT.md); the boxes below are ticked by `REL-01` from evidence |
 | v0.1.0 | **Published** 2026-11-20 (tag at `f667422`, release run 44615842313) | The second pre-release: the hardening work and M3 since v0.0.1, the first through the signed release workflow (cosign, SBOMs, provenance, signed checksums; `REL-04`). Its tag is pushed on the green `main` commit after this merges (owner instruction 61, §v0.1.0 below); still not for production agreements |
+| Slice 8 | **Closed** 2026-11-20 | Owner, instruction 73, on `main` run 44653889545 (a4da083) green on every job; evidence [76](76-SLICE-8-EVIDENCE.md) |
 | Slices 3, 4 | **Closed** 2026-11-20 | Owner, instructions 66 and 68, on `main` run 44610734814 (f667422) green on every job; evidence [74](74-SLICE-3-EVIDENCE.md), [75](75-SLICE-4-EVIDENCE.md) |
 | Slices 1, 2, 5, 7 | **Closed** 2026-11-19 | Owner, instruction 59 ("complete M3"), on `main` run 44419251440 green on every job; the readings of instruction 58 applied (slice 7: B-LT as the account default, anchoring served and shown; `VS-07D`, `VS-07E` after M3). Evidence per gate item: [73](73-M3-SLICE-EVIDENCE.md) |
 | Other slices | Not closed | Release 1's part of slice 3 is built and in browser runs; slices 3, 4, 6, 8 and 9 lead to M4. [96](96-FEATURE-FIT-GAP.md) counts 50 of 168 rows working, 27 in part and 15 with their engine built |
@@ -109,8 +110,8 @@ current slice starts unless the owner asks for it. Work already started is finis
 Current, Finishing or Paused line below. A slice moves to Current only when the one before it is closed; its new
 rows go on the Current line in the same commit.
 
-- Current: `VS-08` `VS-08A` `VS-08B` `VS-08C` `VS-08D` `VS-08E` `VS-08F` `UXW-10` `UXW-31` `UXW-32` `UXW-33`
-- Finishing (started before 2026-11-19; each closes or goes back to Open by 2026-11-21): `VS-03C` `TSH-04` `TSH-05` `TSH-06` `UXW-05` `UXW-15` `UXW-49` `WEB-23` `UX-08C` `UX-08F` `UX-11A` `TSH-02` `VS-01` `VS-02` `VS-05` `VS-07` `VS-07B` `VS-07C` `S1-10` `I18N-01` `E2E-04` `E2E-05` `E2E-10` `E2E-11` `E2E-12` `E2E-13` `WEB-12` `FRZ-01` `REL-01` `LEG-01` `SITE-08` `SITE-09` `HRD-06` `HRD-11` `HRD-12` `DEP-07` `ASVS-01` `ASVS-03` `ASVS-06` `ASVS-07` `ASVS-10` `ASVS-13A` `ASVS-13B` `ASVS-19` `ASVS-22` `ASVS-28` `ASVS-29` `ASVS-16` `ASVS-18` `CON-13` `ASVS-32` `SITE-12` (owner request 2026-11-20)
+- Current: `VS-06` `VS-06A` `VS-06B` `VS-06C` `VS-06D` `VS-06E` `VS-06E1` `VS-06E2` `VS-06F` `UXW-02` `UXW-19` `UXW-20` `UXW-25` `UXW-42` `UXW-43` `ORG-18` `ORG-41` `WEB-07`
+- Finishing (started before 2026-11-19; each closes or goes back to Open by 2026-11-21; slice 8's rows await CI on PR #37 and the owner's sign-off): `VS-08` `VS-08A` `VS-08B` `VS-08C` `VS-08D` `VS-08E` `VS-08F` `UXW-10` `UXW-31` `UXW-32` `UXW-33` `VS-03C` `TSH-04` `TSH-05` `TSH-06` `UXW-05` `UXW-15` `UXW-49` `WEB-23` `UX-08C` `UX-08F` `UX-11A` `TSH-02` `VS-01` `VS-02` `VS-05` `VS-07` `VS-07B` `VS-07C` `S1-10` `I18N-01` `E2E-04` `E2E-05` `E2E-10` `E2E-11` `E2E-12` `E2E-13` `WEB-12` `FRZ-01` `REL-01` `LEG-01` `SITE-08` `SITE-09` `HRD-06` `HRD-11` `HRD-12` `DEP-07` `ASVS-01` `ASVS-03` `ASVS-06` `ASVS-07` `ASVS-10` `ASVS-13A` `ASVS-13B` `ASVS-19` `ASVS-22` `ASVS-28` `ASVS-29` `ASVS-16` `ASVS-18` `CON-13` `ASVS-32` `SITE-12`
 - Paused (owner instruction 51, until M4): `ML-02` `ML-05` `ML-07` `ML-08` `ML-09` `ML-21` `CON-01` `CON-02` `CON-04` `CON-05` `CON-15` `CON-17` `PLAN-01` `WEB-19`
 
 | Order | Slice | Users it unlocks | Target closed | Includes (returned to Open today, picked up here) |
@@ -118,9 +119,12 @@ rows go on the Current line in the same commit.
 | 0 | M3: 1 send and sign, 2 routing, 5 authentication, 7 verify | Small teams, freelancers, self-hosters | 2026-11-19 (green `main` run) | — |
 | 1 | **3 Templates** (finishing: awaits sign-off) | Teams sending the same documents: sales, HR | 2026-11-21 | — |
 | 2 | **4 Every field** (finishing: closes on green `main`, instruction 68) | Complex forms: applications, insurance, loans | 2026-11-24 | — |
-| 3 | **8 API and webhooks** (current, 2026-11-20; [76](76-SLICE-8-EVIDENCE.md)) | Developers integrating signing | 2026-11-27 | `UXW-10` `UXW-31` `UXW-32` `UXW-33` |
-| 4 | 6 Manage and correct | Daily senders: folders, search, correct, resend | 2026-12-01 | `UXW-02` `UXW-20` `UXW-42` `WEB-07` |
+| 3 | **8 API and webhooks** (finishing: awaits CI on PR #37 and sign-off; [76](76-SLICE-8-EVIDENCE.md)) | Developers integrating signing | 2026-11-27 | `UXW-10` `UXW-31` `UXW-32` `UXW-33` |
+| 4 | **6 Manage and correct** (current, 2026-11-20; [77](77-SLICE-6-EVIDENCE.md)) | Daily senders: folders, search, correct, resend | 2026-12-01 | `UXW-02` `UXW-20` `UXW-42` `WEB-07` |
 | 5 | 9 Embedding | Developers embedding signing in their app → **M4** | 2026-12-03 | — |
+| 5r | Remote signing providers (from slice 18, brought forward; owner instruction 75) | Customers who need a CSC provider (DigiCert Document Trust Manager, A-Trust) or India eSign (Aadhaar OTP or eKYC through a licensed ESP) | after M4 | `RSP-01` `RSP-02` |
+| 5a | Production PKI validation (owner instruction 74) | Operators going live: seal chain, OCSP and CRL, TSA, HSM or KMS key checked before go-live | after M4 | `PKI-VAL-01` |
+| 5b | Accessibility and mobile checks (owner instruction 74) | Keyboard-only and screen-reader users, phone signers | after M4 | `UX-TEST-01` |
 | 6 | 10 Organization admin and SSO | Mid-size and large companies | 2026-12-08 | `ORG-01` `ORG-06` `UXW-09` `UXW-37` `UXW-38` `UXW-39` |
 | 7 | 11 Bulk send and signing links | High-volume senders | 2026-12-11 | — |
 | 8 | 12 Brand and language | Branded and non-English use | 2026-12-15 | `UXW-12` |

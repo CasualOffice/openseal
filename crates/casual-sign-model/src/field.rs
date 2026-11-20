@@ -72,6 +72,11 @@ pub enum FieldType {
     Payment,
     /// A free drawing area (later).
     Drawing,
+    /// A strike-through line an editor draws across text on the document (`FG-080`,
+    /// ADR-044; DocuSign's polyline overlay): one horizontal line through the vertical
+    /// middle of its rectangle, as wide as it. Holds no recipient value; drawn into the
+    /// sealed document whenever it is visible.
+    Strikethrough,
 }
 
 impl FieldType {
@@ -89,6 +94,7 @@ impl FieldType {
                 | Self::Approve
                 | Self::Decline
                 | Self::Hyperlink
+                | Self::Strikethrough
         )
     }
 }

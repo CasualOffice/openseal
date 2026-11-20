@@ -19,6 +19,10 @@ casual-sign-model = { path = "../../crates/casual-sign-model" }
 # Admission and normalization of uploads (docs/30 §2, §3).
 casual-sign-sdk = { path = "../../crates/casual-sign-sdk" }
 casual-sign-workflow = { path = "../../crates/casual-sign-workflow" }
+# Word uploads converted to PDF (ADR-042, VS-06C): the client and the wire code only,
+# `default-features = false`, so no DOCX parser, image decoder or font code is linked
+# into the server; the conversion runs in convertd's container.
+casual-sign-convertd = { path = "../casual-sign-convertd", default-features = false }
 # The signing view's rules (VS-04C): the same `evaluate_envelope` the engine runs at
 # finish, so the page shows what the seal will do.
 casual-sign-fields = { path = "../../crates/casual-sign-fields" }
@@ -65,6 +69,9 @@ rust_decimal = { version = "1.37", default-features = false, features = ["std"] 
 ureq = { version = "3.5.1", default-features = false, features = ["rustls-no-provider"] }
 rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "std", "tls12"] }
 rustls-native-certs = "0.8.5"
+# CRC-32 of each entry of the evidence package's store-only ZIP (VS-06D, `storezip`).
+# Already in the tree (flate2, zip). MIT OR Apache-2.0.
+crc32fast = "1.5.0"
 
 [dev-dependencies]
 tower = { version = "0.5.2", default-features = false, features = ["util"] }
@@ -74,6 +81,9 @@ sqlx = { version = "0.9.0", default-features = false, features = ["runtime-tokio
 serde_norway = "0.9.42"
 # Reading a served PDF's text in the preview tests (WEB-06).
 casual-sign-pdf = { path = "../../crates/casual-sign-pdf" }
+# Reading the evidence package back with an independent ZIP reader (VS-06D). Already in
+# the tree through modeld (9.3.0, past the 2026 advisories). MIT.
+zip = { version = "9.3.0", default-features = false }
 
 [lints]
 workspace = true

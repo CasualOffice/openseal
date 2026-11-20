@@ -620,7 +620,7 @@ class Run:
         c = self.compose
         if self.args.build:
             say("building the images from this checkout")
-            sh(["docker", "compose", "-f", str(ROOT / "docker-compose.yml"), "build", "pki", "keyd", "migrate", "worker"], timeout=5400)
+            sh(["docker", "compose", "-f", str(ROOT / "docker-compose.yml"), "build", "pki", "keyd", "migrate", "worker", "convertd"], timeout=5400)
         say("secrets: init-secrets.sh and the CI seal PKI")
         self.helper('sh /repo/tools/chaos/prepare-secrets.sh "$1" "$2"', str(self.work), str(os.getuid()))
         say("the PKCS#11 module, taken from the keyd image as an HSM vendor's would be installed")

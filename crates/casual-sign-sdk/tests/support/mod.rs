@@ -193,6 +193,7 @@ pub fn chain(delivered: Hash256, pages: u32) -> Chain {
             EventData::EnvelopeSent {
                 recipients: 1,
                 documents: 1,
+                envelope_id_stamped: false,
             },
         ),
         (

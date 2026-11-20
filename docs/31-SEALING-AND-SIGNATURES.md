@@ -32,7 +32,8 @@ The account chooses; the default is **PAdES B-T**, so every sealed document carr
 
 **Default: once, at completion**, after every value has been flattened and the certificate of completion and audit
 JSON have been added ([02](02-HLD.md) §5.3). This is the pattern DocuSign follows and the one that keeps the file simple
-for readers: one platform signature over the final document.
+for readers: one platform signature over the final document. With envelope id stamping on (`FG-009`, ADR-045) the
+stamp is drawn by the same flattening, so the seal covers it on every page.
 
 **Option: seal per signer** (slice 16). After each recipient finishes, an incremental revision with a platform
 signature naming that recipient in `/Name` and `/Reason`. Each signer's contribution is then protected individually

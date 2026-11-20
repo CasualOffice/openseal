@@ -9,7 +9,9 @@
 // reloads and navigation within the tab, so the sender app and the signing page share
 // one fake server. Each test or Playwright context starts from the same seed.
 
-import { makePdf, countPages } from "./mockpdf.js";
+import { makePdf, countPages, stampPdf } from "./mockpdf.js";
+
+const DOCX_MEDIA = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 import { checkText } from "./signfields.js";
 import { rulesFor, finishProblems } from "./fieldrules.js";
 import { checkList } from "./bulkmodel.js";
@@ -58,6 +60,8 @@ const FIELD_TYPES = new Set([
   "signature", "initials", "stamp", "date_signed", "name", "first_name", "last_name", "email", "company", "title",
   "envelope_id", "text", "number", "date", "email_address", "phone", "ssn", "zip", "checkbox", "radio_group",
   "dropdown", "multi_select", "formula", "attachment", "note", "approve", "decline", "hyperlink", "payment", "drawing",
+  // FG-080 (ADR-044): an editor's strike-through.
+  "strikethrough",
 ]);
 /// The members of an engine `Field` besides its ids, type and place (api.js `FIELD_MEMBERS`).
 const FIELD_MEMBERS = ["required", "read_only", "locked", "label", "value", "default", "validation", "format", "group", "conditional", "formula", "options", "allow_custom", "tooltip", "placeholder"];
@@ -136,8 +140,53 @@ function unb64(s) {
   return out;
 }
 async function sha256hex(text) {
-  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  const d = await crypto.subtle.digest("SHA-256", typeof text === "string" ? new TextEncoder().encode(text) : text);
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/// CRC-32 (IEEE 802.3, as ZIP uses) of `bytes`.
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (const b of bytes) c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/// A ZIP of stored entries `[[name, bytes]]`, as the server's `storezip` writes it
+/// (VS-06D): local headers and bytes, the central directory, the end record; UTF-8
+/// names, the fixed 1980-01-01 date.
+function storeZip(entries) {
+  const enc = new TextEncoder();
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  const head = (sig, fields) => {
+    const b = new Uint8Array(4 + fields.reduce((n, [w]) => n + w, 0));
+    const v = new DataView(b.buffer);
+    v.setUint32(0, sig, true);
+    let at = 4;
+    for (const [w, x] of fields) { if (w === 2) v.setUint16(at, x, true); else v.setUint32(at, x, true); at += w; }
+    return b;
+  };
+  for (const [name, bytes] of entries) {
+    const n = enc.encode(name);
+    const crc = crc32(bytes);
+    const local = head(0x04034b50, [[2, 10], [2, 0x0800], [2, 0], [2, 0], [2, 0x21], [4, crc], [4, bytes.length], [4, bytes.length], [2, n.length], [2, 0]]);
+    parts.push(local, n, bytes);
+    central.push([head(0x02014b50, [[2, 20], [2, 10], [2, 0x0800], [2, 0], [2, 0], [2, 0x21], [4, crc], [4, bytes.length], [4, bytes.length], [2, n.length], [2, 0], [2, 0], [2, 0], [2, 0], [4, 0], [4, offset]]), n]);
+    offset += local.length + n.length + bytes.length;
+  }
+  const start = offset;
+  for (const [h, n] of central) { parts.push(h, n); offset += h.length + n.length; }
+  parts.push(head(0x06054b50, [[2, 0], [2, 0], [2, entries.length], [2, entries.length], [4, offset - start], [4, start], [2, 0]]));
+  const out = new Uint8Array(parts.reduce((x, p) => x + p.length, 0));
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
 }
 
 class Problem extends Error {
@@ -280,6 +329,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   // ---- Model helpers -----------------------------------------------------------
   /// The seal profiles an envelope or the account's default may name (docs/22 §3).
   const SEAL_PROFILES = ["pades-b-t", "pades-b-lt", "pades-b-lta"];
+  /// Signing options as the server answers them: `stamp_envelope_id` absent when off.
+  function stampOff(o) {
+    if (!o.stamp_envelope_id) delete o.stamp_envelope_id;
+    return o;
+  }
+
   function newEnvelope({ subject = "", message = "", signing_options = {}, created_at } = {}) {
     const env = {
       id: uid(), status: "draft", version: 1, sender_user_id: "user-demo", subject, message,
@@ -290,13 +345,25 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     db.envelopes.push(env);
     return env;
   }
-  function addDocument(env, name, bytes) {
+  /// The server converts a Word document with convertd (ADR-042); mock mode answers a
+  /// placeholder PDF for any ZIP, so the editor's preview and the upload agree, and
+  /// refuses one naming a VBA project as the server does (CS-CNV-0004).
+  function mockConvert(bytes) {
+    if (!(bytes instanceof Uint8Array) || bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 3 || bytes[3] !== 4) {
+      fail(415, "CS-CNV-0002", "Format not supported");
+    }
+    if (new TextDecoder("latin1").decode(bytes).toLowerCase().includes("vbaproject")) fail(415, "CS-CNV-0004", "Macro-enabled document refused");
+    return makePdf([{ title: "Converted Word document", lines: ["Mock mode: the server converts .docx files to PDF with docxide-pdf.", "This page stands in for the converted document."] }]);
+  }
+  function addDocument(env, name, upload) {
+    const zip = upload instanceof Uint8Array && upload.length >= 4 && upload[0] === 0x50 && upload[1] === 0x4b;
+    const bytes = zip ? mockConvert(upload) : upload;
     if (!(bytes instanceof Uint8Array) || bytes.length < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") {
       fail(422, "CS-PDF-0001", "Not a PDF");
     }
     const id = uid();
     db.blobs[id] = b64(bytes);
-    const doc = { id, name: String(name || "document.pdf").slice(0, 255), pages: countPages(bytes), bytes: bytes.length, upload_sha256: null, delivered_sha256: null, admission_findings: 0, fixed: false };
+    const doc = { id, name: String(name || "document.pdf").slice(0, 255), pages: countPages(bytes), bytes: upload.length, upload_sha256: null, delivered_sha256: null, admission_findings: 0, fixed: false };
     env.documents.push(doc);
     return doc;
   }
@@ -506,11 +573,21 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       // VS-02, as the server: an agent, intermediary or editor sees the later
       // recipients not yet reached, which `POST /s/{token}/recipients` may name.
       ...(shown && NAMES_LATER.has(rec.type) ? { later_recipients: laterOf(env, rec) } : {}),
+      // FG-080, as the server: every strike-through on a document they see, whoever drew it.
+      ...(shown ? { strikes: env.fields.filter((f) => f.type === "strikethrough" && !(rec.excluded_documents || []).includes(f.document_id)).map((f) => ({ id: f.id, document_id: f.document_id, placement: f.placement, recipient_id: f.recipient_id })) } : {}),
+      // VS-06A, as the server: an editor also sees the later recipients' fields, which
+      // `PATCH`/`DELETE /s/{token}/editor/fields/{field}` may change.
+      ...(shown && rec.type === "editor" ? { editable_fields: env.fields.filter((f) => !holds(f, rec.id) && editableField(env, rec, f)) } : {}),
     };
   }
+  /// VS-06A, as the server's `editable_owner`: an editor changes their own fields and
+  /// those of recipients later in the order not yet reached.
+  const editableOwner = (rec, q) => q.id === rec.id || ((q.routing_order || 1) > (rec.routing_order || 1) && q.status === "created");
+  const editableField = (env, rec, f) => !!f.recipient_id && !(rec.excluded_documents || []).includes(f.document_id)
+    && [f.recipient_id, ...(f.shared_with || [])].every((r) => { const q = env.recipients.find((x) => x.id === r); return q && editableOwner(rec, q); });
   const laterOf = (env, rec) => env.recipients
     .filter((q) => (q.routing_order || 1) > (rec.routing_order || 1) && q.status === "created")
-    .map((q) => ({ id: q.id, type: q.type, routing_order: q.routing_order || 1, name: q.name || "", email: q.email || "" }));
+    .map((q) => ({ id: q.id, type: q.type, routing_order: q.routing_order || 1, name: q.name || "", email: q.email || "", phone: q.phone || null, auth: [...(q.auth || [])] }));
   const publicRecipient = (r) => {
     const { access_code, auth_passed, token, otp_open, sso_state, viewed_to_end, hosted, ...rest } = r;
     void access_code; void auth_passed; void token; void otp_open; void sso_state; void viewed_to_end; void hosted;
@@ -812,7 +889,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         changed.push("reminders");
         return;
       }
-      case "set_signing_options": env.signing_options = { ...(c.options || {}) }; changed.push("signing_options"); return;
+      case "set_signing_options":
+        // As the engine (FG-009, ADR-045): the envelope id stamp is fixed once sent.
+        if (!!c.options?.stamp_envelope_id !== !!env.signing_options?.stamp_envelope_id) fail(409, "CS-WF-0001", "Not allowed in the current state");
+        env.signing_options = stampOff({ ...(c.options || {}) }); changed.push("signing_options"); return;
       case "set_seal_profile": fail(409, "CS-WF-0001", "Not allowed in the current state", [{ pointer: `${at}/op`, code: "draft_only" }]);
       // falls through: fail throws
       default: fail(422, "CS-API-0001", "Malformed request", [{ pointer: `${at}/op`, code: "CS-API-0001" }]);
@@ -873,6 +953,18 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const waiting = query.get("waiting_for");
     if (waiting != null && waiting !== "me") bad("waiting_for");
     if (waiting) await seedInbox();
+    // VS-06: the Authentication failed view, Expiring soon, custom fields.
+    const authFailedQ = query.get("auth_failed");
+    if (authFailedQ != null && !["true", "false"].includes(authFailedQ)) bad("auth_failed");
+    const authFailed = authFailedQ === "true";
+    const expiresBefore = query.get("expires_before");
+    if (expiresBefore != null && Number.isNaN(Date.parse(expiresBefore))) bad("expires_before");
+    const cfName = (query.get("custom_field") || "").trim();
+    const cfValue = (query.get("custom_value") || "").trim().toLowerCase();
+    if (cfValue && !cfName) bad("custom_value");
+    const failedAuth = (e) => ["sent", "delivered"].includes(e.status)
+      && (e.recipients || []).some((r) => (r.auth_failures || 0) > 0 && ["sent", "delivered"].includes(r.status));
+    const hasCustom = (e) => (e.custom_fields || []).some((f) => f.name === cfName && (!cfValue || has(f.value, cfValue)));
     const dateOf = (e) => (dateField === "updated_at" ? updatedAt(e) : dateField === "completed_at" ? (e.status === "completed" ? e.ended_at : null) : e[dateField]);
     const from = query.get("from");
     const to = query.get("to");
@@ -896,6 +988,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       && (!recipient || (e.recipients || []).some((r) => has(r.name, recipient) || has(r.email, recipient)))
       && (folder == null || (e.folder_id || null) === (folder === "none" ? null : folder))
       && (!waiting || myRecipient(e))
+      && (!authFailed || failedAuth(e))
+      && (!expiresBefore || (!!e.expires_at && e.expires_at < new Date(expiresBefore).toISOString()))
+      && (!cfName || hasCustom(e))
       && inRange(e)).sort(cmp);
     const page = all.slice(start, start + limit);
     return json(200, {
@@ -905,9 +1000,119 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         // As the server's summary (envelopes.rs list): when it was sent and completed (UX-08).
         sent_at: e.sent_at || null, completed_at: e.status === "completed" ? e.ended_at || null : null,
         ...(e.folder_id ? { folder_id: e.folder_id } : {}), ...(waiting ? { my_recipient_id: myRecipient(e).id } : {}),
+        // As the server (ADR-031): the Deleted view says when each was removed.
+        ...(e.deleted_at ? { deleted_at: e.deleted_at } : {}),
       })),
       next_cursor: start + limit < all.length ? String(start + limit) : null,
     });
+  }
+
+  // ---- Reports (VS-06, server api/reports.rs) ---------------------------------------------
+  /// `GET /reports/{envelopes|recipients|usage}` as the server: envelopes created in
+  /// `[from, to)`, of `sender`, newest first, not deleted; JSON or formula-safe CSV.
+  /// `GET /insights` (FG-141), as the server: over the envelopes created in the window
+  /// (Deleted left out), counts by how they stand, the median and 90th percentile
+  /// (continuous, as PostgreSQL's `percentile_cont`) of sent → completed in seconds,
+  /// sent and completed per day in the caller's day, and the top ten senders. The demo
+  /// user is an administrator (`reports.read`), so the scope is the workspace.
+  function insights(query) {
+    const bad = (k) => fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/query/${k}`, code: "CS-API-0001" }]);
+    const from = query.get("from");
+    const to = query.get("to");
+    if (from && Number.isNaN(Date.parse(from))) bad("from");
+    if (to && Number.isNaN(Date.parse(to))) bad("to");
+    if (from && to && Date.parse(to) <= Date.parse(from)) bad("to");
+    const off = query.get("utc_offset_minutes") == null ? 0 : Number(query.get("utc_offset_minutes"));
+    if (!Number.isInteger(off) || Math.abs(off) > 840) bad("utc_offset_minutes");
+    const senderQ = query.get("sender");
+    const sender = senderQ === "me" ? "user-demo" : senderQ;
+    const envs = db.envelopes.filter((e) => !e.deleted_at && e.status !== undefined
+      && (!from || Date.parse(e.created_at) >= Date.parse(from)) && (!to || Date.parse(e.created_at) < Date.parse(to))
+      && (!sender || e.sender_user_id === sender));
+    const doneAt = (e) => (e.status === "completed" ? e.completed_at || e.ended_at || null : null);
+    const n = (f) => envs.filter(f).length;
+    const secs = envs.filter((e) => e.sent_at && doneAt(e)).map((e) => (Date.parse(doneAt(e)) - Date.parse(e.sent_at)) / 1000).sort((a, b) => a - b);
+    const pct = (p) => {
+      if (!secs.length) return null;
+      const at = p * (secs.length - 1);
+      const lo = Math.floor(at);
+      return Math.round(secs[lo] + (secs[Math.min(lo + 1, secs.length - 1)] - secs[lo]) * (at - lo));
+    };
+    const day = (iso) => new Date(Date.parse(iso) + off * 60_000).toISOString().slice(0, 10);
+    const days = new Map();
+    const bump = (d, k) => { const v = days.get(d) || { day: d, sent: 0, completed: 0 }; v[k]++; days.set(d, v); };
+    for (const e of envs) {
+      if (e.sent_at) bump(day(e.sent_at), "sent");
+      if (doneAt(e)) bump(day(doneAt(e)), "completed");
+    }
+    const by = new Map();
+    for (const e of envs.filter((x) => x.sent_at)) {
+      const u = by.get(e.sender_user_id) || { sender_user_id: e.sender_user_id, sent: 0, completed: 0 };
+      u.sent++;
+      if (e.status === "completed") u.completed++;
+      by.set(e.sender_user_id, u);
+    }
+    const completed = n((e) => e.status === "completed");
+    return json(200, {
+      scope: "workspace", from: from || null, to: to || null, sender: sender || null, utc_offset_minutes: off,
+      totals: {
+        created: envs.length, sent: n((e) => !!e.sent_at), completed,
+        declined: n((e) => e.status === "declined"), voided: n((e) => e.status === "voided"), expired: n((e) => e.status === "expired"),
+        in_progress: n((e) => ["sent", "delivered", "completing"].includes(e.status)),
+      },
+      time_to_complete: { completed, median_seconds: pct(0.5), p90_seconds: pct(0.9) },
+      days: [...days.values()].sort((a, b) => a.day.localeCompare(b.day)),
+      top_senders: [...by.values()].sort((a, b) => b.sent - a.sent || a.sender_user_id.localeCompare(b.sender_user_id)).slice(0, 10),
+    });
+  }
+
+  function report(kind, query) {
+    const bad = (k) => fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/query/${k}`, code: "CS-API-0001" }]);
+    const from = query.get("from");
+    const to = query.get("to");
+    if (from && Number.isNaN(Date.parse(from))) bad("from");
+    if (to && Number.isNaN(Date.parse(to))) bad("to");
+    if (from && to && Date.parse(to) <= Date.parse(from)) bad("to");
+    const format = query.get("format") || "json";
+    if (!["json", "csv"].includes(format)) bad("format");
+    const senderQ = query.get("sender");
+    const sender = senderQ === "me" ? "user-demo" : senderQ;
+    const envs = db.envelopes.filter((e) => !e.deleted_at && e.status !== undefined
+      && (!from || Date.parse(e.created_at) >= Date.parse(from)) && (!to || Date.parse(e.created_at) < Date.parse(to))
+      && (!sender || e.sender_user_id === sender))
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    let head;
+    let rows;
+    if (kind === "envelopes") {
+      head = ["envelope_id", "subject", "status", "sender_user_id", "created_at", "sent_at", "completed_at", "voided_at", "expires_at", "recipients"];
+      rows = envs.map((e) => ({ envelope_id: e.id, subject: e.subject, status: e.status, sender_user_id: e.sender_user_id, created_at: e.created_at, sent_at: e.sent_at || null, completed_at: e.status === "completed" ? e.ended_at || null : null, voided_at: e.status === "voided" ? e.ended_at || null : null, expires_at: e.expires_at || null, recipients: (e.recipients || []).length }));
+    } else if (kind === "recipients") {
+      head = ["envelope_id", "subject", "envelope_status", "routing_order", "name", "email", "type", "status"];
+      rows = envs.flatMap((e) => [...(e.recipients || [])].sort((a, b) => a.routing_order - b.routing_order).map((r) => ({ envelope_id: e.id, subject: e.subject, envelope_status: e.status, routing_order: r.routing_order, name: r.name, email: r.email || null, type: r.type, status: r.status })));
+    } else if (kind === "usage") {
+      head = ["sender_user_id", "created", "sent", "completed", "declined", "voided", "expired"];
+      const by = new Map();
+      for (const e of envs) {
+        const u = by.get(e.sender_user_id) || { sender_user_id: e.sender_user_id, created: 0, sent: 0, completed: 0, declined: 0, voided: 0, expired: 0 };
+        u.created++;
+        if (e.status !== "draft") u.sent++;
+        if (["completed", "declined", "voided", "expired"].includes(e.status)) u[e.status]++;
+        by.set(e.sender_user_id, u);
+      }
+      rows = [...by.values()].sort((a, b) => b.created - a.created);
+    } else {
+      fail(404, "CS-API-0002", "Not found");
+    }
+    if (format === "csv") {
+      const cell = (v) => {
+        let s = v == null ? "" : String(v);
+        if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+        return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const text = [head.join(","), ...rows.map((r) => head.map((k) => cell(r[k])).join(","))].join("\r\n") + "\r\n";
+      return new Response(text, { status: 200, headers: { "Content-Type": "text/csv; charset=utf-8" } });
+    }
+    return json(200, { items: rows, truncated: false });
   }
 
   // ---- Webhooks (docs/40 §4, server api/webhooks.rs) --------------------------------------
@@ -995,7 +1200,10 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
   async function createEnvelopeFrom(body) {
     const b = body || {};
     checkSizes(0, (b.documents || []).map((d) => d.content_base64 || ""));
-    const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: b.signing_options || {} });
+    // As the server (FG-009): a request that does not say takes the account's stamp default.
+    const opts = { ...(b.signing_options || {}) };
+    if (!("stamp_envelope_id" in opts) && account().settings?.stamp_envelope_id === true) opts.stamp_envelope_id = true;
+    const env = newEnvelope({ subject: b.subject || "", message: b.message || "", signing_options: stampOff(opts) });
     if (inSandbox()) env.sandbox = true;
     if (b.reminders) env.reminders = b.reminders;
     if (Number.isInteger(b.expires_in_days)) env.expires_at = iso(b.expires_in_days * 24 * 60);
@@ -1832,6 +2040,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     // As the server's `GET /auth/workspaces`: no sandbox member (the org listing has it).
     const spaces = organization().workspaces.filter((w) => w.member).map(workspaceRow).map(({ sandbox: _s, ...w }) => w);
     const here = db.session.account || "acct-demo";
+    // ADR-042: the editor's preview of a Word document, nothing stored.
+    if (res === "conversions" && !id && method === "POST") {
+      if (headers["content-type"] !== DOCX_MEDIA) fail(415, "CS-API-0007", "Unsupported media type");
+      return pdf(mockConvert(body));
+    }
     if (res === "auth" && id === "workspaces" && method === "GET") {
       return json(200, {
         current: here,
@@ -1870,6 +2083,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         if ("builtin_profiles" in body.settings) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/builtin_profiles", code: "CS-API-0001" }]);
         // As the server: `workflow_policy` is taken only as a whole `Policy` (RTE-03).
         if ("workflow_policy" in body.settings && body.settings.workflow_policy !== null && !policyOk(body.settings.workflow_policy)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/workflow_policy", code: "CS-API-0001" }]);
+        // As the server (FG-009): the envelope id stamp default is true or false.
+        if ("stamp_envelope_id" in body.settings && body.settings.stamp_envelope_id !== null && typeof body.settings.stamp_envelope_id !== "boolean") fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/stamp_envelope_id", code: "CS-API-0001" }]);
         // As the server (VS-07): the default seal profile is one of the three PAdES levels.
         if ("default_seal_profile" in body.settings && body.settings.default_seal_profile !== null && !SEAL_PROFILES.includes(body.settings.default_seal_profile)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/settings/default_seal_profile", code: "CS-API-0001" }]);
         const before = db.account.settings;
@@ -1887,6 +2102,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     if (res === "organizations" && id === "me") return orgRoutes(method, sub, subId, subSub, query, body);
     if (res === "ersd-versions" && !id) return ersdVersions(method, body);
     if (res === "admin-events" && !id && method === "GET") return adminEvents(query);
+    if (res === "reports" && id && !sub && method === "GET") return report(id, query);
+    if (res === "insights" && !id && method === "GET") return insights(query);
     // WEB-06: recipient autocomplete, as the server's GET /contacts.
     if (res === "contacts" && method === "GET") {
       const q = (query.get("q") || "").trim().toLowerCase();
@@ -1939,7 +2156,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (method === "PATCH") {
         checkIfMatch(env, headers); draftOnly(env); notScheduled(env);
         const changed = [];
-        for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) { env[k] = body[k]; changed.push(k); }
+        for (const k of ["subject", "message", "signing_options", "reminders"]) if (body && k in body) { env[k] = k === "signing_options" ? stampOff({ ...body[k] }) : body[k]; changed.push(k); }
         if (body && "expires_in_days" in body) { env.expires_at = Number.isInteger(body.expires_in_days) ? iso(body.expires_in_days * 24 * 60) : null; changed.push("expires_at"); }
         await edited(env, changed);
         return withEtag(env);
@@ -1955,12 +2172,13 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         return json(204, null);
       }
     }
-    // UX-03, not on the server yet (api.js NOT_ON_SERVER.restoreEnvelope): back to the lists.
+    // As the server (ADR-031, `POST /envelopes/{id}/restore`): back to the lists, with
+    // `envelope.restored` after the `envelope.deleted`; not deleted (or purged) is 409.
     if (sub === "restore" && method === "POST") {
       if (!env.deleted_at) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      if (headers["if-match"] && headers["if-match"] !== `"v${env.version}"`) fail(412, "CS-WF-0002", "Stale version");
       delete env.deleted_at;
       env.version++;
-      // Not a casual-sign-audit type yet: ADR-031 (Proposed) adds it (NOT_ON_SERVER.restoreEnvelope).
       await audit(env, "envelope.restored", {}, { by: "sender" });
       return withEtag(env);
     }
@@ -2024,16 +2242,74 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       await audit(env, "envelope.voided", { reason: body.reason }, { by: "sender" });
       return withEtag(env);
     }
+    // ORG-09 as the server (envelopes.rs transfer): another enabled member of this
+    // workspace becomes the sender; any state but purged; `envelope.transferred`.
+    if (sub === "transfer" && method === "POST") {
+      for (const k of Object.keys(body || {})) if (!["to_user", "to_workspace"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
+      if (body?.to_workspace && body.to_workspace !== "acct-demo") fail(422, "CS-ORG-0009", "Envelopes stay in their workspace");
+      const to = db.users.find((u) => u.id === body?.to_user && !u.disabled);
+      if (!to) fail(422, "CS-ORG-0009", "Envelopes stay in their workspace");
+      const from = env.sender_user_id;
+      env.sender_user_id = to.id;
+      env.version++;
+      await audit(env, "envelope.transferred", { from_user: from, to_user: to.id }, { by: "user" });
+      return withEtag(env);
+    }
+    if (sub === "custom-fields" && method === "GET") return json(200, { items: [...(env.custom_fields || [])].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) });
+    if (sub === "custom-fields" && method === "PUT") {
+      const items = body?.items;
+      if (!Array.isArray(items) || items.length > 100) fail(422, "CS-API-0001", "Malformed request", [{ pointer: "/items", code: "CS-API-0001" }]);
+      const out = [];
+      items.forEach((f, i) => {
+        const name = typeof f?.name === "string" ? f.name.trim() : "";
+        // eslint-disable-next-line no-control-regex
+        if (!name || name.length > 100 || /[\x00-\x1f\x7f]/.test(name)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/items/${i}/name`, code: "CS-API-0001" }]);
+        // eslint-disable-next-line no-control-regex
+        if (typeof f.value !== "string" || f.value.length > 1000 || /[\x00-\x1f\x7f]/.test(f.value)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/items/${i}/value`, code: "CS-API-0001" }]);
+        if (out.some((x) => x.name === name)) fail(422, "CS-API-0001", "Malformed request", [{ pointer: `/items/${i}/name`, code: "exists" }]);
+        out.push({ name, value: f.value });
+      });
+      env.custom_fields = out;
+      return json(200, { items: out });
+    }
     if (sub === "resend" && method === "POST") {
       if (!["sent", "delivered"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
       const ids = body?.recipient_ids || env.recipients.filter((r) => ["sent", "delivered"].includes(r.status)).map((r) => r.id);
       for (const rid of ids) await audit(env, "reminder.sent", { recipient_id: rid, channel: "email" }, { by: "sender" });
+      // As the engine (docs/24 §3): a resend clears the recipient's failures and lock.
+      for (const r of env.recipients) if (ids.includes(r.id)) {
+        r.auth_failures = 0;
+        if (r.token) delete db.attempts[r.token];
+      }
       return withEtag(env);
     }
     if (sub === "status" && method === "GET") return json(200, { id: env.id, status: env.status, version: env.version, recipients: env.recipients.map((r) => ({ id: r.id, status: r.status })) });
     if (sub === "audit" && method === "GET") {
       const items = db.audit[env.id] || [];
       return json(200, { items, chain_head: items.length ? items[items.length - 1].hash : null });
+    }
+    if (sub === "evidence-package" && method === "GET") {
+      // As the server (VS-06D, `GET …/evidence-package`): an envelope that is over, its
+      // export recorded first (`envelope.exported`), then one ZIP: manifest.json, each
+      // document (the mock's delivered bytes), certificate.pdf, audit-trail.json.
+      if (!["completed", "declined", "voided", "expired"].includes(env.status)) fail(409, "CS-WF-0001", "Not allowed in the current state");
+      await audit(env, "envelope.exported", { by: env.sender_user_id }, { by: "sender" });
+      const enc = new TextEncoder();
+      const files = env.documents.map((d, i) => {
+        const base = (d.name || "document").replace(/\.pdf$/i, "").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 80) || "document";
+        return [`documents/${String(i + 1).padStart(2, "0")}-${base}.pdf`, unb64(db.blobs[d.id]), { kind: "document", document_id: d.id, sealed: env.status === "completed" }];
+      });
+      const certLines = [`Envelope ${env.id}`, `Subject: ${env.subject}`, `Outcome: ${env.status}`, "", "Mock mode: not a real certificate."];
+      files.push(["certificate.pdf", makePdf([{ title: env.status === "completed" ? "Certificate of completion" : "Envelope certificate", lines: certLines }]), { kind: "certificate" }]);
+      const items = db.audit[env.id] || [];
+      const trail = { items, chain_head: items.length ? items[items.length - 1].hash : null };
+      files.push(["audit-trail.json", enc.encode(JSON.stringify(trail, null, 2)), { kind: "audit_trail" }]);
+      const listed = [];
+      for (const [path, bytes, about] of files) listed.push({ path, sha256: await sha256hex(bytes), size: bytes.length, ...about });
+      const manifest = { format: "openseal.evidence-package", version: 1, envelope_id: env.id, status: env.status, exported_at: iso(), exported_by: env.sender_user_id, chain_head: trail.chain_head, entries: listed };
+      save();
+      const zip = storeZip([["manifest.json", enc.encode(JSON.stringify(manifest, null, 2))], ...files.map(([p, b]) => [p, b])]);
+      return new Response(zip, { status: 200, headers: { "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="evidence-${env.id}.zip"` } });
     }
     if (sub === "anchor-proof" && method === "GET") {
       // FG-158: the mock has no anchor job (no time-stamping authority), so nothing is
@@ -2051,11 +2327,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     }
     if (sub === "documents") {
       if (!subId && method === "POST") {
-        draftOnly(env);
+        // A draft's edit, or a sent envelope's correction (docs/24 §6, VS-06).
+        const correcting = editable(env);
         checkSizes(env.documents.reduce((n, x) => n + (x.bytes || 0), 0), [body?.content_base64 || ""]);
         const d = addDocument(env, body?.name, unb64(body?.content_base64 || ""));
         await documentAdded(env, d);
-        await edited(env, [`documents.${d.id}`]);
+        await (correcting ? corrected : edited)(env, [`documents.${d.id}`]);
         return json(201, d);
       }
       if (!subId && method === "GET") return json(200, { items: env.documents });
@@ -2099,13 +2376,19 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
         // `version=current` (WEB-06 E-02): the document as it stands, fields filled so
         // far. The mock has no flattening, so it is the delivered file.
         if (query.get("version") === "current" && env.status === "draft") fail(409, "CS-API-0009", "Not available in the object's state");
-        return pdf(unb64(db.blobs[d.id]));
+        // FG-009 (ADR-045): the current and sealed documents carry the envelope id stamp.
+        const bytes = unb64(db.blobs[d.id]);
+        if (env.signing_options?.stamp_envelope_id && ["current", "sealed"].includes(query.get("version"))) return pdf(stampPdf(bytes, `Envelope ID: ${env.id}`));
+        return pdf(bytes);
       }
       if (!subSub && method === "DELETE") {
-        checkIfMatch(env, headers); draftOnly(env);
+        checkIfMatch(env, headers);
+        const correcting = editable(env);
+        // As the engine (docs/24 §6): who finished on a removed document acts again.
+        if (correcting) for (const f of env.fields.filter((x) => x.document_id === d.id)) fieldOwnerOk(env, f.recipient_id);
         env.documents = env.documents.filter((x) => x !== d);
         env.fields = env.fields.filter((f) => f.document_id !== d.id);
-        await edited(env, [`documents.${d.id}`]);
+        await (correcting ? corrected : edited)(env, [`documents.${d.id}`]);
         return json(204, null);
       }
     }
@@ -2378,7 +2661,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (!subId && method === "POST") {
         tplIfMatch(tp, headers, false);
         for (const k of Object.keys(body || {})) if (!["name", "content_base64"].includes(k)) fail(400, "CS-API-0001", "Unknown member", [{ pointer: `/${k}`, code: "unknown" }]);
-        const bytes = unb64(body?.content_base64 || "");
+        const upload = unb64(body?.content_base64 || "");
+        // A Word document is converted first, as the server does (ADR-042).
+        const bytes = upload.length >= 4 && upload[0] === 0x50 && upload[1] === 0x4b ? mockConvert(upload) : upload;
         if (bytes.length < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") fail(422, "CS-PDF-0001", "Not a PDF");
         const d = { id: uid(), name: String(body?.name || "document.pdf").slice(0, 255), ord: tp.documents.length, pages: countPages(bytes), sha256: null };
         db.blobs[d.id] = b64(bytes);
@@ -2882,6 +3167,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       if (n >= 5) fail(423, "CS-AUTH-0004", "Locked after too many attempts");
       if (body?.method !== "access_code" || body?.code !== rec.access_code) {
         db.attempts[token] = n + 1;
+        rec.auth_failures = (rec.auth_failures || 0) + 1;
         await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "access_code", attempt: n + 1 });
         fail(401, "CS-AUTH-0003", "Recipient authentication failed");
       }
@@ -2906,6 +3192,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const m = typeof rec.otp_open === "string" ? rec.otp_open : (body?.method || "email_otp");
       if (!rec.auth.includes(m) || !rec.otp_open || (body?.method && body.method !== m) || body?.code !== MOCK.emailCode) {
         db.attempts[token] = n + 1;
+        rec.auth_failures = (rec.auth_failures || 0) + 1;
         await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: m, attempt: n + 1 });
         return json(403, view(env, rec, token));
       }
@@ -2935,6 +3222,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       rec.sso_state = null;
       if (!open || body?.state !== open || body?.code !== MOCK.ssoCode) {
         db.attempts[token] = n + 1;
+        rec.auth_failures = (rec.auth_failures || 0) + 1;
         await audit(env, "recipient.auth_failed", { recipient_id: rec.id, method: "sso", attempt: n + 1 });
         return json(403, view(env, rec, token));
       }
@@ -3043,6 +3331,24 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       await audit(env, "recipient.field_completed", { recipient_id: rec.id, field_id: f.id, value_hash: await sha256hex(JSON.stringify(f.value)) });
       return json(200, view(env, rec, token));
     }
+    // As the server (FG-013, ADR-043, `POST /s/{token}/paper`): a signer, where the
+    // envelope allows it, completes with the scan of the documents printed and signed by
+    // hand; the scan joins the envelope fixed (sealed with it) and is recorded.
+    if (sub === "paper" && method === "POST") {
+      if (env.signing_options?.allow_sign_on_paper !== true) fail(409, "CS-WF-0012", "Sign on paper not allowed");
+      if (rec.type !== "signer") fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const bytes = unb64(String(body?.content_base64 || ""));
+      if (bytes.length < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/content_base64", code: "invalid" }]);
+      const printed = await docHashes(env);
+      const d = addDocument(env, "Signed on paper.pdf", bytes);
+      d.fixed = true;
+      await audit(env, "document.added", { document_id: d.id, upload_hash: await blobHash(d.id), bytes: d.bytes }, loc);
+      await audit(env, "document.admitted", { document_id: d.id, report_hash: await blobHash(d.id, ":admission"), findings: 0 }, loc);
+      await audit(env, "document.fixed", { document_id: d.id, delivered_hash: await blobHash(d.id), pages: d.pages }, loc);
+      await audit(env, "recipient.signed_on_paper", { recipient_id: rec.id, documents: printed, document_id: d.id, upload_hash: await blobHash(d.id) }, loc);
+      await complete(env, rec, loc, "paper");
+      return json(200, view(env, rec, token));
+    }
     if (sub === "finish" && method === "POST") {
       // As the engine's `finish`: an approver approves and a copy has nothing to finish;
       // a viewer finishes once every document was viewed to the end.
@@ -3095,6 +3401,50 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       await audit(env, "recipient.reassigned", { recipient_id: rec.id, to_recipient_id: nr.id, ...(body?.reason ? { reason: String(body.reason) } : {}) }, loc);
       return json(200, view(env, rec, token));
     }
+    // VS-06A, as the server: an editor adds, moves and removes their own fields and those
+    // of later recipients not yet reached; anyone else, or a reached recipient's field,
+    // is refused (409 CS-WF-0001). Recorded as `envelope.corrected`.
+    if (sub === "editor" && parts[4] === "fields") {
+      if (rec.type !== "editor" || !["sent", "delivered"].includes(rec.status)) fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const refuse = () => fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const check = (f) => { if (!editableField(env, rec, f)) refuse(); };
+      if (!parts[5] && method === "POST") {
+        const list = Array.isArray(body?.fields) ? body.fields : [];
+        if (!list.length || list.length > 100) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/fields", code: "invalid" }]);
+        const before = env.fields.length;
+        const added = [];
+        try {
+          for (const f of list) {
+            const q = env.recipients.find((x) => x.id === f?.recipient_id);
+            if (!q) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/fields/recipient_id", code: "invalid" }]);
+            if (!editableOwner(rec, q)) refuse();
+            added.push(addField(env, f));
+          }
+        } catch (e) { env.fields.length = before; throw e; }
+        await audit(env, "envelope.corrected", { changed: added.map((f) => `fields.${f.id}`) }, loc);
+        return json(201, view(env, rec, token));
+      }
+      const f = env.fields.find((x) => x.id === parts[5] && !(rec.excluded_documents || []).includes(x.document_id));
+      if (!f || parts[6]) fail(404, "CS-API-0002", "Not found");
+      check(f);
+      if (method === "PATCH") {
+        const next = structuredClone(f);
+        const flat = ["page", "x", "y", "width", "height"];
+        const patch = body && typeof body === "object" ? body : {};
+        if (flat.some((k) => k in patch)) next.placement = placementOf({ ...f.placement, ...Object.fromEntries(flat.filter((k) => k in patch).map((k) => [k, patch[k]])) });
+        if (patch.recipient_id) next.recipient_id = patch.recipient_id;
+        setMembers(next, patch);
+        check(next);
+        Object.assign(f, next);
+        await audit(env, "envelope.corrected", { changed: [`fields.${f.id}`] }, loc);
+        return json(200, view(env, rec, token));
+      }
+      if (method === "DELETE") {
+        env.fields.splice(env.fields.indexOf(f), 1);
+        await audit(env, "envelope.corrected", { changed: [`fields.${f.id}`] }, loc);
+        return json(200, view(env, rec, token));
+      }
+    }
     // VS-02, as the server's `RecipientEdit`: an agent or intermediary names later
     // recipients not yet reached (names and addresses only); anyone else is refused.
     if (sub === "recipients" && method === "POST") {
@@ -3102,17 +3452,33 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const list = Array.isArray(body?.recipients) ? body.recipients : [];
       if (!list.length || list.length > 100) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/recipients", code: "invalid" }]);
       const later = laterOf(env, rec).map((q) => q.id);
+      const bad = (i, k) => fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/${k}`, code: "CS-API-0001" }]);
       for (const [i, n] of list.entries()) {
         const q = env.recipients.find((x) => x.id === n?.id);
         if (!q) fail(404, "CS-API-0002", "Not found");
         if (!later.includes(q.id)) fail(403, "CS-WF-0003", "Not permitted");
-        if (n.name != null && !String(n.name).trim()) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/name`, code: "invalid" }]);
-        if (n.email != null && !/^[^@\s]+@[^@\s]+$/.test(String(n.email).trim())) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: `/recipients/${i}/email`, code: "invalid" }]);
+        if (n.name != null && !String(n.name).trim()) bad(i, "name");
+        if (n.email != null && !/^[^@\s]+@[^@\s]+$/.test(String(n.email).trim())) bad(i, "email");
+        // VS-06A, as the server: an intermediary or editor sets the number, the methods
+        // and an access code (kept, never answered); an agent changing the methods is refused.
+        if (n.phone != null && !/^\+[1-9][0-9 .()-]{7,}$/.test(String(n.phone).trim())) bad(i, "phone");
+        const auth = Array.isArray(n.auth) ? n.auth : q.auth || [];
+        if (n.auth != null && rec.type === "agent" && JSON.stringify(n.auth) !== JSON.stringify(q.auth || [])) fail(403, "CS-WF-0003", "Not permitted");
+        const email = n.email != null ? String(n.email).trim() : q.email;
+        const phone = n.phone != null ? String(n.phone).trim() : q.phone;
+        if ((auth.includes("email_otp") || auth.includes("sso")) && !email) bad(i, "auth");
+        if ((auth.includes("sms_otp") || auth.includes("voice_otp")) && !phone) bad(i, "auth");
+        const code = n.access_code ? String(n.access_code) : "";
+        if (code ? !auth.includes("access_code") || code.length > 255 : auth.includes("access_code") && !q.access_code) bad(i, "access_code");
       }
       for (const n of list) {
         const q = env.recipients.find((x) => x.id === n.id);
         if (n.name != null) q.name = String(n.name).trim();
         if (n.email != null) q.email = String(n.email).trim();
+        if (n.phone != null) q.phone = String(n.phone).trim();
+        if (Array.isArray(n.auth)) q.auth = [...n.auth];
+        if (n.access_code) q.access_code = String(n.access_code);
+        else if (!q.auth.includes("access_code")) delete q.access_code;
       }
       await audit(env, "envelope.corrected", { changed: list.map((n) => `recipients.${n.id}`) }, loc);
       return json(200, view(env, rec, token));
@@ -3150,7 +3516,8 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const headers = {};
     for (const [k, v] of Object.entries(init.headers || {})) headers[k.toLowerCase()] = v;
     let body = null;
-    if (init.body) {
+    if (init.body instanceof Uint8Array) body = init.body; // a file sent as itself (ADR-042)
+    else if (init.body) {
       try { body = JSON.parse(init.body); } catch { return problem({ status: 400, code: "CS-API-0001", title: "Malformed request" }); }
     }
     const parts = url.pathname.split("/");

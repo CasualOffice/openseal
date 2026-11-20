@@ -53,6 +53,7 @@ fn main() {
         EventData::EnvelopeSent {
             recipients: 1,
             documents: 1,
+            envelope_id_stamped: false,
         },
         EventData::EnvelopeCompleting {},
     ]

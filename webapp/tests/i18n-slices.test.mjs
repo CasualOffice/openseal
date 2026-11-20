@@ -34,6 +34,10 @@ const SLICE_MODULES = [
   "fieldlogic.js", "geometry.js", "fieldrules.js",
   // API and webhooks (slice 8): the consent screen, API clients and webhooks in Admin, connected apps
   "authorize.js", "admin.js", "adminmodel.js", "profile.js",
+  // manage and correct (slice 6): Agreements with its views, filters and inspector, Home, Reports
+  "dashboard.js", "managemodel.js", "inspector.js", "home.js", "reports.js", "reportmodel.js",
+  // slice 6 additions (VS-06E): the Insights dashboard
+  "insights.js", "insightsmodel.js",
   // verify
   "verify.js", "verifyview.js", "verifyreport.js", "trail.js",
   // shared components

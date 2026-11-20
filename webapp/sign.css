@@ -214,6 +214,36 @@
 @media (max-width: 79.999em) {
   .os-signframe { grid-template-columns: 6rem minmax(0, 1fr) 0; }
 }
+.os-sign .os-docbar { gap: 0.25rem; }
+
+/* ---- An editor changing fields (VS-06A) ---------------------------------------------------- */
+.os-editbar {
+  position: absolute; left: 1rem; bottom: 1.5rem; z-index: 7; max-width: min(40rem, calc(100% - 2rem)); box-sizing: border-box;
+  display: grid; gap: 0.5rem; padding: 0.75rem 1rem; border-radius: 0.75rem; background: var(--os-raised); color: var(--os-text);
+  box-shadow: 0 0 0 1px var(--os-sign-hair), var(--os-shadow-md);
+}
+.os-editbar__text { margin: 0; color: var(--os-muted); }
+.os-editbar__row { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem; }
+.os-editbar__pick { display: grid; gap: 0.25rem; }
+.os-editbar__select { min-width: 9rem; }
+.os-efield {
+  position: absolute; display: flex; align-items: center; justify-content: flex-start; overflow: hidden; padding: 0 0.25rem; margin: 0;
+  border: 0; border-radius: 0.375rem; cursor: move; touch-action: none; font: inherit; font-size: var(--os-fs-12); text-align: left;
+  background: color-mix(in srgb, var(--os-info) 10%, var(--os-raised)); color: var(--os-text);
+  box-shadow: inset 0 0 0 0.09375rem var(--os-info);
+}
+.os-efield.is-mine { background: var(--os-accent-soft); box-shadow: inset 0 0 0 0.09375rem var(--os-accent-fill); }
+.os-efield:focus-visible { outline: 0.125rem solid var(--os-focus); outline-offset: 0.125rem; }
+.os-efield__label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.os-efield--strikethrough { overflow: visible; background-image: linear-gradient(currentColor, currentColor); background-size: 100% 0.125rem; background-position: 0 50%; background-repeat: no-repeat; }
+.os-efield--strikethrough .os-efield__label { position: absolute; left: 0; bottom: 100%; padding: 0 0.25rem; border-radius: 0.25rem; background: var(--os-raised); }
+/* FG-080: a strike-through drawn over the page, as the seal draws it (a line through the
+   middle of its box, the ink of the document). */
+.os-strike { position: absolute; pointer-events: none; }
+.os-strike::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 0.0625rem; min-height: 1px; transform: translateY(-50%); background: var(--os-sign-ink, var(--os-text)); }
+@media (max-width: 47.999em) {
+  .os-editbar { left: 0.5rem; right: 0.5rem; bottom: 0.5rem; max-width: none; }
+}
 
 /* ---- Fields on the page ------------------------------------------------------------------ */
 .os-sfield {
@@ -334,6 +364,8 @@ body:has(dialog[open]) .os-guide { visibility: hidden; }
 .os-signframe--review { grid-template-columns: minmax(0, 1fr) auto; }
 .os-signframe--review .os-docview__pages { padding-bottom: 2rem; }
 .os-signframe--review .os-page__overlay { container-type: size; }
+/* FG-009: the envelope id stamp, as the engine draws it (grey 7 pt Helvetica). */
+.os-stamp { position: absolute; display: flex; align-items: center; overflow: hidden; white-space: nowrap; line-height: 1; color: #404040; font-family: "Liberation Sans", Arial, Helvetica, sans-serif; pointer-events: none; }
 .os-flat { position: absolute; display: flex; align-items: center; overflow: hidden; color: #0b1f4b; line-height: 1; white-space: nowrap; }
 .os-flat img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .os-flat--checkbox { justify-content: center; }

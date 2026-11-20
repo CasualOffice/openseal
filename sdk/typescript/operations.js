@@ -29,7 +29,9 @@ export const OPERATIONS = Object.freeze({
     "path_params": [
       "id"
     ],
-    "query": []
+    "query": [
+      "name"
+    ]
   },
   "addFields": {
     "body": true,
@@ -162,6 +164,14 @@ export const OPERATIONS = Object.freeze({
     "body_required": true,
     "method": "POST",
     "path": "/api/v1/auth/mfa/totp/confirm",
+    "path_params": [],
+    "query": []
+  },
+  "convertDocument": {
+    "body": false,
+    "body_required": false,
+    "method": "POST",
+    "path": "/api/v1/conversions",
     "path_params": [],
     "query": []
   },
@@ -637,11 +647,31 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "getEnvelopeCustomFields": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/envelopes/{id}/custom-fields",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
   "getEnvelopeStatus": {
     "body": false,
     "body_required": false,
     "method": "GET",
     "path": "/api/v1/envelopes/{id}/status",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
+  "getEvidencePackage": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/envelopes/{id}/evidence-package",
     "path_params": [
       "id"
     ],
@@ -677,6 +707,19 @@ export const OPERATIONS = Object.freeze({
       "id"
     ],
     "query": []
+  },
+  "getInsights": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/insights",
+    "path_params": [],
+    "query": [
+      "from",
+      "sender",
+      "to",
+      "utc_offset_minutes"
+    ]
   },
   "getMe": {
     "body": false,
@@ -732,6 +775,22 @@ export const OPERATIONS = Object.freeze({
       "r"
     ],
     "query": []
+  },
+  "getReport": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/reports/{kind}",
+    "path_params": [
+      "kind"
+    ],
+    "query": [
+      "format",
+      "from",
+      "limit",
+      "sender",
+      "to"
+    ]
   },
   "getRetention": {
     "body": false,
@@ -917,9 +976,13 @@ export const OPERATIONS = Object.freeze({
     "path": "/api/v1/envelopes",
     "path_params": [],
     "query": [
+      "auth_failed",
       "cursor",
+      "custom_field",
+      "custom_value",
       "date_field",
       "deleted",
+      "expires_before",
       "folder",
       "from",
       "limit",
@@ -1473,6 +1536,16 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "restoreEnvelope": {
+    "body": false,
+    "body_required": false,
+    "method": "POST",
+    "path": "/api/v1/envelopes/{id}/restore",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
   "restoreTemplate": {
     "body": false,
     "body_required": false,
@@ -1528,6 +1601,16 @@ export const OPERATIONS = Object.freeze({
     "body_required": false,
     "method": "POST",
     "path": "/api/v1/envelopes/{id}/send",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
+  "setEnvelopeCustomFields": {
+    "body": true,
+    "body_required": true,
+    "method": "PUT",
+    "path": "/api/v1/envelopes/{id}/custom-fields",
     "path_params": [
       "id"
     ],

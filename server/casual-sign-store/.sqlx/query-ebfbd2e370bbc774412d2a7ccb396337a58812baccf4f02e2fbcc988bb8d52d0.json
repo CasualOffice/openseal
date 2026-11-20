@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT count(*) AS \"created!\", count(*) FILTER (WHERE e.sent_at IS NOT NULL) AS \"sent!\", count(*) FILTER (WHERE e.status = 'completed') AS \"completed!\", count(*) FILTER (WHERE e.status = 'declined') AS \"declined!\", count(*) FILTER (WHERE e.status = 'voided') AS \"voided!\", count(*) FILTER (WHERE e.status = 'expired') AS \"expired!\", count(*) FILTER (WHERE e.status IN ('sent', 'delivered', 'completing')) AS \"in_progress!\", percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM e.completed_at - e.sent_at)::float8) FILTER (WHERE e.status = 'completed' AND e.sent_at IS NOT NULL AND e.completed_at IS NOT NULL) AS median_seconds, percentile_cont(0.9) WITHIN GROUP (ORDER BY extract(epoch FROM e.completed_at - e.sent_at)::float8) FILTER (WHERE e.status = 'completed' AND e.sent_at IS NOT NULL AND e.completed_at IS NOT NULL) AS p90_seconds FROM envelopes AS e WHERE e.account_id = $1 AND e.deleted_at IS NULL AND EXISTS (SELECT 1 FROM envelope_states AS s WHERE s.account_id = e.account_id AND s.envelope_id = e.id) AND e.created_at >= $2 AND e.created_at < $3 AND ($4::uuid IS NULL OR e.sender_user_id = $4)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "created!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 1,
+        "name": "sent!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "completed!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 3,
+        "name": "declined!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 4,
+        "name": "voided!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 5,
+        "name": "expired!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 6,
+        "name": "in_progress!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 7,
+        "name": "median_seconds",
+        "type_info": "Float8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 8,
+        "name": "p90_seconds",
+        "type_info": "Float8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Timestamptz",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+    ]
+  },
+  "hash": "ebfbd2e370bbc774412d2a7ccb396337a58812baccf4f02e2fbcc988bb8d52d0"
+}

@@ -97,7 +97,7 @@ const ROUTES = [
   [/^#\/agreements(?:\?.*)?$/, () => import("./dashboard.js"), { nav: "agreements" }],
   [/^#\/envelopes\/([^/?]+)$/, () => import("./envelope.js"), { nav: "agreements" }],
   // The editor is a full-height frame with its own toolbar (WEB-06): no app bar.
-  [/^#\/prepare(?:\/([^/?]+))?$/, () => import("./prepare.js"), { nav: "send", wide: true, chrome: false, frame: true }],
+  [/^#\/prepare(?:\/([^/?]+))?(?:\?.*)?$/, () => import("./prepare.js"), { nav: "send", wide: true, chrome: false, frame: true }],
   [/^#\/templates$/, () => import("./templates.js"), { nav: "templates" }],
   [/^#\/templates\/new$/, async () => {
     const prepare = await import("./prepare.js");
@@ -115,6 +115,8 @@ const ROUTES = [
   // ORG-06: the organization admin, for a person who holds an organization role.
   [/^#\/org(?:\?.*)?$/, () => import("./org.js"), { nav: "admin" }],
   [/^#\/reports$/, () => import("./reports.js"), { nav: "reports" }],
+  // FG-141: the Insights dashboard, reached from Reports.
+  [/^#\/insights$/, () => import("./insights.js"), { nav: "reports" }],
 ];
 
 /// The screen for an address no route matches (UX-04): said, not silently Home.
@@ -1051,7 +1053,7 @@ function registerCommands() {
   register("envelope.new", { label: t("nav.new"), run: () => ctx.navigate("#/prepare"), enabled: () => !!ctx.session });
   // G then a letter goes to a section (NAV-35; keys.js), from any screen of the app's
   // frame; Admin only for an account admin.
-  for (const [id, hash] of [["home", "#/home"], ["agreements", "#/agreements"], ["templates", "#/templates"], ["reports", "#/reports"], ["admin", "#/admin"]]) {
+  for (const [id, hash] of [["home", "#/home"], ["agreements", "#/agreements"], ["templates", "#/templates"], ["reports", "#/reports"], ["insights", "#/insights"], ["admin", "#/admin"]]) {
     register(`nav.${id}`, {
       label: t(`cmd.nav.${id}`),
       run: () => ctx.navigate(hash),

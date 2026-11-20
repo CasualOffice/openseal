@@ -383,6 +383,18 @@ export async function fetchAgreements(ctx, { q = "", cap = 1000 } = {}) {
     items.push(...(page?.items || []));
     cursor = page?.next_cursor || null;
   } while (cursor && items.length < cap);
+  // The Authentication failed quick view is the server's (VS-06): mark its rows.
+  try {
+    const failed = await ctx.api.listEnvelopes({ limit: 200, auth_failed: true, q: q || undefined });
+    const ids = new Set((failed?.items || []).map((x) => x.id));
+    for (const it of items) if (ids.has(it.id)) it.auth_failed = true;
+  } catch { /* a server without the view: nothing is marked */ }
+  // The Deleted view (UXW-02, ADR-031): the envelopes removed from the lists, each with
+  // `deleted_at`, shown only there and restorable.
+  try {
+    const gone = await ctx.api.listEnvelopes({ limit: 200, deleted: true, q: q || undefined });
+    for (const it of gone?.items || []) if (!items.some((x) => x.id === it.id)) items.push({ ...it, deleted_at: it.deleted_at || "deleted" });
+  } catch { /* a server without the view: nothing is listed there */ }
   return { items, capped: !!cursor };
 }
 

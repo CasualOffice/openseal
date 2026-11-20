@@ -53,6 +53,19 @@ export function inWindow(rows, { range = "all", from = "", to = "" } = {}, now =
   return rows.filter((r) => Date.parse(r.created_at) >= since);
 }
 
+/// The window as the server's report bounds (VS-06): `{from, to}` RFC 3339 instants,
+/// either left out when open; the same days `inWindow` keeps.
+export function windowBounds({ range = "all", from = "", to = "" } = {}, now = Date.now()) {
+  if (range === "all") return {};
+  if (range === "custom") {
+    const out = {};
+    if (from) out.from = new Date(`${from}T00:00:00`).toISOString();
+    if (to) out.to = new Date(new Date(`${to}T00:00:00`).getTime() + 86_400_000).toISOString();
+    return out;
+  }
+  return { from: new Date(now - Number(range) * 86_400_000).toISOString() };
+}
+
 /// The CSV's rows (UX-08): every summary field the list gives, the sender by name or
 /// email where `senderName(id)` knows it, else the id.
 export function csvRows(rows, senderName = () => "") {

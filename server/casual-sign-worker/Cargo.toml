@@ -91,6 +91,9 @@ rust_decimal = { version = "1.37", default-features = false, features = ["std"] 
 casual-sign-seal = { path = "../../crates/casual-sign-seal" }
 casual-sign-verify = { path = "../../crates/casual-sign-verify" }
 casual-sign-crypto = { path = "../../crates/casual-sign-crypto" }
+# tests/end_to_end.rs reads the sealed PDF's drawn content (FG-080: an editor's
+# strike-through is in it). Already in the tree through the SDK.
+casual-sign-pdf = { path = "../../crates/casual-sign-pdf" }
 # The end-to-end test drives the API server's router in process against the same
 # database, blob store and clock (tests/end_to_end.rs). Dev only: the worker does not
 # depend on the server.

@@ -107,7 +107,7 @@ packet (19 with an `rdf:RDF` root) seal at B-LT with pyHanko passing; without `N
 | Existing AcroForm fields | Offered to the sender to **convert to OpenSeal fields** (name, type, rect, options mapped) or flatten as they are |
 | External streams, remote fonts | Removed. Reported |
 | Broken xref, damaged objects | Rebuilt; unreadable objects dropped and reported |
-| Non-PDF upload | `Converter` seam: `.docx`, `.xlsx`, `.pptx` through the sister engines' PDF export when deployed, otherwise LibreOffice in a sandboxed container with no network; images (PNG, JPEG) wrapped as one page each |
+| Non-PDF upload | Uploads take PDF and Word (`.docx`) only (owner instruction 76). A Word document is converted to PDF by `casual-sign-convertd` (ADR-042): `docxide-pdf`, Apache-2.0, in a container with no network and a fresh, bounded child process per job, after a screen of the archive (sizes, zip bombs, encryption, macros refused `CS-CNV-0004`, docs/21 §DOCX conversion); the PDF then goes through this admission and normalization as any upload. The `.docx` is kept as the document's `original` version (its SHA-256 the `upload_hash` of `document.added`) and the normalized version's report says `converted: {from: "docx", converter, pdf_sha256, external_references}`. External references in the document are counted, never fetched. Without a converter a Word upload is refused `415 CS-CNV-0002`. Excel and PowerPoint are `VS-06F` (Open); images are not converted |
 
 The normalized file is written fresh (not incrementally), linearization dropped, objects repacked into object streams,
 deterministic object order. Its SHA-256 is the document hash every later event cites.
@@ -374,6 +374,14 @@ honoured), `NeedAppearances false`, the form kept fillable. Checked independentl
 field's rectangle and none outside across every geometry and field type (32 documents; a shifted rectangle fails the
 check), pypdf extracts every value and reads back `/V`; 20 real corpus forms (up to 6,197 fields) flatten and fill with
 no failure. Not yet: text shaping and CJK or RTL faces (`FLT-01`).
+
+**Strike-throughs (`FG-080`, ADR-044):** a visible `strikethrough` field is drawn as one line through the vertical
+middle of its box, as wide as it, 1 point (`0 J`, the field's colour), in the same update as every other field; its
+value is the implied `{checked: true}`, anything else is `CS-FLD-0002`. Tested in every rotation, crop and UserUnit
+(`tests/flatten.rs`, which `tools/check_render.py` renders with PDFium) and end to end, sealed and verified by pyHanko
+(`-worker` `tests/end_to_end.rs`).
+
+**Envelope id stamp (`FG-009`, ADR-045):** with `FlattenOptions::envelope_id_stamp`, the same update draws "Envelope ID: <id>" (7 pt Liberation Sans, grey, one line) in a 10 pt band 4 pt below the top edge of every page as displayed, inset 18 pt from the sides (5 % on a narrow page, shrinking to fit), placed through §4 for every rotation, crop box and UserUnit, as a Form XObject like a field's. The id must be an id (`CS-FLD-0005`). The delivered document is unchanged; the signing page shows the same line in the same place, and the worker and the in-progress preview flatten with the envelope's `signing_options.stamp_envelope_id`. Checked: every rotation, crop and user unit (the stamp read back from the top margin), three pages of three sizes, determinism, and the whole corpus (371 files, 10,692 pages, each stamp read back); a sealed stamped document passes pyHanko and pypdf reads the stamp.
 
 **Checkboxes (`FLT-04`):** a converted checkbox, checked, draws its widget's own on-state appearance (a cross, a filled
 square) in the field's box, the widget nearest the box when the sender moved it; our checkmark only when it has none.

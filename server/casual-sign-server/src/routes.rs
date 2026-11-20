@@ -11,8 +11,8 @@ use axum::routing::{MethodFilter, MethodRouter, on};
 use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
-    admin, bulk, envelopes as env, factors, folders, groups, mfa, ml, oauth, org, privacy,
-    sessions, switch, templates, usetemplates, webhooks,
+    admin, bulk, conversions, envelopes as env, factors, folders, groups, mfa, ml, oauth, org,
+    privacy, reports, sessions, switch, templates, usetemplates, webhooks,
 };
 use crate::authz::{Action, Level, OrgAction};
 use crate::ceremony;
@@ -119,7 +119,7 @@ pub fn table() -> Vec<Route> {
     use Access::{Action as A, Member, Org, Public, SigningIn};
     use Action::{
         AdminAuditRead, ApiClientsManage, AuditRead, BulkSend, EnvelopesRead, EnvelopesSend,
-        EnvelopesTransfer, EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage,
+        EnvelopesTransfer, EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage, ReportsRead,
         RetentionManage, SettingsSending, TemplatesRead, TemplatesWrite, UsersInvite, UsersRead,
         UsersRemove, UsersUpdate, WebhooksManage,
     };
@@ -662,6 +662,17 @@ pub fn table() -> Vec<Route> {
             JSON,
             admin::revoke_client,
         ),
+        // Insights (FG-141): the dashboard's figures; the workspace's with
+        // `reports.read`, else one's own (checked in the handler).
+        r("GET", "/api/v1/insights", er, JSON, reports::insights),
+        // Workspace reports (VS-06, UXW-25).
+        r(
+            "GET",
+            "/api/v1/reports/{kind}",
+            A(ReportsRead),
+            JSON,
+            reports::report,
+        ),
         // Envelopes.
         r("GET", "/api/v1/contacts", er, JSON, env::contacts),
         r("GET", "/api/v1/envelopes", er, JSON, env::list),
@@ -677,6 +688,22 @@ pub fn table() -> Vec<Route> {
         r("GET", "/api/v1/envelopes/{id}", er, JSON, env::get),
         r("PATCH", "/api/v1/envelopes/{id}", ew, JSON, env::patch),
         r("DELETE", "/api/v1/envelopes/{id}", ew, JSON, env::delete),
+        // VS-06D: everything that proves the agreement, as one ZIP.
+        r(
+            "GET",
+            "/api/v1/envelopes/{id}/evidence-package",
+            er,
+            JSON,
+            env::evidence_package,
+        ),
+        // ADR-031 (UXW-02): back from the Deleted view.
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/restore",
+            ew,
+            JSON,
+            env::restore,
+        ),
         r(
             "GET",
             "/api/v1/envelopes/{id}/status",
@@ -700,6 +727,21 @@ pub fn table() -> Vec<Route> {
             env::unschedule,
         ),
         r("POST", "/api/v1/envelopes/{id}/void", es, JSON, env::void),
+        // Custom fields: sender metadata, searchable (VS-06, FG-139).
+        r(
+            "GET",
+            "/api/v1/envelopes/{id}/custom-fields",
+            er,
+            JSON,
+            env::custom_fields,
+        ),
+        r(
+            "PUT",
+            "/api/v1/envelopes/{id}/custom-fields",
+            ew,
+            JSON,
+            env::set_custom_fields,
+        ),
         r(
             "POST",
             "/api/v1/envelopes/{id}/transfer",
@@ -769,6 +811,14 @@ pub fn table() -> Vec<Route> {
             ew,
             UPLOAD,
             env::add_document_route,
+        ),
+        // A Word document converted for the editor's preview, nothing stored (ADR-042).
+        r(
+            "POST",
+            "/api/v1/conversions",
+            ew,
+            UPLOAD,
+            conversions::convert,
         ),
         r(
             "GET",
@@ -1275,6 +1325,27 @@ pub fn table() -> Vec<Route> {
             ceremony::fill,
         ),
         r(
+            "POST",
+            "/s/{token}/editor/fields",
+            Public,
+            JSON,
+            ceremony::place_fields,
+        ),
+        r(
+            "PATCH",
+            "/s/{token}/editor/fields/{field}",
+            Public,
+            JSON,
+            ceremony::edit_field,
+        ),
+        r(
+            "DELETE",
+            "/s/{token}/editor/fields/{field}",
+            Public,
+            JSON,
+            ceremony::remove_field,
+        ),
+        r(
             "PUT",
             "/s/{token}/fields/{field}/attachment",
             Public,
@@ -1282,6 +1353,14 @@ pub fn table() -> Vec<Route> {
             ceremony::attach,
         ),
         r("POST", "/s/{token}/finish", Public, JSON, ceremony::finish),
+        // FG-013, ADR-043: the scan of what the signer signed by hand.
+        r(
+            "POST",
+            "/s/{token}/paper",
+            Public,
+            UPLOAD,
+            ceremony::sign_on_paper,
+        ),
         r(
             "POST",
             "/s/{token}/recipients",
@@ -1368,7 +1447,10 @@ pub fn app(state: AppState) -> Router {
             // only, but for the token endpoint's RFC 6749 form and a raw PDF upload.
             let extra: OtherMedia = match route.path {
                 "/api/v1/oauth/token" => &["application/x-www-form-urlencoded"],
-                "/api/v1/envelopes/{id}/documents" => &["application/pdf"],
+                "/api/v1/envelopes/{id}/documents" => {
+                    &["application/pdf", crate::convert::DOCX_MEDIA_TYPE]
+                }
+                "/api/v1/conversions" => &[crate::convert::DOCX_MEDIA_TYPE],
                 _ => &[],
             };
             h = h.route_layer(from_fn_with_state(extra, json_only));

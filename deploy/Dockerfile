@@ -6,6 +6,7 @@
 #   docker build -f deploy/Dockerfile --target worker .
 #   docker build -f deploy/Dockerfile --target keyd .
 #   docker build -f deploy/Dockerfile --target modeld .
+#   docker build -f deploy/Dockerfile --target convertd .
 #
 # Every base image is pinned by digest (docs/04 rule 31): a floating tag can change what
 # runs under the same name. The runtime images hold the binary and nothing else that
@@ -161,3 +162,43 @@ USER nonroot
 WORKDIR /var/lib/modeld
 EXPOSE 7444
 ENTRYPOINT ["/usr/local/bin/casual-sign-modeld"]
+
+# ---- build-convertd: the conversion daemon, built on its own -----------------------
+# A separate build, as modeld's: the DOCX converter (docxide-pdf) and its image decoders
+# enter convertd only. Built together with the server, Cargo's feature unification would
+# link them into the server binary too (ADR-042).
+FROM ${RUST_IMAGE} AS build-convertd
+WORKDIR /src
+COPY . .
+ENV CARGO_TERM_COLOR=never CARGO_INCREMENTAL=0 CARGO_NET_RETRY=10 CARGO_HTTP_MULTIPLEXING=false
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/src/target \
+    cargo build --release --locked -p casual-sign-convertd \
+ && mkdir -p /out \
+ && cp target/release/casual-sign-convertd /out/
+
+# ---- convertd-fonts: the faces the converter draws with ----------------------------
+# Debian's fonts-croscore: Arimo, Tinos and Cousine, Apache-2.0 (owner instruction 76:
+# everything the converter pulls in is Apache-2.0), metric-compatible with Arial, Times
+# New Roman and Courier New. Their copyright file ships beside them.
+FROM ${DEBIAN_IMAGE} AS convertd-fonts
+RUN apt-get update -q \
+ && apt-get install -y -q --no-install-recommends fonts-croscore \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p /out/fonts /out/doc /out/run \
+ && cp /usr/share/fonts/truetype/croscore/*.ttf /out/fonts/ \
+ && cp /usr/share/doc/fonts-croscore/copyright /out/doc/fonts-croscore.copyright
+
+# ---- convertd: Word to PDF, no network, no secrets (ADR-042) ------------------------
+# /run/convertd holds the socket only, owned by `nonroot` so the empty `convertd` volume
+# mounted there takes that owner; Compose also mounts the root read-only, gives the
+# container no network at all and drops every capability.
+FROM ${RUNTIME_IMAGE} AS convertd
+COPY --from=build-convertd /out/casual-sign-convertd /usr/local/bin/casual-sign-convertd
+COPY --from=convertd-fonts /out/fonts /usr/share/fonts/truetype/croscore
+COPY --from=convertd-fonts /out/doc /usr/share/doc/openseal-convertd
+COPY --from=convertd-fonts --chown=nonroot:nonroot /out/run /run/convertd
+ENV OPENSEAL_CONVERTD_SOCKET=/run/convertd/convertd.sock
+USER nonroot
+HEALTHCHECK --interval=5s --timeout=5s --retries=24 CMD ["/usr/local/bin/casual-sign-convertd", "health"]
+ENTRYPOINT ["/usr/local/bin/casual-sign-convertd"]

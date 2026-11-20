@@ -35,6 +35,8 @@
 //! | `OPENSEAL_CLAMD_MAX_BYTES` | Largest file sent to clamd (default 104857600, clamd's `StreamMaxLength`); at least the largest upload |
 //! | `OPENSEAL_CLAMD_CONCURRENCY` | Scans at once, 1 to 64 (default 4) |
 //! | `OPENSEAL_CLAMD_FAIL_OPEN=1` | Admit an upload clamd could not judge, recorded as `upload.unscanned_admitted`; default: refuse it (`503 CS-SCAN-0002`) |
+//! | `OPENSEAL_CONVERTD_SOCKET` | The Unix socket of convertd, the conversion daemon (ADR-042): Word (`.docx`) uploads are converted to PDF there; none: a Word upload is refused (`415 CS-CNV-0002`, a warning at start) |
+//! | `OPENSEAL_CONVERTD_TIMEOUT` | Most seconds the server waits for one conversion, 1 to 600 (default 90) |
 //! | `OPENSEAL_ADMIN_PASSWORD` (secret) | `bootstrap` only: the first administrator's password |
 //!
 //! `casual-sign-server bootstrap <account name> <admin email> <admin name>` creates the
@@ -698,6 +700,12 @@ async fn main() -> ExitCode {
             Ok(c) => c,
             Err(e) => return fail(&e),
         };
+    // Word uploads converted to PDF through convertd (ADR-042, VS-06C).
+    let converter =
+        match casual_sign_server::convert::converter_from_vars(|n| std::env::var(n).ok()) {
+            Ok(c) => c,
+            Err(e) => return fail(&e),
+        };
     let state = match AppState::new(store, blobs, jwt, Arc::new(SystemClock), config) {
         Ok(s) => s,
         Err(e) => return fail(e.code()),
@@ -721,6 +729,21 @@ async fn main() -> ExitCode {
         None => {
             tracing::warn!("OPENSEAL_CLAMD_ADDR is not set: uploads are not scanned for malware")
         }
+    }
+    match converter {
+        Some(c) => {
+            if c.ping().await {
+                tracing::info!("Word uploads are converted by convertd");
+            } else {
+                tracing::warn!(
+                    "convertd does not answer yet; Word uploads are refused (503 CS-CNV-0005) until it does"
+                );
+            }
+            state.set_converter(c);
+        }
+        None => tracing::warn!(
+            "OPENSEAL_CONVERTD_SOCKET is not set: Word uploads are refused (415 CS-CNV-0002)"
+        ),
     }
     // Security events, their pseudonyms keyed by OPENSEAL_LOG_PSEUDONYM_KEY (ASVS-08).
     match casual_sign_seclog::Pseudonymizer::from_env() {

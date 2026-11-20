@@ -297,6 +297,15 @@ fn samples() -> (Vec<Sample>, BTreeMap<Id, Capture>) {
             true,
             None,
         ),
+        // FG-080, ADR-044: an editor's strike-through, a line across its box.
+        sample(
+            "strike",
+            FieldType::Strikethrough,
+            [260.0, 480.0, 180.0, 12.0],
+            Some(FieldValue::Checked(true)),
+            true,
+            None,
+        ),
     ];
     (v, caps)
 }
@@ -514,6 +523,66 @@ fn a_value_that_does_not_suit_its_field_is_refused() {
     assert_eq!(e.unwrap_err().code(), "CS-FLD-0004");
 }
 
+/// The content of every Form XObject in `out`, decoded.
+fn forms(out: &[u8]) -> Vec<String> {
+    let mut a = admit(out, &Limits::default(), &never).unwrap();
+    let nums: Vec<u32> = a.document.object_numbers().collect();
+    let mut all = Vec::new();
+    for n in nums {
+        if let Ok(Object::Stream(s)) = a.document.object(n, &never)
+            && s.dict.name(b"Subtype") == Some(b"Form")
+        {
+            let ops = a.document.decode_stream(n, &never).unwrap();
+            all.push(String::from_utf8_lossy(&ops).into_owned());
+        }
+    }
+    all
+}
+
+#[test]
+fn a_strike_through_is_one_line_across_the_middle_of_its_box_and_takes_no_other_value() {
+    // FG-080, ADR-044: from the left edge to the right at half the height, butt caps,
+    // in the field's colour; a value other than the mark is refused, never guessed at.
+    let base = delivered(&page_pdf(&cases()[0], "", "", Vec::new()));
+    let mut f = field(
+        "st",
+        FieldType::Strikethrough,
+        1,
+        [40.0, 100.0, 200.0, 10.0],
+    );
+    f.format = Some(Format {
+        color: Some(Rgb([200, 0, 0])),
+        ..Format::default()
+    });
+    let values = BTreeMap::from([(id("st"), FieldValue::Checked(true))]);
+    let out = run(
+        &base,
+        std::slice::from_ref(&f),
+        &values,
+        &BTreeMap::new(),
+        &FlattenOptions::default(),
+    )
+    .unwrap();
+    assert!(out.bytes.starts_with(&base));
+    assert_eq!(out.report.drawn, vec![id("st")]);
+    let all = forms(&out.bytes).join("\n");
+    assert!(all.contains("1 w 0 J"), "{all}");
+    assert!(all.contains("0 5 m"), "{all}");
+    assert!(all.contains("200 5 l"), "{all}");
+    assert!(all.contains("0.7843 0 0 RG"), "{all}");
+    for wrong in [FieldValue::Checked(false), text("x")] {
+        let values = BTreeMap::from([(id("st"), wrong)]);
+        let e = run(
+            &base,
+            std::slice::from_ref(&f),
+            &values,
+            &BTreeMap::new(),
+            &FlattenOptions::default(),
+        );
+        assert_eq!(e.unwrap_err().code(), "CS-FLD-0002");
+    }
+}
+
 #[test]
 fn jpeg_metadata_is_dropped_and_its_orientation_applied() {
     let base = delivered(&page_pdf(&cases()[0], "", "", Vec::new()));
@@ -621,4 +690,116 @@ fn a_multi_line_text_field_draws_each_line_from_the_top_of_its_box() {
     .unwrap();
     let ys = baselines(&out.bytes);
     assert!(ys.len() == 1 && ys[0] < 70.0, "{ys:?}");
+}
+
+/// For each page of `pdf`, the displayed box of each text run holding `needle`.
+fn runs_with(pdf: &[u8], needle: &str) -> Vec<Vec<(f64, f64, f64, f64)>> {
+    let mut a = admit(pdf, &Limits::default(), &never).unwrap();
+    let pages = a.report.pages.clone();
+    let texts = casual_sign_fields::extract_text(&mut a.document, &pages, &never).unwrap();
+    texts
+        .iter()
+        .map(|p| {
+            // A run is one show operator; the stamp is one line, so one run holds it.
+            p.runs
+                .iter()
+                .filter(|r| r.text.contains(needle))
+                .map(|r| {
+                    let b = r.quad.bounds();
+                    (b.x, b.y, b.right(), b.bottom())
+                })
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn the_envelope_id_stamp_is_in_the_top_margin_of_every_page_in_every_rotation() {
+    let needle = format!("Envelope ID: {ENVELOPE}");
+    let mut stamp = FlattenOptions::default();
+    stamp.envelope_id_stamp = true;
+    for case in cases() {
+        let base = delivered(&page_pdf(&case, "", "", Vec::new()));
+        let none = BTreeMap::new();
+        let out = run(&base, &[], &none, &BTreeMap::new(), &stamp).unwrap();
+        assert!(out.bytes.starts_with(&base), "{}", case.name());
+        let found = runs_with(&out.bytes, &needle);
+        assert_eq!(found.len(), 1);
+        let [(x0, y0, x1, y1)] = found[0][..] else {
+            panic!(
+                "{}: the stamp once on the page, found {:?}",
+                case.name(),
+                found[0]
+            );
+        };
+        let (w, _) = case.displayed();
+        // Upright in the top margin of the page as displayed, from the left inset.
+        assert!(y0 >= 0.0 && y1 <= 16.0, "{}: {y0}..{y1}", case.name());
+        assert!(
+            (17.0..20.0).contains(&x0) && x1 < w,
+            "{}: {x0}..{x1}",
+            case.name()
+        );
+        assert!(y1 - y0 < 10.0, "{}: one 7 pt line", case.name());
+        // Off: nothing stamped.
+        let plain = run(
+            &base,
+            &[],
+            &none,
+            &BTreeMap::new(),
+            &FlattenOptions::default(),
+        )
+        .unwrap();
+        assert!(runs_with(&plain.bytes, &needle)[0].is_empty());
+    }
+}
+
+#[test]
+fn the_envelope_id_stamp_is_on_every_page_and_needs_a_valid_id() {
+    // Three pages: portrait, rotated, and one too small for the usual inset.
+    let page = |media: &str, extra: &str| {
+        format!("<</Type/Page/Parent 2 0 R/MediaBox[{media}]{extra}/Resources<<>>/Contents 4 0 R>>")
+            .into_bytes()
+    };
+    let objs = vec![
+        (1, b"<</Type/Catalog/Pages 2 0 R>>".to_vec()),
+        (
+            2,
+            b"<</Type/Pages/Kids[3 0 R 5 0 R 6 0 R]/Count 3>>".to_vec(),
+        ),
+        (3, page("0 0 612 792", "")),
+        (4, stream("", b"")),
+        (5, page("0 0 612 792", "/Rotate 90")),
+        (6, page("0 0 200 100", "")),
+    ];
+    let base = delivered(&classic(&objs));
+    let mut stamp = FlattenOptions::default();
+    stamp.envelope_id_stamp = true;
+    let none = BTreeMap::new();
+    let out = run(&base, &[], &none, &BTreeMap::new(), &stamp).unwrap();
+    let found = runs_with(&out.bytes, &format!("Envelope ID: {ENVELOPE}"));
+    assert_eq!(
+        found.iter().map(Vec::len).collect::<Vec<_>>(),
+        vec![1, 1, 1]
+    );
+    // The small page still holds the whole line, inside the page.
+    let (x0, _, x1, _) = found[2][0];
+    assert!(x0 >= 0.0 && x1 <= 200.0, "{x0}..{x1}");
+    // The same input gives the same bytes.
+    let again = run(&base, &[], &none, &BTreeMap::new(), &stamp).unwrap();
+    assert_eq!(out.bytes, again.bytes);
+
+    // No envelope id, or one that is not an id: refused, never a blank stamp.
+    for envelope_id in [None, Some("not an id"), Some("")] {
+        let mut a = admit(&base, &Limits::default(), &never).unwrap();
+        let input = FlattenInput {
+            fields: &[],
+            values: &none,
+            captures: &BTreeMap::new(),
+            envelope_id,
+            acroform: None,
+        };
+        let e = flatten(&mut a, &input, &FontSet::bundled(), &stamp, &never).unwrap_err();
+        assert_eq!(e.code(), "CS-FLD-0005", "{envelope_id:?}");
+    }
 }

@@ -72,6 +72,13 @@ GROUPS = {
                    "One template sent to a list of people, one envelope each: check the list, then send it in batches."),
     "folders": ("Folders", "Core resources", "Each member's own folders for envelopes and templates."),
     "contacts": ("Contacts", "Core resources", "People the caller has sent to, for recipient suggestions."),
+    "conversions": ("Conversions", "Core resources",
+                    "A Word document converted to PDF and admitted, for a preview before it is uploaded; nothing is "
+                    "stored. An upload of a Word document converts it the same way."),
+    "reports": ("Reports", "Reporting",
+                "The envelope, recipient and usage reports of a workspace over a window, as JSON or CSV."),
+    "insights": ("Insights", "Reporting",
+                 "Aggregate figures for a window: counts by outcome, time to complete, activity by day and top senders."),
     "webhooks": ("Webhooks", "Integrations",
                  "Subscriptions that receive signed event notifications (the Standard Webhooks scheme), their delivery "
                  "log, test events and redelivery. See <a href=\"webhooks.html\">Webhooks</a> for verifying them."),
@@ -125,7 +132,7 @@ def group_of(path: str) -> str:
             return "fields"
         if sub in ("documents", "attachments", "suggestions"):
             return "documents"
-        if sub in ("audit", "anchor-proof", "certificate"):
+        if sub in ("audit", "anchor-proof", "certificate", "evidence-package"):
             return "evidence"
         if sub in ("legal-hold", "purge"):
             return "retention"
@@ -134,7 +141,8 @@ def group_of(path: str) -> str:
             "admin-events": "admin-events", "organizations": "organizations", "users": "users",
             "retention": "retention", "api-clients": "api-clients", "contacts": "contacts", "templates": "templates",
             "folders": "folders", "bulk-sends": "bulk-sends", "groups": "groups",
-            "permission-profiles": "permission-profiles", "webhooks": "webhooks"}.get(seg, "")
+            "permission-profiles": "permission-profiles", "webhooks": "webhooks", "conversions": "conversions",
+            "reports": "reports", "insights": "insights"}.get(seg, "")
 
 
 def esc(s) -> str:

@@ -1,0 +1,54 @@
+[package]
+name = "casual-sign-convertd"
+version = "0.1.0"
+description = "OpenSeal conversion daemon: Word (.docx) uploads converted to PDF in a fresh, bounded child process per job, in its own container with no network and no secrets (ADR-042, docs/30 §3, VS-06C)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# As modeld (ADR-029 review defect 4): everything that reads a hostile .docx belongs to
+# the daemon, behind the `server` feature. The API server depends on this crate with
+# `default-features = false` and links only the client and the wire code, so no DOCX
+# parser, image decoder or font code sits next to the server's secrets.
+[features]
+default = ["server"]
+# The daemon, the per-job child, the DOCX screen and the converter.
+server = ["screen", "dep:docxide-pdf", "dep:rustix"]
+# The archive screen alone (src/screen.rs), without the converter: what the
+# `docx_screen` fuzz target links. Part of `server`.
+screen = ["dep:zip"]
+
+[[bin]]
+name = "casual-sign-convertd"
+path = "src/main.rs"
+required-features = ["server"]
+
+[dependencies]
+# The client side (the API server's): one exchange over the daemon's Unix socket, with a
+# deadline. Already in the tree.
+tokio = { version = "1.40", default-features = false, features = ["net", "io-util", "time"] }
+
+# ---- server only (ADR-042) ----
+# The converter: DOCX to PDF, pure Rust, Apache-2.0 (owner instruction 76). Only the
+# library: `cli` (clap, env_logger) stays off. Every crate it pulls in passes deny.toml;
+# its licence survey is in ADR-042. Pinned exactly: a new release is a reviewed change.
+docxide-pdf = { version = "=0.21.4", default-features = false, optional = true }
+# Reads the archive's central directory for the screen (src/screen.rs) before the
+# converter sees a byte: entry count, declared sizes, ratios, macros. The version
+# docxide-pdf takes, deflate through zlib-rs only.
+zip = { version = "9.4", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
+
+# The child's own limits (`setrlimit`), without `unsafe` in this crate; the same
+# version modeld uses.
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "=1.1.6", default-features = false, features = ["std", "process"], optional = true }
+
+[dev-dependencies]
+# Admits the converted PDF in tests, as the server will.
+casual-sign-pdf = { path = "../../crates/casual-sign-pdf" }
+tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "io-util", "time"] }
+
+[lints]
+workspace = true

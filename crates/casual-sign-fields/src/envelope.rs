@@ -112,6 +112,15 @@ pub fn evaluate_envelope(fields: &[Field], values: &Values) -> Outcome {
         let submitted = values.get(&field.id);
         let value = if field.field_type == FieldType::Formula {
             None
+        } else if field.field_type == FieldType::Strikethrough {
+            // FG-080, ADR-044: a strike-through holds no recipient value; it is drawn
+            // whenever it is shown, so its value is always the mark. A client that sends
+            // another is told so, as for a locked field.
+            let mark = FieldValue::Checked(true);
+            if submitted.is_some_and(|s| *s != mark) {
+                push(&mut issues, &plan, i, FieldError::ClientMismatch);
+            }
+            Some(mark)
         } else if field.locked || field.read_only {
             if submitted.is_some_and(|s| Some(s) != preset.as_ref()) {
                 push(&mut issues, &plan, i, FieldError::ClientMismatch);

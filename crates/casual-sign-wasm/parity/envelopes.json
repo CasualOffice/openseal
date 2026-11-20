@@ -709,5 +709,62 @@
         "text": "x"
       }
     }
+  },
+  {
+    "fields": [
+      {
+        "document_id": "doc",
+        "id": "a",
+        "label": "A",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "checkbox"
+      },
+      {
+        "conditional": {
+          "parent_label": "A",
+          "when": "checked"
+        },
+        "document_id": "doc",
+        "id": "st",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "strikethrough"
+      },
+      {
+        "document_id": "doc",
+        "id": "st2",
+        "placement": {
+          "height": "10",
+          "page": 1,
+          "width": "50",
+          "x": "0",
+          "y": "0"
+        },
+        "recipient_id": "r1",
+        "type": "strikethrough"
+      }
+    ],
+    "name": "strike",
+    "values": {
+      "a": {
+        "checked": true
+      },
+      "st2": {
+        "text": "x"
+      }
+    }
   }
 ]
