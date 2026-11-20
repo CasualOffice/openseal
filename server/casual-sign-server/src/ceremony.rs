@@ -97,6 +97,11 @@ pub(crate) struct Open {
     disclosure: Option<(casual_sign_store::repo::accounts::Disclosure, bool)>,
     /// Security events this request records, written once its transaction commits.
     on_commit: Vec<casual_sign_seclog::SecurityEvent>,
+    /// An embedded signing view's host page, return URL and state (VS-09): the page posts
+    /// its events there; `None` for any other link.
+    embed: Option<casual_sign_store::repo::embed_views::EmbedTarget>,
+    /// The origins the workspace allows to frame its views (VS-09), for `embed`.
+    embed_allowed: Vec<String>,
 }
 
 /// Who sent the envelope, for the recipient to judge whether the request is genuine
@@ -196,7 +201,19 @@ async fn reopen(
             .token(&hash)
             .await?
             .ok_or_else(ApiError::expired)?;
-        let presented = cookie(headers, CEREMONY_COOKIE).map(|c| sha256(c.as_bytes()));
+        // An embedded view inside another site's frame gets no first-party cookie from the
+        // browser, so its page carries the binding in a header instead (VS-09); only an
+        // embedded link takes it, so an emailed link stays bound by the HttpOnly cookie.
+        let header_binding = (record.purpose == TokenPurpose::Embedded)
+            .then(|| {
+                headers
+                    .get(crate::embed::BINDING_HEADER)
+                    .and_then(|v| v.to_str().ok())
+            })
+            .flatten();
+        let presented = cookie(headers, CEREMONY_COOKIE)
+            .or(header_binding)
+            .map(|c| sha256(c.as_bytes()));
         let mut set_cookie = None;
         match (record.session_sha256, presented) {
             (Some(bound), Some(p)) if same(&bound, &p) => {}
@@ -303,6 +320,8 @@ async fn reopen(
             link: format!("/s/{token}"),
             disclosure,
             on_commit: Vec::new(),
+            embed: (record.purpose == TokenPurpose::Embedded).then(|| record.embed.clone()),
+            embed_allowed: crate::embed::allowed(&acct.settings),
         })
     };
     inner.await.map_err(IntoResponse::into_response)
@@ -603,6 +622,14 @@ impl Open {
             "sandbox": self.sandbox,
             "auth_required": me.map(|r| r.spec.auth.iter().filter(|m| !r.auth_passed.contains(m)).copied().collect::<Vec<_>>()),
         });
+        // VS-09: an embedded view's page posts its events to its host page and returns
+        // to the host's URL with its state.
+        if let (Some(t), Some(o)) = (&self.embed, v.as_object_mut()) {
+            o.insert(
+                "embed".into(),
+                crate::embed::target_json(t, &self.embed_allowed),
+            );
+        }
         // VS-02: an agent, intermediary or editor names later recipients, so their view
         // lists the ones they may still change (later in the order, not yet reached),
         // once authenticated; nobody else's view has the member.
@@ -686,8 +713,13 @@ impl Open {
     }
 
     async fn finish(self, st: &AppState, status: StatusCode) -> Result<Response, ApiError> {
-        let body = self.view();
+        let mut body = self.view();
         let cookie = self.cookie.clone();
+        // VS-09: the page of an embedded view keeps its binding in memory and sends it
+        // back in `X-OpenSeal-Binding`; answered once, to the request that bound it.
+        if let (Some(_), Some(secret), Some(o)) = (&self.embed, &cookie, body.as_object_mut()) {
+            o.insert("binding".into(), Value::String(secret.clone()));
+        }
         self.tx.commit().await?;
         for ev in self.on_commit {
             crate::security::emit(st, ev);
@@ -830,10 +862,9 @@ pub(crate) async fn view_or_page(
     headers: HeaderMap,
     token: Path<String>,
 ) -> Response {
-    if crate::web::wants_page(&headers)
-        && let Some(app) = st.webapp()
-    {
-        return crate::web::sign_page(app);
+    if crate::web::wants_page(&headers) && st.webapp().is_some() {
+        // VS-09: an embedded view's page may be framed by its host page only.
+        return crate::embed::signing_page(&st, &token.0).await;
     }
     view(st, ip, method, headers, token).await
 }

@@ -34,6 +34,8 @@ const SLICE_MODULES = [
   "fieldlogic.js", "geometry.js", "fieldrules.js",
   // API and webhooks (slice 8): the consent screen, API clients and webhooks in Admin, connected apps
   "authorize.js", "admin.js", "adminmodel.js", "profile.js",
+  // embedding (slice 9): the embedded prepare and correct page, the framed side, the host page's elements, Admin's websites
+  "embed.js", "embedframe.js", "embedmodel.js", "openseal-elements.js",
   // manage and correct (slice 6): Agreements with its views, filters and inspector, Home, Reports
   "dashboard.js", "managemodel.js", "inspector.js", "home.js", "reports.js", "reportmodel.js",
   // slice 6 additions (VS-06E): the Insights dashboard
@@ -43,7 +45,7 @@ const SLICE_MODULES = [
   // shared components
   "ui/core.js", "ui/controls.js", "ui/menus.js", "ui/panel.js", "ui/palette.js", "ui/pdfpreview.js",
 ];
-const SLICE_PAGES = ["app.html", "sign.html", "verify.html"];
+const SLICE_PAGES = ["app.html", "sign.html", "verify.html", "embed.html"];
 
 /// The code before a literal that makes it text a person reads or hears, matched at the
 /// end of the code since the previous literal.

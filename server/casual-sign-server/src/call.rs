@@ -65,7 +65,9 @@ impl Call {
         AdminActor {
             kind: match self.p.credential {
                 Credential::Session(_) => ActorKind::User(self.p.user),
-                Credential::ApiKey(c) | Credential::AccessToken(c) => ActorKind::ApiClient(c),
+                Credential::ApiKey(c)
+                | Credential::AccessToken(c)
+                | Credential::EmbedView { client: c, .. } => ActorKind::ApiClient(c),
             },
             at: self.st.now(),
             request_id: crate::error::request_id(),

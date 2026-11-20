@@ -6,7 +6,8 @@
 //! the server's own scoping stands alone. A's objects are unchanged afterwards.
 //!
 //! Ceremony paths (`/s/{token}`) carry no account principal: their token names its
-//! account (stored hashed, SEC-A01), and are covered by the ceremony tests.
+//! account (stored hashed, SEC-A01), and are covered by the ceremony tests; so do the
+//! embedded views' pages (`/e/{token}`, VS-09), covered by tests/embedding.rs.
 
 // Test code: a panic is the failure report (CLAUDE.md).
 #![allow(
@@ -222,6 +223,7 @@ async fn another_accounts_ids_are_not_found_on_every_operation(rls: Rls) {
         if !path.contains('{')
             || path.starts_with("/api/v1/reports/")
             || path.starts_with("/s/")
+            || path.starts_with("/e/")
             || path.starts_with("/api/v1/organizations/")
             || path.starts_with("/api/v1/auth/sessions/")
             || path.starts_with("/api/v1/auth/mfa/passkeys/")

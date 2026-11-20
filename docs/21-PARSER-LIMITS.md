@@ -249,6 +249,16 @@ dynamic-only form the reader refuses with `CS-PDF-0012` whose packets `casual-si
 | Refresh token | 30 days unused, one use, rotated | CS-AUTH-0014 | `tests/oauth.rs` (replay revokes the family) |
 | JWT bearer assertion | `exp` in the future and at most 3,600 s after `iat`; `iat` at most 60 s ahead | CS-AUTH-0014 | `tests/oauth.rs` |
 
+
+### Embedding (`VS-09`, built)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| Embedding origins per workspace | 20, each at most 255 bytes | CS-API-0001 |
+| View `return_url` | 2,048 bytes | CS-EMB-0001 |
+| View `state` | 1,024 characters, no control character | CS-API-0001 |
+| View link life; spent | 5 minutes; once | CS-AUTH-0002 |
+| Prepare or correct view session | 1 hour | CS-AUTH-0002 |
 ## Platform console (`casual-sign-console`; `CON-02`, `CON-03`, `CON-06`, `CON-07`, `CON-08`, `CON-09`, built)
 
 | Limit | Default | Code |
@@ -355,6 +365,15 @@ inside the child before the converter reads the archive (`src/screen.rs`). Every
 | Converted PDF | 128 MiB | CS-CNV-0003 (`output`) | none: `wire::tests::a_lying_length_is_refused_before_allocating` |
 | Jobs at once | 2 (`OPENSEAL_CONVERTD_SLOTS`); a request beyond them is refused at once, never queued | CS-CNV-0005 (`busy`) | none: `daemon::tests::slots_are_taken_and_given_back` |
 | The server's wait for one conversion | 90 s (`OPENSEAL_CONVERTD_TIMEOUT`), connecting and moving the bytes included | CS-CNV-0003 (`time`) | none: server `tests/convert.rs` |
+
+## Remote signing providers (designed, ADR-046 and ADR-047 Proposed; not built)
+
+| Limit | Default | Code |
+| --- | ---: | --- |
+| A CSC answer (JSON) | 1 MiB; at most 32 credentials, 16 certificates per chain | CS-RSP-0004 |
+| An eSign response (XML) | 512 KiB, depth 16, 256 elements, 5 `DocSignature`, 16 KiB of base64 certificate, 512 KiB of base64 per signature; no DTD or entities | CS-RSP-0004 |
+| A remote signing session | 15 minutes without an answer (account setting, 5 to 60) | CS-RSP-0003 after it closes |
+| A provider's CMS | The planned `/Contents` placeholder; never re-laid out | CS-RSP-0005 |
 
 ## Bulk and links
 

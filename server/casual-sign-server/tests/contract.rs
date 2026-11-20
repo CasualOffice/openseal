@@ -701,6 +701,73 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         (not_in_person.status, not_in_person.code().as_str()),
         (StatusCode::CONFLICT, "CS-WF-0001")
     );
+    // VS-09: the correct view of the sent envelope, and the prepare view of a draft, each
+    // spent once through its page's session.
+    let correct = ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/envelopes/{emb_id}/views/correct"),
+            &bearer,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "correct view",
+    )
+    .await;
+    assert!(correct["url"].as_str().unwrap().contains("/e/"));
+    let prep = ok(
+        api.call(
+            "POST",
+            "/api/v1/envelopes",
+            &bearer,
+            Some(json!({
+                "subject": "Embedded draft",
+                "documents": [{"name": "d.pdf", "content_base64": b64(&pdf(1))}],
+            })),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "embedded draft",
+    )
+    .await;
+    let prep_id = prep["id"].as_str().unwrap();
+    let view = ok(
+        api.call(
+            "POST",
+            &format!("/api/v1/envelopes/{prep_id}/views/prepare"),
+            &bearer,
+            Some(json!({})),
+            &[],
+        )
+        .await,
+        StatusCode::CREATED,
+        "prepare view",
+    )
+    .await;
+    let url = view["url"].as_str().unwrap();
+    let link = &url[url.find("/e/").unwrap()..];
+    // No web app in this harness: the page is not served, and nothing is spent.
+    let page = api
+        .call("GET", link, &Auth::None, None, &[("accept", "text/html")])
+        .await;
+    assert_eq!(page.status, StatusCode::NOT_FOUND);
+    let s = ok(
+        api.call(
+            "POST",
+            &format!("{link}/session"),
+            &Auth::None,
+            Some(json!({})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "view session",
+    )
+    .await;
+    assert_eq!(s["kind"], "prepare");
     ok(
         api.call(
             "DELETE",

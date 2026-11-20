@@ -216,6 +216,13 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     try { if (v) store?.setItem("openseal.csrf", v); else store?.removeItem("openseal.csrf"); } catch { /* storage off */ }
   };
 
+  /// VS-09: an embedded view's credentials, kept in memory only. `bearer`: a prepare or
+  /// correct view's session (`osv_…`), sent on staff calls instead of the cookie a
+  /// cross-site frame does not get; `binding`: an embedded signing view's binding, sent
+  /// on ceremony calls in `X-OpenSeal-Binding` for the same reason.
+  let bearer = null;
+  let binding = null;
+
   /// Asked when a sensitive call answers `403 CS-AUTH-0013` (ASVS-07): resolves true once
   /// the person has re-authenticated (the call is then made again, once), false or null
   /// when they cancelled (the refusal stands). Set by the app with `setStepUp`.
@@ -246,6 +253,8 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     // A file sent as itself (a Word document to convert, ADR-042), not as JSON.
     if (bytes !== undefined) headers["Content-Type"] = contentType || "application/octet-stream";
     if (method !== "GET" && !ceremony && csrf) headers["X-CSRF-Token"] = csrf;
+    if (bearer && !ceremony) headers.Authorization = `Bearer ${bearer}`;
+    if (binding && ceremony) headers["X-OpenSeal-Binding"] = binding;
     if (method === "POST") headers["Idempotency-Key"] = random();
     if (ifMatch) headers["If-Match"] = ifMatch;
     let res;
@@ -296,6 +305,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
   return {
     request,
     hasCsrf: () => !!csrf,
+    /// VS-09: act as an embedded prepare or correct view's session (null: stop).
+    setBearer(v) { bearer = typeof v === "string" && v ? v : null; },
+    /// VS-09: the binding an embedded signing view's first answer carried.
+    setBinding(v) { binding = typeof v === "string" && v ? v : null; },
     /// Set what asks the person to re-authenticate before a sensitive call (ASVS-07):
     /// `async (err) => boolean`; null turns it off.
     setStepUp(fn) { stepUp = typeof fn === "function" ? fn : null; },
@@ -810,6 +823,15 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
     // email, organisation}}` (UXW-34). `url` is there only when the account has
     // published the disclosure's text; `sender.name` and `.email` are null once the
     // sending user has left the account.
+    /// VS-09, docs/40 §5: embedded views. The integrator's calls (`signing`, `prepare`,
+    /// `correct`: `{url, expires_at}`, a link spent once) and the embedded page's own
+    /// (`session`: spend a prepare or correct link for its session).
+    views: {
+      signing: (id, body) => data(request("POST", `${E(id)}/views/signing`, { body })),
+      prepare: (id, body = {}) => data(request("POST", `${E(id)}/views/prepare`, { body })),
+      correct: (id, body = {}) => data(request("POST", `${E(id)}/views/correct`, { body })),
+      session: (token) => data(request("POST", `/e/${encodeURIComponent(token)}/session`, { body: {}, ceremony: true })),
+    },
     ceremony: {
       view: (token) => data(request("GET", S(token), { ceremony: true })),
       /// An approver approves (`recipient.approved`); a signer is refused (409).

@@ -654,6 +654,14 @@ impl Privacy<'_> {
         .await
         .map_err(db)?;
         sqlx::query!(
+            "DELETE FROM embed_views WHERE account_id = $1 AND envelope_id = $2",
+            acct,
+            e
+        )
+        .execute(&mut *c)
+        .await
+        .map_err(db)?;
+        sqlx::query!(
             "DELETE FROM recipient_tokens WHERE account_id = $1 AND envelope_id = $2",
             acct,
             e

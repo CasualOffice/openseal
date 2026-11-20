@@ -32,6 +32,7 @@
 // name is shown, not edited (the API has no rename).
 
 import { retentionPage } from "./adminretention.js";
+import { parseOrigins, MAX_ORIGINS } from "./embedmodel.js";
 import { h, clear, fmtDate, download } from "./dom.js";
 import { icon } from "./icons.js";
 import { t } from "./i18n.js";
@@ -272,6 +273,52 @@ function account(panel, ctx, part) {
           h("dt", { text: t("admin.seal-profile") }), h("dd", { attrs: { "data-testid": "seal-profile" }, text: t(sealProfileLabel(s().default_seal_profile)) }),
           h("dt", { text: t("admin.stamp-envelope-id") }), h("dd", { attrs: { "data-testid": "stamp-default" }, text: t(s().stamp_envelope_id === true ? "admin.stamp-on" : "admin.stamp-off") })),
         lockNote("first_reminder_days")));
+    // VS-09: the websites that may frame the workspace's embedded views.
+    if (part !== "branding") {
+      const origins = Array.isArray(s().embedding_origins) ? s().embedding_origins : [];
+      box.append(card("embedding", t("admin.embedding"), t("admin.embedding-lede"), t("admin.edit-embedding"), editEmbedding,
+        origins.length
+          ? h("ul", { class: "os-adm__list", attrs: { "aria-label": t("admin.embedding-list"), "data-testid": "embedding-origins" } }, ...origins.map((o) => h("li", { text: o })))
+          : h("p", { class: "os-muted", attrs: { "data-testid": "embedding-origins" }, text: t("admin.embedding-none") })));
+    }
+  }
+
+  /// VS-09: the websites allowed to frame the views, one per line; checked here as the
+  /// server checks them, saved with a recent sign-in (a security setting, ASVS-07).
+  async function editEmbedding() {
+    const f = {};
+    const ok = await openPanel({
+      id: "account-embedding",
+      title: t("admin.embedding"),
+      description: t("admin.embedding-lede"),
+      build(body) {
+        const now = Array.isArray(s().embedding_origins) ? s().embedding_origins : [];
+        f.list = h("textarea", { id: "a-embed", class: "os-input os-input--mono", rows: 5, value: now.join("\n"), attrs: { autofocus: true, spellcheck: "false", "aria-describedby": "a-embed-help a-embed-err" } });
+        f.err = h("p", { id: "a-embed-err", class: "os-field-error", attrs: { role: "alert" } });
+        body.append(
+          h("label", { class: "os-label", attrs: { for: "a-embed" }, text: t("admin.embedding-origins") }), f.list,
+          h("p", { id: "a-embed-help", class: "os-help", text: t("admin.embedding-help") }), f.err);
+      },
+      actions: [
+        { label: t("action.cancel"), value: null },
+        {
+          label: t("templates.save"), variant: "primary",
+          onClick: async () => {
+            const got = parseOrigins(f.list.value);
+            if (got.bad != null || got.tooMany) {
+              f.err.textContent = got.bad != null ? t("admin.embedding-bad", { value: got.bad }) : t("admin.embedding-too-many", { n: MAX_ORIGINS });
+              f.list.setAttribute("aria-invalid", "true");
+              f.list.focus();
+              return undefined;
+            }
+            const out = await ctx.api.patchAccountSettings({ embedding_origins: got.origins.length ? got.origins : null });
+            acct = { ...acct, settings: out?.settings || acct.settings };
+            return true;
+          },
+        },
+      ],
+    });
+    if (ok) { toast(t("admin.embedding-saved"), "success"); render(); }
   }
   function card(id, title, lede, editLabel, onEdit, ...body) {
     return h("section", { class: "os-card os-adm__card", attrs: { "aria-labelledby": `acct-${id}-h`, "data-testid": `account-${id}` } },

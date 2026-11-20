@@ -47,6 +47,8 @@ export interface Operations {
   createApiClient(params: { body: unknown }): Promise<any>;
   /** Check a list of recipient sets against a template, and make a bulk send of it (UXW-04) — `POST /api/v1/bulk-sends` (bulk.send) */
   createBulkSend(params: { body: unknown }): Promise<any>;
+  /** Five-minute embedded correct link for a sent envelope, an API client only (VS-09) — `POST /api/v1/envelopes/{id}/views/correct` (envelopes.send) */
+  createCorrectView(params: { "id": string | number | boolean; body?: unknown }): Promise<any>;
   /** Create a draft, or create and send in one call — `POST /api/v1/envelopes` (envelopes.write) */
   createEnvelope(params: { body: unknown }): Promise<any>;
   /** One envelope from one template or several (composite templates), as a draft or sent (slice 3) — `POST /api/v1/envelopes/from-templates` (envelopes.write) */
@@ -59,6 +61,8 @@ export interface Operations {
   createOrgWorkspace(params: { body: unknown }): Promise<any>;
   /** Make a custom permission profile — `POST /api/v1/permission-profiles` (profiles.manage) */
   createPermissionProfile(params: { body: unknown }): Promise<any>;
+  /** Five-minute embedded prepare (sender) link for a draft, an API client only (VS-09) — `POST /api/v1/envelopes/{id}/views/prepare` (envelopes.send) */
+  createPrepareView(params: { "id": string | number | boolean; body?: unknown }): Promise<any>;
   /** The Inbox (UXW-01): a five-minute signing link for the signed-in member, as the recipient they are — `POST /api/v1/envelopes/{id}/sign-link` */
   createSignLink(params: { "id": string | number | boolean }): Promise<any>;
   /** Five-minute embedded signing link (the creating API client only) — `POST /api/v1/envelopes/{id}/views/signing` (envelopes.send) */

@@ -2417,6 +2417,15 @@ struct ViewIn {
     recipient_id: String,
     #[serde(default)]
     auth_asserted: Option<String>,
+    /// VS-09: the origin of the host page that frames the view.
+    #[serde(default)]
+    frame_origin: Option<String>,
+    /// VS-09: where the signer's browser goes when the view ends.
+    #[serde(default)]
+    return_url: Option<String>,
+    /// VS-09: an opaque value given back with each event.
+    #[serde(default)]
+    state: Option<String>,
 }
 
 /// `POST /envelopes/{id}/views/signing`: a single-use, five-minute ceremony link for
@@ -2440,6 +2449,17 @@ pub(crate) async fn view_signing(
         return Err(ApiError::invalid("/recipient_id"));
     }
     let rid = r.id().clone();
+    // VS-09: the host page and return URL must be among the workspace's embedding
+    // origins; checked before anything is recorded.
+    let acct = tx.account().get().await?;
+    let target = crate::embed::target(
+        crate::embed::TargetIn {
+            frame_origin: req.frame_origin.clone(),
+            return_url: req.return_url.clone(),
+            state: req.state.clone(),
+        },
+        &crate::embed::allowed(&acct.settings),
+    )?;
     if let Some(claim) = &req.auth_asserted {
         let mut cmds = c.commands(&mut tx).await?;
         let ctx = cmds.ctx(
@@ -2484,9 +2504,10 @@ pub(crate) async fn view_signing(
     }
     let token = random_secret()?;
     let expires = crate::state::plus_std(c.st.now(), c.st.config().view_ttl)?;
+    let token_id = RecipientTokenId(Uuid::now_v7());
     tx.recipients()
         .issue_token(&NewToken {
-            id: RecipientTokenId(Uuid::now_v7()),
+            id: token_id,
             envelope_id: l.id,
             recipient_id: RecipientId(uid(&rid)?),
             token_sha256: sha256(token.as_bytes()),
@@ -2495,6 +2516,9 @@ pub(crate) async fn view_signing(
             expires_at: expires,
         })
         .await?;
+    if target != casual_sign_store::repo::embed_views::EmbedTarget::default() {
+        tx.recipients().set_embed_target(token_id, &target).await?;
+    }
     tx.commit().await?;
     let url = format!("{}/s/{token}", c.st.config().public_url);
     let mut r = json(

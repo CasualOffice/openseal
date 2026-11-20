@@ -349,6 +349,8 @@
   .os-intel__card, .os-intel__glyph, .os-intel__count { transition: none; }
 }
 
+/* VS-09: the websites that may embed the workspace's views. */
+.os-adm__list { margin: 0; padding-left: 1.25rem; font-family: var(--os-font-mono); overflow-wrap: anywhere; }
 /* FG-141: Insights. */
 .os-insights { display: flex; flex-direction: column; gap: var(--os-s4); }
 .os-insights__tiles { grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); }

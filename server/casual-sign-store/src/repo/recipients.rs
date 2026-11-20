@@ -322,6 +322,34 @@ impl Recipients<'_> {
         Ok(())
     }
 
+    /// Give an embedded view's token (`TokenPurpose::Embedded`) its host page, return URL
+    /// and state (VS-09, migration 0050).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0003` when no embedded token of this account has the id; `CS-DB-0008`
+    /// for a value out of bounds.
+    pub async fn set_embed_target(
+        &mut self,
+        token: RecipientTokenId,
+        target: &super::embed_views::EmbedTarget,
+    ) -> Result<()> {
+        let acct = self.tx.acct();
+        let done = sqlx::query!(
+            "UPDATE recipient_tokens SET frame_origin = $3, return_url = $4, return_state = $5 \
+             WHERE account_id = $1 AND id = $2 AND purpose = 'embedded'",
+            acct,
+            token.0,
+            target.frame_origin.as_deref(),
+            target.return_url.as_deref(),
+            target.return_state.as_deref()
+        )
+        .execute(self.tx.conn())
+        .await
+        .map_err(db)?;
+        super::affected(done.rows_affected(), "recipient_token")
+    }
+
     /// Revoke every live token of a recipient at `at` (docs/24 `RevokeTokens`); returns
     /// how many were revoked.
     ///
@@ -368,6 +396,8 @@ pub struct TokenRecord {
     pub expires_at: OffsetDateTime,
     /// Revocation, when revoked.
     pub revoked_at: Option<OffsetDateTime>,
+    /// An embedded view's host page, return URL and state (VS-09).
+    pub embed: super::embed_views::EmbedTarget,
 }
 
 impl Recipients<'_> {
@@ -456,7 +486,8 @@ impl Recipients<'_> {
         let acct = self.tx.acct();
         let row = sqlx::query!(
             "SELECT id, envelope_id, recipient_id, purpose, host_user_id, session_sha256, expires_at, \
-             revoked_at FROM recipient_tokens WHERE account_id = $1 AND token_sha256 = $2",
+             revoked_at, frame_origin, return_url, return_state \
+             FROM recipient_tokens WHERE account_id = $1 AND token_sha256 = $2",
             acct,
             token_sha256.as_slice()
         )
@@ -473,6 +504,11 @@ impl Recipients<'_> {
                 session_sha256: super::opt_hash32(r.session_sha256, "session_sha256")?,
                 expires_at: r.expires_at,
                 revoked_at: r.revoked_at,
+                embed: super::embed_views::EmbedTarget {
+                    frame_origin: r.frame_origin,
+                    return_url: r.return_url,
+                    return_state: r.return_state,
+                },
             })
         })
         .transpose()

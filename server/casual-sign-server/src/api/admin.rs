@@ -118,7 +118,10 @@ struct AccountPatch {
 /// security, the workflow policy signing, branding its own, everything else sending.
 fn setting_action(key: &str) -> Action {
     match key {
-        "mfa_policy" | "session_idle" | "session_max_age" => Action::SettingsSecurity,
+        // Who may frame the workspace's embedded views (VS-09, SEC-O12): security.
+        "mfa_policy" | "session_idle" | "session_max_age" | crate::embed::SETTING => {
+            Action::SettingsSecurity
+        }
         "workflow_policy" => Action::SettingsSigning,
         "branding" => Action::BrandsManage,
         _ => Action::SettingsSending,
@@ -154,6 +157,11 @@ pub(crate) async fn patch_account(c: Call, body: Bytes) -> Result<Response, ApiE
             && !casual_sign_policy::org::valid_session_setting(&k, &v)
         {
             return Err(ApiError::invalid(&format!("/settings/{k}")));
+        }
+        // The origins that may frame the workspace's embedded views (VS-09): each as a
+        // browser compares it, at most twenty.
+        if k == crate::embed::SETTING && !v.is_null() {
+            crate::embed::check_setting(&v)?;
         }
         if k == "workflow_policy"
             && serde_json::from_value::<casual_sign_workflow::Policy>(v.clone()).is_err()
@@ -1472,6 +1480,7 @@ pub(crate) async fn session(c: Call) -> Result<Response, ApiError> {
         Credential::Session(_) => "session",
         Credential::ApiKey(_) => "api_key",
         Credential::AccessToken(_) => "access_token",
+        Credential::EmbedView { .. } => "embedded_view",
     };
     // CON-13, ASVS-32: which factors the person has, so the sign-in step and step-up
     // offer the right ones.

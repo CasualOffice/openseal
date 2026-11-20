@@ -89,12 +89,28 @@ pub(crate) async fn request_context(
             );
         }
     }
+    // SEC-A06: never framed, unless the page's own policy names who may frame it (an
+    // embedded view, VS-09); a browser that reads `X-Frame-Options` before
+    // `frame-ancestors` would otherwise refuse the frame the policy allows.
+    let framable = h
+        .get(header::CONTENT_SECURITY_POLICY)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|csp| {
+            csp.split(';')
+                .map(str::trim)
+                .find(|d| d.starts_with("frame-ancestors"))
+        })
+        .is_some_and(|d| d != "frame-ancestors 'none'");
+    if !framable {
+        h.insert(
+            HeaderName::from_static("x-frame-options"),
+            HeaderValue::from_static("DENY"),
+        );
+    }
     for (name, value) in [
         ("x-content-type-options", "nosniff"),
         ("referrer-policy", "no-referrer"),
-        ("x-frame-options", "DENY"),
         ("cross-origin-opener-policy", "same-origin"),
-        ("cross-origin-resource-policy", "same-origin"),
         (
             "strict-transport-security",
             "max-age=63072000; includeSubDomains",
@@ -103,6 +119,13 @@ pub(crate) async fn request_context(
         h.insert(
             HeaderName::from_static(name),
             HeaderValue::from_static(value),
+        );
+    }
+    // Only the embedding elements' module says otherwise (VS-09, `web::ELEMENTS`).
+    if !h.contains_key("cross-origin-resource-policy") {
+        h.insert(
+            HeaderName::from_static("cross-origin-resource-policy"),
+            HeaderValue::from_static("same-origin"),
         );
     }
     if !h.contains_key(header::CACHE_CONTROL) {
@@ -129,7 +152,7 @@ pub(crate) async fn request_context(
 /// answers are data to save, never a page to render (ASVS 14.4.2); the web app's own
 /// files are not.
 fn api_surface(path: &str) -> bool {
-    ["/api/", "/s/", "/.well-known/"]
+    ["/api/", "/s/", "/e/", "/.well-known/"]
         .iter()
         .any(|p| path.starts_with(p))
 }
@@ -331,6 +354,18 @@ pub(crate) async fn guard(
     };
     // Later security events of this request name the principal (ASVS-08).
     crate::security::authenticated(&p);
+    // An embedded view session reaches its own envelope and its editor's operations
+    // only (VS-09), whatever its member's profile would allow.
+    if let crate::auth::Credential::EmbedView { envelope, kind, .. } = p.credential {
+        let route = req
+            .extensions()
+            .get::<MatchedPath>()
+            .map(|m| m.as_str().to_owned())
+            .unwrap_or_default();
+        if !crate::embed::reaches(kind, envelope, req.method(), &route, req.uri().path()) {
+            return ApiError::beyond_view().into_response();
+        }
+    }
     if let Some(owed) = p.second_factor.owed()
         && !g.signing_in
     {

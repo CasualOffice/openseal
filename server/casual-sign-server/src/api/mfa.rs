@@ -31,7 +31,9 @@ use crate::totp;
 pub(crate) fn session(c: &Call) -> Result<StaffSessionId, ApiError> {
     match c.p.credential {
         Credential::Session(s) => Ok(s),
-        Credential::ApiKey(_) | Credential::AccessToken(_) => Err(ApiError::invalid("/credential")),
+        Credential::ApiKey(_) | Credential::AccessToken(_) | Credential::EmbedView { .. } => {
+            Err(ApiError::invalid("/credential"))
+        }
     }
 }
 

@@ -81,7 +81,8 @@ GHCR, each signed keyless with Sigstore, with build provenance and an SBOM, and 
 end on one machine with Docker Compose and is **not for production agreements**. **Phases D, 0, 1 and 2 are closed**
 and milestones M0 to M3 are reached (**M3, "first signature"**, 2026-11-19). **Slices closed: 1 (send and sign), 2
 (routing), 3 (templates), 4 (every field), 5 (authentication and consent) and 7 (verify)**, 6 of 35. Slice 8 (API and
-webhooks) is merged and awaits a green `main`; slice 6 (manage and correct) is being built. Work follows one binding plan, one slice at a time
+webhooks) is merged and awaits a green `main`; slice 6 (manage and correct) is being built; slice 9 (embedding: signing, prepare and correct views in a frame, the
+`<openseal-signing>` and `<openseal-prepare>` elements, per-workspace `frame-ancestors`) is built on a branch. Work follows one binding plan, one slice at a time
 ([docs/06](docs/06-ROADMAP-AND-DELIVERY.md) §Execution plan). ML, the platform console, and plans and metering stay
 paused (`Paused` in the tracker). Each item's exact state is in [docs/14](docs/14-EXECUTION-TRACKER.md); slice
 evidence is in [docs/73](docs/73-M3-SLICE-EVIDENCE.md), [74](docs/74-SLICE-3-EVIDENCE.md) and

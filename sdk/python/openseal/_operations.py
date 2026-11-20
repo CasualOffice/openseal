@@ -204,6 +204,16 @@ OPERATIONS = {
         "path_params": [],
         "query": []
     },
+    "createCorrectView": {
+        "body": True,
+        "body_required": False,
+        "method": "POST",
+        "path": "/api/v1/envelopes/{id}/views/correct",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
     "createEnvelope": {
         "body": True,
         "body_required": True,
@@ -250,6 +260,16 @@ OPERATIONS = {
         "method": "POST",
         "path": "/api/v1/permission-profiles",
         "path_params": [],
+        "query": []
+    },
+    "createPrepareView": {
+        "body": True,
+        "body_required": False,
+        "method": "POST",
+        "path": "/api/v1/envelopes/{id}/views/prepare",
+        "path_params": [
+            "id"
+        ],
         "query": []
     },
     "createSignLink": {

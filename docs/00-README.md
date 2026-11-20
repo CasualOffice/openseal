@@ -53,6 +53,7 @@ by `tools/licence-inventory.py`, `LEG-01`).
 | [74-SLICE-3-EVIDENCE](74-SLICE-3-EVIDENCE.md) | Slice 3 (templates) evidence: every outcome element and end-point item with its status and evidence, for the owner to close | Live: proposal, waits for a green `main` run |
 | [75-SLICE-4-EVIDENCE](75-SLICE-4-EVIDENCE.md) | Slice 4 (every field) evidence: every outcome element and end-point item with its status and evidence, for the owner to close | Live: in progress |
 | [76-SLICE-8-EVIDENCE](76-SLICE-8-EVIDENCE.md) | Slice 8 (API and webhooks) evidence: every outcome element and end-point item with its status and evidence, and the owner questions | Live: in progress |
+| [78-SLICE-9-EVIDENCE](78-SLICE-9-EVIDENCE.md) | Slice 9 (embedding) evidence: every outcome element and end-point item with its status and evidence, and the owner questions | Live: in progress |
 | [77-SLICE-6-EVIDENCE](77-SLICE-6-EVIDENCE.md) | Slice 6 (Manage and correct) evidence: every outcome element and end-point item with its status and evidence, and the owner questions | Live: in progress |
 | [72-SUSTAINABILITY-OPTIONS](72-SUSTAINABILITY-OPTIONS.md) | Sustainability options: hosted cloud, paid support and SLA, managed key service, a staged combination; needs, cost drivers, risks, fit with Apache-2.0 (`DOC-014`) | Ready for the owner's decision |
 | [96-FEATURE-FIT-GAP](96-FEATURE-FIT-GAP.md) | **Every DocuSign and SignNow feature** (168 rows) with disposition, slice and status — the parity measure | Live |

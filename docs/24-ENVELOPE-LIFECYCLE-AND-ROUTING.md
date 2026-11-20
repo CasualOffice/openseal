@@ -86,6 +86,12 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - **Envelope id stamp (`FG-009`, ADR-045).** `signing_options.stamp_envelope_id` is set while a draft only: a
   correction that turns it on or off is `CS-WF-0001`, since a signer may have seen the pages already. `envelope.sent`
   records it (`envelope_id_stamped`).
+- **Remote-provider signatures (designed, ADR-046 and ADR-047 Proposed; `RSP-01`, `RSP-02`).** A `signer` with a
+  `remote` signature type ends their turn through `BeginRemoteSigning` (values frozen, a sub-state `signing_remotely`)
+  and the provider's answer (`recipient.remote_signed`, then `recipient.signed` and `recipient.completed` as today), or a
+  failed session that reopens their fields. Two remote signers never share a routing order (`CS-RSP-0007` at send); one
+  remote session is open per envelope at a time; after a document's first remote signature its fields, documents and
+  stamp cannot change (`CS-RSP-0007`), while recipients' contact details and authentication, void and decline still can.
 - **Signer location (GEO-01).** When the envelope's `signing_options.capture_location` is on, the signing page asks the
   signer for their device's location; every recipient action (`recipient.delivered`, `recipient.viewed_document`,
   `recipient.signed`, `recipient.approved`, `recipient.declined`) then carries a location in its context

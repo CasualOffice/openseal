@@ -125,6 +125,7 @@ one recorded in `envelope.completed`.
 | `excluded_documents` | Document visibility (`WF-02`): documents this recipient never sees, is never served and does not act on; at least one stays visible and none holds a field of theirs |
 | `route_delay_hours`, `held_until` | Delayed routing (`WF-02`): hours to wait, once their turn comes, before they are invited (0 to 720; not on a `cc`), and the time that wait ends; until then their link does not open (`CS-WF-0007`) |
 | `signing_group` | Designed, not built (slice 29, ADR-035 Proposed, `WF-01`): 2 to 20 members `{member_id, name, email, phone?, delivery}` frozen at send from an account group (`groups`, `group_members`) or listed; any one may act, the first to open their link claims the recipient; only on `signer`, `approver`, `viewer`. Members' contact details are personal data as a recipient's |
+| `signature` | Designed, not built (slice 5r, ADR-046 and ADR-047 Proposed, `RSP-01`, `RSP-02`): absent for a simple signature; `{type: "remote", provider_id}` for a `signer` who signs with their own certificate at a provider the account enabled (`account_signing_providers`, a tenant table; the provider catalogue `platform.signing_providers` is the operator's). Remote signing sessions are rows of their own (prepared hashes, state, sealed authorization code; never a token or SAD) |
 | `consent` | ERSD version accepted, time, from the audit chain |
 | `language` | Signer UI and email language |
 | `declined_reason`, `reassigned_to` | |
@@ -439,6 +440,14 @@ command and audit type (ADR-031, Accepted): it clears `deleted_at` through the s
 live template sets it (the template keeps its roles, documents and fields, leaves every read, edit and the list, and
 `Templates::list_deleted`, `get_deleted` and `restore` serve the Deleted view); deleting it there removes it for good.
 A template has no audit chain, so neither step is evidence. Fifty-four tables with `0022`.
+
+`0050_embedding.sql` (`VS-09`): `recipient_tokens` gains `frame_origin`, `return_url` and `return_state`, set only on
+an `embedded` token (a check); a tenant table `embed_views` (`id`, `envelope_id`, `kind` `prepare` or `correct`,
+`client_id`, `user_id`, `token_sha256`, `expires_at`, `used_at`, `session_sha256`, `session_expires_at`, the three
+host members, `created_at`; spent exactly when it has a session, both checked) holds prepare and correct view links
+and their sessions, as hashes only; `openseal_resolve_embed_view` and `openseal_resolve_embed_session` find a live
+link's or session's workspace. `TenantTx::embed_views` (`create`, `unspent`, `spend`, `by_session`) and
+`Recipients::set_embed_target`; the purge deletes an envelope's views with its links.
 
 `0023_password_reset.sql` (`UXW-37`, `UXW-38`) adds two tenant tables. `password_resets` (`id`, `user_id`,
 `requested_at`, `token_sha256`, `sent_at`, `expires_at`, `used_at`, `revoked_at`) records a self-service reset: never

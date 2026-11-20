@@ -11,6 +11,7 @@ pub mod api_clients;
 pub mod audit;
 pub mod bulk_sends;
 pub mod documents;
+pub mod embed_views;
 pub mod envelopes;
 pub mod fields;
 pub mod folders;
@@ -99,6 +100,11 @@ impl TenantTx {
     /// OAuth consents, authorization codes and refresh tokens (VS-08A).
     pub fn oauth(&mut self) -> oauth::OAuth<'_> {
         oauth::OAuth { tx: self }
+    }
+
+    /// Embedded prepare and correct views (VS-09).
+    pub fn embed_views(&mut self) -> embed_views::EmbedViews<'_> {
+        embed_views::EmbedViews { tx: self }
     }
 
     /// Workspace reports (`VS-06`).

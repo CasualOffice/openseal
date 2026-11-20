@@ -413,6 +413,15 @@ jobs:
           path: target/e2e-demo/vs08-*
           if-no-files-found: error
           retention-days: 90
+      # The slice 9 demo (VS-09E): embedding.spec.mjs's run recorded (a host page on another
+      # site embedding a signing, a prepare and a correct view and hearing their events).
+      - if: success() && hashFiles('target/e2e-demo/vs09-*') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: slice-9-demo-${{ matrix.shard }}
+          path: target/e2e-demo/vs09-*
+          if-no-files-found: error
+          retention-days: 90
       # The slice 6 demo (VS-06B): manage-correct.spec.mjs's run recorded (a failed access
       # code in the Authentication failed view, resend, custom fields and their search,
       # documents corrected, a copy, the server's reports, a transfer).
