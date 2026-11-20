@@ -236,3 +236,9 @@ test("FG-013: a signer signs on paper where the envelope allows it; the scan joi
   assert.equal(ev.documents.length, 1, "what was printed: the delivered document, not the scan");
   await assert.rejects(c.ceremony.signOnPaper(on.tk, b64), (e) => e.status === 409);
 });
+
+test("an envelope being sealed (completing) still offers its history", () => {
+  // compose-e2e run 44799145279: right after the last signer, the real stack is still
+  // sealing, and the envelope page had no History to open.
+  assert.ok(envelopeActions("completing").more.flat().includes("history"));
+});

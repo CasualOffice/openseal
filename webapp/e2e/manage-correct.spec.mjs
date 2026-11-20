@@ -186,7 +186,11 @@ test("slice 6 (VS-06): authentication failed view, resend, custom fields and sea
   await expect(page.getByText(`Transferred to ${member}`)).toBeVisible();
   await expect(page.getByText("Ownership transferred").first()).toBeVisible();
 
-  if (REAL) await page.video()?.saveAs(path.join(DEMO, `vs06-${testInfo.project.name}-manage-and-correct.webm`));
+  // The recording is complete only once the page is closed: saveAs waits for that, so
+  // calling it on an open page waits until the test times out (compose-e2e run 44799145279).
+  if (!REAL) return;
+  await page.close();
+  await page.video()?.saveAs(path.join(DEMO, `vs06-${testInfo.project.name}-manage-and-correct.webm`));
 });
 
 /// An envelope sent for the run with `recipients` (each `{ref, type, name, email,
