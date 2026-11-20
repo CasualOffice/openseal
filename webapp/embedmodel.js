@@ -6,11 +6,31 @@
 /// At most this many websites (the server's `MAX_ORIGINS`).
 export const MAX_ORIGINS = 20;
 
-const DEV = (host) => host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host.endsWith(".localhost") || host.endsWith(".test");
+/// Whether `host` (lower case, no port, IPv6 in brackets) is a private-network host, for
+/// which plain `http` is taken (owner instruction 81; the server's `private_host`): a
+/// loopback, RFC 1918, link-local or IPv6 unique-local address, `localhost`, a
+/// single-label name, or a name under `.local`, `.internal`, `.lan`, `.localhost`, `.test`.
+export function privateHost(host) {
+  const v6 = /^\[([0-9a-f:]+)\]$/.exec(host);
+  if (v6) {
+    const a = v6[1];
+    if (a === "::1") return true;
+    const first = a.startsWith("::") ? 0 : Number.parseInt(a.split(":")[0], 16);
+    return Number.isFinite(first) && ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80);
+  }
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (v4.slice(1).some((x) => Number(x) > 255)) return false;
+    return a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+  }
+  if (/^[\d.]+$/.test(host)) return false;
+  return !host.includes(".") || [".local", ".internal", ".lan", ".localhost", ".test"].some((t) => host.endsWith(t));
+}
 
 /// The origin `s` names as a browser compares it (`scheme://host[:port]`, lower case, no
 /// default port), or null: a path, query, fragment, user name or wildcard; a scheme
-/// other than `https`, or `http` but to a development host.
+/// other than `https`, or `http` but to a public host.
 export function normalOrigin(s) {
   if (typeof s !== "string") return null;
   const v = s.trim();
@@ -21,7 +41,7 @@ export function normalOrigin(s) {
   const host = m[2].toLowerCase();
   const port = m[3] || "";
   if (port && (Number(port) < 1 || Number(port) > 65535)) return null;
-  if (scheme === "http" && !DEV(host)) return null;
+  if (scheme === "http" && !privateHost(host)) return null;
   const dflt = (scheme === "https" && port === "443") || (scheme === "http" && port === "80");
   return `${scheme}://${host}${port && !dflt ? `:${port}` : ""}`;
 }

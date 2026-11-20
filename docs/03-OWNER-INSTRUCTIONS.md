@@ -89,6 +89,7 @@ by saying so.
 | 78 | 2026-11-20 | `FG-009` (envelope id stamping), `FG-013` (sign on paper), `FG-080` (strike-through by an editor) and `FG-141` (insights dashboard) are part of slice 6 and built end to end; `VS-06A` (an editor changing fields during signing; an intermediary changing authentication) and `VS-06D` (one evidence-package download) are finished too, so no slice-6 element is left partial | `VS-06A`, `VS-06D`, `VS-06E`, [77](77-SLICE-6-EVIDENCE.md) |
 | 79 | 2026-11-21 | Chose, from options: accept ADR-043 (sign on paper, the scan kept as a fixed document and sealed), ADR-044 (an editor's strike-through drawn into the sealed PDF, recorded as `envelope.corrected`) and ADR-045 (the envelope id stamped at sealing time, an account default) as built in slice 6 |
 | 80 | 2026-11-21 | Chose, from options: the Word converter may ship the Carlito and Caladea fonts (SIL Open Font License 1.1, metric-compatible with Calibri and Cambria) so converted documents keep their layout (`VS-06G`) |
+| 81 | 2026-11-21 | Answered slice 9's owner questions: (a) plain `http://` embedding origins are also allowed for intranet hosts (private-network addresses and names: RFC 1918, loopback, link-local, `.local`, `.internal`, `.lan`, single-label names), not only development hosts; public hosts still need `https`; (b) prepare and correct views stay API-client only | `VS-09A`, `VS-09C`, [78](78-SLICE-9-EVIDENCE.md) |
 
 ## Inherited working rules
 

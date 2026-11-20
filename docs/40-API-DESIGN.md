@@ -208,8 +208,9 @@ run on the OpenSeal origin: the signer's session and its evidence must not be re
 **As built (slice 9, `VS-09A`–`VS-09E`, migration 0050).**
 
 - *Allowed origins.* `PATCH /accounts/me {settings: {embedding_origins: [...]}}`: at most 20 origins, each written as a
-  browser compares it (`https://host[:port]`, lower case, no default port, no path; `http://` only to `localhost`,
-  loopback or a `.test` / `.localhost` name), distinct; else `422 CS-API-0001`. A security setting
+  browser compares it (`https://host[:port]`, lower case, no default port, no path; `http://` only to a
+  private-network host, owner instruction 81: a loopback, RFC 1918, link-local or IPv6 unique-local address,
+  `localhost`, a single-label name, or a name under `.local`, `.internal`, `.lan`, `.localhost` or `.test`), distinct; else `422 CS-API-0001`. A security setting
   (`settings.security`, a recent sign-in for a staff session). Admin → Organization → Embedding edits it.
 - *Framing.* A view page (`GET /s/{token}` of an embedded link, `GET /e/{token}`) carries `frame-ancestors` naming the
   view's `frame_origin` while it is still on the list, the whole list when the view named none, else `'none'`; every

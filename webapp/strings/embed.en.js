@@ -17,7 +17,7 @@ export const EMBED = {
   "admin.embedding-list": "Allowed websites",
   "admin.edit-embedding": "Edit websites",
   "admin.embedding-origins": "Allowed websites, one per line",
-  "admin.embedding-help": "Each as https://host or https://host:port, with no path. http:// only for localhost or a .test name, for development.",
+  "admin.embedding-help": "Each as https://host or https://host:port, with no path. http:// only for an intranet host: a private address, or a name such as intranet, portal.corp.internal or wiki.local.",
   "admin.embedding-bad": "Not a website address this accepts: {value}",
   "admin.embedding-too-many": "At most {n} websites.",
   "admin.embedding-saved": "Embedding websites saved.",

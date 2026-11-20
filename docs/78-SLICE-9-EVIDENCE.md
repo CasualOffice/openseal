@@ -65,12 +65,14 @@ slices 6 and 8 closed and `VS-08J` (SDKs published as beta).
 
 **Owner questions** (decided here and recorded; the owner may change them):
 
-1. *`http://` origins on the list.* Taken only for development hosts (`localhost`, loopback, `.test`, `.localhost`);
-   production hosts must be `https://`. Keep, or allow plain `http` for intranet hosts?
-2. *Who may ask for a prepare or correct view.* An API client only (as DocuSign's sender view is an API call); a staff
-   session is refused. Keep?
-3. *Instruction 73* is cited by the brief for this slice but is not in [03](03-OWNER-INSTRUCTIONS.md) on this branch;
-   it should be recorded there with its text.
+1. *`http://` origins on the list.* Answered (owner instruction 81): also for intranet hosts. Built: a loopback,
+   RFC 1918, link-local or IPv6 unique-local address, `localhost`, a single-label name, or a name under `.local`,
+   `.internal`, `.lan`, `.localhost` or `.test`; a public host still needs `https`. Tests seen red before the change:
+   `embed::tests::plain_http_is_taken_for_intranet_hosts_only` (`left: None right: Some("http://10.1.2.3")`) and
+   `slice9.test.mjs` "plain http is taken for intranet hosts only" (`✖`).
+2. *Who may ask for a prepare or correct view.* Answered (owner instruction 81): API clients only, as built.
+3. *Instruction 73* (closing slice 8 on a green `main`) is in [03](03-OWNER-INSTRUCTIONS.md) since slice 6 merged;
+   nothing left to record.
 
 ## Found and not fixed
 

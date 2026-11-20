@@ -134,6 +134,16 @@ test("the framed view takes the host's commands only from its parent and the hos
   assert.equal(fromHost({ source: win.parent, origin: HOST, data: theme }, win.parent, []), false);
 });
 
+test("plain http is taken for intranet hosts only, as the server takes it (owner instruction 81)", () => {
+  for (const ok of ["http://10.1.2.3", "http://172.16.0.9:8080", "http://192.168.1.20", "http://169.254.10.10", "http://127.0.0.2", "http://[fd12:3456::1]", "http://[fe80::1]", "http://[::1]", "http://intranet", "http://portal.corp.internal", "http://wiki.local", "http://sign.lan:8443"]) {
+    assert.equal(normalOrigin(ok), ok, ok);
+  }
+  for (const pub of ["http://8.8.8.8", "http://172.32.0.1", "http://192.169.0.1", "http://[2001:db8::1]", "http://example.com", "http://intranet.example.com"]) {
+    assert.equal(normalOrigin(pub), null, pub);
+  }
+  assert.equal(normalOrigin("https://8.8.8.8"), "https://8.8.8.8");
+});
+
 test("Admin's websites are origins as the server writes them, at most twenty", () => {
   assert.equal(normalOrigin("https://Shop.Example:443"), "https://shop.example");
   assert.equal(normalOrigin("http://localhost:3000"), "http://localhost:3000");

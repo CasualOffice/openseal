@@ -52,20 +52,36 @@ const SESSION_TTL: std::time::Duration = std::time::Duration::from_secs(3600);
 /// The header that carries an embedded signing view's binding in a cross-site frame.
 pub(crate) const BINDING_HEADER: &str = "x-openseal-binding";
 
-/// Whether `host` (lower case, no port) is a name only a developer's own machine
-/// answers: loopback, `localhost`, or a reserved `.test` / `.localhost` name (RFC 6761).
-fn development_host(host: &str) -> bool {
-    host == "localhost"
-        || host == "127.0.0.1"
-        || host == "[::1]"
-        || host.ends_with(".localhost")
-        || host.ends_with(".test")
+/// Whether `host` (lower case, no port, IPv6 in brackets) is a private-network host,
+/// for which plain `http` is taken (owner instruction 81): a loopback, RFC 1918,
+/// link-local or IPv6 unique-local address; `localhost`; a single-label name; or a
+/// name under `.local`, `.internal`, `.lan`, `.localhost` or `.test`. A public host
+/// needs `https`.
+fn private_host(host: &str) -> bool {
+    if let Some(v6) = host.strip_prefix('[').and_then(|h| h.strip_suffix(']')) {
+        return v6.parse::<std::net::Ipv6Addr>().is_ok_and(|a| {
+            let first = a.segments()[0];
+            a.is_loopback() || (first & 0xfe00) == 0xfc00 || (first & 0xffc0) == 0xfe80
+        });
+    }
+    if let Ok(a) = host.parse::<std::net::Ipv4Addr>() {
+        return a.is_loopback() || a.is_private() || a.is_link_local();
+    }
+    if host.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        // Digits and dots that are not an address are no host name either.
+        return false;
+    }
+    !host.contains('.')
+        || [".local", ".internal", ".lan", ".localhost", ".test"]
+            .iter()
+            .any(|t| host.ends_with(t))
 }
 
 /// The origin `s` names, as a browser compares it (`scheme://host[:port]`, lower case,
 /// no default port), or `None` when it is not one: a path, query, fragment, user
-/// name or wildcard; a scheme other than `https`, or `http` but to a development host
-/// (`localhost`, loopback, `.test` or `.localhost`); a host with characters a host name has not.
+/// name or wildcard; a scheme other than `https`, or `http` but to a public host (plain
+/// `http` is for private-network and intranet hosts only); a host with characters a host
+/// name has not.
 #[must_use]
 pub fn origin(s: &str) -> Option<String> {
     if s.is_empty() || s.len() > MAX_ORIGIN {
@@ -110,7 +126,7 @@ pub fn origin(s: &str) -> Option<String> {
             return None;
         }
     }
-    if scheme == "http" && !development_host(&host) {
+    if scheme == "http" && !private_host(&host) {
         return None;
     }
     let default = matches!((scheme, port.as_str()), ("https", "443") | ("http", "80"));
@@ -583,6 +599,47 @@ async fn session_inner(st: &AppState, hash: &[u8; 32], token: &str) -> Result<Re
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plain_http_is_taken_for_intranet_hosts_only() {
+        // Owner instruction 81: private-network addresses and intranet names.
+        for ok in [
+            "http://10.1.2.3",
+            "http://172.16.0.9:8080",
+            "http://172.31.255.1",
+            "http://192.168.1.20",
+            "http://127.0.0.2",
+            "http://169.254.10.10",
+            "http://[fd12:3456::1]",
+            "http://[fe80::1]",
+            "http://[::1]",
+            "http://intranet",
+            "http://portal.corp.internal",
+            "http://wiki.local",
+            "http://sign.lan:8443",
+            "http://localhost:3000",
+            "http://embed-host.test",
+        ] {
+            assert_eq!(origin(ok).as_deref(), Some(ok), "{ok}");
+        }
+        for public in [
+            "http://8.8.8.8",
+            "http://172.32.0.1",
+            "http://192.169.0.1",
+            "http://11.0.0.1",
+            "http://[2001:db8::1]",
+            "http://example.com",
+            "http://intranet.example.com",
+            "http://local.example",
+        ] {
+            assert_eq!(origin(public), None, "{public}");
+        }
+        // Every host, public or not, may use https.
+        assert_eq!(
+            origin("https://8.8.8.8").as_deref(),
+            Some("https://8.8.8.8")
+        );
+    }
 
     #[test]
     fn origins_are_written_as_a_browser_compares_them() {
