@@ -21,6 +21,7 @@ const SERVER_TYPES = new Set([
   "recipient.reassigned", "recipient.finish_later", "recipient.in_person_hosted", "envelope.viewed_by_sender",
   "document.downloaded", "certificate.downloaded", "attachment.downloaded", "auth.asserted_by_host",
   "envelope.transferred", "envelope.exported", "envelope.restored", "recipient.signed_on_paper",
+  "recipient.remote_signing_started", "recipient.remote_signing_prepared", "recipient.remote_signed", "recipient.remote_signing_failed",
 ]);
 const ACTOR_KINDS = new Set(["system", "sender", "recipient", "user", "host"]);
 

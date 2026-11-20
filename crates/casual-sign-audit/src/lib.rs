@@ -42,7 +42,8 @@ pub use chain::{Chain, ChainedEvent, TRAIL_FILE_NAME, TRAIL_FORMAT, TRAIL_VERSIO
 pub use error::{AuditError, JsonFault, LocationFault, ShapeFault};
 pub use event::{
     Actor, ActorKind, AdoptionMethod, AuditEvent, AuthMethod, Channel, Context, DocumentHash,
-    EVENT_VERSION, EventData, MarkKind, PERSONAL_MEMBERS, Personal, SignInIdentity,
+    EVENT_VERSION, EventData, MarkKind, NameMatch, PERSONAL_MEMBERS, Personal, PreparedDocument,
+    RemoteCertificate, RemoteFailure, RemoteProvider, RemoteSignedDocument, SignInIdentity,
 };
 pub use hash::Hash256;
 pub use location::{

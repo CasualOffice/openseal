@@ -564,6 +564,65 @@ pub enum Command {
         /// The policy or request.
         policy: Text,
     },
+
+    // Remote-provider signatures (ADR-046 §3.4) ---------------------------------------
+    /// A remote signer, their turn come and authenticated, starts signing with their
+    /// provider: `values` are set and checked as a finish would, then frozen, and
+    /// `recipient.remote_signing_started` is recorded. Refused (`CS-RSP-0007`) when they
+    /// are not a remote signer of this provider or another session is open.
+    BeginRemoteSigning {
+        /// The recipient.
+        recipient: Id,
+        /// The new session's id (host-minted).
+        session: Id,
+        /// The provider, as the catalogue names it.
+        provider: casual_sign_audit::RemoteProvider,
+        /// Values set first, as in `Finish`.
+        values: Vec<FieldEntry>,
+    },
+    /// The worker prepared the session's documents (the platform): records the hashes the
+    /// signature will bind; a document not yet locked reaches its lock point here.
+    RemoteSigningPrepared {
+        /// The recipient.
+        recipient: Id,
+        /// The open session.
+        session: Id,
+        /// Each document prepared.
+        documents: Vec<casual_sign_audit::PreparedDocument>,
+        /// SHA-256 of the credential's certificate, when known before signing.
+        certificate_sha256: Option<Hash256>,
+    },
+    /// The worker checked and embedded the provider's signature in every prepared
+    /// document (the platform): `recipient.remote_signed`, then the recipient signs and
+    /// completes as a finish does.
+    CompleteRemoteSigning {
+        /// The recipient.
+        recipient: Id,
+        /// The open session.
+        session: Id,
+        /// The provider.
+        provider: casual_sign_audit::RemoteProvider,
+        /// The provider's transaction id, where it has one.
+        provider_reference: Option<String>,
+        /// The certificate the signature was made with.
+        certificate: casual_sign_audit::RemoteCertificate,
+        /// Its name against the recipient's.
+        name_match: casual_sign_audit::NameMatch,
+        /// Each document signed.
+        documents: Vec<casual_sign_audit::RemoteSignedDocument>,
+    },
+    /// The session failed: cancelled by the signer, or ended by the platform. The
+    /// signer's fields reopen; a new attempt is a new session.
+    FailRemoteSigning {
+        /// The recipient.
+        recipient: Id,
+        /// The open session.
+        session: Id,
+        /// Why.
+        reason: casual_sign_audit::RemoteFailure,
+        /// The provider's own error code.
+        provider_code: Option<String>,
+    },
 }
 
 impl Command {
@@ -609,6 +668,10 @@ impl Command {
             Self::SealFailed { .. } => "seal_failed",
             Self::RecordAccess { .. } => "record_access",
             Self::Purge { .. } => "purge",
+            Self::BeginRemoteSigning { .. } => "begin_remote_signing",
+            Self::RemoteSigningPrepared { .. } => "remote_signing_prepared",
+            Self::CompleteRemoteSigning { .. } => "complete_remote_signing",
+            Self::FailRemoteSigning { .. } => "fail_remote_signing",
         }
     }
 }
