@@ -3223,6 +3223,24 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       await audit(env, "recipient.field_completed", { recipient_id: rec.id, field_id: f.id, value_hash: await sha256hex(JSON.stringify(f.value)) });
       return json(200, view(env, rec, token));
     }
+    // As the server (FG-013, ADR-043, `POST /s/{token}/paper`): a signer, where the
+    // envelope allows it, completes with the scan of the documents printed and signed by
+    // hand; the scan joins the envelope fixed (sealed with it) and is recorded.
+    if (sub === "paper" && method === "POST") {
+      if (env.signing_options?.allow_sign_on_paper !== true) fail(409, "CS-WF-0012", "Sign on paper not allowed");
+      if (rec.type !== "signer") fail(409, "CS-WF-0001", "Not allowed for this recipient");
+      const bytes = unb64(String(body?.content_base64 || ""));
+      if (bytes.length < 8 || String.fromCharCode(...bytes.subarray(0, 5)) !== "%PDF-") fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/content_base64", code: "invalid" }]);
+      const printed = await docHashes(env);
+      const d = addDocument(env, "Signed on paper.pdf", bytes);
+      d.fixed = true;
+      await audit(env, "document.added", { document_id: d.id, upload_hash: await blobHash(d.id), bytes: d.bytes }, loc);
+      await audit(env, "document.admitted", { document_id: d.id, report_hash: await blobHash(d.id, ":admission"), findings: 0 }, loc);
+      await audit(env, "document.fixed", { document_id: d.id, delivered_hash: await blobHash(d.id), pages: d.pages }, loc);
+      await audit(env, "recipient.signed_on_paper", { recipient_id: rec.id, documents: printed, document_id: d.id, upload_hash: await blobHash(d.id) }, loc);
+      await complete(env, rec, loc, "paper");
+      return json(200, view(env, rec, token));
+    }
     if (sub === "finish" && method === "POST") {
       // As the engine's `finish`: an approver approves and a copy has nothing to finish;
       // a viewer finishes once every document was viewed to the end.

@@ -1766,6 +1766,88 @@ pub(crate) async fn attach(
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct PaperIn {
+    content_base64: String,
+    #[serde(default)]
+    location: Option<DeviceLocation>,
+}
+
+/// The name a signed-on-paper scan takes among the envelope's documents.
+const PAPER_NAME: &str = "Signed on paper.pdf";
+
+/// `POST /s/{token}/paper {content_base64, location?}` (FG-013, ADR-043): a signer whose
+/// turn it is, authenticated and consented, on an envelope whose
+/// `signing_options.allow_sign_on_paper` is on, uploads the scan of the documents they
+/// printed and signed by hand. A PDF only, at most the documents' size limit; screened
+/// for malware, then admitted and normalized like any upload (docs/30 §2) and stored
+/// with its original. The engine's `SignOnPaper` adds it to the envelope as a fixed
+/// document (the seal covers it) and records `recipient.signed_on_paper` with the
+/// documents printed and the scan's hash, then `recipient.completed`. Off: `409
+/// CS-WF-0012`; not a signer, not their turn, or done: `409 CS-WF-0001` or `CS-WF-0007`;
+/// not a PDF: `422`.
+pub(crate) async fn sign_on_paper(
+    State(st): State<AppState>,
+    axum::Extension(ip): axum::Extension<ClientIp>,
+    method: Method,
+    headers: HeaderMap,
+    Path(token): Path<String>,
+    body: Bytes,
+) -> Response {
+    let max = st.config().max_document_bytes;
+    ceremony_upload!(
+        st,
+        token,
+        headers,
+        ip,
+        method,
+        UploadKind::Document,
+        |o| {
+            o.ready()?;
+            if !o.l.state.options.allow_sign_on_paper {
+                return Err(casual_sign_workflow::WorkflowError::OptionDisabled {
+                    option: "allow_sign_on_paper",
+                }
+                .into());
+            }
+            let req: PaperIn = parse(&body)?;
+            if req.content_base64.len() > max.div_ceil(3).saturating_mul(4).saturating_add(4) {
+                return Err(ApiError::too_large());
+            }
+            let bytes = STANDARD
+                .decode(&req.content_base64)
+                .map_err(|_| ApiError::invalid("/content_base64"))?;
+            if bytes.is_empty() || bytes.len() > max {
+                return Err(ApiError::invalid("/content_base64"));
+            }
+            if casual_sign_host::capture::media_type(&bytes) != "application/pdf" {
+                return Err(ApiError::invalid("/content_base64"));
+            }
+            let target = o.targets(&[]);
+            Ok((req.location, target, bytes))
+        },
+        |location, bytes| {
+            // Checked again: the envelope may have changed during the scan.
+            o.ready()?;
+            o.locate(location.as_ref());
+            let env = o.l.id;
+            // The scanner's verdict is in the security log and the admin event; the
+            // admission report records none for this upload.
+            let spec =
+                crate::api::envelopes::add_document(&st, &mut o.tx, env, PAPER_NAME, bytes, None)
+                    .await?;
+            let r = o.recipient.clone();
+            o.run(Command::SignOnPaper {
+                recipient: r,
+                document: spec,
+            })
+            .await?;
+            Ok(StatusCode::OK)
+        }
+    )
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ValueIn {
     field: String,
     value: FieldValue,

@@ -198,3 +198,41 @@ test("VS-06D: the evidence package is one ZIP whose manifest names each entry's 
   assert.ok(envelopeActions("voided", { cert: true }).more.flat().includes("evidence"));
   assert.ok(!envelopeActions("sent").more.flat().includes("evidence"));
 });
+
+test("FG-013: a signer signs on paper where the envelope allows it; the scan joins the envelope and is recorded", async () => {
+  const c = await client();
+  const pdf = makePdf([{ title: "Paper" }]);
+  const doc = { name: "a.pdf", content_base64: btoa(String.fromCharCode(...pdf)) };
+  const make = async (allowed) => {
+    const env = await c.createEnvelope({
+      documents: [doc],
+      signing_options: { allow_sign_on_paper: allowed },
+      recipients: [{ ref: "r1", type: "signer", name: "A", email: "a@example.com", routing_order: 1 }, { ref: "r2", type: "signer", name: "B", email: "b@example.com", routing_order: 2 }],
+      fields: [{ recipient: "r1", document: 0, type: "signature", page: 1, x: 72, y: 600, width: 160, height: 44, required: true },
+        { recipient: "r2", document: 0, type: "signature", page: 1, x: 72, y: 500, width: 160, height: 44, required: true }],
+    });
+    const sent = await c.sendEnvelope(env.id);
+    const tk = sent.recipients[0].mock_token;
+    await c.ceremony.open(tk);
+    await c.ceremony.consent(tk, MOCK.ersd);
+    return { id: env.id, tk };
+  };
+  const scan = makePdf([{ title: "Signed by hand" }]);
+  const b64 = btoa(String.fromCharCode(...scan));
+  const off = await make(false);
+  await assert.rejects(c.ceremony.signOnPaper(off.tk, b64), (e) => e.status === 409 && e.code === "CS-WF-0012");
+  const on = await make(true);
+  await assert.rejects(c.ceremony.signOnPaper(on.tk, btoa("not a pdf at all")), (e) => e.status === 422);
+  const v = await c.ceremony.signOnPaper(on.tk, b64);
+  assert.equal(v.recipient.status, "completed");
+  const { envelope } = await c.getEnvelope(on.id);
+  assert.equal(envelope.documents.length, 2);
+  assert.equal(envelope.documents[1].name, "Signed on paper.pdf");
+  const types = (await c.audit(on.id)).items.map((i) => i.type);
+  const at = types.indexOf("recipient.signed_on_paper");
+  assert.deepEqual(types.slice(at - 3, at + 2), ["document.added", "document.admitted", "document.fixed", "recipient.signed_on_paper", "recipient.completed"]);
+  const ev = (await c.audit(on.id)).items[at].event.data;
+  assert.equal(ev.document_id, envelope.documents[1].id);
+  assert.equal(ev.documents.length, 1, "what was printed: the delivered document, not the scan");
+  await assert.rejects(c.ceremony.signOnPaper(on.tk, b64), (e) => e.status === 409);
+});

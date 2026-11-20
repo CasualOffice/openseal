@@ -701,9 +701,17 @@ cancelling leaves the refusal. Security events: `auth.reauthenticate` (with `fac
   records `envelope.exported` first, so the trail ends with it. In flight or purged `409 CS-WF-0001`, nothing
   recorded; certificate not made yet `409 CS-API-0009`; another account's id `404`. Web app: "Download evidence
   package" in the envelope page's More menu, once it is over (`api.evidencePackage`, the mock answers the same ZIP).
+- **Sign on paper** (`FG-013`, ADR-043): `signing_options.allow_sign_on_paper` (off by default, absent when off);
+  `POST /s/{token}/paper {content_base64, location?}` (public, the ceremony's cookie and every required
+  authentication and consent as any ceremony write): the scan, a PDF of at most the document size limit, screened,
+  admitted and normalized like any upload, added to the envelope as "Signed on paper.pdf" (fixed, sealed with the
+  rest), recorded as `recipient.signed_on_paper`, and the signer completed; answers the view. Off `409 CS-WF-0012`;
+  not a signer, not their turn or finished `409`; not a PDF `422`. Signing page: "Sign on paper" in More (command
+  `signer.sign-on-paper`), a dialog with Print, the steps and the upload. The certificate shows the signer as "Signed
+  on paper" with the scan's document.
 - Tests: `-server` `tests/manage_views.rs`, `tests/correct_documents.rs`, `tests/editor_intermediary.rs`,
-  `tests/reports.rs`, `tests/lists.rs` (restore), `tests/evidence_package.rs`; the contract test calls every new
-  operation.
+  `tests/reports.rs`, `tests/lists.rs` (restore), `tests/evidence_package.rs`, `tests/sign_on_paper.rs`; the
+  contract test calls every new operation.
 
 ## As built (`WEB-19`, document analysis; docs/33 §6, §7 As built)
 

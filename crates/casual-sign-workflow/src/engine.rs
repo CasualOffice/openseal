@@ -22,7 +22,8 @@ use crate::effect::{
 };
 use crate::error::{ObjectKind, SealFault, WorkflowError};
 use crate::state::{
-    Bookkeeping, ConsentRecord, EnvelopeState, Fields, RecipientState, ScheduledTimer,
+    Bookkeeping, ConsentRecord, DocumentSpec, DocumentState, EnvelopeState, Fields, RecipientState,
+    ScheduledTimer,
 };
 use crate::validate::violations;
 
@@ -720,6 +721,10 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             complete_field(s, i, entry, out)
         }
         Command::Finish { recipient, values } => finish(s, cmd, recipient, values, out),
+        Command::SignOnPaper {
+            recipient,
+            document,
+        } => sign_on_paper(s, cmd, recipient, document, out),
         Command::Approve { recipient } => {
             let (i, r) = rec(s, recipient)?;
             authorize_recipient(r, cmd, ctx)?;
@@ -1746,6 +1751,70 @@ fn finish(
         }
         _ => sign(s, i, values, out),
     }
+}
+
+/// FG-013, ADR-043: the signer completes with the scan of what they printed and signed by
+/// hand. The scan becomes a fixed document of the envelope (so the seal covers it), and
+/// `recipient.signed_on_paper` names the documents as delivered that were printed (the
+/// signer's visible ones, before the scan joined them) and the scan. Fields assigned to
+/// the signer keep whatever they hold; no value is required of them.
+fn sign_on_paper(
+    s: &mut EnvelopeState,
+    cmd: &Command,
+    recipient: &Id,
+    document: &DocumentSpec,
+    out: &mut Out<'_>,
+) -> Result<(), WorkflowError> {
+    let ctx = out.ctx;
+    let (i, r) = rec(s, recipient)?;
+    authorize_recipient(r, cmd, ctx)?;
+    gate_ready(s, r, cmd, ctx)?;
+    if r.spec.rtype != RecipientType::Signer {
+        return Err(recipient_refused(cmd, r));
+    }
+    if !s.options.allow_sign_on_paper {
+        return Err(WorkflowError::OptionDisabled {
+            option: "allow_sign_on_paper",
+        });
+    }
+    if s.document(&document.id).is_some() {
+        return Err(WorkflowError::DuplicateId {
+            kind: ObjectKind::Document,
+            id: document.id.clone(),
+        });
+    }
+    if s.documents.len() >= limits::MAX_DOCUMENTS {
+        return Err(not_allowed(cmd, s));
+    }
+    let printed = s.visible_documents(i);
+    out.event(EventData::DocumentAdded {
+        document_id: document.id.clone(),
+        upload_hash: document.upload_hash,
+        bytes: document.bytes,
+    });
+    if let Some((report_hash, findings)) = document.admission {
+        out.event(EventData::DocumentAdmitted {
+            document_id: document.id.clone(),
+            report_hash,
+            findings,
+        });
+    }
+    out.event(EventData::DocumentFixed {
+        document_id: document.id.clone(),
+        delivered_hash: document.delivered_hash,
+        pages: document.pages,
+    });
+    s.documents.push(DocumentState {
+        spec: document.clone(),
+        fixed: true,
+    });
+    out.event(EventData::RecipientSignedOnPaper {
+        recipient_id: recipient.clone(),
+        documents: printed.clone(),
+        document_id: document.id.clone(),
+        upload_hash: document.upload_hash,
+    });
+    complete_recipient(s, i, printed, out)
 }
 
 pub(crate) fn has_address(r: &RecipientState) -> bool {

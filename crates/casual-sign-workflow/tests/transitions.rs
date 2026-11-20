@@ -290,6 +290,122 @@ fn an_evidence_package_is_exported_once_the_envelope_is_over_never_while_in_flig
     assert_eq!(code(hx.run(sender(), export)), "CS-WF-0001");
 }
 
+/// A draft of two signers in sequence with sign on paper `allowed` or not, sent.
+fn paper_envelope(allowed: bool) -> Harness {
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("r1", Signer, 1), recipient("r2", Signer, 2)]);
+    hx.ok(
+        sender(),
+        Command::Edit {
+            changes: vec![Change::SetSigningOptions {
+                options: SigningOptions {
+                    allow_sign_on_paper: allowed,
+                    ..SigningOptions::default()
+                },
+            }],
+        },
+    );
+    hx.send();
+    hx
+}
+
+#[test]
+fn a_signer_signs_on_paper_with_the_scan_added_fixed_and_bound_to_what_was_printed() {
+    // FG-013, ADR-043.
+    let paper = |rid: &str, did: &str| Command::SignOnPaper {
+        recipient: id(rid),
+        document: document(did, 7, 3),
+    };
+    // Off by default: refused.
+    let mut hx = paper_envelope(false);
+    hx.get_ready("r1");
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), paper("r1", "scan-1"))),
+        "CS-WF-0012"
+    );
+
+    let mut hx = paper_envelope(true);
+    // Not their turn, or not ready: refused.
+    assert_eq!(
+        code(hx.run(as_recipient("r2"), paper("r2", "scan-1"))),
+        "CS-WF-0007"
+    );
+    // Another recipient's command, or the sender: refused.
+    hx.get_ready("r1");
+    assert_eq!(code(hx.run(sender(), paper("r1", "scan-1"))), "CS-WF-0003");
+    // A document id already in use: refused.
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), paper("r1", "doc-1"))),
+        "CS-WF-0010"
+    );
+    let delivered = hx.state().documents[0].hash();
+    let d = hx.ok(as_recipient("r1"), paper("r1", "scan-1"));
+    assert_eq!(
+        &types(&d)[..5],
+        [
+            "document.added",
+            "document.admitted",
+            "document.fixed",
+            "recipient.signed_on_paper",
+            "recipient.completed"
+        ]
+    );
+    assert_eq!(
+        d.events[3].data,
+        EventData::RecipientSignedOnPaper {
+            recipient_id: id("r1"),
+            documents: vec![delivered],
+            document_id: id("scan-1"),
+            upload_hash: h(7),
+        }
+    );
+    // The scan is a fixed document of the envelope; r1 is done and r2 invited.
+    let s = hx.state();
+    assert_eq!(s.documents.len(), 2);
+    assert!(s.documents[1].fixed);
+    assert_eq!(hx.rstatus("r1"), RecipientStatus::Completed);
+    assert_eq!(invited(&d), ["r2"]);
+    assert!(
+        hx.state().fields.0.iter().all(|f| f.value.is_none()),
+        "no electronic value was required of r1"
+    );
+    // Once done, a second time is refused.
+    assert_eq!(
+        code(hx.run(as_recipient("r1"), paper("r1", "scan-2"))),
+        "CS-WF-0001"
+    );
+    // r2 signs electronically; the seal covers the scan with the rest.
+    hx.sign("r2");
+    assert_eq!(hx.status(), EnvelopeStatus::Completing);
+    hx.seal();
+    assert_eq!(hx.status(), EnvelopeStatus::Completed);
+    assert_eq!(hx.state().sealed.len(), 2);
+}
+
+#[test]
+fn only_a_signer_signs_on_paper() {
+    let mut hx = Harness::new();
+    hx.draft(&[recipient("a1", Approver, 1)]);
+    hx.ok(
+        sender(),
+        Command::Edit {
+            changes: vec![Change::SetSigningOptions {
+                options: SigningOptions {
+                    allow_sign_on_paper: true,
+                    ..SigningOptions::default()
+                },
+            }],
+        },
+    );
+    hx.send();
+    hx.get_ready("a1");
+    let c = Command::SignOnPaper {
+        recipient: id("a1"),
+        document: document("scan-1", 7, 1),
+    };
+    assert_eq!(code(hx.run(as_recipient("a1"), c)), "CS-WF-0001");
+}
+
 // Routing -----------------------------------------------------------------------------
 
 #[test]
@@ -1015,6 +1131,7 @@ fn signing_options_can_turn_off_decline_reassign_and_finish_later() {
                     allow_decline: false,
                     allow_finish_later: false,
                     capture_location: false,
+                    allow_sign_on_paper: false,
                 },
             }],
         },

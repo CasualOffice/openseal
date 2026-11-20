@@ -491,6 +491,22 @@ pub enum EventData {
         /// The documents approved.
         documents: Vec<DocumentHash>,
     },
+    /// A signer signed on paper (FG-013, ADR-043): they printed the documents named here
+    /// as delivered, signed them by hand and uploaded the scan, which was admitted like
+    /// any upload and added to the envelope as `document_id` (its own `document.added`
+    /// and `document.fixed` precede this event), so the seal covers it. Their
+    /// electronic fields take no part. Additive to ADR-010 as ADR-027 was.
+    #[serde(rename = "recipient.signed_on_paper")]
+    RecipientSignedOnPaper {
+        /// The recipient.
+        recipient_id: Id,
+        /// The documents, as delivered, that the signer printed and signed by hand.
+        documents: Vec<DocumentHash>,
+        /// The uploaded scan, added to the envelope as this document.
+        document_id: Id,
+        /// SHA-256 of the uploaded scan's bytes.
+        upload_hash: Hash256,
+    },
     /// The recipient finished their part (any role).
     #[serde(rename = "recipient.completed")]
     RecipientCompleted {
@@ -611,6 +627,7 @@ impl EventData {
         "recipient.field_completed",
         "recipient.signed",
         "recipient.approved",
+        "recipient.signed_on_paper",
         "recipient.completed",
         "recipient.declined",
         "recipient.reassigned",
@@ -914,8 +931,9 @@ mod tests {
             serde_json::json!({"type": "envelope.expired", "data": {}})
         );
         // 40 before ORG-09 added `envelope.transferred` and `envelope.exported` (additive,
-        // ADR-027); 43 with ADR-031's `envelope.restored`.
-        assert_eq!(EventData::TYPES.len(), 43);
+        // ADR-027); 43 with ADR-031's `envelope.restored`; 44 with ADR-043's
+        // `recipient.signed_on_paper`.
+        assert_eq!(EventData::TYPES.len(), 44);
     }
 
     #[test]

@@ -221,6 +221,30 @@ fn signer_attachments_are_listed_by_hash() {
     );
 }
 
+/// FG-013, ADR-043: a signer who signed on paper reads "Signed on paper" with the scan's
+/// document, never "Signed" alone.
+#[test]
+fn a_signer_who_signed_on_paper_is_shown_so_with_the_scan() {
+    let fonts = FontSet::bundled();
+    let (chain, delivered) = chain(1);
+    let mut inp = input(&chain, delivered, 1);
+    inp.recipients[0].outcome = casual_sign_certificate::Outcome::SignedOnPaper {
+        at: t(1_000_000),
+        document_id: "scan-0193".into(),
+    };
+    let r = render_certificate(&inp, &fonts, &CertificateOptions::default()).unwrap();
+    let mut a = admit(&r.bytes, &Limits::default(), &never).unwrap();
+    let pages = a.report.pages.clone();
+    let text = casual_sign_fields::extract_text(&mut a.document, &pages, &never)
+        .unwrap()
+        .iter()
+        .flat_map(|p| p.runs.iter().map(|r| r.text.clone()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(text.contains("Signed on paper"), "{text}");
+    assert!(text.contains("scan-0193"), "{text}");
+}
+
 /// ADR-041 (`VS-08D`): a sandbox envelope's certificate says, in its title, its first
 /// lines and the PDF's own title, that it is a sandbox test and not for agreements, and
 /// never reads as a certificate of completion.

@@ -120,6 +120,7 @@ export const COMMON = {
   "event.recipient.field_completed": "Field filled",
   "event.recipient.field_cleared": "Field cleared",
   "event.recipient.signed": "Recipient signed",
+  "event.recipient.signed_on_paper": "Recipient signed on paper",
   "event.recipient.approved": "Recipient approved",
   "event.recipient.completed": "Recipient finished",
   "event.recipient.declined": "Recipient declined",

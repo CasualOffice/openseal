@@ -1321,6 +1321,14 @@ pub fn table() -> Vec<Route> {
             ceremony::attach,
         ),
         r("POST", "/s/{token}/finish", Public, JSON, ceremony::finish),
+        // FG-013, ADR-043: the scan of what the signer signed by hand.
+        r(
+            "POST",
+            "/s/{token}/paper",
+            Public,
+            UPLOAD,
+            ceremony::sign_on_paper,
+        ),
         r(
             "POST",
             "/s/{token}/recipients",

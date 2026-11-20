@@ -154,7 +154,8 @@ pub(crate) fn pages_json(a: &AdmissionReport) -> Value {
 
 /// Admit and normalize an upload (docs/30 §2, §3), store the original and the
 /// delivered bytes, and record the document's rows. Signed input is kept as it is.
-async fn add_document(
+/// Also the signing page's scan of a document signed on paper (FG-013, ADR-043).
+pub(crate) async fn add_document(
     st: &AppState,
     tx: &mut TenantTx,
     env: EnvelopeId,

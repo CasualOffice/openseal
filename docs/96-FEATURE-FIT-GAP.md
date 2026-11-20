@@ -30,7 +30,7 @@ instructions 8 and 9).
 | FG-010 | Document visibility per recipient | DS | Build | 6 | Works: engine, server (a hidden document is neither listed nor served to that recipient, `404`), editor's More options per recipient (`WF-02`) |
 | FG-011 | Document generation from DOCX templates | SN, DS add-on | Build | 28 | — |
 | FG-012 | Template matching on upload | DS | Build | 3 | Partial: uploads to a draft are matched against the workspace's template page hashes when template matching is on (`WEB-19`); not run on the real stack in a browser |
-| FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | — |
+| FG-013 | Sign on paper (print, sign, upload), with the upload admitted and recorded as evidence | DS | Build | 6 | Partial: built on a branch (`VS-06`, ADR-043 Accepted by owner instruction 78): the envelope option, `POST /s/{token}/paper` (admitted like any upload, added as a fixed document so the seal covers it, `recipient.signed_on_paper`), Sign on paper in the signing page's More, the certificate's "Signed on paper"; `Works` once `manage-correct.spec.mjs` is green on `main` |
 
 ## Recipients and routing
 

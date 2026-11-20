@@ -2002,6 +2002,7 @@ const HISTORY = {
   "recipient.field_completed": "sign.history.filled",
   "recipient.finish_later": "sign.history.later",
   "recipient.signed": "sign.history.completed",
+  "recipient.signed_on_paper": "sign.history.signed-on-paper",
   "recipient.approved": "sign.history.approved",
   "recipient.completed": "sign.history.completed",
   "recipient.declined": "sign.history.declined",
@@ -2073,6 +2074,8 @@ function buildMenu(stage_ = "open") {
   // UX-06: change the adopted signature from anywhere, once there is one.
   if (stage === "open" && adoptions.signature) items.push(item("pencil", t("sign.field.change-signature"), "signer.change-signature", { testId: "menu-change-signature" }));
   if (stage === "open" && opts.allow_reassign === true) items.push(item("user-plus", t("sign.menu.reassign"), "signer.reassign", { testId: "menu-reassign" }));
+  // FG-013: print, sign by hand, upload the scan; a signer only, where the sender allows it.
+  if (stage === "open" && paperAllowed()) items.push(item("printer", t("sign.paper.menu"), "signer.sign-on-paper", { testId: "menu-sign-on-paper" }));
   items.push(item("list-ordered", t("sign.menu.history"), "signer.history", { testId: "menu-history" }));
   items.push(help_);
   if (stage === "open") {
@@ -2104,6 +2107,60 @@ function registerCommands() {
   register("signer.finish-later", { label: t("sign.later"), run: finishLater, enabled: () => stage === "open" && opts().allow_finish_later !== false });
   register("signer.decline", { label: t("sign.decline"), run: decline, enabled: () => stage === "open" && opts().allow_decline !== false });
   register("signer.withdraw-consent", { label: t("sign.withdraw"), run: withdrawConsent, enabled: () => stage === "open" && !!view?.recipient?.consented });
+  register("signer.sign-on-paper", { label: t("sign.paper.menu"), run: signOnPaper, enabled: () => stage === "open" && paperAllowed() });
+}
+
+/// Whether this recipient may sign on paper (FG-013, ADR-043): the envelope allows it
+/// and they sign (the server refuses anyone else too).
+function paperAllowed() {
+  return view?.envelope?.signing_options?.allow_sign_on_paper === true && view?.recipient?.type === "signer";
+}
+
+/// Sign on paper (FG-013, ADR-043): print the documents, sign them by hand, scan them
+/// into one PDF and upload it. The scan becomes part of the envelope and is sealed with
+/// it; the upload finishes this signer's part, so it is confirmed like a finish.
+async function signOnPaper() {
+  closeMore();
+  let input;
+  let err;
+  const file = await openDialog({
+    title: t("sign.paper.title"),
+    className: "os-paper",
+    build(body) {
+      const print = button(t("sign.paper.print"), { icon: "printer", variant: "secondary", attrs: { "data-testid": "paper-print" }, onClick: () => run("signer.print") });
+      body.append(
+        h("ol", { class: "os-paper__steps" },
+          h("li", {}, h("span", { text: t("sign.paper.step-print") }), " ", print),
+          h("li", { text: t("sign.paper.step-sign") }),
+          h("li", { text: t("sign.paper.step-scan") })),
+        h("p", { class: "os-muted", text: t("sign.paper.evidence") }),
+        h("label", { class: "os-label", attrs: { for: "paper-file" }, text: t("sign.paper.file") }),
+        (input = h("input", { id: "paper-file", type: "file", class: "os-input", attrs: { accept: "application/pdf,.pdf", "aria-describedby": "paper-err", "data-testid": "paper-file" } })),
+        (err = h("p", { id: "paper-err", class: "os-field-error", attrs: { "aria-live": "polite" } })));
+    },
+    actions: [
+      { label: t("action.cancel"), value: null },
+      {
+        label: t("sign.paper.confirm"),
+        variant: "primary",
+        attrs: { "data-testid": "paper-confirm" },
+        onClick: () => {
+          const f = input.files?.[0];
+          if (!f) { err.textContent = t("sign.paper.none"); input.setAttribute("aria-invalid", "true"); input.focus(); return undefined; }
+          if (f.type && f.type !== "application/pdf") { err.textContent = t("sign.paper.not-pdf"); input.setAttribute("aria-invalid", "true"); input.focus(); return undefined; }
+          return f;
+        },
+      },
+    ],
+  });
+  if (!file) return;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    view = await api.ceremony.signOnPaper(token, btoa(bin), location_);
+    done(everyoneSigned(view.envelope?.status), true);
+  } catch (ex) { toastError(ex); }
 }
 
 /// The guide bar's progress ring (the canvas's 36-unit SVG): a faint track, the arc

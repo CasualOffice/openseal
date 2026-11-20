@@ -823,6 +823,10 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       decline: (token, reason, location) =>
         data(request("POST", `${S(token)}/decline`, { body: withLocation(reason ? { reason } : {}, location), ceremony: true })),
       finishLater: (token) => data(request("POST", `${S(token)}/finish-later`, { body: {}, ceremony: true })),
+      /// Sign on paper (FG-013, ADR-043): the scan (a PDF, base64) of the documents the
+      /// signer printed and signed by hand; answers the view, this recipient completed.
+      signOnPaper: (token, contentBase64, location) =>
+        data(request("POST", `${S(token)}/paper`, { body: withLocation({ content_base64: contentBase64 }, location), ceremony: true })),
       /// An agent (or intermediary) names later recipients before finishing (VS-02):
       /// `[{id, name?, email?}]`, ids from the view's `later_recipients`.
       nameRecipients: (token, recipients, location) =>

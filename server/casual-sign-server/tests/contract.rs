@@ -1463,6 +1463,17 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         (StatusCode::CONFLICT, "CS-API-0009"),
         "signer certificate before completion"
     );
+    // FG-013: signer 1 has finished; sign on paper is refused (and off on this envelope).
+    let paper = api
+        .call(
+            "POST",
+            &format!("{s1}/paper"),
+            &Auth::None,
+            Some(json!({"content_base64": "JVBERi0="})),
+            &h1,
+        )
+        .await;
+    assert!(paper.status.is_client_error(), "{:?}", paper.json());
     // WEB-08: a staff download of an attachment no field names (tests/lists.rs serves one).
     let none = api
         .call(

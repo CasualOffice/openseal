@@ -456,6 +456,17 @@ pub enum Command {
         /// The field and value.
         entry: FieldEntry,
     },
+    /// Sign on paper (FG-013, ADR-043): a signer whose turn it is, authenticated and
+    /// consented, on an envelope allowing it, completes with the scan of the documents
+    /// they printed and signed by hand. The server admits the scan like any upload and
+    /// passes it as `document`; it is added to the envelope (fixed, so the seal covers
+    /// it) and `recipient.signed_on_paper` binds it to the documents printed.
+    SignOnPaper {
+        /// The recipient.
+        recipient: Id,
+        /// The admitted scan.
+        document: DocumentSpec,
+    },
     /// The recipient finished: signs (signer types), completes (viewer, agent,
     /// intermediary). Values given here are set first.
     Finish {
@@ -583,6 +594,7 @@ impl Command {
             Self::AdoptSignature { .. } => "adopt_signature",
             Self::CompleteField { .. } => "complete_field",
             Self::Finish { .. } => "finish",
+            Self::SignOnPaper { .. } => "sign_on_paper",
             Self::Approve { .. } => "approve",
             Self::Decline { .. } => "decline",
             Self::Reassign { .. } => "reassign",

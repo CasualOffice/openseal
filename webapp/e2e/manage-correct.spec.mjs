@@ -395,3 +395,63 @@ test("VS-06D: the evidence package downloads as one ZIP whose manifest hashes ev
   expect(trail.items.at(-1).type).toBe("envelope.exported");
   expect(trail.chain_head).toBe(manifest.chain_head);
 });
+
+// FG-013 (ADR-043): sign on paper. The sender allows it; the signer opens their link,
+// chooses Sign on paper in More, uploads the scan of the signed pages, and is done; the
+// envelope gains the scan as a document and the trail records it. Mock: the link is
+// the mock's token; Compose stack: read from Mailpit. Axe, light and dark, on the
+// dialog (mock).
+test("FG-013: a signer signs on paper and the scan joins the envelope as evidence", async ({ page }, testInfo) => {
+  test.skip(!REAL && testInfo.project.name !== "chromium" && testInfo.project.name !== "webkit", "desktop browsers");
+  test.setTimeout(REAL ? 180_000 : 90_000);
+  const run = `${Date.now()}-${testInfo.project.name}-${Math.random().toString(36).slice(2, 8)}`;
+  await page.setViewportSize(SIZE);
+  await signIn(page, "home");
+  const subject = `FG-013 paper ${run}`;
+  const signer = `fg013-${run}@example.com`;
+  const started = Date.now();
+  const made = await inApp(page, async ({ subject, signer, pdf }) => {
+    const api = window.__vs06;
+    const e = await api.createEnvelope({
+      subject, status: "sent", signing_options: { allow_sign_on_paper: true },
+      documents: [{ name: "paper.pdf", content_base64: pdf }],
+      recipients: [{ ref: "s", type: "signer", name: "Pat Paper", email: signer, routing_order: 1 }],
+      fields: [{ recipient: "s", document: 0, type: "signature", page: 1, x: 72, y: 600, width: 180, height: 40, required: true }],
+    });
+    return { id: e.id, token: e.recipients?.[0]?.mock_token || null };
+  }, { subject, signer, pdf: Buffer.from(makePdf([{ title: subject, lines: ["Clause 1."] }])).toString("base64") });
+  const link = REAL ? await emailedLink(signer, started) : signPage(made.token);
+  await page.goto(link, { waitUntil: "domcontentloaded" });
+  const consent = page.getByRole("heading", { name: "Electronic records and signatures" });
+  const progress = page.locator("#guide-progress");
+  await expect(consent.or(progress).first()).toBeVisible();
+  if (await consent.isVisible()) {
+    await page.getByLabel("I agree to use electronic records and signatures.").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+  }
+  await expect(progress).toBeVisible();
+  await page.getByRole("button", { name: "More" }).click();
+  await page.getByTestId("menu-sign-on-paper").click();
+  const dialog = page.getByRole("dialog", { name: "Sign on paper" });
+  await expect(dialog).toBeVisible();
+  if (!REAL) {
+    for (const scheme of ["light", "dark"]) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await expectAccessible(page, `sign on paper dialog (${scheme})`);
+    }
+    await page.emulateMedia({ colorScheme: "light" });
+  }
+  // Nothing chosen: said so, nothing sent.
+  await dialog.getByTestId("paper-confirm").click();
+  await expect(dialog.getByText("Choose the PDF of your signed pages.")).toBeVisible();
+  await dialog.getByTestId("paper-file").setInputFiles(pdfFile("signed-scan.pdf", "Signed by hand"));
+  await dialog.getByTestId("paper-confirm").click();
+  await expect(page.getByTestId("done-download")).toBeVisible({ timeout: 30_000 });
+  // The sender sees the scan among the documents and the event in the history.
+  await signIn(page, "home");
+  await page.goto(app(`#/envelopes/${encodeURIComponent(made.id)}`), { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: subject })).toBeVisible();
+  await expect(page.getByText("Signed on paper.pdf").first()).toBeVisible();
+  await more(page, "History");
+  await expect(page.getByTestId("history-timeline").getByText("Recipient signed on paper").first()).toBeVisible();
+});
