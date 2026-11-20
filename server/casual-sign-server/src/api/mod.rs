@@ -110,6 +110,12 @@ pub(crate) async fn envelope(
     id: &str,
 ) -> Result<Loaded, ApiError> {
     let id = EnvelopeId(path_id(id)?);
+    // An embedded view session (VS-09) sees its own envelope and no other.
+    if let crate::auth::Credential::EmbedView { envelope, .. } = p.credential
+        && envelope != id
+    {
+        return Err(ApiError::not_found());
+    }
     let l = load(tx, id).await?.ok_or_else(ApiError::not_found)?;
     if !visible(p, &l.state) {
         return Err(ApiError::not_found());

@@ -572,6 +572,48 @@ impl EntryPoints<'_> {
         }))
     }
 
+    /// The workspace of a live, unspent embedded view link (VS-09, migration 0050).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn resolve_embed_view(
+        &self,
+        token_sha256: &[u8; 32],
+        now: OffsetDateTime,
+    ) -> Result<Option<AccountId>> {
+        let row = sqlx::query!(
+            r#"SELECT account_id AS "account_id!" FROM openseal_resolve_embed_view($1, $2)"#,
+            token_sha256.as_slice(),
+            now
+        )
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| AccountId(r.account_id)))
+    }
+
+    /// The workspace of a live embedded view session (VS-09, migration 0050).
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn resolve_embed_session(
+        &self,
+        session_sha256: &[u8; 32],
+        now: OffsetDateTime,
+    ) -> Result<Option<AccountId>> {
+        let row = sqlx::query!(
+            r#"SELECT account_id AS "account_id!" FROM openseal_resolve_embed_session($1, $2)"#,
+            session_sha256.as_slice(),
+            now
+        )
+        .fetch_optional(&self.store.pool)
+        .await
+        .map_err(db)?;
+        Ok(row.map(|r| AccountId(r.account_id)))
+    }
+
     /// The API client an unexpired, unrevoked key's hash names (SEC-A10).
     ///
     /// # Errors

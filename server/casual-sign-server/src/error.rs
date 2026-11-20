@@ -289,6 +289,21 @@ impl ApiError {
         Self::new(StatusCode::FORBIDDEN, "CS-AUTH-0010")
     }
 
+    /// `CS-EMB-0001` 422 at `pointer`: a view's frame origin or return URL is not an
+    /// origin the workspace allows to frame its views (VS-09, docs/40 §5).
+    pub fn origin_not_allowed(pointer: &str) -> Self {
+        Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-EMB-0001").fields(vec![FieldProblem {
+            pointer: pointer.into(),
+            code: "CS-EMB-0001",
+        }])
+    }
+
+    /// `CS-EMB-0002` 403: an embedded view session asked for something beyond its
+    /// envelope and its editor's operations (VS-09).
+    pub fn beyond_view() -> Self {
+        Self::new(StatusCode::FORBIDDEN, "CS-EMB-0002")
+    }
+
     /// `CS-AUTH-0011` 403: the session owes a second factor it has not passed, or must
     /// enrol one first (ASVS-01); `detail` says which (`verify` or `enrol`).
     pub fn second_factor_required(detail: &str) -> Self {

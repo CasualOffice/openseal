@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- VS-09: served at /e/{token} for a page on another origin to frame; every URL here is
+       root-relative. CSP as app.html; the server's header adds frame-ancestors with the
+       view's host page only (docs/40 §5). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="openseal-api-base" content="">
+  <title data-i18n="embed.page-title">Prepare · OpenSeal</title>
+  <link rel="icon" href="/assets/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/tokens.css">
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/shell.css">
+  <link rel="stylesheet" href="/prepare.css">
+  <link rel="stylesheet" href="/manage.css">
+  <script type="module" src="/embed.js"></script>
+</head>
+<body class="os-app os-embed">
+  <a class="os-skip" href="#main" data-i18n="a11y.skip">Skip to content</a>
+  <div class="os-content" id="content">
+    <main id="main" class="os-main" tabindex="-1"></main>
+  </div>
+  <div id="route-status" class="os-sr-only" role="status" aria-live="polite"></div>
+</body>
+</html>

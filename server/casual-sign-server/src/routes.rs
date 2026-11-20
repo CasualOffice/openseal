@@ -977,6 +977,21 @@ pub fn table() -> Vec<Route> {
             JSON,
             env::view_signing,
         ),
+        // Embedded prepare and correct views (VS-09, docs/40 §5).
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/views/prepare",
+            es,
+            JSON,
+            crate::embed::view_prepare,
+        ),
+        r(
+            "POST",
+            "/api/v1/envelopes/{id}/views/correct",
+            es,
+            JSON,
+            crate::embed::view_correct,
+        ),
         // Templates.
         r(
             "GET",
@@ -1198,6 +1213,15 @@ pub fn table() -> Vec<Route> {
             A(WebhooksManage),
             JSON,
             webhooks::deliveries,
+        ),
+        // The embedded prepare and correct page and its one-time session (VS-09).
+        r("GET", "/e/{token}", Public, JSON, crate::embed::view_page),
+        r(
+            "POST",
+            "/e/{token}/session",
+            Public,
+            JSON,
+            crate::embed::view_session,
         ),
         // Ceremony (docs/40 §6).
         r("GET", "/s/{token}", Public, JSON, ceremony::view_or_page),

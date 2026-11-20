@@ -1094,11 +1094,38 @@ components:
       properties:
         recipient_id: {type: string}
         auth_asserted: {type: string, description: "The host's statement of how it authenticated the signer"}
+        frame_origin: {type: string, description: "VS-09: the origin of the page that frames the view (`https://host[:port]`), one of the workspace's `embedding_origins`; the view page's `frame-ancestors` and the only origin its events are posted to. Not on the list: `422 CS-EMB-0001`"}
+        return_url: {type: string, description: "VS-09: where the browser goes when the view ends, with `event` and `state` added to its query; its origin must be one of the workspace's `embedding_origins` (`422 CS-EMB-0001`)"}
+        state: {type: string, maxLength: 1024, description: "VS-09: an opaque value given back with every event and on the return URL"}
     SigningView:
       type: object
       properties:
-        url: {type: string}
+        url: {type: string, description: "Single use, valid for `expires_at` (five minutes)"}
         expires_at: {type: string, format: date-time}
+    EditorViewRequest:
+      type: object
+      additionalProperties: false
+      description: "VS-09: where an embedded prepare or correct view's host page is; every member optional, each checked as for the signing view"
+      properties:
+        frame_origin: {type: string}
+        return_url: {type: string}
+        state: {type: string, maxLength: 1024}
+    EmbedTarget:
+      type: object
+      description: "VS-09: where an embedded view posts its events (`frame_origin`), returns to (`return_url`) and the host's `state`; each null when the view named none"
+      properties:
+        frame_origin: {type: [string, 'null']}
+        return_url: {type: [string, 'null']}
+        state: {type: [string, 'null']}
+    EmbedSession:
+      type: object
+      description: "VS-09: the session an embedded prepare or correct page authenticates with (`Authorization: Bearer osv_…`), on its envelope only, with its editor's operations only (`403 CS-EMB-0002` otherwise), until `expires_at` (one hour)"
+      properties:
+        session: {type: string}
+        envelope_id: {type: string}
+        kind: {type: string, enum: [prepare, correct]}
+        expires_at: {type: string, format: date-time}
+        embed: {$ref: '#/components/schemas/EmbedTarget'}
     Template:
       type: object
       properties:
@@ -1340,6 +1367,11 @@ components:
             url: {type: string, description: '`/s/{token}/disclosure`, present only when the account has published that text (UXW-34)'}
         sandbox: {type: boolean, description: 'The envelope is a sandbox workspace''s (ADR-041): the page says it is a test, not an agreement'}
         auth_required: {type: [array, 'null'], items: {$ref: '#/components/schemas/AuthMethod'}}
+        embed: {$ref: '#/components/schemas/EmbedTarget'}
+        binding:
+          type: string
+          description: 'VS-09: an embedded signing view only, in the answer that bound the link: the secret the page sends back in `X-OpenSeal-Binding` on every later call, since a browser sends a cross-site frame no first-party cookie. Kept in memory only'
+
         later_recipients:
           type: array
           description: >-
@@ -4036,6 +4068,67 @@ paths:
             application/json:
               schema: {$ref: '#/components/schemas/SigningView'}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/views/prepare:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: createPrepareView
+      summary: "Five-minute embedded prepare (sender) link for a draft, an API client only (VS-09)"
+      description: >-
+        A single-use link to the editor for this draft, for the page at `frame_origin` to
+        frame: recipients, documents and fields, then send. Only an API key or an OAuth
+        access token may ask (`403 CS-AUTH-0010` to a staff session); the envelope must
+        be a draft (`409 CS-WF-0001`). Opening it (`POST /e/{token}/session`) spends it.
+      x-permission: "envelopes.send"
+      x-level: workspace
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EditorViewRequest'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/envelopes/{id}/views/correct:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Object id (UUIDv7)
+        schema: {type: string}
+    post:
+      operationId: createCorrectView
+      summary: "Five-minute embedded correct link for a sent envelope, an API client only (VS-09)"
+      description: >-
+        As `createPrepareView`, for an envelope in flight (sent or delivered, else `409
+        CS-WF-0001`): the correct editor (recipients, authentication, expiry and
+        reminders).
+      x-permission: "envelopes.send"
+      x-level: workspace
+      parameters:
+        - $ref: '#/components/parameters/idempotencyKey'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/EditorViewRequest'}
+      responses:
+        '201':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningView'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/templates:
     get:
       operationId: listTemplates
@@ -5066,6 +5159,56 @@ paths:
               schema: {$ref: '#/components/schemas/CeremonyView'}
             text/html:
               schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /e/{token}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Embedded view link token (secret)
+        schema: {type: string}
+    get:
+      operationId: embedViewPage
+      summary: "The embedded prepare or correct page (VS-09)"
+      description: >-
+        `embed.html`, whose `frame-ancestors` is the view's frame origin while it is
+        among the workspace's `embedding_origins` (else the list, else `'none'`). Serving
+        it spends nothing.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: The page
+          content:
+            text/html:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /e/{token}/session:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Embedded view link token (secret)
+        schema: {type: string}
+    post:
+      operationId: embedViewSession
+      summary: "Spend the view link once and get its session (VS-09)"
+      description: >-
+        An unknown, expired or already spent link, a revoked client or a removed member
+        is `401 CS-AUTH-0002`.
+      security: []
+      x-permission: public
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/EmbedSession'}
         default: {$ref: '#/components/responses/Problem'}
   /s/{token}/session:
     parameters:

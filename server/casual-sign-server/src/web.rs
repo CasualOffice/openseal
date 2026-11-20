@@ -16,7 +16,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::Path;
-use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
 use axum::http::{HeaderMap, HeaderValue, Method, header};
@@ -36,6 +35,10 @@ pub const VERIFY_CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe
 style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; \
 worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; \
 frame-ancestors 'none'";
+
+/// The embedding elements' module (`<openseal-signing>`, `<openseal-prepare>`, VS-09):
+/// the one file a page on another origin loads.
+pub const ELEMENTS: &str = "openseal-elements.js";
 
 /// A page may ask for the device's location (GEO-01), nothing else.
 const PAGE_PERMISSIONS: &str = "geolocation=(self), camera=(), microphone=()";
@@ -231,9 +234,21 @@ impl WebApp {
                 HeaderValue::from_static(PAGE_PERMISSIONS),
             );
             // A signing page's URL holds the link's token: never cached anywhere.
-            if name == "sign.html" {
+            if name == "sign.html" || name == "embed.html" {
                 h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
             }
+        }
+        // VS-09: the embedding elements are loaded by a host page on another origin as
+        // a module script, which a browser fetches with CORS; nothing else is.
+        if name == ELEMENTS {
+            h.insert(
+                header::ACCESS_CONTROL_ALLOW_ORIGIN,
+                HeaderValue::from_static("*"),
+            );
+            h.insert(
+                header::HeaderName::from_static("cross-origin-resource-policy"),
+                HeaderValue::from_static("cross-origin"),
+            );
         }
         Some(r)
     }
@@ -278,12 +293,6 @@ pub(crate) async fn fallback(
         path.trim_start_matches('/')
     };
     app.file(name)
-        .unwrap_or_else(|| ApiError::not_found().into_response())
-}
-
-/// `sign.html`, for a browser opening a signing link.
-pub(crate) fn sign_page(app: &Arc<WebApp>) -> Response {
-    app.file("sign.html")
         .unwrap_or_else(|| ApiError::not_found().into_response())
 }
 

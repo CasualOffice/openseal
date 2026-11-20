@@ -28,6 +28,7 @@ mod call;
 mod ceremony;
 mod crypto;
 mod dto;
+pub mod embed;
 mod error;
 pub mod geo;
 mod http;

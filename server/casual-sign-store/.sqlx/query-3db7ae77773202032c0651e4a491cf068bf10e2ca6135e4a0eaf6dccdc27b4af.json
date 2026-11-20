@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id, envelope_id, recipient_id, purpose, host_user_id, session_sha256, expires_at, revoked_at FROM recipient_tokens WHERE account_id = $1 AND token_sha256 = $2",
+  "query": "SELECT id, envelope_id, recipient_id, purpose, host_user_id, session_sha256, expires_at, revoked_at, frame_origin, return_url, return_state FROM recipient_tokens WHERE account_id = $1 AND token_sha256 = $2",
   "describe": {
     "columns": [
       {
@@ -90,6 +90,39 @@
             "name": "revoked_at"
           }
         }
+      },
+      {
+        "ordinal": 8,
+        "name": "frame_origin",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "frame_origin"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "return_url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "return_url"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "return_state",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "recipient_tokens",
+            "name": "return_state"
+          }
+        }
       }
     ],
     "parameters": {
@@ -106,8 +139,11 @@
       true,
       true,
       false,
+      true,
+      true,
+      true,
       true
     ]
   },
-  "hash": "c3e425890d829a53725d2407a979752635251cacdb10e8624c809c52f1f153c8"
+  "hash": "3db7ae77773202032c0651e4a491cf068bf10e2ca6135e4a0eaf6dccdc27b4af"
 }

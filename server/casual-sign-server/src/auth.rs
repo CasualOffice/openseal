@@ -82,6 +82,18 @@ pub enum Credential {
     ApiKey(ApiClientId),
     /// An access token issued to an OAuth client.
     AccessToken(ApiClientId),
+    /// An embedded prepare or correct view's session (VS-09): the API client that asked
+    /// for the view, acting on one envelope with its editor's operations only.
+    EmbedView {
+        /// The API client that created the view.
+        client: ApiClientId,
+        /// The view.
+        view: Uuid,
+        /// The one envelope it acts on.
+        envelope: casual_sign_store::EnvelopeId,
+        /// Prepare or correct.
+        kind: casual_sign_store::repo::embed_views::ViewKind,
+    },
 }
 
 /// Where a staff session stands with its second factor (ASVS-01, docs/40 §2). API keys
@@ -190,6 +202,7 @@ impl Principal {
             Credential::Session(s) => format!("session:{s}"),
             Credential::ApiKey(c) => format!("api_key:{c}"),
             Credential::AccessToken(c) => format!("oauth_client:{c}"),
+            Credential::EmbedView { view, .. } => format!("embed_view:{view}"),
         };
         (
             vec![casual_sign_audit::AuthMethod::AccountLogin],
@@ -203,7 +216,9 @@ impl Principal {
     #[must_use]
     pub fn client(&self) -> Option<ApiClientId> {
         match self.credential {
-            Credential::ApiKey(c) | Credential::AccessToken(c) => Some(c),
+            Credential::ApiKey(c)
+            | Credential::AccessToken(c)
+            | Credential::EmbedView { client: c, .. } => Some(c),
             Credential::Session(_) => None,
         }
     }
@@ -216,6 +231,7 @@ impl Principal {
             // One OAuth client may act for several members (VS-08A): each its own.
             Credential::AccessToken(c) => format!("client:{c}:user:{}", self.user),
             Credential::Session(_) => format!("user:{}", self.user),
+            Credential::EmbedView { view, .. } => format!("embed:{view}"),
         }
     }
 
@@ -448,6 +464,56 @@ async fn as_member(
     })
 }
 
+/// The principal of an embedded view session (VS-09): the member the view was created
+/// for, through the API client that asked, holding no more than the envelope scopes the
+/// client holds; the guard then keeps it to its envelope ([`crate::embed::reaches`]). A
+/// revoked client or a removed member ends it on the next request.
+async fn embed_session(
+    state: &AppState,
+    token: &str,
+    now: OffsetDateTime,
+) -> Result<Principal, ApiError> {
+    let hash = sha256(token.as_bytes());
+    let account = state
+        .store()
+        .entry_points()
+        .resolve_embed_session(&hash, now)
+        .await?
+        .ok_or_else(ApiError::unauthenticated)?;
+    let mut tx = state.store().for_account(account).begin().await?;
+    let v = tx
+        .embed_views()
+        .by_session(&hash, now)
+        .await?
+        .ok_or_else(ApiError::expired)?;
+    let c = tx
+        .api_clients()
+        .get(v.client_id)
+        .await?
+        .ok_or_else(ApiError::expired)?;
+    if c.revoked_at.is_some() || c.expires_at.is_some_and(|e| e <= now) {
+        return Err(ApiError::expired());
+    }
+    let limit: Vec<String> = ["envelopes:read", "envelopes:write", "envelopes:send"]
+        .into_iter()
+        .filter(|s| c.scopes.iter().any(|g| g == s))
+        .map(str::to_owned)
+        .collect();
+    as_member(
+        &mut tx,
+        account,
+        v.user_id,
+        Credential::EmbedView {
+            client: v.client_id,
+            view: v.id,
+            envelope: v.envelope_id,
+            kind: v.kind,
+        },
+        Some(&limit),
+    )
+    .await
+}
+
 /// Authenticate a request to `/api/v1`.
 ///
 /// # Errors
@@ -462,6 +528,9 @@ pub(crate) async fn authenticate(
 ) -> Result<Principal, ApiError> {
     let now = state.now();
     if let Some(token) = bearer(headers) {
+        if token.starts_with(crate::embed::SESSION_PREFIX) {
+            return embed_session(state, token, now).await;
+        }
         if token.starts_with(API_KEY_PREFIX) {
             let (account, client) = state
                 .store()
