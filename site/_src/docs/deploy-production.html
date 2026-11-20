@@ -13,6 +13,7 @@
   <li><strong>TLS between services.</strong> PostgreSQL serves TLS 1.3 only and clients verify it (<code>sslmode=verify-full</code>); the object store serves TLS from an internal CA; keyd is mutual TLS.</li>
   <li><strong>Isolated networks.</strong> The database, object store and keyd sit on internal networks with no route out; only the worker reaches the internet (SMTP, timestamp authorities, webhooks).</li>
   <li><strong>Configuration integrity.</strong> keyd and the worker refuse to start when their security settings differ from a recorded manifest.</li>
+  <li><strong>Word conversion in a sandbox.</strong> <code>convertd</code> turns Word uploads into PDF in a container with no network, a read-only root and per-document memory, CPU and time limits; the server replicas reach it over a Unix socket (<code>OPENSEAL_CONVERTD_SOCKET</code>, set by the profile). See the <a href="configuration.html#convertd">configuration reference</a>.</li>
   <li><strong>Zero-downtime restarts.</strong> Two server replicas behind HAProxy, which takes a draining replica out of rotation before it stops.</li>
 </ul>
 
@@ -126,7 +127,7 @@ export OPENSEAL_SMTP_USER=openseal               # the password is the smtp-pass
 </ul>
 
 <h2 id="images">8. Use the signed images</h2>
-<p>Each release publishes <code>ghcr.io/casualoffice/openseal-server</code>, <code>-worker</code> and <code>-keyd</code>. Every image digest is signed with keyless cosign by the repository's release workflow at the release tag (recorded in the public Rekor log) and has a GitHub build provenance attestation; the release's assets are listed in <code>SHA256SUMS</code>, which is signed the same way. Verify all of it before you run anything:</p>
+<p>Each release publishes <code>ghcr.io/casualoffice/openseal-server</code>, <code>-worker</code> and <code>-keyd</code>; releases after v0.1.0 also publish <code>-convertd</code>, which the profile on <code>main</code> needs (v0.1.0's own profile has no convertd). Every image digest is signed with keyless cosign by the repository's release workflow at the release tag (recorded in the public Rekor log) and has a GitHub build provenance attestation; the release's assets are listed in <code>SHA256SUMS</code>, which is signed the same way. Verify all of it before you run anything:</p>
 <pre><code>V=v0.1.0
 REPO=CasualOffice/openseal
 gh release download "$V" -R "$REPO" -D "openseal-$V"; cd "openseal-$V"

@@ -1,6 +1,6 @@
 <!--meta {"title": "Deploy with Docker Compose", "description": "Run OpenSeal on one machine with Docker Compose for evaluation: prerequisites, step-by-step commands, the first administrator, checking it works, and stopping or removing it."} -->
 <h1>Deploy with Docker Compose</h1>
-<p class="lede">The whole platform on one machine, for evaluation and development: the server, the worker, the key daemon, PostgreSQL, an object store, a development timestamp authority and a mail catcher. About ten minutes, most of it the first image build.</p>
+<p class="lede">The whole platform on one machine, for evaluation and development: the server, the worker, the key daemon, the Word conversion daemon (<code>convertd</code>, which the server reaches through <code>OPENSEAL_CONVERTD_SOCKET</code>), PostgreSQL, an object store, a development timestamp authority and a mail catcher. About ten minutes, most of it the first image build.</p>
 
 <div class="callout warn">{{icon:triangle-alert}}<div><p><strong>Evaluation only.</strong> This stack generates its own certificate authority and seal key on first start, keeps the key in a software HSM, uses a development timestamp authority and sends cookies over plain HTTP. Its seals validate only against the generated root, not in Adobe Acrobat. For anything that others rely on, follow <a href="deploy-production.html">Production deployment</a>.</p></div></div>
 
@@ -63,6 +63,7 @@ docker compose up -d --wait</code></pre>
     <tr><td>Move the web app's port</td><td><code>OPENSEAL_HTTP_PORT=8443 docker compose up -d --wait</code></td></tr>
     <tr><td>Move Mailpit's port</td><td><code>OPENSEAL_MAIL_PORT=8026 docker compose up -d --wait</code></td></tr>
     <tr><td>Scan uploads for malware</td><td><code>OPENSEAL_CLAMD_ADDR=clamav:3310 docker compose --profile production up -d --build --wait</code> (ClamAV needs about 1 GB of memory and outbound HTTPS for its signatures)</td></tr>
+    <tr><td>Embed signing in a page of your own</td><td>Add the page's origin under Admin, Organization, Embedding, for example <code>http://localhost:3000</code> (plain <code>http</code> is accepted only for loopback and intranet hosts); see <a href="administration.html#embedding">Embedding origins</a></td></tr>
     <tr><td>Follow what it does</td><td><code>docker compose logs -f server worker</code>; every line is one JSON object</td></tr>
     <tr><td>Ship logs to a collector</td><td>Add <code>-f deploy/compose.log-forwarding.yml</code> (syslog over mutual TLS); see <a href="deploy-production.html#monitoring">Monitoring</a></td></tr>
   </tbody>

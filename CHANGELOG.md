@@ -4,6 +4,55 @@ All notable changes, by date. Format: [Keep a Changelog](https://keepachangelog.
 
 ## [Unreleased]
 
+Since v0.1.0 (tag at `f667422`): slices 8 (2026-11-20) and 6 (2026-11-21) closed, slice 9 in review (PR #40). Slices 3 and 4 are in the v0.1.0 tag (below). Still not for production agreements, and nothing here states legal validity, compliance or
+certification (docs/09).
+
+### API and webhooks (slice 8, closed; PR #37)
+- OAuth 2.1 authorization code with PKCE (S256 only), a consent screen, rotating refresh tokens and Connected apps
+  (`VS-08A`, migration 0048); the RFC 7523 JWT grant with a registered public key (`VS-08B`).
+- Webhooks with signed deliveries, a delivery log and redelivery, checked on the real stack by a receiver that verifies
+  every signature (`VS-08C`).
+- Sandbox workspaces (ADR-041): permanently marked, sealed with a separate key whose certificate says it is not for
+  agreements, a banner on every page and email, not metered, keys `osk_test_` (`VS-08D`, migration 0049).
+- TypeScript and Python SDKs generated from `api/openapi.yaml` and tested offline in `sdk/`; not published yet (owner
+  instruction 70) (`VS-08E`).
+- The website's API reference rebuilt: an overview and one page per resource, generated from the contract, with
+  deployment guides and a configuration reference generated from the binaries (`SITE-12`, PR #38).
+
+### Manage and correct (slice 6, closed; PR #39)
+- Authentication failed and Expiring soon views; restore a deleted envelope from the Deleted view (ADR-031,
+  `envelope.restored`); envelope custom fields, searchable from Agreements.
+- Correct documents and fields in the editor's Correct mode; Transfer from the envelope page.
+- An editor adds, moves and removes later signers' fields at the ceremony; an intermediary sets a later recipient's
+  authentication (`VS-06A`).
+- Word (`.docx`) uploads converted to PDF by `docxide-pdf` (Apache-2.0) in a new service, `casual-sign-convertd`: its
+  own container with no network, a read-only root and a fresh child process per document with memory, CPU and time
+  limits; macro documents refused; the Word file kept as the original (ADR-042, `VS-06C`). Excel and PowerPoint are
+  not converted (`VS-06F`). The server finds it through `OPENSEAL_CONVERTD_SOCKET`; the release workflow builds and
+  signs a `convertd` image.
+- Envelope id stamping on every page (ADR-045), sign on paper with the scan kept as evidence (ADR-043), an editor's
+  strike-through drawn into the sealed PDF (ADR-044).
+- Server reports as formula-safe CSV and an Insights page (counts, median and 90th-percentile time to complete, top
+  senders); one evidence-package ZIP per envelope with a SHA-256 manifest (`VS-06D`).
+
+### Embedding (slice 9, in review; PR #40)
+- Embedded signing, prepare and correct views: `frame_origin`, `return_url` and `state` checked against the
+  workspace's allowed origins (`422 CS-EMB-0001`); five-minute single-use links; prepare and correct for API clients
+  only, through a one-hour session kept to that envelope (migration 0050).
+- `<openseal-signing>` and `<openseal-prepare>`, one ES module served at `/openseal-elements.js`, taking messages only
+  from their own frame and OpenSeal's origin.
+- Per-workspace `frame-ancestors` from up to 20 embedding origins (Admin → Organization → Embedding); plain `http`
+  only for loopback and intranet hosts; `X-Frame-Options: DENY` everywhere else.
+
+### Designs accepted
+- ADR-046 (remote signatures per recipient through CSC API v2 providers, DigiCert and A-Trust first) and ADR-047
+  (India eSign through a licensed ESP, OpenSeal as the ASP), owner instruction 82: designs only, built next
+  (`RSP-01`, `RSP-02`).
+
+### Fixed
+- The webhook spec reads the receiver until the delivery shows (`9c20a0e`), after `main` run 44809730807 went red
+  on it.
+
 ## [0.1.0] — 2026-11-19 (pre-release)
 
 The second pre-release. Since v0.0.1, feature work paused for a hardening release (owner instruction 48) and for
@@ -126,6 +175,24 @@ SSO and SAML for staff, WebAuthn, payments, B-LTA renewal jobs, Helm and multi-n
 proof in a signer's own downloads (`VS-07D`), a per-envelope seal level in the editor (`VS-07E`), linux/arm64 images
 (`REL-02`), an external penetration test (`HRD-05`), and the slices after M3 on the
 [roadmap](https://casualoffice.github.io/openseal/roadmap.html).
+
+### Also in the tag: templates (slice 3; PR #33)
+
+Merged after these notes were written and before the tag; slices 3 and 4 closed on `main` run 44610734814, the
+tag's own commit (owner instructions 66 and 68).
+
+- Composite templates: `POST /envelopes/from-templates` makes one envelope from one to ten templates, roles with the
+  same name (ignoring case) becoming one recipient; the Use page's "Add a template" (`VS-03A`).
+- Template folders, each member's own (`TSH-03`, migration 0047): `GET /folders?kind=templates`, Move to folder.
+
+### Also in the tag: every field (slice 4; PRs #35, #36)
+- Every engine field kind but payment works for the signer and in the sealed PDF: date in its format, email address,
+  phone, SSN and ZIP checked as the engine checks them, multi-select, stamp, drawing, envelope id, formula, hyperlink,
+  approve and decline (`VS-04A`).
+- Conditional fields, checkbox groups, formulas and linked fields set in the editor's Logic panel, the signing view
+  following the server's own evaluation (`VS-04C`); shared fields several recipients fill (`VS-04D`).
+- Anchors and `{{…}}` text tags through the API, suggested by Detect fields (`VS-04E`); a PDF's own form fields offered
+  and placed in the editor (`VS-04F`).
 
 ### Reporting security issues
 Report vulnerabilities as described in `SECURITY.md`. This is pre-release software; do not use it for agreements you
