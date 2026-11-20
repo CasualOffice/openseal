@@ -1,4 +1,4 @@
-<!--meta {"title": "Configuration reference", "wide": true, "description": "Every environment variable of the OpenSeal server, worker and key daemon, and of the production profile: default, whether it is required, whether it is a secret, and what it does."} -->
+<!--meta {"title": "Configuration reference", "wide": true, "description": "Every environment variable of the OpenSeal server, worker, key daemon and conversion daemon, and of the production profile: default, whether it is required, whether it is a secret, and what it does."} -->
 <h1>Configuration reference</h1>
 <p class="lede">OpenSeal is configured entirely through environment variables. These tables are generated from each program's own documentation in the source, so they list exactly what the release reads.</p>
 
@@ -30,12 +30,16 @@
 <p>Holds the seal key, one key per alias, and signs only for callers on its allow list over mutual TLS. <code>casual-sign-keyd config-manifest</code> prints its manifest; <code>casual-sign-keyd verify-oplog PATH</code> checks an operation log's chain.</p>
 <!--config:keyd-->
 
+<h2 id="convertd">Conversion daemon (<code>casual-sign-convertd</code>)</h2>
+<p>Converts Word (<code>.docx</code>) uploads to PDF in its own container: no network, a read-only root, no capabilities, and a fresh child process per document with memory, CPU, time and page limits. The server reaches it over a Unix socket on the <code>convertd</code> volume and finds it through its own <code>OPENSEAL_CONVERTD_SOCKET</code> (in the server table above); with that unset, Word uploads are refused (<code>415 CS-CNV-0002</code>). The converted PDF is admitted like any upload and the Word file is kept as the document's original. Excel and PowerPoint are not converted. <code>casual-sign-convertd health</code> is its container health check.</p>
+<!--config:convertd-->
+
 <h2 id="production-profile">Production profile (<code>deploy/compose.production.yml</code>)</h2>
 <p>The variables the profile itself reads when Compose renders it. It maps them onto the services' variables above and sets the rest (paths under <code>/run/secrets/</code>, listen addresses, the ops listener, the drain period). Compose refuses to start while a required one is unset, naming it.</p>
 <!--config:profile-->
 
 <h2 id="evaluation-stack">Evaluation stack (<code>docker-compose.yml</code>)</h2>
-<p>The evaluation stack sets everything it needs itself. You may set <code>OPENSEAL_HTTP_PORT</code> (default <code>8080</code>) and <code>OPENSEAL_MAIL_PORT</code> (default <code>8025</code>) to move its ports, <code>OPENSEAL_CLAMD_ADDR=clamav:3310</code> with <code>--profile production</code> to scan uploads, and <code>OPENSEAL_IMAGE_PREFIX</code> and <code>OPENSEAL_VERSION</code> to run published images. The optional settings it leaves unset (trusted proxies, GeoIP, identity providers, the SMS gateway, the model service, the webhook allow list) are yours to add.</p>
+<p>The evaluation stack sets everything it needs itself, including convertd and the server's <code>OPENSEAL_CONVERTD_SOCKET</code>. You may set <code>OPENSEAL_HTTP_PORT</code> (default <code>8080</code>) and <code>OPENSEAL_MAIL_PORT</code> (default <code>8025</code>) to move its ports, <code>OPENSEAL_CLAMD_ADDR=clamav:3310</code> with <code>--profile production</code> to scan uploads, and <code>OPENSEAL_IMAGE_PREFIX</code> and <code>OPENSEAL_VERSION</code> to run published images. The optional settings it leaves unset (trusted proxies, GeoIP, identity providers, the SMS gateway, the model service, the webhook allow list) are yours to add.</p>
 
 <h2 id="console">Platform console</h2>
 <p>The separate operators' console (<code>casual-sign-console</code>) reads <code>OPENSEAL_CONSOLE_DATABASE_URL</code> and <code>OPENSEAL_CONSOLE_MFA_KEY</code> (secrets), <code>OPENSEAL_CONSOLE_LISTEN</code>, <code>OPENSEAL_CONSOLE_ORIGIN</code>, the <code>OPENSEAL_CONSOLE_KEYD_*</code> settings for its Keys page, and <code>OPENSEAL_CONSOLE_TSA_ALLOW</code>. They are documented with the console in <a href="https://github.com/CasualOffice/openseal/blob/main/docs/65-RUNNING-IT.md">docs/65</a>.</p>

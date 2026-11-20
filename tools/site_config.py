@@ -2,7 +2,7 @@
 so the website cannot drift from the binaries:
 
 - each binary's environment variables from the table in its module documentation
-  (`//! | Variable | Meaning |` in server/casual-sign-{server,worker,keyd}/src/main.rs),
+  (`//! | Variable | Meaning |` in server/casual-sign-{server,worker,keyd,convertd}/src/main.rs),
   with the default the text states, whether it is a secret (`(secret)`, or a `_FILE`
   form named) and whether the binary refuses to start without it (its `need("…")` reads,
   plus the few REQUIRED_EXTRA below that are read another way);
@@ -25,8 +25,11 @@ BINARIES = {
     "server": "server/casual-sign-server/src/main.rs",
     "worker": "server/casual-sign-worker/src/main.rs",
     "keyd": "server/casual-sign-keyd/src/main.rs",
+    "convertd": "server/casual-sign-convertd/src/main.rs",
 }
 PROFILE = "deploy/compose.production.yml"
+# The fewest variables a binary's table may yield before the build suspects the table moved.
+MIN_ROWS = {"convertd": 5}
 
 # Read other than through `need("…")`; the binary still refuses to start without them.
 REQUIRED_EXTRA = {
@@ -34,6 +37,7 @@ REQUIRED_EXTRA = {
                "OPENSEAL_MFA_KEY": "Outside development"},
     "worker": {"OPENSEAL_DATABASE_URL": "Yes"},
     "keyd": {},
+    "convertd": {},
 }
 # need("…") reads that apply only when a feature is used.
 CONDITIONAL = {
@@ -68,7 +72,7 @@ EXTRA_ROWS = {
         ("OPENSEAL_ALERT_MAX_TRACKED", "50000", False, "Most subjects counted, 1,000 to 10,000,000"),
         ("RUST_LOG", "info", False, "Filters the operational log lines; security events are never filtered"),
     ],
-    "worker": [], "keyd": [],
+    "worker": [], "keyd": [], "convertd": [],
 }
 
 COMPOSE_DESC = {
@@ -150,7 +154,7 @@ def module_rows(binary: str) -> list[dict]:
         if name not in seen:
             rows.append({"name": name, "default": default, "required": "", "secret": secret,
                          "file": f"{name}_FILE" if secret else "", "desc": _md(desc)})
-    if len(rows) < 10:
+    if len(rows) < MIN_ROWS.get(binary, 10):
         raise SystemExit(f"site_config: read only {len(rows)} variables from {BINARIES[binary]}; has its table moved?")
     return rows
 
@@ -192,6 +196,7 @@ def fill(body: str) -> str:
         "<!--config:server-->": table(module_rows("server"), "server", "Server variables"),
         "<!--config:worker-->": table(module_rows("worker"), "worker", "Worker variables"),
         "<!--config:keyd-->": table(module_rows("keyd"), "keyd", "keyd variables"),
+        "<!--config:convertd-->": table(module_rows("convertd"), "convertd", "convertd variables"),
         "<!--config:profile-->": table(profile_rows(), "profile", "Production profile variables"),
     }
     for k, v in subs.items():

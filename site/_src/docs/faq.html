@@ -34,8 +34,8 @@
 
 <h2>Integration</h2>
 <h3>Is there an API?</h3>
-<p>Yes: a REST API under <code>/api/v1</code>, described in OpenAPI, with API keys and OAuth client credentials, idempotency keys, ETags for safe concurrent edits, and signed webhooks. See the <a href="api.html">API reference</a> and <a href="webhooks.html">Webhooks</a>.</p>
+<p>Yes: a REST API under <code>/api/v1</code>, described in OpenAPI, with API keys, OAuth 2.1 (authorization code with PKCE, client credentials), the JWT grant, sandbox workspaces, idempotency keys, ETags for safe concurrent edits, and signed webhooks with a delivery log. TypeScript and Python clients are generated from the same contract (in the repository, not yet published). See the <a href="api.html">API reference</a> and <a href="webhooks.html">Webhooks</a>.</p>
 <h3>Is the API compatible with DocuSign's?</h3>
 <p>Its concepts are the familiar ones (envelopes, recipients, routing orders, fields, templates, embedded views). A DocuSign-shaped compatibility endpoint is a separate, later question, to be decided with counsel (<code>VS-25</code>).</p>
 <h3>Can I embed signing in my application?</h3>
-<p>An embedded signing link for a recipient is available through the API today. Embeddable signing and preparing elements are planned (<code>VS-09</code>).</p>
+<p>Embedded signing, prepare and correct views, the <code>&lt;openseal-signing&gt;</code> and <code>&lt;openseal-prepare&gt;</code> elements and per-workspace allowed origins are built and in review (<code>VS-09</code>); an administrator lists the sites allowed to frame them under <a href="administration.html#embedding">Embedding origins</a>.</p>

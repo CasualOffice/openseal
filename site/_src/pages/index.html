@@ -86,8 +86,8 @@
         <li><strong>Not for production agreements yet.</strong> v0.1.0 is a pre-release for evaluation.</li>
         <li>The Docker Compose stack makes its own certificate authority, software HSM and timestamp authority, so its seals validate only against that development CA.</li>
         <li>Release gates still ahead: an external security and cryptographic review, an accessibility audit, validation in Adobe Acrobat, and a counsel review. The ASVS self-assessment is written and its findings are being closed.</li>
-        <li>The backup and restore drill is built; its run on CI is the last step before it counts. A Helm chart and a high-availability reference are not built yet.</li>
-        <li>Document intelligence and the platform console are paused until the first-signature milestone closes; the core flow, hardening, the verifier and the API come first.</li>
+        <li>Encrypted backups with a restore drill run on every CI run; a Helm chart and a multi-node high-availability reference are not built yet.</li>
+        <li>Document intelligence and the platform console are paused until the team-beta milestone; templates, every field kind, the API and webhooks, and managing and correcting envelopes came first, and embedding is being finished.</li>
       </ul>
       <p>Every item is a row on the <a href="roadmap.html">roadmap</a>, kept in step with the project's tracker.</p>
     </div>
@@ -319,7 +319,7 @@ curl https://sign.example.com/api/v1/envelopes \
       <div class="sec-head flush">
         <span class="eyebrow eyebrow--dot">Open source</span>
         <h2 id="oss-h">Apache-2.0. Commercial use welcome.</h2>
-        <p>Every serious open-source e-signature project is AGPL, which most companies cannot ship inside their products. OpenSeal can go anywhere. Bulk send, groups, permission profiles and webhooks are already in the open core, and conditional fields, SSO and embedding are planned for it, not for a paid tier.</p>
+        <p>Every serious open-source e-signature project is AGPL, which most companies cannot ship inside their products. OpenSeal can go anywhere. Bulk send, conditional fields, groups, permission profiles and webhooks are already in the open core, embedding is being finished, and SSO is planned for it, not for a paid tier.</p>
       </div>
       <ul class="os-points">
         <li>{{icon:circle-check}}<span>Use it in SaaS, on-premises, desktop and mobile products. No royalties and no separate commercial licence.</span></li>
@@ -348,7 +348,7 @@ curl https://sign.example.com/api/v1/envelopes \
           <tr><th scope="row">Licence</th><td><span class="mark yes">{{icon:circle-check:16}}Apache-2.0</span></td><td>Proprietary service</td><td>Proprietary service</td><td>AGPL-3.0</td></tr>
           <tr><th scope="row">Run it on your own servers</th><td><span class="mark yes">{{icon:circle-check:16}}Yes, Docker Compose today</span></td><td><span class="mark no">{{icon:circle-x:16}}No, vendor cloud</span></td><td><span class="mark no">{{icon:circle-x:16}}No, vendor cloud</span></td><td><span class="mark yes">{{icon:circle-check:16}}Yes</span></td></tr>
           <tr><th scope="row">Embed in a closed-source product</th><td><span class="mark yes">{{icon:circle-check:16}}Yes, no copyleft</span></td><td>Through their paid API</td><td>Through their paid API</td><td><span class="mark part">{{icon:circle-alert:16}}AGPL terms apply; some embedding is paid</span></td></tr>
-          <tr><th scope="row">Bulk send, conditional fields, SSO</th><td><span class="mark part">{{icon:circle-alert:16}}Open core, no tiers: bulk send built; conditional fields and SSO planned</span></td><td>Higher plans</td><td>Higher plans</td><td>Mostly paid editions</td></tr>
+          <tr><th scope="row">Bulk send, conditional fields, SSO</th><td><span class="mark part">{{icon:circle-alert:16}}Open core, no tiers: bulk send and conditional fields built; SSO planned</span></td><td>Higher plans</td><td>Higher plans</td><td>Mostly paid editions</td></tr>
           <tr><th scope="row">Verify a completed PDF offline</th><td data-claim><span class="mark yes">{{icon:circle-check:16}}In-browser verifier and CLI</span>{{claim:tested|CI job wasm-parity|tools/wasm-parity.sh}}</td><td>In a PDF reader</td><td>Not documented</td><td>Documenso: no verifier; DocuSeal: basic</td></tr>
           <tr><th scope="row">Independent validators in CI</th><td data-claim><span class="mark yes">{{icon:circle-check:16}}pyHanko and EU DSS</span>{{claim:tested|CI job validators|.github/workflows/ci.yml}}</td><td>Not published</td><td>Not published</td><td>Not published</td></tr>
           <tr><th scope="row">Long-term validation (B-LT, B-LTA)</th><td data-claim><span class="mark yes">{{icon:circle-check:16}}Built; B-T is the default</span>{{claim:tested|sealing tests at every level|crates/casual-sign-seal/tests/seal.rs}}</td><td>Not documented</td><td>Not documented</td><td>Documenso: B-B to B-LTA; others limited</td></tr>
@@ -373,7 +373,7 @@ curl https://sign.example.com/api/v1/envelopes \
       <details><summary>How do I check a document without your servers?{{icon:chevron-down}}</summary><div><p>Use the <a href="verify.html">Verify page</a> on this site, or the one in any OpenSeal install; the check runs in your browser and the file stays on your machine. The <code>openseal</code> command line runs the same check offline. The seal is standard PAdES, so independent tools such as pyHanko and EU DSS validate it too.</p></div></details>
       <details><summary>Do the models see or learn from my documents?{{icon:chevron-down}}</summary><div><p>The model service runs on your own servers, beside the rest of the stack, and every feature is off until an administrator turns it on. It uses pretrained models only and is designed so that nothing learns from your documents. What it finds is a suggestion; nothing a model says enters the sealed PDF or the audit trail.</p></div></details>
       <details><summary>Can I build a commercial product on it?{{icon:chevron-down}}</summary><div><p>Yes. Apache-2.0 allows commercial and proprietary use, embedding, hosting and resale. When you redistribute it, keep the LICENSE and the NOTICE file. See <a href="brand.html">brand and attribution</a>.</p></div></details>
-      <details><summary>Does it have an API and webhooks?{{icon:chevron-down}}</summary><div><p>Yes: a REST API under <code>/api/v1</code> with API keys and OAuth client credentials, idempotency keys, ETags, and webhooks signed with the Standard Webhooks scheme. Read the <a href="docs/api.html">API reference</a>.</p></div></details>
+      <details><summary>Does it have an API and webhooks?{{icon:chevron-down}}</summary><div><p>Yes: a REST API under <code>/api/v1</code> with API keys, OAuth 2.1 (authorization code with PKCE, client credentials) and the JWT grant, sandbox workspaces, idempotency keys, ETags, and webhooks signed with the Standard Webhooks scheme with a delivery log and redelivery. TypeScript and Python clients are generated from the same contract; they are in the repository, not yet published. Read the <a href="docs/api.html">API reference</a>.</p></div></details>
       <details><summary>Where are the signing keys?{{icon:chevron-down}}</summary><div><p>In a separate service, keyd, which talks PKCS#11 to your HSM (SoftHSM in the development stack) and signs digests only. File keys are refused outside development.</p></div></details>
     </div>
   </div>

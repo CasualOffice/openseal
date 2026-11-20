@@ -53,6 +53,16 @@
 </div>
 <p>The scope each operation needs is listed beside it in the <a href="api.html">API reference</a>.</p>
 
+<h2 id="embedding">Embedding origins</h2>
+<p>Another site may show OpenSeal's signing, prepare and correct views in a frame, or through the <code>&lt;openseal-signing&gt;</code> and <code>&lt;openseal-prepare&gt;</code> elements, only if its origin is on the workspace's list. <strong>Organization, Embedding</strong> edits the list, which is a security setting: a staff session needs a recent sign-in to change it. The API's <code>PATCH /accounts/me</code> sets the same list as <code>settings.embedding_origins</code>.</p>
+<ul>
+  <li>At most 20 origins, each written as a browser compares it: <code>https://host</code> or <code>https://host:port</code>, lower case, with no path.</li>
+  <li>Plain <code>http://</code> is accepted only for a loopback, private-network or link-local address, <code>localhost</code>, a single-label name, or a name under <code>.local</code>, <code>.internal</code>, <code>.lan</code>, <code>.localhost</code> or <code>.test</code>. A public host needs <code>https</code>.</li>
+  <li>A view page lets only the origin that asked for it frame it (its <code>frame-ancestors</code>); every other page refuses to be framed (<code>frame-ancestors 'none'</code> and <code>X-Frame-Options: DENY</code>). A view requested for an origin not on the list is refused (<code>422 CS-EMB-0001</code>).</li>
+  <li>Prepare and correct views are requested by an API client only, never by a staff session.</li>
+</ul>
+<p>Requesting a view (<code>frame_origin</code>, <code>return_url</code>, <code>state</code>) is in the <a href="api-envelopes.html#op-createsigningview">API reference</a>.</p>
+
 <h2>Admin audit log</h2>
 <p>Every change to settings, members, groups, profiles, workspaces and the organization is recorded in a hash-chained log in the same transaction as the change. <strong>Audit log</strong> lists it and exports it as JSON or CSV. Nothing in it is ever edited or deleted.</p>
 
