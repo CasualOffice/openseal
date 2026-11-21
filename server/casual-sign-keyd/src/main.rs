@@ -22,6 +22,7 @@
 //! | `OPENSEAL_KEYD_NEXT_ALIAS` | Optional, during a seal key rotation (`CON-10`): a second key served beside the first, on the same token: `OPENSEAL_KEYD_NEXT_PKCS11_KEY_LABEL` and/or `_KEY_ID` (one is required), `OPENSEAL_KEYD_NEXT_CHAIN` or `_INTERMEDIATES`; development: `OPENSEAL_KEYD_NEXT_FILE_KEY` with `OPENSEAL_KEYD_NEXT_CHAIN` |
 //! | `OPENSEAL_KEYD_SANDBOX_ALIAS` | Optional (ADR-041, `VS-08D`): the sandbox key, served beside the others on the same token, whose certificate says it is not for agreements; the worker seals sandbox workspaces' envelopes with it only: `OPENSEAL_KEYD_SANDBOX_PKCS11_KEY_LABEL` and/or `_KEY_ID` (one is required), `OPENSEAL_KEYD_SANDBOX_CHAIN` or `_INTERMEDIATES`; development: `OPENSEAL_KEYD_SANDBOX_FILE_KEY` with `OPENSEAL_KEYD_SANDBOX_CHAIN` |
 //! | `OPENSEAL_KEYD_SEAL_TOKEN_KEY` or `OPENSEAL_KEYD_SEAL_TOKEN_KEY_FILE` | 32 bytes as 64 hex digits, the key the database mints seal tokens under (`KEYD-02`, migration 0040): with it, keyd signs only for a request carrying a valid token for its envelope (`CS-KEY-0015` otherwise); without it keyd signs for any envelope id and warns `seal_token_not_enforced` at start. The production profile sets it |
+//! | `OPENSEAL_KEYD_ASP_ALIAS` | Optional (ADR-047 §3.5, `RSP-02`): the India eSign ASP request-signing key, an alias beginning `asp-`, served beside the others on the same token: `OPENSEAL_KEYD_ASP_PKCS11_KEY_LABEL` and/or `_KEY_ID`, `OPENSEAL_KEYD_ASP_CHAIN` or `_INTERMEDIATES`; development: `OPENSEAL_KEYD_ASP_FILE_KEY` with `OPENSEAL_KEYD_ASP_CHAIN` |
 //! | `OPENSEAL_KEYD_ASP_TOKEN_KEY` or `OPENSEAL_KEYD_ASP_TOKEN_KEY_FILE` | 32 bytes as 64 hex digits, the key the database mints ASP tokens under (ADR-047 §3.5, migration 0052): with it, an ASP request-signing key (alias `asp-*`) signs only for a request carrying a valid token for an open eSign session; without it, ASP keys never sign (`CS-KEY-0015`) |
 //! | `OPENSEAL_CONFIG_MANIFEST` | Optional (required by the production profile): the manifest of the security settings below; keyd refuses to start when they differ (`CS-KEY-0014`, ASVS-24) |
 //! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: keyd does not start (`CS-LOG-0001`) |
@@ -84,6 +85,8 @@ const CONFIG_FILES: &[&str] = &[
     "OPENSEAL_KEYD_NEXT_INTERMEDIATES",
     "OPENSEAL_KEYD_SANDBOX_CHAIN",
     "OPENSEAL_KEYD_SANDBOX_INTERMEDIATES",
+    "OPENSEAL_KEYD_ASP_CHAIN",
+    "OPENSEAL_KEYD_ASP_INTERMEDIATES",
 ];
 
 /// Security settings hashed as values.
@@ -107,6 +110,10 @@ const CONFIG_VALUES: &[&str] = &[
     "OPENSEAL_KEYD_SANDBOX_PKCS11_KEY_LABEL",
     "OPENSEAL_KEYD_SANDBOX_PKCS11_KEY_ID",
     "OPENSEAL_KEYD_SANDBOX_FILE_KEY",
+    "OPENSEAL_KEYD_ASP_ALIAS",
+    "OPENSEAL_KEYD_ASP_PKCS11_KEY_LABEL",
+    "OPENSEAL_KEYD_ASP_PKCS11_KEY_ID",
+    "OPENSEAL_KEYD_ASP_FILE_KEY",
 ];
 
 fn var(name: &'static str) -> Option<String> {
@@ -200,6 +207,26 @@ fn slots() -> Result<Vec<Slot>, KeydError> {
             intermediates: "OPENSEAL_KEYD_SANDBOX_INTERMEDIATES",
             key_label: "OPENSEAL_KEYD_SANDBOX_PKCS11_KEY_LABEL",
             key_id: "OPENSEAL_KEYD_SANDBOX_PKCS11_KEY_ID",
+        });
+    }
+    // ADR-047 §3.5: the ASP request-signing key, an `asp-*` alias, which signs only with
+    // the database's ASP token for an open eSign session.
+    if let Some(alias) = var("OPENSEAL_KEYD_ASP_ALIAS") {
+        if !alias.starts_with(casual_sign_keyd_client::ASP_ALIAS_PREFIX)
+            || out.iter().any(|s| s.alias == alias)
+        {
+            return Err(KeydError::Setting(
+                "OPENSEAL_KEYD_ASP_ALIAS (asp-*, unlike any other key's alias)",
+            ));
+        }
+        out.push(Slot {
+            next: true,
+            alias,
+            file_key: "OPENSEAL_KEYD_ASP_FILE_KEY",
+            chain: "OPENSEAL_KEYD_ASP_CHAIN",
+            intermediates: "OPENSEAL_KEYD_ASP_INTERMEDIATES",
+            key_label: "OPENSEAL_KEYD_ASP_PKCS11_KEY_LABEL",
+            key_id: "OPENSEAL_KEYD_ASP_PKCS11_KEY_ID",
         });
     }
     Ok(out)

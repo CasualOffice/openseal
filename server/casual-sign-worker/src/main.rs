@@ -170,6 +170,29 @@ fn sandbox_key() -> Result<Option<SealKey>, WorkerError> {
     Ok(Some(SealKey::Keyd(KeydKey::new(endpoint, &alias))))
 }
 
+/// keyd as the India eSign ASP signer (`RSP-02`, ADR-047 §3.5), over the same mTLS as
+/// the platform key, when keyd is configured; the catalogue names each row's ASP alias.
+fn asp_signer() -> Result<Option<Arc<dyn casual_sign_worker::worker::esign::AspSigner>>, WorkerError>
+{
+    if var("OPENSEAL_KEYD_ADDR").is_none() {
+        return Ok(None);
+    }
+    let ca = read("OPENSEAL_KEYD_CA")?;
+    let cert = read("OPENSEAL_KEYD_CLIENT_CERT")?;
+    let key = read("OPENSEAL_KEYD_CLIENT_KEY")?;
+    let tls = client_tls(&ca, Some((&cert, &key)))
+        .map_err(|e| WorkerError::Pipeline { code: e.code() })?;
+    let endpoint = Endpoint {
+        addr: need("OPENSEAL_KEYD_ADDR")?,
+        server_name: need("OPENSEAL_KEYD_SERVER_NAME")?,
+        tls,
+        timeout: Duration::from_secs(30),
+    };
+    Ok(Some(casual_sign_worker::worker::esign::keyd_signer(
+        endpoint,
+    )))
+}
+
 /// The model service's client, when `OPENSEAL_MODELD_ADDR` is set (docs/33 §1): the
 /// client and wire format only, no inference runtime in this process (`SEC-I14`).
 fn inference() -> Result<Option<Arc<dyn casual_sign_worker::ml::Inference>>, WorkerError> {
@@ -457,6 +480,7 @@ async fn serve<B: BlobStore + 'static>(
                     catalogue: Arc::new(c),
                     key: Arc::new(k),
                     policy: policy_for_providers,
+                    asp: asp_signer()?,
                 },
             )),
             Ok(None) => {

@@ -877,6 +877,7 @@ dependencies = [
  "casual-sign-certificate",
  "casual-sign-crypto",
  "casual-sign-csc",
+ "casual-sign-esign",
  "casual-sign-host",
  "casual-sign-keyd",
  "casual-sign-model",

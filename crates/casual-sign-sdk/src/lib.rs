@@ -73,7 +73,8 @@ pub mod remote {
     };
     pub use casual_sign_pdf::admit;
     pub use casual_sign_seal::{
-        Appearance, CompleteOptions, ExternalSigner, Prepared, Rect, Visible, complete, prepare,
+        Appearance, CmsFormat, CompleteOptions, ExternalSigner, Prepared, PreparedForCms,
+        ProviderCms, Rect, Visible, complete, complete_cms, prepare, prepare_for_cms,
     };
 }
 
