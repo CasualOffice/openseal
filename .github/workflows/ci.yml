@@ -338,7 +338,11 @@ jobs:
       OPENSEAL_E2E_PASSWORD: e2e-only-passphrase
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # The eSign stub's tests sign and verify with xmlsec1 (RSP-02); required here.
+      - run: sudo apt-get update -q && sudo apt-get install -y -q xmlsec1
       - run: python3 -I -m unittest discover -s tools/e2e -p 'test_*.py'
+        env:
+          OPENSEAL_REQUIRE_XMLSEC1: "1"
       - run: docker compose up -d --build --wait
       - run: docker compose exec -T -e OPENSEAL_ADMIN_PASSWORD="$OPENSEAL_E2E_PASSWORD" server casual-sign-server bootstrap "E2E" "$OPENSEAL_E2E_EMAIL" "E2E Admin"
       # VS-07: the server image carries the WebAssembly verifier (deploy/Dockerfile's wasm
@@ -452,6 +456,18 @@ jobs:
           path: |
             target/e2e-demo/rsp01-*
             target/e2e-sealed/rsp01-*
+          if-no-files-found: error
+          retention-days: 90
+      # The RSP-02 demo: esign.spec.mjs's run recorded (an eSign signer at the ESP stub of
+      # tools/e2e/compose.e2e.yml: the consent, a cancel at the ESP, then two documents
+      # signed there), kept with the sealed PDFs and the certificate of completion.
+      - if: success() && hashFiles('target/e2e-demo/rsp02-*') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rsp-02-demo-${{ matrix.shard }}
+          path: |
+            target/e2e-demo/rsp02-*
+            target/e2e-sealed/rsp02-*
           if-no-files-found: error
           retention-days: 90
       - if: failure()

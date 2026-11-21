@@ -83,10 +83,26 @@ sandbox_seal() {
     fi
 }
 
+# The India eSign ASP's request-signing key and the ASP token key (RSP-02, ADR-047 §3.5):
+# keyd signs eSign requests with it only with the database's token. On its own check.
+esign_asp() {
+    if [ ! -f "$OUT/asp-token-key" ]; then
+        (
+            cd "$OUT"
+            leaf asp "/O=OpenSeal development/CN=OpenSeal development ASP" \
+                "keyUsage=critical,digitalSignature"
+            cat asp.pem ca.pem > asp-chain.pem
+            openssl rand -hex 32 > asp-token-key
+            chmod 0644 asp.key asp.pem asp-chain.pem asp-token-key
+        )
+    fi
+}
+
 if [ -f "$OUT/.complete" ]; then
     echo "dev-pki: secrets already present"
     mfa_key
     sandbox_seal
+    esign_asp
     modeld_identity
     exit 0
 fi
@@ -139,6 +155,7 @@ chmod 0644 ./*.key ./*.pem postgres-password postgres-app-password softhsm-pin s
     s3-secret-key database-url migrate-database-url s3.json keyd-allow-list
 mfa_key
 sandbox_seal
+esign_asp
 touch .complete
 echo "dev-pki: development secrets written"
 modeld_identity

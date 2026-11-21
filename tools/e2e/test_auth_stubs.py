@@ -17,8 +17,11 @@ import base64
 import hashlib
 import http.client
 import json
+import os
 import pathlib
+import re
 import secrets
+import shutil
 import ssl
 import subprocess
 import tempfile
@@ -455,6 +458,84 @@ class CscProvider(unittest.TestCase):
         for k in ("base_uri", "token_endpoint"):
             self.assertTrue(conf[k].startswith("http://127.0.0.1:8091/"), k)
         self.assertTrue(conf["authorization_endpoint"].startswith("http://localhost:8091/"))
+
+
+XMLSEC = shutil.which("xmlsec1")
+ASP_TEMPLATE = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n<Esign ver="2.1" sc="Y" ts="2026-11-21T10:00:00" '
+    'txn="0193a000-0000-7000-8000-0000000000e1.1" ekycId="" ekycIdType="A" aspId="ASP-CI" AuthMode="1" '
+    'responseSigType="pkcs7pdf" responseUrl="http://localhost:8080/rsp/esign/esign-ci/response">'
+    '<Docs><InputHash id="1" hashAlgorithm="SHA256" docInfo="Lease">' + "ab" * 32 + "</InputHash></Docs>"
+    + st.DSIG_TEMPLATE + "</Esign>"
+)
+
+
+@unittest.skipUnless(XMLSEC or os.environ.get("OPENSEAL_REQUIRE_XMLSEC1") == "1",
+                     "xmlsec1 is not installed (CI installs it)")
+class EsignProvider(unittest.TestCase):
+    """The eSign stub (RSP-02, ADR-047 §4): it verifies the ASP's request with xmlsec1,
+    records that it carries no Aadhaar data, and answers with xmlsec1-signed answers whose
+    CMS is well formed and signed over the request's hash by the one-time certificate."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dir = tempfile.TemporaryDirectory()
+        d = pathlib.Path(cls.dir.name)
+        make_root(d)
+        st.openssl("genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", str(d / "asp.key"))
+        st.openssl("req", "-new", "-x509", "-key", str(d / "asp.key"), "-days", "1", "-subj", "/CN=ASP", "-out", str(d / "asp.pem"))
+        cls.esp = st.Esign(d, d, d / "pub", d / "asp.pem", None)
+        cls.d = d
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.dir.cleanup()
+
+    def signed_request(self, body: str) -> str:
+        tmpl, out = self.d / "req.xml", self.d / "req.signed.xml"
+        tmpl.write_text(body)
+        subprocess.run(["xmlsec1", "--sign", "--privkey-pem", str(self.d / "asp.key"), "--output", str(out), str(tmpl)],
+                       check=True, capture_output=True)
+        return out.read_text()
+
+    def test_a_signed_request_verifies_and_carries_no_aadhaar_data(self):
+        req = self.esp.check_request(self.signed_request(ASP_TEMPLATE))
+        self.assertTrue(req["verified"])
+        self.assertTrue(req["aadhaar_free"])
+        self.assertEqual(req["hash"], "ab" * 32)
+        self.assertEqual(req["txn"], "0193a000-0000-7000-8000-0000000000e1.1")
+        tampered = self.signed_request(ASP_TEMPLATE).replace("docInfo=\"Lease\"", "docInfo=\"Lease!\"")
+        self.assertFalse(self.esp.check_request(tampered)["verified"])
+        with_uid = self.esp.check_request(self.signed_request(ASP_TEMPLATE.replace('ekycId=""', 'ekycId="999988887777"')))
+        self.assertFalse(with_uid["aadhaar_free"])
+
+    def verify_answer(self, xml: str) -> bool:
+        path = self.d / f"ans-{secrets.token_hex(4)}.xml"
+        path.write_text(xml)
+        done = subprocess.run(["xmlsec1", "--verify", "--pubkey-cert-pem", str(self.d / "pub" / "esp-response.pem"), str(path)],
+                              capture_output=True, check=False)
+        return done.returncode == 0
+
+    def test_answers_are_signed_with_a_well_formed_cms_over_the_hash(self):
+        req = {"txn": "t.1", "hash": hashlib.sha256(b"prepared").hexdigest()}
+        for variant in ("cades", "adobe"):
+            xml = self.esp.answer(req, signed=True, variant=variant)
+            self.assertTrue(self.verify_answer(xml), variant)
+            cms = base64.b64decode(re.search(r"<DocSignature[^>]*>([^<]+)</DocSignature>", xml).group(1))
+            printed = st.openssl("cms", "-cmsout", "-print", "-inform", "DER", data=cms).decode()
+            self.assertIn("messageDigest", printed)
+            self.assertEqual("signingTime" in printed, variant == "adobe")
+        failed = self.esp.answer(req, signed=False, err="ESP-944")
+        self.assertTrue(self.verify_answer(failed))
+        self.assertIn('errCode="ESP-944"', failed)
+
+    def test_hostile_variants_fail_where_they_should(self):
+        req = {"txn": "t.1", "hash": "00" * 32}
+        self.assertFalse(self.verify_answer(self.esp.answer(req, signed=True, variant="wrong-key")))
+        self.assertNotIn("xmldsig#", self.esp.answer(req, signed=True, variant="unsigned"))
+        ber = self.esp.answer(req, signed=True, variant="ber")
+        cms = base64.b64decode(re.search(r"<DocSignature[^>]*>([^<]+)</DocSignature>", ber).group(1))
+        self.assertEqual(cms[:2], b"\x30\x80")
 
 
 if __name__ == "__main__":

@@ -40,7 +40,47 @@
 #   it signs with `openssl pkeyutl`. The provider secrets key and client secret here are
 #   test values for this throwaway stack only.
 
+# - `esign` (RSP-02, ADR-047 §4): an India eSign Service Provider (auth_stubs.py `esign`,
+#   API v2.1) for the eSign row of tools/e2e/signing-providers.json. The browser posts the
+#   ASP's signed request to it on localhost:8092 and it posts the signed answer back to
+#   the server's public endpoint through the browser, so it needs no network link to the
+#   stack. It verifies each request with xmlsec1 against the ASP certificate dev-pki made
+#   (keyd serves that key as `asp-ci`, with the ASP token key the migration installs),
+#   issues one-time certificates under the development root (its CRL served by dev-tsa)
+#   and writes its response-signing certificate into the `esign` volume, which the
+#   server and the worker read as the catalogue names it.
+
 services:
+  keyd:
+    environment:
+      OPENSEAL_KEYD_ASP_ALIAS: asp-ci
+      OPENSEAL_KEYD_ASP_PKCS11_KEY_LABEL: asp-ci
+      OPENSEAL_KEYD_ASP_CHAIN: /secrets/asp-chain.pem
+      OPENSEAL_KEYD_IMPORT_ASP_KEY: /secrets/asp.key
+      OPENSEAL_KEYD_ASP_TOKEN_KEY_FILE: /secrets/asp-token-key
+
+  migrate:
+    environment:
+      OPENSEAL_KEYD_ASP_TOKEN_KEY_FILE: /secrets/asp-token-key
+
+  esign:
+    image: openseal-devtools:dev
+    restart: unless-stopped
+    user: tsa
+    command: ["python3", "-I", "/opt/e2e/auth_stubs.py", "esign", "--issue-from", "/secrets",
+              "--listen", "0.0.0.0:8092", "--asp-cert", "/secrets/asp.pem", "--publish", "/esign",
+              "--crl-url", "http://tsa:8318/ca.crl"]
+    volumes:
+      - {type: volume, source: secrets, target: /secrets, read_only: true}
+      - esign:/esign
+      - ./tools/e2e:/opt/e2e:ro
+    ports: ["127.0.0.1:8092:8092"]
+    depends_on: {pki: {condition: service_completed_successfully}}
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:8092/healthz', timeout=2); assert os.path.exists('/esign/esp-response.pem')"]
+      interval: 3s
+      retries: 20
+
   worker:
     environment:
       OPENSEAL_SMS_GATEWAY_URL: https://sms-gateway:8443/messages
@@ -54,11 +94,12 @@ services:
       OPENSEAL_SIGNING_PROVIDERS_FILE: /opt/e2e/signing-providers.json
       OPENSEAL_PROVIDER_SECRETS_KEY: Y2ktb25seS1wcm92aWRlci1zZWNyZXRzLWtleS0zMmI=
       OPENSEAL_E2E_CSC_SECRET: ci-only-csc-client-secret
-    volumes: [./tools/e2e:/opt/e2e:ro]
+    volumes: [./tools/e2e:/opt/e2e:ro, "esign:/esign:ro"]
     ports: [127.0.0.1:8091:8091]
     depends_on:
       sms-gateway: {condition: service_healthy}
       hooks: {condition: service_healthy}
+      esign: {condition: service_healthy}
 
   hooks:
     image: openseal-devtools:dev
@@ -87,8 +128,10 @@ services:
       OPENSEAL_SIGNING_PROVIDERS_FILE: /opt/e2e/signing-providers.json
       OPENSEAL_PROVIDER_SECRETS_KEY: Y2ktb25seS1wcm92aWRlci1zZWNyZXRzLWtleS0zMmI=
       OPENSEAL_E2E_CSC_SECRET: ci-only-csc-client-secret
-    volumes: ["./tools/e2e:/opt/e2e:ro"]
+    volumes: ["./tools/e2e:/opt/e2e:ro", "esign:/esign:ro"]
     ports: ["127.0.0.1:8090:8090"]
+    depends_on:
+      esign: {condition: service_healthy}
 
   sms-gateway:
     image: openseal-devtools:dev
@@ -141,3 +184,6 @@ services:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/healthz', timeout=2)"]
       interval: 3s
       retries: 20
+
+volumes:
+  esign:
