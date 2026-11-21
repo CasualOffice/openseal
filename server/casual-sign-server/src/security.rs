@@ -349,6 +349,8 @@ pub fn classify(method: &str, template: &str) -> Option<Kind> {
         "/api/v1/retention",
         "/api/v1/envelopes/{id}/legal-hold",
         "/api/v1/envelopes/{id}/purge",
+        // An account's own remote-signing provider credentials (RSP-01, ADR-046).
+        "/api/v1/signing-providers",
     ];
     const READS: &[&str] = &[
         "/api/v1/envelopes/{id}/documents/{doc}/content",

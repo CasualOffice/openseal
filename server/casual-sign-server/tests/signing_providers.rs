@@ -144,6 +144,35 @@ async fn an_account_enables_a_provider_and_its_own_secret_is_sealed() {
     );
     assert_eq!(got, put);
     assert_eq!(got["required_qualifiers"], json!(["eu_eidas_qes"]));
+    // Another account reading the same catalogue entry sees its own settings, never
+    // this account's (the id names a shared catalogue entry, not an account's object).
+    let b = api.tenant("beta").await;
+    let theirs = ok(
+        api.call(
+            "GET",
+            "/api/v1/signing-providers/csc-ci",
+            &b.auth,
+            None,
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "another account's get",
+    );
+    assert_eq!(theirs["enabled"], false, "{theirs}");
+    assert_eq!(theirs["own_client_secret"], false, "{theirs}");
+    assert_ne!(
+        theirs["required_qualifiers"],
+        json!(["eu_eidas_qes"]),
+        "{theirs}"
+    );
+    let b_list = ok(
+        api.call("GET", "/api/v1/signing-providers", &b.auth, None, &[])
+            .await,
+        StatusCode::OK,
+        "another account's list",
+    );
+    assert_eq!(b_list["items"][0]["enabled"], false, "{b_list}");
 
     // Stored sealed: never in clear, opens only bound to this account and provider.
     let sealed: Vec<u8> = sqlx::query_scalar(
