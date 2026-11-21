@@ -231,6 +231,27 @@ pub struct RemoteProvider {
     pub name: String,
 }
 
+/// What an India eSign session adds when it starts (ADR-047 §3.8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EsignStarted {
+    /// SHA-256 of the eSign consent text the signer ticked (versioned, ADR-047 §3.1).
+    pub consent_sha256: Hash256,
+    /// The eSign API version used (`2.1`).
+    pub api_version: String,
+    /// The authentication the request asks the ESP for: `otp`, `face`, ...
+    pub auth_mode: String,
+}
+
+/// What an India eSign signature adds when it is embedded (ADR-047 §3.8).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EsignSigned {
+    /// The authentication the request asked the ESP for.
+    pub auth_mode: String,
+    /// The certificate's policy OIDs, as found.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub policy_oids: Vec<String>,
+}
+
 /// One document prepared for a remote signature (ADR-046 §3.7): the hashes the
 /// provider's signature binds.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -250,6 +271,9 @@ pub struct PreparedDocument {
     /// This preparation is the document's lock point (its layout frozen from here).
     #[serde(default)]
     pub lock_point: bool,
+    /// The eSign transaction id of this document's request (ADR-047 §3.8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub txn: Option<String>,
 }
 
 /// The certificate a remote signature was made with, as found in it and as the provider
@@ -291,6 +315,16 @@ pub struct RemoteSignedDocument {
     /// Our signature time-stamp's time (B-T).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp_time: Option<Timestamp>,
+    /// eSign: SHA-256 of the signed request XML kept with the evidence (ADR-047 §3.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_sha256: Option<Hash256>,
+    /// eSign: SHA-256 of the ESP's response XML kept with the evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_sha256: Option<Hash256>,
+    /// The `/SubFilter` written: `ETSI.CAdES.detached`, or `adbe.pkcs7.detached` for a
+    /// provider's CMS that is not CAdES-conformant (ADR-047 §3.3).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature_format: Option<String>,
 }
 
 /// How the certificate's name compares with the recipient's name as sent.
@@ -705,6 +739,9 @@ pub enum EventData {
         session: Id,
         /// The provider.
         provider: RemoteProvider,
+        /// India eSign: the consent's hash, the API version, the authentication asked.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        esign: Option<EsignStarted>,
     },
     /// The documents were prepared: the hashes the provider's signature will bind.
     #[serde(rename = "recipient.remote_signing_prepared")]
@@ -737,6 +774,9 @@ pub enum EventData {
         name_match: NameMatch,
         /// Each document signed.
         documents: Vec<RemoteSignedDocument>,
+        /// India eSign: the authentication asked and the certificate's policies.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        esign: Option<EsignSigned>,
     },
     /// The session failed; the signer's fields reopen.
     #[serde(rename = "recipient.remote_signing_failed")]

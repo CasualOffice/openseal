@@ -15,8 +15,8 @@
 mod common;
 
 use casual_sign_audit::{
-    AdoptionMethod, EventData, MarkKind, NameMatch, Personal, PreparedDocument, RemoteCertificate,
-    RemoteFailure, RemoteProvider, RemoteSignedDocument,
+    AdoptionMethod, EsignSigned, EsignStarted, EventData, Hash256, MarkKind, NameMatch, Personal,
+    PreparedDocument, RemoteCertificate, RemoteFailure, RemoteProvider, RemoteSignedDocument,
 };
 use casual_sign_model::{FieldType, FieldValue, RecipientStatus, RecipientType, SignatureType};
 use casual_sign_workflow::{Command, Decision, FieldEntry, Principal, RemoteRule, WorkflowError};
@@ -60,6 +60,14 @@ fn sig_value() -> Vec<FieldEntry> {
 }
 
 fn begin(hx: &mut Harness, session: &str) -> Result<Decision, WorkflowError> {
+    begin_with(hx, session, None)
+}
+
+fn begin_with(
+    hx: &mut Harness,
+    session: &str,
+    esign: Option<EsignStarted>,
+) -> Result<Decision, WorkflowError> {
     hx.run(
         as_recipient("r1"),
         Command::BeginRemoteSigning {
@@ -67,6 +75,7 @@ fn begin(hx: &mut Harness, session: &str) -> Result<Decision, WorkflowError> {
             session: id(session),
             provider: provider(),
             values: sig_value(),
+            esign,
         },
     )
 }
@@ -80,6 +89,7 @@ fn prepared_doc() -> PreparedDocument {
         byte_range_digest: h(3),
         to_be_signed: h(4),
         lock_point: false,
+        txn: None,
     }
 }
 
@@ -110,6 +120,15 @@ fn certificate() -> RemoteCertificate {
 }
 
 fn complete(hx: &mut Harness, session: &str) -> Result<Decision, WorkflowError> {
+    complete_with(hx, session, None, None)
+}
+
+fn complete_with(
+    hx: &mut Harness,
+    session: &str,
+    esign: Option<EsignSigned>,
+    hashes: Option<(Hash256, Hash256)>,
+) -> Result<Decision, WorkflowError> {
     hx.run(
         Principal::System,
         Command::CompleteRemoteSigning {
@@ -124,9 +143,77 @@ fn complete(hx: &mut Harness, session: &str) -> Result<Decision, WorkflowError> 
                 revision_hash: h(6),
                 signature_sha256: h(7),
                 timestamp_time: Some(t(10)),
+                request_sha256: hashes.map(|x| x.0),
+                response_sha256: hashes.map(|x| x.1),
+                signature_format: hashes.map(|_| "adbe.pkcs7.detached".to_owned()),
             }],
+            esign,
         },
     )
+}
+
+/// ADR-047 §3.8, `RSP-02` acceptance (5): an eSign session records the consent's hash
+/// when it starts, and the ESP's reference, the request and response hashes and the
+/// format when it is embedded; a CSC session's events carry none of these members, so
+/// they hash as before.
+#[test]
+fn an_esign_session_records_its_consent_reference_and_xml_hashes() {
+    let mut hx = Harness::new();
+    ready_remote(&mut hx);
+    let started = begin_with(
+        &mut hx,
+        "s1",
+        Some(EsignStarted {
+            consent_sha256: h(9),
+            api_version: "2.1".into(),
+            auth_mode: "otp".into(),
+        }),
+    )
+    .unwrap();
+    let json = serde_json::to_string(&started.events.last().unwrap().data).unwrap();
+    assert!(json.contains(&h(9).hex()), "{json}");
+    assert!(json.contains("\"api_version\":\"2.1\""), "{json}");
+    prepare(&mut hx, "s1").unwrap();
+    let signed = complete_with(
+        &mut hx,
+        "s1",
+        Some(EsignSigned {
+            auth_mode: "otp".into(),
+            policy_oids: vec!["2.16.356.100.2.4.1".into()],
+        }),
+        Some((h(11), h(12))),
+    )
+    .unwrap();
+    let remote = signed
+        .events
+        .iter()
+        .find(|e| serde_type_name(&e.data) == "recipient.remote_signed")
+        .unwrap();
+    let json = serde_json::to_string(&remote.data).unwrap();
+    for needle in [
+        h(11).hex(),
+        h(12).hex(),
+        "tx-1".to_owned(),
+        "adbe.pkcs7.detached".to_owned(),
+        "2.16.356.100.2.4.1".to_owned(),
+    ] {
+        assert!(json.contains(&needle), "{needle}: {json}");
+    }
+
+    let mut csc = Harness::new();
+    ready_remote(&mut csc);
+    let d = begin(&mut csc, "s2").unwrap();
+    let json = serde_json::to_string(&d.events.last().unwrap().data).unwrap();
+    assert!(!json.contains("esign"), "{json}");
+    prepare(&mut csc, "s2").unwrap();
+    let d = complete(&mut csc, "s2").unwrap();
+    for e in &d.events {
+        let json = serde_json::to_string(&e.data).unwrap();
+        assert!(
+            !json.contains("esign") && !json.contains("request_sha256"),
+            "{json}"
+        );
+    }
 }
 
 fn types(d: &Decision) -> Vec<String> {

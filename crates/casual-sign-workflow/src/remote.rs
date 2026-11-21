@@ -4,8 +4,8 @@
 //! engine; these commands record what it did, in the chain, in order.
 
 use casual_sign_audit::{
-    EventData, Hash256, NameMatch, PreparedDocument, RemoteCertificate, RemoteFailure,
-    RemoteProvider, RemoteSignedDocument,
+    EsignSigned, EsignStarted, EventData, Hash256, NameMatch, PreparedDocument, RemoteCertificate,
+    RemoteFailure, RemoteProvider, RemoteSignedDocument,
 };
 use casual_sign_model::{Id, RecipientType};
 
@@ -38,6 +38,8 @@ fn open_session<'s>(
 }
 
 /// `BeginRemoteSigning`.
+// The command's members, each named at the one call.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn begin(
     s: &mut EnvelopeState,
     cmd: &Command,
@@ -45,6 +47,7 @@ pub(crate) fn begin(
     session: &Id,
     provider: &RemoteProvider,
     values: &[FieldEntry],
+    esign: Option<&EsignStarted>,
     out: &mut Out<'_>,
 ) -> Result<(), WorkflowError> {
     let ctx = out.ctx;
@@ -67,6 +70,7 @@ pub(crate) fn begin(
         recipient_id: recipient.clone(),
         session: session.clone(),
         provider: provider.clone(),
+        esign: esign.cloned(),
     });
     let now = out.ctx.now;
     rec_mut(s, i)?.remote = Some(RemoteSession {
@@ -136,6 +140,7 @@ pub(crate) struct Completion<'a> {
     pub(crate) certificate: &'a RemoteCertificate,
     pub(crate) name_match: NameMatch,
     pub(crate) documents: &'a [RemoteSignedDocument],
+    pub(crate) esign: Option<&'a EsignSigned>,
 }
 
 /// `CompleteRemoteSigning`: `recipient.remote_signed`, then the signer signs and
@@ -173,6 +178,7 @@ pub(crate) fn complete(
         certificate: Box::new(c.certificate.clone()),
         name_match: c.name_match,
         documents: c.documents.to_vec(),
+        esign: c.esign.cloned(),
     });
     rec_mut(s, i)?.remote = None;
     signed(s, i, out)

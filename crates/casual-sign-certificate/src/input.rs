@@ -194,6 +194,24 @@ pub struct RemoteSignature {
     pub level: String,
     /// Our signature time-stamp's time.
     pub timestamp: Option<Timestamp>,
+    /// India eSign (`RSP-02`, ADR-047 §3.8): what the certificate of completion adds;
+    /// `None` for a CSC provider.
+    pub esign: Option<EsignFacts>,
+}
+
+/// An India eSign signature's facts the certificate of completion states (ADR-047
+/// §3.7, §3.8, docs/09 §2a): never the certificate's e-KYC attributes, never a legal
+/// status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EsignFacts {
+    /// The authentication the request asked the ESP for: `otp`, `face`, ...
+    pub auth_mode: String,
+    /// The ESP's transaction reference (`resCode`).
+    pub reference: Option<String>,
+    /// The `/SubFilter` written: `ETSI.CAdES.detached` or `adbe.pkcs7.detached`.
+    pub format: String,
+    /// The certificate's policy OIDs, as found.
+    pub policy_oids: Vec<String>,
 }
 
 /// Whether a copy went to a carbon-copy recipient or a viewer.
