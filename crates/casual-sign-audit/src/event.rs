@@ -315,6 +315,10 @@ pub struct RemoteSignedDocument {
     /// Our signature time-stamp's time (B-T).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timestamp_time: Option<Timestamp>,
+    /// eSign: SHA-256 of this document's one-time signer certificate (v2.1 makes one
+    /// request, so one certificate, per document; `certificate` names the first).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certificate_sha256: Option<Hash256>,
     /// eSign: SHA-256 of the signed request XML kept with the evidence (ADR-047 §3.6).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_sha256: Option<Hash256>,

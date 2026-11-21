@@ -790,5 +790,11 @@ ASP tokens), migrations (sessions' eSign members, the token function). Documents
 - **The stub (§4), a simplification.** `tools/e2e/auth_stubs.py esign` issues one-time certificates under the
   development root, which stands for both the CCA root and the ESP's CA; a two-level test chain is left to the UAT
   run (`RSP-02` acceptance (6)).
+- **One signer, one certificate per document (v2.1), a correction.** v2.1 makes one request per document and the ESP
+  issues a one-time certificate (its key deleted after one signature) for each, so a session of two documents carries
+  two signer certificates. The first build required them byte-identical and so refused every second document
+  (`response_invalid`, main run 44924940955); the worker now requires the same subject and issuer, records each
+  document's certificate as `certificate_sha256` in `recipient.remote_signed` and names the first in `certificate`.
+  Seen red with byte equality restored, on two certificates the CI stub issued.
 - **Still to build or obtain.** v3.3 is `RSP-02A`. The real-stack run of `webapp/e2e/esign.spec.mjs` is CI's
   (`compose-e2e`); a run through eMudhra's or CVL's UAT and counsel's review are `RSP-02` acceptance (6) and (7).

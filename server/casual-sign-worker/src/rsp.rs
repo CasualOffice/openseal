@@ -858,6 +858,9 @@ impl<B: BlobStore + 'static> Worker<B> {
                     &[
                         ("session", session.id.to_string()),
                         ("reason", reason_text.clone()),
+                        // The check that ended it: a docs/20 code or the provider's
+                        // own short code, never a message (RSP-02).
+                        ("code", provider_code.clone().unwrap_or_default()),
                     ],
                 );
                 match apply_in(&mut tx, envelope, &cmd, &c).await {
@@ -1290,6 +1293,7 @@ fn sign_phase(
                 .signature_timestamp
                 .and_then(|d| i64::try_from(d.as_millis()).ok())
                 .and_then(Timestamp::from_unix_millis),
+            certificate_sha256: None,
             request_sha256: None,
             response_sha256: None,
             signature_format: None,

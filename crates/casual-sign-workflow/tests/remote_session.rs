@@ -143,6 +143,7 @@ fn complete_with(
                 revision_hash: h(6),
                 signature_sha256: h(7),
                 timestamp_time: Some(t(10)),
+                certificate_sha256: None,
                 request_sha256: hashes.map(|x| x.0),
                 response_sha256: hashes.map(|x| x.1),
                 signature_format: hashes.map(|_| "adbe.pkcs7.detached".to_owned()),

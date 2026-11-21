@@ -285,6 +285,13 @@ pub(crate) struct SignIn<'a> {
     pub(crate) recipient_name: &'a str,
 }
 
+/// Whether two one-time certificates name the same signer: the same subject, issued by
+/// the same CA (ADR-047 §3.1: one request, so one certificate, per document in v2.1).
+pub(crate) fn same_signer(a: &Certificate, b: &Certificate) -> bool {
+    a.tbs_certificate().subject() == b.tbs_certificate().subject()
+        && a.tbs_certificate().issuer() == b.tbs_certificate().issuer()
+}
+
 fn policy_oids(cert: &Certificate) -> Vec<String> {
     let Ok(Some((_, policies))) = cert
         .tbs_certificate()
@@ -373,8 +380,14 @@ pub(crate) fn sign(i: SignIn<'_>) -> Outcome {
         let Ok(cert) = Certificate::from_der(&user) else {
             return Outcome::Failed(RemoteFailure::ResponseInvalid, Some("CS-RSP-0004".into()));
         };
-        // One signer across the session's documents.
-        if leaf.as_ref().is_some_and(|(_, d)| *d != user) {
+        // One signer across the session's documents: v2.1 makes one request per
+        // document and the ESP issues a one-time certificate for each (its key deleted
+        // after one signature), so the certificates differ; their subject, the person
+        // the e-KYC identified, must not.
+        if leaf
+            .as_ref()
+            .is_some_and(|(first, _)| !same_signer(first, &cert))
+        {
             return Outcome::Failed(RemoteFailure::ResponseInvalid, Some("CS-RSP-0004".into()));
         }
         let decode = |s: &str| STANDARD.decode(s).unwrap_or_default();
@@ -432,13 +445,16 @@ pub(crate) fn sign(i: SignIn<'_>) -> Outcome {
                 .signature_timestamp
                 .and_then(|d| i64::try_from(d.as_millis()).ok())
                 .and_then(Timestamp::from_unix_millis),
+            certificate_sha256: Some(Hash256::digest(&user)),
             request_sha256: Some(Hash256::digest(&request)),
             response_sha256: Some(Hash256::digest(&response)),
             signature_format: doc.format.clone(),
         });
         blobs.push(sealed.bytes);
         blobs.push(response);
-        leaf = Some((cert, user));
+        if leaf.is_none() {
+            leaf = Some((cert, user));
+        }
     }
     let Some((cert, der)) = leaf else {
         return Outcome::Failed(RemoteFailure::ResponseInvalid, Some("CS-RSP-0004".into()));
@@ -666,6 +682,24 @@ mod tests {
         ] {
             assert_eq!(parse_txn(bad), None, "{bad}");
         }
+    }
+
+    /// Two answers of one v2.1 session, from the CI stub ESP: two one-time certificates
+    /// (each document its own key), one signer.
+    #[test]
+    fn one_time_certificates_of_one_signer_are_one_signer() {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../crates/casual-sign-seal/tests/fixtures/esign-stub");
+        let a = std::fs::read(dir.join("cades.user.der")).unwrap();
+        let b = std::fs::read(dir.join("adobe.user.der")).unwrap();
+        assert_ne!(a, b, "each document has its own certificate");
+        let (a, b) = (
+            Certificate::from_der(&a).unwrap(),
+            Certificate::from_der(&b).unwrap(),
+        );
+        assert!(same_signer(&a, &b));
+        let root = std::fs::read(dir.join("root.der")).unwrap();
+        assert!(!same_signer(&a, &Certificate::from_der(&root).unwrap()));
     }
 
     #[test]
