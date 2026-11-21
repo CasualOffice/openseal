@@ -697,6 +697,37 @@ DSIG_TEMPLATE = (
 ESIGN_VARIANTS = ("cades", "adobe", "unsigned", "wrong-key", "other-digest", "ber", "other-cert")
 
 
+def xmlsec1(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    """Run xmlsec1 with the options its version needs: from 1.3, a key given on the
+    command line is found for a signature without `KeyInfo` only with `--lax-key-search`
+    (1.2 refuses the option)."""
+    # The command (`--sign`, `--verify`) comes first; its options after it.
+    return subprocess.run(["xmlsec1", *args[:1], *XMLSEC1_LAX(), *args[1:]], capture_output=True, check=False, cwd=cwd)
+
+
+def xmlsec1_verified(done: subprocess.CompletedProcess) -> bool:
+    """xmlsec1's own verdict, not only its exit status (a usage error exits 0): 1.3 says
+    "Verification status: OK", 1.2 "OK" on a line of its own."""
+    text = (done.stdout + done.stderr).decode(errors="replace")
+    return done.returncode == 0 and ("Verification status: OK" in text
+                                     or any(line.strip() == "OK" for line in text.splitlines()))
+
+
+def _xmlsec1_lax() -> list[str]:
+    done = subprocess.run(["xmlsec1", "--version"], capture_output=True, check=False)
+    m = re.search(r"(\d+)\.(\d+)", done.stdout.decode(errors="replace"))
+    return ["--lax-key-search"] if m and (int(m.group(1)), int(m.group(2))) >= (1, 3) else []
+
+
+_LAX: list[list[str]] = []
+
+
+def XMLSEC1_LAX() -> list[str]:  # noqa: N802
+    if not _LAX:
+        _LAX.append(_xmlsec1_lax())
+    return _LAX[0]
+
+
 def der(tag: int, body: bytes) -> bytes:
     """One DER TLV."""
     n = len(body)
@@ -796,7 +827,7 @@ class Esign:
         openssl("genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", str(self.other_key))
 
     def xmlsec(self, *args: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["xmlsec1", *args], capture_output=True, check=False, cwd=self.work)
+        return xmlsec1(*args, cwd=self.work)
 
     def check_request(self, xml: str) -> dict:
         """What an ESP checks of an ASP's request: the ASP's XML Signature (with xmlsec1,
@@ -808,7 +839,7 @@ class Esign:
         get = lambda name: (re.search(rf'\b{name}="([^"]*)"', xml) or [None, None])[1]  # noqa: E731
         m = re.search(r"<InputHash[^>]*>([0-9a-fA-F]{64})</InputHash>", xml)
         return {
-            "verified": done.returncode == 0,
+            "verified": xmlsec1_verified(done),
             "txn": get("txn"), "response_url": get("responseUrl"), "auth_mode": get("AuthMode"),
             "sc": get("sc"), "ekyc_id": get("ekycId"), "doc_info": get("docInfo"),
             "hash": m.group(1).lower() if m else None,

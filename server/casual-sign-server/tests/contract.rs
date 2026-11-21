@@ -1588,6 +1588,8 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
         ("POST", "remote-signing/authorize", Some(json!({}))),
         ("POST", "remote-signing/cancel", Some(json!({}))),
         ("GET", "remote-signing/documents/d1", None),
+        // RSP-02: the eSign hand-off page, with no armed session.
+        ("GET", "remote-signing/esign", None),
     ] {
         let r = api
             .call(method, &format!("{s1}/{path}"), &Auth::None, body, &h1)
@@ -1598,6 +1600,18 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             r.status
         );
     }
+    // RSP-02: an ESP's answer endpoint answers every body alike, a redirect to the
+    // signing page (here no provider is configured and the body is no answer).
+    let answer = api
+        .call(
+            "POST",
+            "/rsp/esign/esign-ci/response",
+            &Auth::None,
+            Some(json!({"eSignResponse": "<EsignResp/>"})),
+            &[],
+        )
+        .await;
+    assert_eq!(answer.status, StatusCode::SEE_OTHER);
     ok(
         api.call(
             "POST",

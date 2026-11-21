@@ -32,6 +32,7 @@ ECDSA=http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256
 variant() { # name key c14n sigalg transform
     sed -e "s|@C14N@|$3|" -e "s|@SIGALG@|$4|" -e "s|@TRANSFORM@|$5|" \
         "$here/response.tmpl.xml" > "$work/$1.tmpl.xml"
+    # The devtools image's xmlsec1 is 1.2 (Debian 12); from 1.3 add --lax-key-search.
     docker run --rm -v "$work:/w" -w /w openseal-devtools:dev \
         xmlsec1 --sign --privkey-pem "$2.key,$2.pem" --output "$1.xml" "$1.tmpl.xml"
     cp "$work/$1.xml" "$here/$1.xml"

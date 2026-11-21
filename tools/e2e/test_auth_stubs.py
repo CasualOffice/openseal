@@ -494,8 +494,8 @@ class EsignProvider(unittest.TestCase):
     def signed_request(self, body: str) -> str:
         tmpl, out = self.d / "req.xml", self.d / "req.signed.xml"
         tmpl.write_text(body)
-        subprocess.run(["xmlsec1", "--sign", "--privkey-pem", str(self.d / "asp.key"), "--output", str(out), str(tmpl)],
-                       check=True, capture_output=True)
+        done = st.xmlsec1("--sign", "--privkey-pem", str(self.d / "asp.key"), "--output", str(out), str(tmpl))
+        self.assertEqual(done.returncode, 0, done.stderr.decode(errors="replace"))
         return out.read_text()
 
     def test_a_signed_request_verifies_and_carries_no_aadhaar_data(self):
@@ -512,9 +512,8 @@ class EsignProvider(unittest.TestCase):
     def verify_answer(self, xml: str) -> bool:
         path = self.d / f"ans-{secrets.token_hex(4)}.xml"
         path.write_text(xml)
-        done = subprocess.run(["xmlsec1", "--verify", "--pubkey-cert-pem", str(self.d / "pub" / "esp-response.pem"), str(path)],
-                              capture_output=True, check=False)
-        return done.returncode == 0
+        done = st.xmlsec1("--verify", "--pubkey-cert-pem", str(self.d / "pub" / "esp-response.pem"), str(path))
+        return st.xmlsec1_verified(done)
 
     def test_answers_are_signed_with_a_well_formed_cms_over_the_hash(self):
         req = {"txn": "t.1", "hash": hashlib.sha256(b"prepared").hexdigest()}

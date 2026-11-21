@@ -301,7 +301,7 @@ fn our_signed_requests_verify_under_our_profile() {
 
 /// xmlsec1 as a command: on the path, or in the container image named by
 /// `OPENSEAL_XMLSEC1_IMAGE` with `dir` mounted at /w.
-fn xmlsec1(dir: &Path, args: &[&str]) -> Option<std::process::Output> {
+fn xmlsec1_raw(dir: &Path, args: &[&str]) -> Option<std::process::Output> {
     if let Ok(image) = std::env::var("OPENSEAL_XMLSEC1_IMAGE") {
         let mount = format!("{}:/w", dir.display());
         let mut c = Command::new("docker");
@@ -314,6 +314,45 @@ fn xmlsec1(dir: &Path, args: &[&str]) -> Option<std::process::Output> {
         .args(args)
         .output()
         .ok()
+}
+
+/// As [`xmlsec1_raw`] with the options the version needs: from 1.3 a key given on the
+/// command line is used for a signature without `KeyInfo`, or whose `KeyInfo` names
+/// no key, only with `--lax-key-search`, which 1.2 refuses.
+fn xmlsec1(dir: &Path, args: &[&str]) -> Option<std::process::Output> {
+    let version = xmlsec1_raw(dir, &["--version"])?;
+    let text = String::from_utf8_lossy(&version.stdout).into_owned();
+    // "xmlsec1 1.3.9 (openssl)": the version is the second word.
+    let numbers: Vec<u32> = text
+        .split_whitespace()
+        .nth(1)
+        .unwrap_or("")
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|s| !s.is_empty())
+        .take(2)
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    let lax = matches!(numbers.as_slice(), [major, minor] if (*major, *minor) >= (1, 3));
+    // The command (`--sign`, `--verify`) comes first; its options after it.
+    let (command, rest) = args.split_first()?;
+    let mut all: Vec<&str> = vec![command];
+    if lax {
+        all.push("--lax-key-search");
+    }
+    all.extend_from_slice(rest);
+    xmlsec1_raw(dir, &all)
+}
+
+/// xmlsec1's own verdict, not only its exit status (a usage error exits 0).
+fn verified(out: &std::process::Output) -> bool {
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // 1.3 says "Verification status: OK"; 1.2 says "OK" on a line of its own.
+    out.status.success()
+        && (text.contains("Verification status: OK") || text.lines().any(|l| l.trim() == "OK"))
 }
 
 #[test]
@@ -344,7 +383,7 @@ fn our_signed_requests_verify_under_xmlsec1() {
         };
         ran = true;
         assert!(
-            ok.status.success(),
+            verified(&ok),
             "{name}: xmlsec1 refused our request: {}",
             String::from_utf8_lossy(&ok.stderr)
         );
@@ -359,8 +398,10 @@ fn our_signed_requests_verify_under_xmlsec1() {
         )
         .unwrap();
         assert!(
-            !bad.status.success(),
-            "{name}: xmlsec1 took a tampered request"
+            !verified(&bad),
+            "{name}: xmlsec1 took a tampered request: {}{}",
+            String::from_utf8_lossy(&bad.stdout),
+            String::from_utf8_lossy(&bad.stderr)
         );
     }
     let _ = std::fs::remove_dir_all(&dir);
