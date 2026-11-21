@@ -494,14 +494,54 @@ impl ParsedCms {
         if ty != oid::ID_DATA || content.is_some() {
             return Err(CryptoError::ContentTypeMismatch);
         }
-        self.verify_signer(ty, content_digest)
+        self.verify_signer(ty, content_digest, true)
     }
 
-    /// The checks shared by detached and encapsulated signatures.
+    /// As [`ParsedCms::verify_detached`] for a legacy `adbe.pkcs7.detached` signer, which
+    /// need not carry ESS `signing-certificate-v2` (a provider's `PKCS7pdf`, ADR-047
+    /// §3.3): when the attribute is present it must still match the signer; when it is
+    /// absent the signer is the certificate the SignerInfo names. A SHA-1-only ESS v1 is
+    /// still refused.
+    ///
+    /// # Errors
+    /// The first failing check, as a [`CryptoError`] with its docs/20 code.
+    pub fn verify_detached_legacy(
+        &self,
+        content_digest: &DigestValue,
+    ) -> Result<VerifiedSigner, CryptoError> {
+        let (ty, content) = self.encapsulated();
+        if ty != oid::ID_DATA || content.is_some() {
+            return Err(CryptoError::ContentTypeMismatch);
+        }
+        self.verify_signer(ty, content_digest, false)
+    }
+
+    /// The signer certificate's DER exactly as carried, found by the SignerInfo's
+    /// identifier.
+    ///
+    /// # Errors
+    /// [`CryptoError::SignerCertificateNotFound`] when the structure does not carry it.
+    pub fn signer_certificate_der(&self) -> Result<&[u8], CryptoError> {
+        let si = self.signer_info()?;
+        self.find_signer(&si.sid).map(|(_, raw)| raw)
+    }
+
+    /// The OIDs of the signed attributes, as received.
+    pub fn signed_attribute_oids(&self) -> Vec<ObjectIdentifier> {
+        self.signer_info()
+            .ok()
+            .and_then(|si| si.signed_attrs.as_ref())
+            .map(|a| a.iter().map(|x| x.oid).collect())
+            .unwrap_or_default()
+    }
+
+    /// The checks shared by detached and encapsulated signatures; `ess_required` false
+    /// only for a legacy detached signer.
     pub(crate) fn verify_signer(
         &self,
         content_type: ObjectIdentifier,
         content_digest: &DigestValue,
+        ess_required: bool,
     ) -> Result<VerifiedSigner, CryptoError> {
         let si = self.signer_info()?;
         let attrs = si
@@ -535,12 +575,17 @@ impl ParsedCms {
             // SHA-1 ESSCertID only: not checkable without SHA-1, which we never accept.
             return Err(CryptoError::UnsupportedAlgorithm);
         }
-        let ess: SigningCertificateV2 = single_value(
-            attrs,
-            oid::ID_SIGNING_CERTIFICATE_V2,
-            SignedAttribute::SigningCertificateV2,
-        )?;
-        ess.matches(cert, cert_der)?;
+        let has_ess = attrs
+            .iter()
+            .any(|a| a.oid == oid::ID_SIGNING_CERTIFICATE_V2);
+        if ess_required || has_ess {
+            let ess: SigningCertificateV2 = single_value(
+                attrs,
+                oid::ID_SIGNING_CERTIFICATE_V2,
+                SignedAttribute::SigningCertificateV2,
+            )?;
+            ess.matches(cert, cert_der)?;
+        }
 
         let scheme = Scheme::from_algorithm_identifier(
             &si.signature_algorithm,

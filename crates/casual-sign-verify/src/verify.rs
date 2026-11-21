@@ -729,7 +729,16 @@ fn cms_signature(
         h.update(p);
     }
     let digest = h.finish();
-    let signer = match cms.verify_detached(&digest) {
+    // A legacy `adbe.pkcs7.detached` signer need not carry ESS `signing-certificate-v2`
+    // (ADR-047 §3.3): its signature is checked over the signed attributes as received
+    // under the certificate the SignerInfo names; PAdES still requires the attribute.
+    let legacy = c.sub_filter.as_deref() == Some("adbe.pkcs7.detached");
+    let checked = if legacy {
+        cms.verify_detached_legacy(&digest)
+    } else {
+        cms.verify_detached(&digest)
+    };
+    let signer = match checked {
         Ok(s) => {
             checks.digest = Check::Passed;
             checks.signature = Check::Passed;

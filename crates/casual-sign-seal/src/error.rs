@@ -65,6 +65,18 @@ pub enum RemoteProblem {
     /// credential's certificate (another document's hash, another key, a malformed or
     /// wrong-length value).
     SignatureValue,
+    /// A provider's CMS (ADR-047 §3.4) is BER, refused until `SEAL-13`.
+    Ber,
+    /// A provider's CMS is not DER `SignedData` with one SignerInfo and signed
+    /// attributes, or its signature does not verify over them, or uses a weak algorithm.
+    Cms,
+    /// A provider's CMS has another `message-digest` than our ByteRange digest.
+    MessageDigest,
+    /// A provider's CMS is signed by another certificate than the one it named.
+    Certificate,
+    /// A provider's CMS is not CAdES-conformant though the revision was prepared as
+    /// `ETSI.CAdES.detached` (the catalogue said the provider's is).
+    Format,
 }
 
 impl fmt::Display for RemoteProblem {
@@ -74,6 +86,11 @@ impl fmt::Display for RemoteProblem {
             Self::SignatureValue => {
                 f.write_str("the value does not verify over the prepared attributes")
             }
+            Self::Ber => f.write_str("the provider's CMS is BER"),
+            Self::Cms => f.write_str("the provider's CMS does not verify"),
+            Self::MessageDigest => f.write_str("the provider's CMS is over other bytes"),
+            Self::Certificate => f.write_str("the provider's CMS names another signer"),
+            Self::Format => f.write_str("the provider's CMS is not CAdES-conformant"),
         }
     }
 }
