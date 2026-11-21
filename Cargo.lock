@@ -920,9 +920,14 @@ name = "casual-sign-xfa"
 version = "0.0.0"
 dependencies = [
  "casual-sign-pdf",
+ "casual-sign-xml",
  "miniz_oxide 0.8.9",
  "skrifa 0.46.2",
 ]
+
+[[package]]
+name = "casual-sign-xml"
+version = "0.0.0"
 
 [[package]]
 name = "cbc"

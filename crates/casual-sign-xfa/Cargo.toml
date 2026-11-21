@@ -9,6 +9,8 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
+# The bounded XML reader (ADR-026), its own crate since ADR-047.
+casual-sign-xml = { path = "../casual-sign-xml" }
 # Glyph ids, advances and face metrics from supplied font bytes; the same parser and
 # version casual-sign-flatten uses (ADR-024), so the dependency graph does not grow.
 # MIT OR Apache-2.0.

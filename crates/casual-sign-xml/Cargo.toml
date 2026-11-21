@@ -1,0 +1,16 @@
+[package]
+name = "casual-sign-xml"
+version = "0.0.0"
+description = "Bounded XML reader for OpenSeal: no DTDs, no entities, bounded depth, nodes and attributes (ADR-026, moved out of casual-sign-xfa by ADR-047)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# No dependencies: the reader is ours (ADR-026), so no general XML library enters the
+# engine or the hosts (ADR-047 §3.5).
+[dependencies]
+
+[lints]
+workspace = true

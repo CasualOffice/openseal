@@ -261,6 +261,7 @@ dependencies = [
  "casual-sign-pii",
  "casual-sign-seal",
  "casual-sign-verify",
+ "casual-sign-xml",
  "der",
  "libfuzzer-sys",
  "rcgen",
@@ -303,6 +304,10 @@ dependencies = [
  "x509-cert",
  "x509-ocsp",
 ]
+
+[[package]]
+name = "casual-sign-xml"
+version = "0.0.0"
 
 [[package]]
 name = "cbc"
