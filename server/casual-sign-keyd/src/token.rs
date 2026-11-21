@@ -14,7 +14,9 @@
 //! The MAC is computed and compared by aws-lc-rs (ADR-006), in constant time.
 
 use aws_lc_rs::hmac;
-use casual_sign_keyd_client::wire::{SEAL_TOKEN_MAC, SealToken, seal_token_message};
+use casual_sign_keyd_client::wire::{
+    SEAL_TOKEN_MAC, SealToken, asp_token_message, seal_token_message,
+};
 
 use crate::error::KeydError;
 
@@ -102,6 +104,88 @@ impl SealTokenKey {
             return Err(KeydError::SealRefused);
         }
         hmac::verify(&self.0, &seal_token_message(envelope, t.expires), &t.mac)
+            .map_err(|_| KeydError::SealRefused)
+    }
+}
+
+/// The key keyd and the database share to mint and verify **ASP tokens** (ADR-047 §3.5,
+/// migration 0052): keyd signs with an ASP request-signing key (alias
+/// [`casual_sign_keyd_client::ASP_ALIAS_PREFIX`]`*`) only for a request carrying the
+/// database's token for an open eSign session. Its own key and its own label
+/// (`openseal-keyd-asp-token-v1`), so a seal token never opens an ASP key and an ASP
+/// token never opens a seal key. Never logged.
+pub struct AspTokenKey(hmac::Key);
+
+impl core::fmt::Debug for AspTokenKey {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("AspTokenKey(..)")
+    }
+}
+
+impl AspTokenKey {
+    /// The key from 64 hex digits (surrounding white space ignored).
+    ///
+    /// # Errors
+    /// `CS-KEY-0012` (`OPENSEAL_KEYD_ASP_TOKEN_KEY`) for anything else.
+    pub fn from_hex(text: &str) -> Result<Self, KeydError> {
+        let t = text.trim();
+        let bad = || KeydError::Setting("OPENSEAL_KEYD_ASP_TOKEN_KEY");
+        if t.len() != SEAL_TOKEN_KEY_LEN.saturating_mul(2) {
+            return Err(bad());
+        }
+        let bytes = (0..t.len())
+            .step_by(2)
+            .map(|i| {
+                t.get(i..i.saturating_add(2))
+                    .and_then(|h| u8::from_str_radix(h, 16).ok())
+            })
+            .collect::<Option<Vec<u8>>>()
+            .ok_or_else(bad)?;
+        Self::new(&bytes)
+    }
+
+    /// The key from its 32 bytes.
+    ///
+    /// # Errors
+    /// `CS-KEY-0012` for any other length.
+    pub fn new(bytes: &[u8]) -> Result<Self, KeydError> {
+        if bytes.len() != SEAL_TOKEN_KEY_LEN {
+            return Err(KeydError::Setting("OPENSEAL_KEYD_ASP_TOKEN_KEY"));
+        }
+        Ok(Self(hmac::Key::new(hmac::HMAC_SHA256, bytes)))
+    }
+
+    /// The token for `session` expiring at `expires`, as the database mints it (tests
+    /// and tooling).
+    #[must_use]
+    pub fn mint(&self, session: &str, expires: u64) -> SealToken {
+        SealToken {
+            expires,
+            mac: hmac::sign(&self.0, &asp_token_message(session, expires))
+                .as_ref()
+                .to_vec(),
+        }
+    }
+
+    /// Whether `token` lets keyd sign an ASP request for `session` at `now`.
+    ///
+    /// # Errors
+    /// `CS-KEY-0015` otherwise.
+    pub fn check(
+        &self,
+        session: &str,
+        token: Option<&SealToken>,
+        now: u64,
+    ) -> Result<(), KeydError> {
+        let t = token.ok_or(KeydError::SealRefused)?;
+        if session.is_empty()
+            || t.mac.len() != SEAL_TOKEN_MAC
+            || now > t.expires
+            || t.expires.saturating_sub(now) > MAX_TOKEN_LIFETIME_S
+        {
+            return Err(KeydError::SealRefused);
+        }
+        hmac::verify(&self.0, &asp_token_message(session, t.expires), &t.mac)
             .map_err(|_| KeydError::SealRefused)
     }
 }

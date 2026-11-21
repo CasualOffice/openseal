@@ -20,4 +20,7 @@ pub mod wire;
 pub use admin::{AdminClient, hex};
 pub use error::{ADMIN_REFUSED, ALIAS_REFUSED, KeyConfigProblem, KeydError};
 pub use tls::{Endpoint, call, client_tls, tls_certificates};
-pub use wire::{Health, KeyHealth, KeyInfo, LogEntry, SealToken, seal_token_message};
+pub use wire::{
+    ASP_ALIAS_PREFIX, Health, KeyHealth, KeyInfo, LogEntry, SealToken, asp_token_message,
+    seal_token_message,
+};

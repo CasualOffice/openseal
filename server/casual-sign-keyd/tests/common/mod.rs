@@ -284,6 +284,36 @@ pub fn start_keyd_full(
     RunningKeyd { addr, oplog }
 }
 
+/// A keyd with seal tokens and, when given, ASP tokens (ADR-047 §3.5).
+pub fn start_keyd_asp(
+    pki: &Pki,
+    keys: Vec<(&str, Arc<dyn DigestSigner>)>,
+    allowed: &[&str],
+    dir: &Path,
+    seal: casual_sign_keyd::SealTokenKey,
+    asp: Option<casual_sign_keyd::AspTokenKey>,
+) -> RunningKeyd {
+    let (cert, key, _) = pki.server_identity();
+    let tls = server_tls(cert.as_bytes(), key.as_bytes(), pki.tls_ca.pem().as_bytes()).unwrap();
+    let mut allow = AllowList::new();
+    for fp in allowed {
+        allow.allow(fp, "test");
+    }
+    let oplog = dir.join("keyd-oplog.tsv");
+    let mut service = KeyService::new(allow, OpLog::open(&oplog).unwrap(), KeydLimits::default())
+        .with_seal_tokens(seal);
+    for (alias, key) in keys {
+        service.add_key(alias, key).unwrap();
+    }
+    if let Some(asp) = asp {
+        service = service.with_asp_tokens(asp);
+    }
+    let keyd = Keyd::bind("127.0.0.1:0", tls, service).unwrap();
+    let addr = keyd.local_addr().unwrap().to_string();
+    std::thread::spawn(move || keyd.serve());
+    RunningKeyd { addr, oplog }
+}
+
 /// An endpoint for `keyd` with the given client identity (`None`: no certificate).
 pub fn endpoint(
     pki: &Pki,

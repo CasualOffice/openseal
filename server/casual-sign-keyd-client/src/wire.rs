@@ -98,6 +98,19 @@ pub fn seal_token_message(envelope: &str, expires: u64) -> Vec<u8> {
     format!("openseal-keyd-seal-token-v1\n{envelope}\n{expires}").into_bytes()
 }
 
+/// Aliases of this prefix are ASP request-signing keys (ADR-047 §3.5): keyd signs with
+/// one only for a request whose `envelope` field carries an open eSign session's id and
+/// whose token is the database's ASP token for it, never with a seal token.
+pub const ASP_ALIAS_PREFIX: &str = "asp-";
+
+/// The bytes an ASP token's MAC covers: `openseal-keyd-asp-token-v1`, the eSign session
+/// id, and `expires` in decimal, separated by line feeds. Migration 0052 builds the same
+/// bytes in SQL, under a key of its own.
+#[must_use]
+pub fn asp_token_message(session: &str, expires: u64) -> Vec<u8> {
+    format!("openseal-keyd-asp-token-v1\n{session}\n{expires}").into_bytes()
+}
+
 /// A request to keyd.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
