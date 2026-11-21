@@ -33,7 +33,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked
       # Engine crates only: hosts under server/ are native (docs/19).
-      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-keyd-client --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-secrets --exclude casual-sign-csc --exclude casual-sign-seclog --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked
+      - run: cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-keyd-client --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-secrets --exclude casual-sign-csc --exclude casual-sign-esign --exclude casual-sign-seclog --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked
       - run: python3 tools/check-repo.py
       - run: python3 -I fixtures/tools/generate.py --check
       - run: python3 -I fixtures/corpus/fetch.py --check
@@ -81,9 +81,9 @@ jobs:
             part: server
         include:
           - part: engine
-            skip: "--exclude casual-sign-store --exclude casual-sign-policy --exclude casual-sign-platform-store --exclude casual-sign-console --exclude casual-sign-keyd-client --exclude casual-sign-secrets --exclude casual-sign-csc --exclude casual-sign-seclog --exclude casual-sign-keyd --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude clipper2-rust"
+            skip: "--exclude casual-sign-store --exclude casual-sign-policy --exclude casual-sign-platform-store --exclude casual-sign-console --exclude casual-sign-keyd-client --exclude casual-sign-secrets --exclude casual-sign-csc --exclude casual-sign-esign --exclude casual-sign-seclog --exclude casual-sign-keyd --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude clipper2-rust"
           - part: server
-            skip: "--exclude casual-sign-model --exclude casual-sign-pdf --exclude casual-sign-crypto --exclude casual-sign-fields --exclude casual-sign-pii --exclude casual-sign-verify --exclude casual-sign-flatten --exclude casual-sign-seal --exclude casual-sign-audit --exclude casual-sign-certificate --exclude casual-sign-sdk --exclude casual-sign-xfa --exclude casual-sign-cli --exclude casual-sign-wasm --exclude casual-sign-workflow"
+            skip: "--exclude casual-sign-model --exclude casual-sign-pdf --exclude casual-sign-crypto --exclude casual-sign-fields --exclude casual-sign-pii --exclude casual-sign-verify --exclude casual-sign-flatten --exclude casual-sign-seal --exclude casual-sign-audit --exclude casual-sign-certificate --exclude casual-sign-sdk --exclude casual-sign-xml --exclude casual-sign-xfa --exclude casual-sign-cli --exclude casual-sign-wasm --exclude casual-sign-workflow"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90   # a hung test fails the job instead of holding the main queue for 6 h
     steps:
@@ -91,7 +91,13 @@ jobs:
       # modeld's feature_gate test runs `cargo tree --offline --target all`, which needs every
       # platform's crates in the cache, not only the host's (CI-01).
       - run: cargo fetch --locked
+      # xmlsec1, the independent XML Signature implementation, checks the eSign requests
+      # we sign (casual-sign-esign tests/xmlsec.rs, ADR-047 §4); required, not skipped.
+      - if: matrix.part == 'server'
+        run: sudo apt-get update -q && sudo apt-get install -y -q xmlsec1
       - run: cargo test --workspace ${{ matrix.skip }} --all-features --locked --no-fail-fast
+        env:
+          OPENSEAL_REQUIRE_XMLSEC1: ${{ matrix.part == 'server' && '1' || '' }}
 
   msrv:
     runs-on: ubuntu-latest

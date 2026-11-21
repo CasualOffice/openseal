@@ -533,6 +533,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-esign"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "casual-sign-xml",
+ "der",
+ "rcgen",
+ "x509-cert",
+]
+
+[[package]]
 name = "casual-sign-fields"
 version = "0.1.0"
 dependencies = [

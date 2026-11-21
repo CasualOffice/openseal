@@ -9,6 +9,7 @@
 #   cargo +nightly fuzz run seal fixtures/sealed fixtures/signed -- -max_total_time=300 -dict=fuzz/pdf.dict
 #   cargo +nightly fuzz run pii -- -max_total_time=300
 #   cargo +nightly fuzz run xml -- -max_total_time=300
+#   cargo +nightly fuzz run esign_response server/casual-sign-esign/tests/fixtures -- -max_total_time=300
 [package]
 name = "casual-sign-pdf-fuzz"
 version = "0.0.0"
@@ -31,6 +32,8 @@ casual-sign-pii = { path = "../crates/casual-sign-pii" }
 casual-sign-fields = { path = "../crates/casual-sign-fields" }
 # The bounded XML reader in both modes (ADR-047 §3.5).
 casual-sign-xml = { path = "../crates/casual-sign-xml" }
+# The India eSign answer reader (ADR-047 §3.4), a host crate fuzzed here as admit is.
+casual-sign-esign = { path = "../server/casual-sign-esign" }
 der = { version = "0.8.3", default-features = false, features = ["alloc"] }
 # A throwaway signing key made at start (never written), for the `seal` target.
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto"] }
@@ -97,6 +100,13 @@ bench = false
 [[bin]]
 name = "xml"
 path = "fuzz_targets/xml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "esign_response"
+path = "fuzz_targets/esign_response.rs"
 test = false
 doc = false
 bench = false

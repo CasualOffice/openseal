@@ -742,3 +742,30 @@ ASP tokens), migrations (sessions' eSign members, the token function). Documents
 7. **Name mismatch** between the e-KYC name and the recipient's name as sent: record (recommended) or refuse?
 8. **Non-CAdES CMS** (`adbe.pkcs7.detached`, if an ESP's `PKCS7pdf` carries `signingTime`): accept as designed, or
    offer only ESPs whose CMS is CAdES-conformant?
+
+#### 9. As built (`RSP-02`, recorded as each part lands)
+
+- **Status.** Accepted 2026-11-21 (owner instruction 82, with the recommended answers to §8: v2.1 first, v3.3 when an
+  ESP offers it; the operator is the ASP for every account; OTP and face; `docInfo` the name cut to 50 characters;
+  raw XML kept as evidence; name mismatches recorded; a non-CAdES CMS accepted as `adbe.pkcs7.detached`; question 6
+  to counsel).
+- **`casual-sign-xml` (§3.5).** ADR-026's reader moved out of `-xfa`; its lenient mode is the XFA reader unchanged
+  (the XFA corpus and hostile tests pass as before, its errors mapped to the same `CS-XFA` codes). A strict mode for
+  signed XML: UTF-8 only, XML 1.0 line-end and attribute-value normalization, no processing instruction but the
+  declaration, no control characters, every prefix declared, expanded attribute names unique; each element keeps its
+  prefix, qualified attributes and namespace declarations. `Limits::esign()` is 512 KiB, depth 16, 256 elements.
+  Codes `CS-XML-0001` to `-0007`; fuzz target `xml`.
+- **`casual-sign-esign` (§3.5).** Canonical XML 1.0 and Exclusive Canonicalization 1.0 (without comments, no
+  `InclusiveNamespaces`); the profile verifies before any value is read, under the configured certificate (RSA
+  2,048 bits or more, or P-256), never `KeyInfo`; `Object`, other references, transforms, methods, a second or
+  misplaced `Signature` are refused. Our requests are signed with Canonical XML 1.0 and RSA-SHA256 or ECDSA-SHA256 (a
+  DER ECDSA value from keyd is turned into `r ‖ s`). **xmlsec1 1.2.37** agrees both ways (2026-11-21): the three
+  answers it signed (`tests/fixtures/make.sh`: inclusive and exclusive, RSA and P-256, over namespaces, escapes, CR
+  and CDATA) verify under our profile, and our RSA and P-256 requests verify under xmlsec1 while a tampered copy does
+  not; seen red with the attribute order and the TAB escape of the canonicalization changed.
+- **The request (§3.1), a decision.** `responseSigType` is written `pkcs7pdf` and `ekycIdType` `A` with an empty
+  `ekycId` (to confirm with each ESP's UAT, §2); `ts` is IST from the worker's clock.
+- **An answer whose signature does not verify, a decision.** It fails nothing: anyone who learns a `txn` could
+  otherwise end a signer's session with junk. It is refused (`CS-RSP-0004`), logged as a security event and
+  ignored; the session waits for a valid answer or its end. An answer that verifies but whose CMS does not hold
+  fails the session `response_invalid` (§3.4).

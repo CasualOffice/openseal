@@ -26,6 +26,7 @@ members = [
     "server/casual-sign-console",
     "server/casual-sign-secrets",
     "server/casual-sign-csc",
+    "server/casual-sign-esign",
     "server/casual-sign-seclog",
     "server/casual-sign-keyd-client",
     "server/casual-sign-keyd",

@@ -5,11 +5,14 @@
 #     passwords, written once into the `secrets` volume at first start.
 #   - dev-tsa.py: an RFC 3161 time-stamping authority over HTTP, answering with
 #     `openssl ts -reply` (the cryptography is OpenSSL's; this only carries bytes).
+#   - xmlsec1: the independent XML Signature implementation the test stack's stub eSign
+#     Service Provider signs its answers with and checks our requests with (ADR-047 §4,
+#     tools/e2e/auth_stubs.py `esign`). Never in a product image.
 # Pinned by digest (docs/04 rule 31).
 ARG DEBIAN_IMAGE=debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
 FROM ${DEBIAN_IMAGE}
 RUN apt-get update -q \
- && apt-get install -y -q --no-install-recommends openssl python3 \
+ && apt-get install -y -q --no-install-recommends openssl python3 xmlsec1 \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10002 --home-dir /var/lib/tsa --create-home tsa
 COPY deploy/devtools/dev-pki.sh /usr/local/bin/dev-pki

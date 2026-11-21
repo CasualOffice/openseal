@@ -35,4 +35,4 @@ mod error;
 mod reader;
 
 pub use error::XmlError;
-pub use reader::{Attribute, Dom, Limits, Node, NodeId, parse};
+pub use reader::{Attribute, Dom, Limits, Node, NodeId, XML_NAMESPACE, parse};

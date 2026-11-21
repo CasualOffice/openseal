@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EsignResp errCode="NA" errMsg="NA &amp; &lt;x&gt;" resCode="RC-2026-0001" status="1" ts="2026-11-21T19:20:30" txn="0192f3a4-0000-7000-8000-000000000001" xmlns:ext="urn:example:ext" ext:note="a&#9;b"  >
+  <UserX509Certificate>
+MIIBszCCAVmgAwIBAgIUQ2VydGlmaWNhdGUgcGxhY2Vob2xkZXIwCgYIKoZIzj0E
+AwIwFDESMBAGA1UEAwwJVGVzdCBDQSAxMB4XDTI2MTEyMTAwMDAwMFoXDTI2MTEy
+  </UserX509Certificate>
+  <Signatures>
+    <DocSignature error="" id="1" sigHashAlgorithm="SHA256">MIAGCSqGSIb3DQEHAqCAMIACAQExDzANBglghkgBZQMEAgEFADA=</DocSignature>
+  </Signatures>
+  <ext:Extra xmlns="urn:example:default" b="2" a='1'>text &#xD; with cr, quote " and &gt;<inner c="x&#10;y"/><![CDATA[<raw & data>]]></ext:Extra>
+  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+    <SignedInfo>
+      <CanonicalizationMethod Algorithm="@C14N@"/>
+      <SignatureMethod Algorithm="@SIGALG@"/>
+      <Reference URI="">
+        <Transforms>
+          <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>@TRANSFORM@
+        </Transforms>
+        <DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+        <DigestValue></DigestValue>
+      </Reference>
+    </SignedInfo>
+    <SignatureValue/>
+    <KeyInfo><X509Data/></KeyInfo>
+  </Signature>
+</EsignResp>

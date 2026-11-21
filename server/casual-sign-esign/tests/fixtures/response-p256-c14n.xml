@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<EsignResp xmlns:ext="urn:example:ext" errCode="NA" errMsg="NA &amp; &lt;x&gt;" resCode="RC-2026-0001" status="1" ts="2026-11-21T19:20:30" txn="0192f3a4-0000-7000-8000-000000000001" ext:note="a&#9;b">
+  <UserX509Certificate>
+MIIBszCCAVmgAwIBAgIUQ2VydGlmaWNhdGUgcGxhY2Vob2xkZXIwCgYIKoZIzj0E
+AwIwFDESMBAGA1UEAwwJVGVzdCBDQSAxMB4XDTI2MTEyMTAwMDAwMFoXDTI2MTEy
+  </UserX509Certificate>
+  <Signatures>
+    <DocSignature error="" id="1" sigHashAlgorithm="SHA256">MIAGCSqGSIb3DQEHAqCAMIACAQExDzANBglghkgBZQMEAgEFADA=</DocSignature>
+  </Signatures>
+  <ext:Extra xmlns="urn:example:default" b="2" a="1">text &#13; with cr, quote " and &gt;<inner c="x&#10;y"/><![CDATA[<raw & data>]]></ext:Extra>
+  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+    <SignedInfo>
+      <CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+      <SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/>
+      <Reference URI="">
+        <Transforms>
+          <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><Transform Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+        </Transforms>
+        <DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+        <DigestValue>y9MHc0XV5mBi6sa4TlR5FRn4OQ1MjO2zYKZtOrMNgbo=</DigestValue>
+      </Reference>
+    </SignedInfo>
+    <SignatureValue>RpTGP1WsmGedQJmxGWELprQCdm/VRrQF+GdAO/v0h+hhMgGlLhz9nc2DZQAho/uw
+60WPFSgzk8zSmZgXEymPNQ==</SignatureValue>
+    <KeyInfo><X509Data>
+<X509Certificate>MIIBvjCCAWSgAwIBAgIUfAJduaj3BX4chNGVGZ08wkZRAAwwCgYIKoZIzj0EAwIw
+RTEqMCgGA1UEAwwhVGVzdCBFU1AgcmVzcG9uc2Ugc2lnbmluZyAoUC0yNTYpMRcw
+FQYDVQQKDA5PcGVuU2VhbCB0ZXN0czAeFw0yNjExMjExMTM5MjZaFw00NjExMTYx
+MTM5MjZaMEUxKjAoBgNVBAMMIVRlc3QgRVNQIHJlc3BvbnNlIHNpZ25pbmcgKFAt
+MjU2KTEXMBUGA1UECgwOT3BlblNlYWwgdGVzdHMwWTATBgcqhkjOPQIBBggqhkjO
+PQMBBwNCAATJ6XufM3lZt8ppLYyVC1oEo4AZ2SYyKdjQUw/CKmJG9Ck+AeqAgjt2
+G/wGvdle132qU1CoGYuGVJxvJvaKSkeAozIwMDAdBgNVHQ4EFgQUkxQ3MD7a9OOh
+n5nwsqffvmKNuGUwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNIADBFAiBS
+GaHY01qGVrcV60QkVkz8Q6hP3TtKk6oahjDSu9Y0YQIhAJtHEiHfk3qguEXK/I+a
+UbfQtDKVGLvphttuiBuZ/AIT
+</X509Certificate>
+</X509Data></KeyInfo>
+  </Signature>
+</EsignResp>
