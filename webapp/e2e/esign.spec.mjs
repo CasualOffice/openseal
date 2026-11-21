@@ -91,10 +91,21 @@ async function fillSignature(page) {
     await page.getByLabel("I agree to use electronic records and signatures.").check();
     await page.getByRole("button", { name: "Continue" }).click();
   }
-  await page.getByRole("button", { name: /Signature, required/ }).click();
+  // One signature field per document (the real-stack test sends two documents): the
+  // first opens the adopt panel; each later one takes the adopted signature, or opens the
+  // panel again; the fields keep their label, so each is taken by position.
+  const fields = page.getByRole("button", { name: /Signature, required/ });
   const dlg = page.getByRole("dialog", { name: "Adopt your signature" });
-  await dlg.getByTestId("adopt-confirm").click();
-  await expect(dlg).toBeHidden();
+  await expect(fields.first()).toBeVisible();
+  const total = await fields.count();
+  expect(total).toBeGreaterThan(0);
+  for (let i = 0; i < total; i += 1) {
+    await fields.nth(i).click();
+    if (await dlg.waitFor({ state: "visible", timeout: 2000 }).then(() => true, () => false)) {
+      await dlg.getByTestId("adopt-confirm").click();
+      await expect(dlg).toBeHidden();
+    }
+  }
   await page.getByRole("button", { name: "Finish" }).click();
   await expect(page.getByRole("heading", { name: "Review and finish" })).toBeVisible();
 }
