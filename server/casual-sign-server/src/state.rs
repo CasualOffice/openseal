@@ -231,6 +231,13 @@ pub(crate) fn plus_std(t: OffsetDateTime, d: Duration) -> Result<OffsetDateTime,
 #[derive(Debug, Clone)]
 pub struct AppState(pub(crate) Arc<Inner>);
 
+/// The operator's signing providers and the key that seals their secrets (`RSP-01`).
+#[derive(Debug)]
+pub(crate) struct SigningProviders {
+    pub(crate) catalogue: casual_sign_csc::Catalogue,
+    pub(crate) key: casual_sign_csc::ProviderSecretsKey,
+}
+
 #[derive(Debug)]
 pub(crate) struct Inner {
     pub store: Store,
@@ -244,6 +251,7 @@ pub(crate) struct Inner {
     pub geoip: std::sync::OnceLock<Arc<crate::geo::GeoIp>>,
     pub webapp: std::sync::OnceLock<Arc<crate::web::WebApp>>,
     pub idps: std::sync::OnceLock<Arc<crate::idp::RecipientIdps>>,
+    pub signing: std::sync::OnceLock<Arc<SigningProviders>>,
     pub mfa: std::sync::OnceLock<Arc<crate::mfa::MfaKey>>,
     pub pepper: std::sync::OnceLock<Arc<crate::crypto::PasswordPepper>>,
     pub scanner: std::sync::OnceLock<Arc<crate::scan::Scanner>>,
@@ -280,6 +288,7 @@ impl AppState {
             geoip: std::sync::OnceLock::new(),
             webapp: std::sync::OnceLock::new(),
             idps: std::sync::OnceLock::new(),
+            signing: std::sync::OnceLock::new(),
             mfa: std::sync::OnceLock::new(),
             pepper: std::sync::OnceLock::new(),
             scanner: std::sync::OnceLock::new(),
@@ -307,6 +316,25 @@ impl AppState {
     /// is ignored.
     pub fn set_recipient_idps(&self, idps: crate::idp::RecipientIdps) {
         let _ = self.0.idps.set(Arc::new(idps));
+    }
+
+    /// Offer remote-provider signatures (`RSP-01`, ADR-046) from the operator's
+    /// `catalogue`, sealing provider secrets under `key`. Set once; a second call is
+    /// ignored. Without it every provider is unknown (`CS-RSP-0001`).
+    pub fn set_signing_providers(
+        &self,
+        catalogue: casual_sign_csc::Catalogue,
+        key: casual_sign_csc::ProviderSecretsKey,
+    ) {
+        let _ = self
+            .0
+            .signing
+            .set(Arc::new(SigningProviders { catalogue, key }));
+    }
+
+    /// The signing providers, when configured.
+    pub(crate) fn signing(&self) -> Option<Arc<SigningProviders>> {
+        self.0.signing.get().cloned()
     }
 
     /// Let staff enrol a TOTP second factor, its seeds sealed under `key` (ASVS-01).

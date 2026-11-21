@@ -35,6 +35,7 @@ pub const PERSONAL_MEMBERS: &[&str] = &[
     "context.location",
     "data.reason",
     "data.host_claim",
+    "data.certificate.subject_cn",
 ];
 
 /// A personal value (a name, an address, free text a person wrote). Serialized as the
@@ -217,6 +218,114 @@ pub struct DocumentHash {
     pub document_id: Id,
     /// SHA-256 of its bytes.
     pub hash: Hash256,
+}
+
+/// A remote signing provider as an event names it (ADR-046 §3.7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteProvider {
+    /// The catalogue's id.
+    pub id: Id,
+    /// `csc` (ADR-046) or `in_esign` (ADR-047).
+    pub kind: String,
+    /// The name the catalogue shows.
+    pub name: String,
+}
+
+/// One document prepared for a remote signature (ADR-046 §3.7): the hashes the
+/// provider's signature binds.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreparedDocument {
+    /// The document.
+    pub document_id: Id,
+    /// SHA-256 of the bytes before this signature's revisions.
+    pub base_hash: Hash256,
+    /// SHA-256 of the prepared bytes (the revision with its zero placeholder).
+    pub prepared_hash: Hash256,
+    /// The prepared revision's `/ByteRange`.
+    pub byte_range: [u64; 4],
+    /// The digest of the ByteRange: the CMS `message-digest`.
+    pub byte_range_digest: Hash256,
+    /// The digest the provider signs: of the DER signed attributes.
+    pub to_be_signed: Hash256,
+    /// This preparation is the document's lock point (its layout frozen from here).
+    #[serde(default)]
+    pub lock_point: bool,
+}
+
+/// The certificate a remote signature was made with, as found in it and as the provider
+/// stated (ADR-046 §3.7); never interpreted as a legal status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteCertificate {
+    /// SHA-256 of its DER.
+    pub sha256: Hash256,
+    /// The issuer's distinguished name (RFC 4514).
+    pub issuer: String,
+    /// The serial number, hex.
+    pub serial: String,
+    /// Validity start.
+    pub not_before: Timestamp,
+    /// Validity end.
+    pub not_after: Timestamp,
+    /// The subject's common name: personal data (a name, docs/07 §Data).
+    pub subject_cn: Personal<String>,
+    /// The key: `rsa-2048`, `rsa-3072`, `ec-p256`, ...
+    pub key: String,
+    /// The CSC `signatureQualifier` as the provider stated it, when it stated one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qualifier: Option<String>,
+    /// The ETSI EN 319 412-5 statements found in the certificate (`QcCompliance`,
+    /// `QcSSCD`, `QcType`), as found.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub qc_statements: Vec<String>,
+}
+
+/// One document a remote signature was embedded into.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoteSignedDocument {
+    /// The document.
+    pub document_id: Id,
+    /// SHA-256 of the bytes with the signature (and its DSS) embedded.
+    pub revision_hash: Hash256,
+    /// SHA-256 of the CMS written into `/Contents`.
+    pub signature_sha256: Hash256,
+    /// Our signature time-stamp's time (B-T).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_time: Option<Timestamp>,
+}
+
+/// How the certificate's name compares with the recipient's name as sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NameMatch {
+    /// Equal.
+    Exact,
+    /// Equal after case folding and whitespace and diacritic normalization.
+    Normalized,
+    /// Different (recorded; refused only when the account says so).
+    Differs,
+}
+
+/// Why a remote signing session failed (ADR-046 §3.7, §3.12).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum RemoteFailure {
+    /// The signer cancelled at the provider (OAuth `access_denied`) or on our page.
+    Cancelled,
+    /// No answer within the session's time, or an expired authorization.
+    Expired,
+    /// The provider, our TSA or OCSP could not be reached.
+    ProviderUnavailable,
+    /// The provider refused the request itself.
+    ProviderRefused,
+    /// The provider's answer did not hold.
+    ResponseInvalid,
+    /// The signer has no credential the account accepts.
+    NoEligibleCredential,
+    /// The CMS outgrew the planned placeholder.
+    PlaceholderOverflow,
+    /// The envelope was voided, declined or expired.
+    EnvelopeEnded,
 }
 
 /// The events of docs/32 §3, each with its data. Wire form: `"type"` is the dotted name,
@@ -586,6 +695,63 @@ pub enum EventData {
         by: Id,
     },
 
+    // Remote-provider signatures (ADR-046 §3.7; additive to ADR-010 as ADR-027 was) ----
+    /// A remote signer started signing with their provider: their values are frozen.
+    #[serde(rename = "recipient.remote_signing_started")]
+    RecipientRemoteSigningStarted {
+        /// The recipient.
+        recipient_id: Id,
+        /// The session.
+        session: Id,
+        /// The provider.
+        provider: RemoteProvider,
+    },
+    /// The documents were prepared: the hashes the provider's signature will bind.
+    #[serde(rename = "recipient.remote_signing_prepared")]
+    RecipientRemoteSigningPrepared {
+        /// The recipient.
+        recipient_id: Id,
+        /// The session.
+        session: Id,
+        /// Each document prepared.
+        documents: Vec<PreparedDocument>,
+        /// SHA-256 of the signer's certificate, known before signing for CSC.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        certificate_sha256: Option<Hash256>,
+    },
+    /// The provider's signature was checked and embedded into every document.
+    #[serde(rename = "recipient.remote_signed")]
+    RecipientRemoteSigned {
+        /// The recipient.
+        recipient_id: Id,
+        /// The session.
+        session: Id,
+        /// The provider.
+        provider: RemoteProvider,
+        /// The provider's transaction id, where it has one.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_reference: Option<String>,
+        /// The certificate (boxed: the largest member of any event).
+        certificate: Box<RemoteCertificate>,
+        /// The certificate's name against the recipient's.
+        name_match: NameMatch,
+        /// Each document signed.
+        documents: Vec<RemoteSignedDocument>,
+    },
+    /// The session failed; the signer's fields reopen.
+    #[serde(rename = "recipient.remote_signing_failed")]
+    RecipientRemoteSigningFailed {
+        /// The recipient.
+        recipient_id: Id,
+        /// The session.
+        session: Id,
+        /// Why.
+        reason: RemoteFailure,
+        /// The provider's own error code, never its message.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        provider_code: Option<String>,
+    },
+
     // Integration ---------------------------------------------------------------------
     /// An embedding host asserted that it authenticated the signer.
     #[serde(rename = "auth.asserted_by_host")]
@@ -644,6 +810,10 @@ impl EventData {
         "attachment.downloaded",
         "envelope.exported",
         "auth.asserted_by_host",
+        "recipient.remote_signing_started",
+        "recipient.remote_signing_prepared",
+        "recipient.remote_signed",
+        "recipient.remote_signing_failed",
     ];
 }
 
@@ -942,8 +1112,8 @@ mod tests {
         );
         // 40 before ORG-09 added `envelope.transferred` and `envelope.exported` (additive,
         // ADR-027); 43 with ADR-031's `envelope.restored`; 44 with ADR-043's
-        // `recipient.signed_on_paper`.
-        assert_eq!(EventData::TYPES.len(), 44);
+        // `recipient.signed_on_paper`; 48 with ADR-046's four remote-signing types.
+        assert_eq!(EventData::TYPES.len(), 48);
     }
 
     #[test]

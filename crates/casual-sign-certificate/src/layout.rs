@@ -750,6 +750,60 @@ pub(crate) fn plan(
 
 /// The certificate's title: a certificate of completion, or for an envelope that ended
 /// without completing an envelope certificate, which never claims completion (UXW-30).
+/// A remote signature's rows (`RSP-01`), in docs/09 §2a's words: what the provider
+/// and the certificate state, attributed; never a legal level in our voice.
+fn remote_rows(x: &crate::RemoteSignature, o: &CertificateOptions) -> Vec<(String, Value)> {
+    let stated = match &x.qualifier {
+        Some(q) => format!("{q} (as stated by {})", x.provider),
+        None => format!("None stated by {}", x.provider),
+    };
+    let found = if x.qc_statements.is_empty() {
+        "None".to_owned()
+    } else {
+        x.qc_statements.join(", ")
+    };
+    let name = match x.name_match {
+        casual_sign_audit::NameMatch::Exact => "The same as the recipient's",
+        casual_sign_audit::NameMatch::Normalized => {
+            "The same as the recipient's, ignoring case, spacing and accents"
+        }
+        _ => "Not the same as the recipient's",
+    };
+    vec![
+        (
+            "Signature".into(),
+            Value::plain(format!(
+                "Created by {} with the signer's certificate; PAdES {}{}",
+                x.provider,
+                x.level,
+                x.timestamp
+                    .map(|t| format!(", time-stamped {}", datetime(t, o)))
+                    .unwrap_or_default()
+            )),
+        ),
+        (
+            "Certificate".into(),
+            Value::plain(format!("{}, issued by {}", x.subject, x.issuer)),
+        ),
+        ("Serial".into(), Value::hash(x.serial.clone())),
+        (
+            "Valid".into(),
+            Value::plain(format!(
+                "{} to {}",
+                datetime(x.not_before, o),
+                datetime(x.not_after, o)
+            )),
+        ),
+        (
+            "Certificate SHA-256".into(),
+            Value::hash(x.certificate_sha256.hex()),
+        ),
+        ("Signature qualifier".into(), Value::plain(stated)),
+        ("The certificate states".into(), Value::plain(found)),
+        ("Name on the certificate".into(), Value::plain(name)),
+    ]
+}
+
 pub(crate) fn title(input: &CertificateInput<'_>) -> &'static str {
     match (input.ending.is_some(), input.sandbox) {
         (true, false) => "Envelope Certificate (not completed)",
@@ -853,7 +907,7 @@ fn recipient(wr: &mut Writer, r: &crate::input::RecipientRow, o: &CertificateOpt
         Some(c) => format!("Version {} accepted {}", c.version, datetime(c.accepted, o)),
         None => "\u{2014}".to_owned(),
     };
-    let rows: Vec<(String, Value)> = vec![
+    let mut rows: Vec<(String, Value)> = vec![
         ("Email".into(), Value::plain(email(&r.party.email, mask))),
         (
             "Role".into(),
@@ -881,6 +935,9 @@ fn recipient(wr: &mut Writer, r: &crate::input::RecipientRow, o: &CertificateOpt
         (outcome_label.into(), Value::plain(outcome)),
         ("Consent".into(), Value::plain(consent)),
     ];
+    if let Some(x) = &r.remote {
+        rows.extend(remote_rows(x, o));
+    }
     let header_h = line_h(10.0) + 2.0;
     let rows_h: f64 = rows
         .iter()

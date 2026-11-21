@@ -350,6 +350,30 @@ fn capture(
     w: f64,
     h: f64,
 ) -> Result<Drawn, FlattenError> {
+    capture_with(ctx, field, id, w, h, None)
+}
+
+/// A remote signer's widget (ADR-046 §3.2): their adopted mark over two lines, their
+/// name as sent (the capture's `signed_by`) and `note`.
+pub(crate) fn remote_mark(
+    ctx: &mut Ctx<'_>,
+    field: &Field,
+    id: &Id,
+    note: &str,
+    w: f64,
+    h: f64,
+) -> Result<Drawn, FlattenError> {
+    capture_with(ctx, field, id, w, h, Some(note))
+}
+
+fn capture_with(
+    ctx: &mut Ctx<'_>,
+    field: &Field,
+    id: &Id,
+    w: f64,
+    h: f64,
+    note: Option<&str>,
+) -> Result<Drawn, FlattenError> {
     let captures = ctx.captures;
     let cap = captures
         .get(id)
@@ -362,7 +386,12 @@ fn capture(
     let signs = matches!(field.field_type, FieldType::Signature | FieldType::Initials);
     let captioned = ctx.options.signed_by_line && signs;
     let mut caption: Vec<String> = Vec::new();
-    if captioned {
+    if let Some(note) = note {
+        if let Some(name) = &cap.signed_by {
+            caption.push(bounded(field, name)?.to_owned());
+        }
+        caption.push(note.to_owned());
+    } else if captioned {
         let by = match &cap.signed_by {
             Some(name) => format!("Signed by: {}", bounded(field, name)?),
             None => "Signed".to_owned(),
@@ -372,7 +401,10 @@ fn capture(
             caption.push(bounded(field, env)?.to_owned());
         }
     }
-    if signs && let Some(reason) = &cap.reason {
+    if signs
+        && note.is_none()
+        && let Some(reason) = &cap.reason
+    {
         caption.push(format!("Reason: {}", bounded(field, reason)?));
     }
     let band = if caption.is_empty() {

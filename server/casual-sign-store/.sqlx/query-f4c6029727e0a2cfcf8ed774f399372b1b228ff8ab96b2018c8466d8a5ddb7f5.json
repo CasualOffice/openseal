@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_signing_sessions SET status = $3, state_sha256 = $4, pkce_sealed = $5, credential_id = COALESCE($6, credential_id), credentials = COALESCE($7, credentials), prepared = COALESCE($8, prepared) WHERE account_id = $1 AND id = $2 AND closed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Text",
+        "Jsonb",
+        "Jsonb"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f4c6029727e0a2cfcf8ed774f399372b1b228ff8ab96b2018c8466d8a5ddb7f5"
+}

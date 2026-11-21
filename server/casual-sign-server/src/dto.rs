@@ -86,6 +86,12 @@ pub(crate) struct RecipientIn {
     /// before inviting them; the engine bounds it (`CS-WF-0023`).
     #[serde(default)]
     pub route_delay_hours: u16,
+    /// How a signer signs (ADR-046 §3.1): absent or `{"type": "simple"}`, or
+    /// `{"type": "remote", "provider_id": "…"}` naming a provider the account enabled
+    /// (`GET /signing-providers`); checked by the server (`CS-RSP-0001`) and the engine
+    /// (`CS-RSP-0007`).
+    #[serde(default)]
+    pub signature: casual_sign_model::SignatureType,
 }
 
 fn one() -> u32 {
@@ -173,6 +179,7 @@ impl RecipientIn {
             witness_for: None,
             excluded_documents: Vec::new(),
             route_delay_hours: self.route_delay_hours,
+            signature: self.signature.clone(),
         })
     }
 }
@@ -374,6 +381,8 @@ pub(crate) fn recipient(r: &RecipientState) -> Value {
         "time_zone_offset_minutes": s.time_zone_offset_minutes,
         "excluded_documents": s.excluded_documents,
         "route_delay_hours": s.route_delay_hours,
+        "signature": (!s.signature.is_simple()).then_some(&s.signature),
+        "remote_signing": remote_session(r),
         "held_until": r.held_until,
         "status": r.status,
         "completed_at": r.completed_at,
@@ -383,6 +392,14 @@ pub(crate) fn recipient(r: &RecipientState) -> Value {
         "consented": r.consent.is_some(),
         "authenticated": r.auth_satisfied(),
     })
+}
+
+/// A recipient's open remote signing session (ADR-046 §3.4), or null.
+fn remote_session(r: &RecipientState) -> Value {
+    r.remote.as_ref().map_or(
+        Value::Null,
+        |x| json!({"session": x.session, "provider_id": x.provider_id, "prepared": x.prepared}),
+    )
 }
 
 /// A field as the API shows it: the model's wire form.

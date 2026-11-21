@@ -8,7 +8,8 @@ Writes the hostile controls `valid.pdf` and `valid_xrefstream.pdf` (from
 `cargo run -p casual-sign-seal --example gen_sealed`, which normalizes them, seals the
 matrix (P-256 and RSA-3072; B-B, B-T, B-LT, B-LTA; approval and certification P1-P3;
 two signatures; visible and invisible; an existing form field; an augmentation and a
-renewal) and checks every output with our verifier. The PKI, TSA and OCSP responder are
+renewal; remote-provider signatures over a materialized form, RSP-01, with a tampered
+copy whose `expect` is `tampered`) and checks every output with our verifier. The PKI, TSA and OCSP responder are
 in-process and thrown away; no private key is written. Only the root certificate is kept.
 
 manifest.tsv columns: file, expect (intact), why, level (B-B | B-T | B-LT | B-LTA: what EU

@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO account_signing_providers (account_id, provider_id, enabled, required_qualifiers, refuse_name_mismatch, session_minutes, client_secret_sealed, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $8, $9) ON CONFLICT (account_id, provider_id) DO UPDATE SET enabled = $3, required_qualifiers = $4, refuse_name_mismatch = $5, session_minutes = $6, client_secret_sealed = CASE WHEN $7 THEN $8 ELSE account_signing_providers.client_secret_sealed END, updated_at = $9",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Text",
+        "Bool",
+        "TextArray",
+        "Bool",
+        "Int4",
+        "Bool",
+        "Bytea",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "13b1a1643c186103f975c34dfc006b034b5650d9ba6b96bf696666425f2a9066"
+}

@@ -23,7 +23,7 @@ import { button, busy, toast, toastError, openDialog, confirmDialog, noServerSta
 import { register, run } from "./commands.js";
 import { openPdf } from "./pdfview.js";
 import { fromWire } from "./geometry.js";
-import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, IMAGED, BUTTONS, isHidden, effectiveValue, computedOf, safeHref, dateFormatOf, DATE_PATTERNS, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments, actedAs, SSO_KEY, ssoReturn } from "./signfields.js";
+import { fills, isFilled, isFixed, checkText, fixedText, inputModeFor, TYPED, CHOSEN, IMAGED, BUTTONS, isHidden, effectiveValue, computedOf, safeHref, dateFormatOf, DATE_PATTERNS, guideState, ringDash, loaderSteps, pageCounts, pageTotal, filledKinds, firstName, nameParts, orgMark, askLine, dateField, phoneSegments, actedAs, SSO_KEY, ssoReturn, RSP_KEY, rspReturn } from "./signfields.js";
 import { adoptDialog, imageDialog } from "./signature.js";
 import { enlargeFor } from "./zoom.js";
 import { docView, zoomControls, thumbnails, clampScale, remPx } from "./docview.js";
@@ -60,7 +60,9 @@ export function tokenFrom(loc) {
 let session = null;
 try { session = window.sessionStorage; } catch { session = null; }
 const ssoBack = ssoReturn(location, session);
-const token = ssoBack ? ssoBack.token : tokenFrom(location);
+// Back from a remote signing provider (RSP-01; signfields.js `rspReturn`).
+const rspBack = ssoBack ? null : rspReturn(location, session);
+const token = ssoBack ? ssoBack.token : rspBack ? rspBack.token : tokenFrom(location);
 const main = document.getElementById("main");
 const guide = document.getElementById("guide");
 const subjectEl = document.getElementById("subject");
@@ -271,8 +273,24 @@ async function start() {
       }
     }
   }
+  // RSP-01: back from the remote signing provider, or reopened while a session is open.
+  if (rspBack) {
+    try { window.history.replaceState(null, "", `/s/${encodeURIComponent(token)}`); } catch { /* kept */ }
+    loader.reach(1);
+    fillHeader();
+    try {
+      view = await api.ceremony.remoteCallback(token, rspBack.state, rspBack.code, rspBack.error);
+    } catch (err) { return remoteFailed(err); }
+    return remoteProgress();
+  }
   loader.reach(1);
   fillHeader();
+  // A remote signer reopening the link while their session is open sees where it is.
+  if (view.recipient?.signature?.type === "remote" && view.recipient?.status !== "completed" && !(view.auth_required || []).length) {
+    let s = null;
+    try { s = (await api.ceremony.remoteStatus(token)).remote_signing; } catch { s = null; }
+    if (s && OPEN_REMOTE.has(s.status)) return remoteProgress(true);
+  }
   if (ssoFailed && (view.auth_required || []).includes("sso")) {
     buildMenu("auth");
     moreBtn.hidden = false;
@@ -1782,10 +1800,18 @@ function review() {
   const rtype = view.recipient?.type;
   const names = Array.isArray(view.later_recipients) ? laterForm(view.later_recipients, SETS_AUTH.has(rtype)) : null;
   const back = button(t("sign.review.back"), { icon: "chevron-left", size: "lg" });
-  const goLabel = t(rtype === "approver" ? "sign.approve" : "sign.finish");
+  // RSP-01: a remote signer signs at their provider, not with Finish.
+  const remote = view.recipient?.signature?.type === "remote";
+  const goLabel = remote ? t("sign.remote.start", { provider: view.remote_provider_name || t("sign.remote.provider") }) : t(rtype === "approver" ? "sign.approve" : "sign.finish");
   const go = button(goLabel, { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish" } });
   back.addEventListener("click", () => documents());
   go.addEventListener("click", async () => {
+    if (remote) {
+      try {
+        const r = await busy(go, () => api.ceremony.remoteStart(token, location_));
+        return toProvider(r);
+      } catch (err) { return toastError(err); }
+    }
     try {
       view = await busy(go, async () => {
         if (rtype === "approver") return api.ceremony.approve(token, location_);
@@ -1920,6 +1946,67 @@ function everyoneSigned(status) {
 /// has just finished), "Signed. Thank you, <name>.", what happens next, when they signed
 /// and what they filled, the Verify page, and a copy. The document's fingerprint is
 /// shown only when the view carries one; today's view does not, so it is not shown.
+/// RSP-01: a session's steps while it is open (the store's `remote_signing_sessions.status`).
+const OPEN_REMOTE = new Set(["authorizing_service", "preparing", "choosing", "prepared", "authorizing_credential", "signing"]);
+
+/// RSP-01: send the browser to the provider (top-level, never in a frame), keeping the
+/// link in this tab for the return.
+function toProvider(r) {
+  const url = r?.remote_authorization_url;
+  if (!url) return remoteFailed(null);
+  try { session?.setItem(RSP_KEY, token); } catch { /* the return then cannot find the link */ }
+  window.location.assign(url);
+}
+
+/// RSP-01: a session that did not hold, with why and a way to start again.
+function remoteFailed(err) {
+  const why = err ? errorMessage(err) : t("sign.remote.failed.text");
+  message({ kind: "error", title: t("sign.remote.failed.title"), text: why, action: button(t("sign.remote.retry"), { icon: "refresh-cw", variant: "primary", size: "lg", onClick: () => { window.location.replace(`/s/${encodeURIComponent(token)}`); } }), testId: "remote-failed" });
+}
+
+/// RSP-01: the session while the provider and the worker work, polled; once the
+/// documents are prepared, the signer authorizes them at the provider; once embedded,
+/// the signer is done.
+async function remoteProgress(reopened = false) {
+  loader.hide();
+  guide.hidden = true;
+  setTools(false);
+  const status = h("p", { class: "os-muted", attrs: { role: "status", "aria-live": "polite", "data-testid": "remote-status" }, text: t("sign.remote.working") });
+  screen(stateCard({ mark: stateMark("shield-check"), title: t("sign.remote.title"), children: [status], testId: "remote-progress" }));
+  for (let i = 0; i < 180; i++) {
+    let now;
+    try { now = await api.ceremony.remoteStatus(token); } catch (err) { return remoteFailed(err); }
+    view = now;
+    const s = now.remote_signing || {};
+    if (now.recipient?.status === "completed") return done(everyoneSigned(now.envelope?.status), true);
+    if (s.status === "failed") return remoteFailed(null);
+    // Left at the provider (reopened before coming back): stop that session to start again.
+    if (reopened && (s.status === "authorizing_service" || s.status === "authorizing_credential")) {
+      const cancel = button(t("sign.remote.restart"), { variant: "primary", size: "lg", attrs: { "data-testid": "remote-cancel" } });
+      cancel.addEventListener("click", async () => {
+        try { await busy(cancel, () => api.ceremony.remoteCancel(token)); window.location.replace(`/s/${encodeURIComponent(token)}`); } catch (err) { toastError(err); }
+      });
+      screen(stateCard({ mark: stateMark("shield-check"), title: t("sign.remote.left.title"), text: t("sign.remote.left.text", { provider: s.provider || t("sign.remote.provider") }), actions: [cancel], testId: "remote-left" }));
+      return;
+    }
+    if (s.status === "prepared") {
+      const go = button(t("sign.remote.authorize", { provider: s.provider || t("sign.remote.provider") }), { icon: "pen-line", variant: "primary", size: "lg", attrs: { "data-testid": "remote-authorize" } });
+      const cancel = button(t("sign.remote.cancel"), { size: "lg", attrs: { "data-testid": "remote-cancel" } });
+      go.addEventListener("click", async () => {
+        try { toProvider(await busy(go, () => api.ceremony.remoteAuthorize(token))); } catch (err) { toastError(err); }
+      });
+      cancel.addEventListener("click", async () => {
+        try { await busy(cancel, () => api.ceremony.remoteCancel(token)); window.location.replace(`/s/${encodeURIComponent(token)}`); } catch (err) { toastError(err); }
+      });
+      const n = (s.documents || []).length;
+      screen(stateCard({ mark: stateMark("file-check"), title: t("sign.remote.ready.title"), text: t("sign.remote.ready.text", { n, provider: s.provider || t("sign.remote.provider") }), actions: [go, cancel], testId: "remote-ready" }));
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return remoteFailed(null);
+}
+
 function done(everyone, celebrate = false) {
   loader.hide();
   channel.end("completed", { envelope_id: view?.envelope?.id, recipient_id: view?.recipient?.id });

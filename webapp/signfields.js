@@ -389,3 +389,21 @@ export function ssoReturn(loc, storage) {
   if (!saved) return null;
   return { token: saved, state: q.get("state"), code: q.get("code") || "" };
 }
+
+/// Where the signing page keeps the link while the signer is at their remote signing
+/// provider (RSP-01): the provider sends the browser back to `/s/rsp`, which cannot
+/// carry the link.
+export const RSP_KEY = "openseal.sign.rsp";
+
+/// The return from a remote signing provider: `{token, state, code, error}` when `loc`
+/// is `/s/rsp` with `state` in the query and this tab started a session (the link in
+/// `storage`); `null` otherwise. Takes the link out of `storage`.
+export function rspReturn(loc, storage) {
+  if (!/^\/s\/rsp\/?$/.test(loc.pathname)) return null;
+  const q = new URLSearchParams(loc.search);
+  if (!q.get("state")) return null;
+  let saved = null;
+  try { saved = storage?.getItem(RSP_KEY) || null; storage?.removeItem(RSP_KEY); } catch { saved = null; }
+  if (!saved) return null;
+  return { token: saved, state: q.get("state"), code: q.get("code") || null, error: q.get("error") || null };
+}

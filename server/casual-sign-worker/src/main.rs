@@ -25,6 +25,7 @@
 //! | `OPENSEAL_MODELD_CLIENT_CERT`, `OPENSEAL_MODELD_CLIENT_KEY` | This worker's client certificate chain and key for the model service (PEM paths) |
 //! | `OPENSEAL_WORKER_DEV_KEY`, `OPENSEAL_WORKER_DEV_CHAIN` | Instead of keyd: a PEM key and its chain, development only, needs `OPENSEAL_DEV_INSECURE_KEY=1` |
 //! | `OPENSEAL_WEBHOOK_ALLOW` | Non-public ranges webhooks may reach anyway, comma-separated CIDRs (default none) |
+//! | `OPENSEAL_SIGNING_PROVIDERS_FILE`, `OPENSEAL_PROVIDER_SECRETS_KEY` | Remote-provider signatures (`RSP-01`, docs/65): the operator's provider catalogue and the key that opens provider secrets; the provider's requests pass `OPENSEAL_WEBHOOK_ALLOW`'s address policy (HTTP only to a loopback host) |
 //! | `OPENSEAL_WEBHOOK_EXTRA_ROOTS` | PEM file of CAs webhook receivers may chain to besides the platform's roots (a private CA) |
 //! | `OPENSEAL_SEAL_NAME`, `OPENSEAL_SEAL_REASON` | The seal's `/Name` and `/Reason` |
 //! | `OPENSEAL_LOG_PSEUDONYM_KEY` or `OPENSEAL_LOG_PSEUDONYM_KEY_FILE` | 32 bytes as base64: keys the pseudonyms in security events (ASVS-08, docs/65 §Logs); none: a key per process; malformed: the worker does not start (`CS-LOG-0001`) |
@@ -416,6 +417,8 @@ async fn serve<B: BlobStore + 'static>(
             })?);
         }
     }
+    let policy_for_providers = policy.clone();
+    let base_url = config.base_url.clone();
     let worker = Worker::new(
         store,
         blobs,
@@ -443,6 +446,35 @@ async fn serve<B: BlobStore + 'static>(
             )?))
         }
         None => worker,
+    };
+    // Remote-provider signatures (RSP-01, ADR-046): the operator's catalogue and the key
+    // that opens provider secrets; provider requests pass the webhook address policy.
+    let worker = match casual_sign_csc::Catalogue::from_env(&base_url) {
+        Ok(c) if c.is_empty() => worker,
+        Ok(c) => match casual_sign_csc::ProviderSecretsKey::from_env() {
+            Ok(Some(k)) => worker.with_remote_signing(Arc::new(
+                casual_sign_worker::worker::rsp::RemoteSigning {
+                    catalogue: Arc::new(c),
+                    key: Arc::new(k),
+                    policy: policy_for_providers,
+                },
+            )),
+            Ok(None) => {
+                return Err(WorkerError::Config {
+                    setting: "OPENSEAL_PROVIDER_SECRETS_KEY",
+                });
+            }
+            Err(_) => {
+                return Err(WorkerError::Config {
+                    setting: "OPENSEAL_PROVIDER_SECRETS_KEY",
+                });
+            }
+        },
+        Err(_) => {
+            return Err(WorkerError::Config {
+                setting: "OPENSEAL_SIGNING_PROVIDERS_FILE",
+            });
+        }
     };
     // Where anchors are published (FG-158): a file the operator publishes.
     let worker = match var("OPENSEAL_ANCHOR_LOG") {

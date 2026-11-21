@@ -86,12 +86,26 @@ created ──(routing reaches me)──▶ sent ──open──▶ delivered �
 - **Envelope id stamp (`FG-009`, ADR-045).** `signing_options.stamp_envelope_id` is set while a draft only: a
   correction that turns it on or off is `CS-WF-0001`, since a signer may have seen the pages already. `envelope.sent`
   records it (`envelope_id_stamped`).
-- **Remote-provider signatures (designed, ADR-046 and ADR-047 Accepted, owner instruction 82; `RSP-01`, `RSP-02`).** A `signer` with a
+- **Remote-provider signatures (ADR-046 and ADR-047 Accepted; `RSP-01` in progress, `RSP-02` not built).** A `signer` with a
   `remote` signature type ends their turn through `BeginRemoteSigning` (values frozen, a sub-state `signing_remotely`)
   and the provider's answer (`recipient.remote_signed`, then `recipient.signed` and `recipient.completed` as today), or a
   failed session that reopens their fields. Two remote signers never share a routing order (`CS-RSP-0007` at send); one
   remote session is open per envelope at a time; after a document's first remote signature its fields, documents and
   stamp cannot change (`CS-RSP-0007`), while recipients' contact details and authentication, void and decline still can.
+  **As built (`RSP-01`, engine):** commands `BeginRemoteSigning` (the recipient: turn, authentication, consent and
+  adopted mark as for a finish; their values set, auto-filled and checked, then frozen: `CompleteField` is
+  `CS-RSP-0007` `ValuesFrozen`; a plain `Finish` by a remote signer is `FinishThroughProvider`; a second open
+  session `SessionOpen`), `RemoteSigningPrepared` and `CompleteRemoteSigning` (the platform only, `CS-WF-0003`
+  otherwise; the engine marks each document's lock point and adds it to `locked_documents`), `FailRemoteSigning` (the
+  recipient or the platform; fields reopen, `remote_failures` counts). A session that is not the recipient's open one
+  is `CS-RSP-0003`. Voiding, declining or expiring closes an open session `envelope_ended`, so a late answer finds
+  nothing. `crates/casual-sign-workflow/tests/remote.rs`, `tests/remote_session.rs` (each rule seen red with its
+  check removed). The `recipient.remote_signed` event's actor is the platform (the worker embeds the signature), the
+  signer named by `recipient_id`.
+  **As built (`RSP-01`, hosts):** the server's ceremony runs `BeginRemoteSigning` at `POST /s/{token}/remote-signing`
+  and `FailRemoteSigning` at a refusal at the provider, a cancel and a session found past its time (`expired`); the
+  worker's `remote_signing` job runs `RemoteSigningPrepared`, `CompleteRemoteSigning` and, on any failure,
+  `FailRemoteSigning` with its reason (docs/40 §6, `casual-sign-server` `tests/ceremony_rsp.rs`).
 - **Signer location (GEO-01).** When the envelope's `signing_options.capture_location` is on, the signing page asks the
   signer for their device's location; every recipient action (`recipient.delivered`, `recipient.viewed_document`,
   `recipient.signed`, `recipient.approved`, `recipient.declined`) then carries a location in its context

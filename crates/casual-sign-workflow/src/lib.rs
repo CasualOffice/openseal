@@ -28,6 +28,7 @@ mod date;
 mod effect;
 mod engine;
 mod error;
+mod remote;
 mod state;
 mod validate;
 
@@ -39,8 +40,8 @@ pub use effect::{
     Alert, Effect, EffectId, EffectKind, InvitationKind, Notice, Timer, WebhookTopic,
 };
 pub use engine::{canonical_hash, decide};
-pub use error::{ObjectKind, Problem, SealFault, Violation, WorkflowError};
+pub use error::{ObjectKind, Problem, RemoteRule, SealFault, Violation, WorkflowError};
 pub use state::{
     Bookkeeping, ConsentRecord, DocumentSpec, DocumentState, EnvelopeState, Fields, RecipientSpec,
-    RecipientState, ScheduledTimer,
+    RecipientState, RemoteSession, ScheduledTimer,
 };

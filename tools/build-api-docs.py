@@ -95,6 +95,9 @@ GROUPS = {
                             "What members may do: the built-in profiles and custom ones, as actions of the catalogue."),
     "account": ("Account settings", "Administration", "The workspace's settings: sending, signing, security, "
                                                      "branding defaults and document analysis."),
+    "signing-providers": ("Signing providers", "Administration",
+                          "The remote signing providers the operator offers the workspace (RSP-01): which are "
+                          "enabled, and their options."),
     "ersd": ("Electronic disclosure", "Administration",
              "Versions of the electronic records and signature disclosure recipients consent to."),
     "retention": ("Retention and legal hold", "Administration",
@@ -143,6 +146,7 @@ def group_of(path: str) -> str:
             "retention": "retention", "api-clients": "api-clients", "contacts": "contacts", "templates": "templates",
             "folders": "folders", "bulk-sends": "bulk-sends", "groups": "groups",
             "permission-profiles": "permission-profiles", "webhooks": "webhooks", "conversions": "conversions",
+            "signing-providers": "signing-providers",
             "reports": "reports", "insights": "insights"}.get(seg, "")
 
 

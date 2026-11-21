@@ -574,6 +574,66 @@ components:
         excluded_documents: {type: array, items: {type: string}, description: 'Documents hidden from this recipient (WF-02): never listed or served to them'}
         route_delay_hours: {type: integer, minimum: 0, maximum: 720, description: 'Delayed routing (WF-02): hours routing waits, once this recipient''s turn comes, before inviting them'}
         held_until: {type: [string, 'null'], format: date-time, description: 'Delayed routing (WF-02): their turn came and they are invited at this time; until then their link does not open (`409 CS-WF-0007`)'}
+        signature:
+          oneOf: [{$ref: '#/components/schemas/SignatureType'}, {type: 'null'}]
+          description: 'How they sign (ADR-046): `null` for a simple signature'
+        remote_signing:
+          type: [object, 'null']
+          description: 'Their open remote signing session (ADR-046 §3.4), if any'
+          properties:
+            session: {type: string}
+            provider_id: {type: string}
+            prepared: {type: boolean}
+    SignatureType:
+      type: object
+      required: [type]
+      additionalProperties: false
+      description: >-
+        How a signer signs (ADR-046 §3.1, `RSP-01`). Absent or `{"type": "simple"}`: an adopted mark under the
+        platform seal. `{"type": "remote", "provider_id": "…"}`: the signer signs with their own certificate at a
+        provider the account enabled (`GET /signing-providers`); only for a `signer`, and two remote signers never
+        share a routing order (`422 CS-RSP-0007`). A provider not in the operator's catalogue, not offered to the
+        account or not enabled is `422 CS-RSP-0001`; changing the type while the recipient's session is open is
+        `409 CS-RSP-0007`.
+      properties:
+        type: {type: string, enum: [simple, remote]}
+        provider_id: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,31}$'}
+    SigningProvider:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [csc]}
+        enabled: {type: boolean}
+    SigningProviderList:
+      type: object
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/SigningProvider'}}
+    SigningProviderSettings:
+      type: object
+      properties:
+        id: {type: string}
+        name: {type: string}
+        kind: {type: string, enum: [csc]}
+        enabled: {type: boolean}
+        required_qualifiers: {type: array, items: {type: string}, description: 'signatureQualifier values one of which a credential must state, as the provider states them'}
+        refuse_name_mismatch: {type: boolean, description: 'A certificate name that differs from the recipient name refuses the signature (default: recorded)'}
+        session_minutes: {type: integer, minimum: 5, maximum: 60}
+        own_client_secret: {type: boolean, description: 'The account set its own OAuth client secret (never returned)'}
+    SigningProviderIn:
+      type: object
+      required: [enabled]
+      additionalProperties: false
+      properties:
+        enabled: {type: boolean}
+        required_qualifiers: {type: array, maxItems: 8, items: {type: string, pattern: '^[a-z0-9_-]{1,64}$'}}
+        refuse_name_mismatch: {type: boolean}
+        session_minutes: {type: integer, minimum: 5, maximum: 60}
+        client_secret:
+          type: [string, 'null']
+          writeOnly: true
+          maxLength: 2048
+          description: 'The account''s own OAuth client secret for this provider: stored sealed with AES-256-GCM, never returned; `null` removes it'
     RecipientList:
       type: object
       properties:
@@ -600,6 +660,7 @@ components:
           items: {oneOf: [{type: string}, {type: integer, minimum: 0}]}
           description: "Documents hidden from this recipient (WF-02): document ids, or in a create the index of a document of the same request. A recipient sees at least one document (`422 CS-WF-0004`), never a field on a hidden one (`422 CS-WF-0021`)."
         route_delay_hours: {type: integer, minimum: 0, maximum: 65535, default: 0, description: "Delayed routing (WF-02): hours routing waits, once this recipient's turn comes, before inviting them. At most 720 at send (`422 CS-WF-0023`); not on a carbon copy (`422 CS-WF-0004`)."}
+        signature: {$ref: '#/components/schemas/SignatureType'}
     RecipientCreate:
       oneOf:
         - $ref: '#/components/schemas/RecipientIn'
@@ -625,6 +686,7 @@ components:
           description: "A new access code, stored only as Argon2id. Needed when `auth` gains `access_code`; refused when the resulting `auth` lacks it. Removing `access_code` from `auth` deletes the stored code. Draft or correcting envelopes only."
         excluded_documents: {type: array, items: {type: string}, description: 'Document ids hidden from this recipient (WF-02); `[]` shows every document'}
         route_delay_hours: {type: integer, minimum: 0, maximum: 65535, description: 'Delayed routing (WF-02): hours to wait once their turn comes; `0` invites at once'}
+        signature: {$ref: '#/components/schemas/SignatureType'}
     Field:
       type: object
       description: The model's field (docs/22 §6); `placement` in displayed page points, origin top-left.
@@ -1446,6 +1508,9 @@ components:
               id: {type: string}
               name: {type: string}
         sso_authorization_url: {type: string, description: 'After `POST /s/{token}/sso`: where the page sends the browser to sign in (RAUTH-01)'}
+        remote_provider_name: {type: string, description: 'RSP-01: a remote signer''s provider, by its catalogue name, for "Sign with <provider>"'}
+        remote_authorization_url: {type: string, description: 'RSP-01: after `POST /s/{token}/remote-signing` or `…/authorize`: where the page sends the browser, top level, to the provider (scope `service`, then `credential`)'}
+        remote_signing: {$ref: '#/components/schemas/RemoteSigningState'}
         sender:
           type: object
           description: Who sent the envelope, so the recipient can judge whether the request is genuine (UXW-34).
@@ -1518,6 +1583,48 @@ components:
       required: [provider]
       properties:
         provider: {type: string, pattern: '^[a-z0-9-]{1,32}$'}
+    RemoteSigningState:
+      description: >-
+        RSP-01: the recipient's latest remote signing session, or null. `status` is
+        `authorizing_service`, `preparing`, `choosing`, `prepared`, `authorizing_credential`,
+        `signing`, `completed` or `failed`; `failure` the reason a failed one ended
+        (`cancelled`, `expired`, `provider_unavailable`, `provider_refused`,
+        `no_eligible_credential`, `response_invalid`, `placeholder_overflow`, ...);
+        `documents` the documents prepared for signing (their exact bytes at
+        `GET /s/{token}/remote-signing/documents/{id}`).
+      type: [object, 'null']
+      properties:
+        session: {type: string}
+        status: {type: string}
+        failure: {type: [string, 'null']}
+        provider: {type: [string, 'null']}
+        documents: {type: array, items: {type: string}}
+    RemoteStartRequest:
+      description: RSP-01. Values given with the start, as at finish; usually none (each was saved as filled).
+      type: object
+      additionalProperties: false
+      properties:
+        values:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, value]
+            properties:
+              field: {type: string}
+              value: {type: object}
+        location: {$ref: '#/components/schemas/DeviceLocation'}
+    RemoteCallbackRequest:
+      description: >-
+        RSP-01: what the provider sent the browser back with (to the provider's redirect
+        URI, `{OPENSEAL_PUBLIC_URL}/s/rsp`): `state` and either `code` or `error`.
+      type: object
+      additionalProperties: false
+      required: [state]
+      properties:
+        state: {type: string, maxLength: 256}
+        code: {type: string, maxLength: 900}
+        error: {type: string, maxLength: 256}
     SsoVerifyRequest:
       description: What the identity provider sent the browser back with (RAUTH-01).
       type: object
@@ -5304,6 +5411,61 @@ paths:
       responses:
         '204': {description: Deleted}
         default: {$ref: '#/components/responses/Problem'}
+  /api/v1/signing-providers:
+    get:
+      operationId: listSigningProviders
+      summary: "Signing providers the operator offers this account (RSP-01, ADR-046)"
+      description: >-
+        The providers of the operator's catalogue offered to this account, each with whether the account
+        enabled it. A sender may name an enabled one as a signer's `signature.provider_id`.
+      x-permission: "envelopes.write"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningProviderList'}
+        default: {$ref: '#/components/responses/Problem'}
+  /api/v1/signing-providers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: The catalogue's provider id
+        schema: {type: string}
+    get:
+      operationId: getSigningProvider
+      summary: "A provider's settings for this account (404 when not offered)"
+      x-permission: "settings.signing"
+      x-level: workspace
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningProviderSettings'}
+        default: {$ref: '#/components/responses/Problem'}
+    put:
+      operationId: putSigningProvider
+      summary: "Enable or disable a provider and set its options"
+      description: >-
+        Each change is a `workspace.signing_provider_changed` admin event; an own client secret is recorded only as
+        `rotated` or `removed`.
+      x-permission: "settings.signing"
+      x-level: workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/SigningProviderIn'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/SigningProviderSettings'}
+        default: {$ref: '#/components/responses/Problem'}
   /api/v1/webhooks:
     get:
       operationId: listWebhooks
@@ -5667,6 +5829,164 @@ paths:
           content:
             application/json:
               schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/remote-signing:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    get:
+      operationId: ceremonyRemoteSigningStatus
+      summary: "The recipient's remote signing session"
+      description: >-
+        RSP-01 (ADR-046): the view with `remote_signing`, the recipient's latest session
+        (null when none). A session open past its time is failed `expired` first. The
+        signing page polls it while the worker prepares and signs.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: The view with `remote_signing`
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+    post:
+      operationId: ceremonyRemoteSigningStart
+      summary: "Start signing with the recipient's remote signing provider"
+      description: >-
+        RSP-01 (ADR-046 §3.4): for a signer whose signature type is `remote`, once every
+        required field has its value. Records `recipient.remote_signing_started` (values
+        frozen while the session is open), opens a session with a new `state` (kept only
+        as SHA-256) and a PKCE S256 verifier (sealed under the provider secrets key), and
+        answers the view with `remote_authorization_url`, the provider's authorization
+        endpoint with scope `service`. The session ends after the provider's
+        `session_minutes` (15 by default). `409 CS-RSP-0007` for a recipient who is not a
+        remote signer or while another remote session is open in the envelope;
+        `409 CS-RSP-0001` when the provider is no longer offered or enabled;
+        `CS-API-0003` past 5 a minute per link.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteStartRequest'}
+      responses:
+        '200':
+          description: Started; send the browser to `remote_authorization_url`
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/remote-signing/callback:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyRemoteSigningCallback
+      summary: "The provider's answer, brought back by the signing page"
+      description: >-
+        RSP-01: the `state` must be the open session's, for the step it was sent for
+        (`authorizing_service` or `authorizing_credential`), within its time; it is spent
+        once. The code is sealed with the PKCE verifier for the worker, which is queued
+        (`remote_signing`: prepare after the first, sign after the second). An `error`
+        fails the session (`access_denied`: `cancelled`; otherwise `provider_refused`).
+        Anything else is `409 CS-RSP-0003` and nothing is kept.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/RemoteCallbackRequest'}
+      responses:
+        '200':
+          description: Taken; the view with `remote_signing`
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/remote-signing/authorize:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyRemoteSigningAuthorize
+      summary: "Authorize the prepared documents at the provider"
+      description: >-
+        RSP-01: once the session is `prepared`, a new `state` and PKCE verifier and the
+        view with `remote_authorization_url`, scope `credential`, binding the chosen
+        credential, the number of signatures and the exact hashes to be signed (SCAL2).
+        `409 CS-RSP-0003` in any other step.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: Send the browser to `remote_authorization_url`
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/remote-signing/cancel:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    post:
+      operationId: ceremonyRemoteSigningCancel
+      summary: "Stop the open remote signing session"
+      description: >-
+        RSP-01: fails the open session `cancelled` (`recipient.remote_signing_failed`);
+        the recipient's values are free again and they may start again. Nothing is ever
+        signed another way. `409 CS-RSP-0003` when no session is open.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: Cancelled; the view with `remote_signing`
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CeremonyView'}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/remote-signing/documents/{id}:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+      - name: id
+        in: path
+        required: true
+        description: Document id
+        schema: {type: string}
+    get:
+      operationId: ceremonyRemoteSigningDocument
+      summary: "A prepared document's exact bytes"
+      description: >-
+        RSP-01 (ADR-046 §3.3): while the session is open and prepared, the exact bytes
+        whose hash the signer authorizes (the document with the signature slot, before the
+        signature is embedded). `409 CS-RSP-0003` with no open session; `404` for a
+        document not prepared.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: The prepared PDF
+          content:
+            application/pdf:
+              schema: {type: string, format: binary}
         default: {$ref: '#/components/responses/Problem'}
   /s/{token}/sso:
     parameters:

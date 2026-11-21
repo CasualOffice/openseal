@@ -135,7 +135,7 @@ export function fieldWire(f) {
 /// the same create.
 export function recipientWire(r) {
   const out = { type: r.type || "signer", name: r.name, email: r.email || "" };
-  for (const k of ["ref", "phone", "routing_order", "delivery", "auth", "access_code", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "route_delay_hours", "excluded_documents"]) {
+  for (const k of ["ref", "phone", "routing_order", "delivery", "auth", "access_code", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "route_delay_hours", "excluded_documents", "signature"]) {
     if (!blank(r[k])) out[k] = r[k];
   }
   return out;
@@ -143,7 +143,7 @@ export function recipientWire(r) {
 
 const newId = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : null);
 const instantOf = (d) => (d instanceof Date ? d.toISOString() : d);
-const RECIPIENT_SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for", "excluded_documents", "route_delay_hours"];
+const RECIPIENT_SPEC = ["id", "type", "routing_order", "name", "email", "phone", "delivery", "auth", "embedded_client_user_id", "time_zone_offset_minutes", "date_format", "witness_for", "excluded_documents", "route_delay_hours", "signature"];
 
 /// The engine's `RecipientSpec` from a recipient as the API shows it (or a new one): only
 /// the members it has, since it refuses any other (no `status`, no `access_code`; an
@@ -608,6 +608,14 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       cancel: (id) => data(request("POST", `/api/v1/bulk-sends/${encodeURIComponent(id)}/cancel`)),
     },
 
+    // ---- Signing providers (RSP-01, ADR-046) ------------------------------------
+    /// `{items: [{id, name, kind, enabled}]}`: the operator's providers offered to the
+    /// account; a signer may be given an enabled one (`signature.provider_id`).
+    listSigningProviders: () => data(request("GET", "/api/v1/signing-providers")),
+    /// One provider's options for the account (`admin:account`).
+    getSigningProvider: (id) => data(request("GET", `/api/v1/signing-providers/${encodeURIComponent(id)}`)),
+    /// `{enabled, required_qualifiers?, refuse_name_mismatch?, session_minutes?, client_secret?}`.
+    putSigningProvider: (id, body) => data(request("PUT", `/api/v1/signing-providers/${encodeURIComponent(id)}`, { body })),
     // ---- Webhooks (docs/40 §4; scope webhooks:manage) ---------------------------
     /// `{items: [{id, envelope_id, url, event_types, secret_refs, active}]}`.
     listWebhooks: () => data(request("GET", "/api/v1/webhooks")),
@@ -845,6 +853,14 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// Remove this recipient's value from a field before finishing (`NOT_ON_SERVER.clearField`).
       clearField: unbuilt("clearField", (token, field) => data(request("DELETE", `${S(token)}/fields/${encodeURIComponent(field)}`, { ceremony: true }))),
       open: (token) => data(request("POST", `${S(token)}/session`, { body: {}, ceremony: true })),
+      /// RSP-01: start signing with the recipient's remote provider (the view with
+      /// `remote_authorization_url`), the provider's return, the session's state, the
+      /// prepared documents' authorization, and cancel.
+      remoteStart: (token, location) => data(request("POST", `${S(token)}/remote-signing`, { body: withLocation({}, location), ceremony: true })),
+      remoteCallback: (token, state, code, error) => data(request("POST", `${S(token)}/remote-signing/callback`, { body: error ? { state, error } : { state, code }, ceremony: true })),
+      remoteStatus: (token) => data(request("GET", `${S(token)}/remote-signing`, { ceremony: true })),
+      remoteAuthorize: (token) => data(request("POST", `${S(token)}/remote-signing/authorize`, { body: {}, ceremony: true })),
+      remoteCancel: (token) => data(request("POST", `${S(token)}/remote-signing/cancel`, { body: {}, ceremony: true })),
       consent: (token, ersdVersion, location) =>
         data(request("POST", `${S(token)}/consent`, { body: withLocation({ ersd_version: ersdVersion }, location), ceremony: true })),
       authenticate: (token, method, code) =>

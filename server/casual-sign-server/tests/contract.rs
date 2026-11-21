@@ -965,6 +965,57 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
     )
     .await;
 
+    // Signing providers (RSP-01): the operator's catalogue offers one; the account
+    // enables it.
+    api.st.set_signing_providers(
+        casual_sign_csc::Catalogue::parse(
+            json!({"providers": [{"id": "csc-ci", "kind": "csc", "name": "CI provider",
+                "base_uri": "https://csc.example.test/csc/v2",
+                "authorization_endpoint": "https://csc.example.test/oauth2/authorize",
+                "token_endpoint": "https://csc.example.test/oauth2/token",
+                "client_id": "openseal", "client_secret_ref": "CSC_SECRET",
+                "trust_anchors_file": "/anchors.pem", "accounts": ["*"]}]})
+            .to_string()
+            .as_bytes(),
+            "https://sign.example.test",
+            &|_| {
+                Ok(Some(casual_sign_secrets::Secret::new(
+                    "operator".to_owned(),
+                )))
+            },
+            &|_| Some(b"-----BEGIN CERTIFICATE-----\nAA==\n-----END CERTIFICATE-----\n".to_vec()),
+        )
+        .unwrap(),
+        casual_sign_csc::ProviderSecretsKey::new(&[7; 32]).unwrap(),
+    );
+    ok(
+        api.call("GET", "/api/v1/signing-providers", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "signing providers",
+    )
+    .await;
+    ok(
+        api.call(
+            "PUT",
+            "/api/v1/signing-providers/csc-ci",
+            k,
+            Some(json!({"enabled": true, "session_minutes": 20})),
+            &[],
+        )
+        .await,
+        StatusCode::OK,
+        "enable provider",
+    )
+    .await;
+    ok(
+        api.call("GET", "/api/v1/signing-providers/csc-ci", k, None, &[])
+            .await,
+        StatusCode::OK,
+        "provider",
+    )
+    .await;
+
     // Webhooks.
     let w = ok(
         api.call("POST", "/api/v1/webhooks", k, Some(json!({"url": "https://hooks.example.com/os", "event_types": ["envelope.completed"], "secret_refs": ["primary"]})), &[]).await,
@@ -1512,6 +1563,39 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
             (r.status, r.code().as_str()),
             (StatusCode::CONFLICT, "CS-API-0014"),
             "{path}"
+        );
+    }
+    // RSP-01: remote signing is refused to a simple signer, whatever the step (the
+    // session itself: tests/ceremony_rsp.rs, and the real stack's remote-signing spec).
+    let none = api
+        .call(
+            "GET",
+            &format!("{s1}/remote-signing"),
+            &Auth::None,
+            None,
+            &h1,
+        )
+        .await;
+    assert_eq!(none.status, StatusCode::OK);
+    assert_eq!(none.json()["remote_signing"], Value::Null);
+    for (method, path, body) in [
+        ("POST", "remote-signing", Some(json!({}))),
+        (
+            "POST",
+            "remote-signing/callback",
+            Some(json!({"state": "s", "code": "c"})),
+        ),
+        ("POST", "remote-signing/authorize", Some(json!({}))),
+        ("POST", "remote-signing/cancel", Some(json!({}))),
+        ("GET", "remote-signing/documents/d1", None),
+    ] {
+        let r = api
+            .call(method, &format!("{s1}/{path}"), &Auth::None, body, &h1)
+            .await;
+        assert!(
+            r.status.is_client_error(),
+            "{method} {path}: {:?}",
+            r.status
         );
     }
     ok(
@@ -2924,8 +3008,9 @@ async fn every_operation_and_a_two_signer_envelope_to_its_seal_job() {
 /// their `Content-Disposition` by `casual-sign-worker`'s `tests/end_to_end.rs`; and those
 /// another test of this crate answers through this harness, which checks every answer:
 /// a field's uploaded attachment (`tests/lists.rs`), the evidence package
-/// (`tests/evidence_package.rs`) and the organization log as CSV
-/// (`tests/organizations.rs`).
+/// (`tests/evidence_package.rs`), the organization log as CSV
+/// (`tests/organizations.rs`) and a remote signer's prepared document
+/// (`tests/ceremony_rsp.rs`).
 const FILES_ANSWERED_ELSEWHERE: &[(&str, &str)] = &[
     ("GET", "/api/v1/envelopes/{id}/certificate"),
     ("GET", "/api/v1/envelopes/{id}/documents/combined"),
@@ -2933,6 +3018,7 @@ const FILES_ANSWERED_ELSEWHERE: &[(&str, &str)] = &[
     ("GET", "/api/v1/envelopes/{id}/attachments/{sha256}"),
     ("GET", "/api/v1/envelopes/{id}/evidence-package"),
     ("GET", "/api/v1/organizations/me/audit"),
+    ("GET", "/s/{token}/remote-signing/documents/{id}"),
 ];
 
 /// ASVS 14.4.2, `ASVS-10`: each operation `api/openapi.yaml` says answers a file (a

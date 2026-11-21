@@ -149,6 +149,70 @@ fn leaf_and_chain(
     Ok((leaf.clone(), rest.to_vec()))
 }
 
+/// The DER `SET OF` signed attributes [`sign_detached`] would have a key sign for
+/// `signer` over `content_digest` (RFC 5652 §5.4: the explicit `SET OF` tag), for a
+/// signature made elsewhere: a remote provider signs the digest of these bytes
+/// (ADR-046 §3.5).
+///
+/// # Errors
+/// [`CryptoError::Encoding`] if the DER cannot be produced.
+pub fn signed_attributes_der(
+    signer: &Certificate,
+    content_digest: &DigestValue,
+) -> Result<Vec<u8>, CryptoError> {
+    to_der(&signed_attributes(signer, content_digest)?)
+}
+
+/// A signature value made by a key this platform does not hold (a CSC provider's
+/// `signHash` answer, ADR-046 §3.6), checked and wrapped so it assembles like one made
+/// through a [`KeyProvider`].
+///
+/// `chain` is the signer certificate first; `signed_attrs_der` the bytes
+/// [`signed_attributes_der`] returned; `value` the provider's signature over them. An
+/// ECDSA value given as raw `r‖s` is re-encoded as DER (CSC providers return either).
+///
+/// # Errors
+/// [`CryptoError::UnsupportedAlgorithm`] when the chain is empty or the key does not fit
+/// `algorithm`; [`CryptoError::Malformed`] when the attributes are not one DER `SET OF`;
+/// [`CryptoError::SignatureInvalid`] when the value is not a signature over the
+/// attributes by the signer certificate's key.
+pub fn external_signature(
+    chain: &[Certificate],
+    algorithm: SignatureAlgorithm,
+    signed_attrs_der: &[u8],
+    value: &[u8],
+) -> Result<SignedCms, CryptoError> {
+    let (signer, rest) = chain
+        .split_first()
+        .ok_or(CryptoError::UnsupportedAlgorithm)?;
+    let spki = signer.tbs_certificate().subject_public_key_info();
+    signature::key_matches(spki, algorithm)?;
+    let signed_attrs = SetOfVec::<Attribute>::from_der(signed_attrs_der)
+        .map_err(|_| CryptoError::Malformed(Structure::Cms))?;
+    if to_der(&signed_attrs)? != signed_attrs_der {
+        return Err(CryptoError::Malformed(Structure::Cms));
+    }
+    let value = signature::normalize_ecdsa(algorithm, value)?;
+    let max = max_signature_len(signer, algorithm)?;
+    let len_ok = if algorithm.is_rsa() {
+        value.len() == max
+    } else {
+        (8..=max).contains(&value.len())
+    };
+    if !len_ok {
+        return Err(CryptoError::SignatureInvalid);
+    }
+    let scheme = Scheme::from_algorithm_identifier(&algorithm.algorithm_identifier()?, None)?;
+    signature::verify(spki, scheme, signed_attrs_der, &value)?;
+    Ok(SignedCms {
+        signer: signer.clone(),
+        chain: rest.to_vec(),
+        algorithm,
+        signed_attrs,
+        signature: value,
+    })
+}
+
 /// Sign a detached CMS over content whose digest is `content_digest` (docs/31 §4 steps
 /// 4–5). The provider receives only the DER signed attributes.
 ///
@@ -200,10 +264,40 @@ pub fn max_der_len(
 ) -> Result<usize, CryptoError> {
     let algorithm = provider.algorithm();
     let (signer, chain) = leaf_and_chain(provider)?;
+    max_len(&signer, &chain, algorithm, timestamp_token_len)
+}
+
+/// [`max_der_len`] for a signer known only by its chain and algorithm (a remote
+/// provider's credential, ADR-046 §3.3), so its placeholder is planned before it signs.
+///
+/// # Errors
+/// [`CryptoError::UnsupportedAlgorithm`] when the chain is empty or its key does not fit
+/// `algorithm`.
+pub fn max_der_len_for(
+    chain: &[Certificate],
+    algorithm: SignatureAlgorithm,
+    timestamp_token_len: usize,
+) -> Result<usize, CryptoError> {
+    let (signer, rest) = chain
+        .split_first()
+        .ok_or(CryptoError::UnsupportedAlgorithm)?;
+    signature::key_matches(
+        signer.tbs_certificate().subject_public_key_info(),
+        algorithm,
+    )?;
+    max_len(signer, rest, algorithm, timestamp_token_len)
+}
+
+fn max_len(
+    signer: &Certificate,
+    chain: &[Certificate],
+    algorithm: SignatureAlgorithm,
+    timestamp_token_len: usize,
+) -> Result<usize, CryptoError> {
     let d = algorithm.digest_algorithm();
     let zero = DigestValue::from_bytes(d, &vec![0u8; d.output_len()])?;
-    let attrs = signed_attributes(&signer, &zero)?;
-    let sig = vec![0xFFu8; max_signature_len(&signer, algorithm)?];
+    let attrs = signed_attributes(signer, &zero)?;
+    let sig = vec![0xFFu8; max_signature_len(signer, algorithm)?];
     let unsigned = if timestamp_token_len == 0 {
         None
     } else {
@@ -214,7 +308,7 @@ pub fn max_der_len(
             filler,
         )?])?)
     };
-    Ok(assemble(&signer, &chain, algorithm, attrs, sig, unsigned)?.len())
+    Ok(assemble(signer, chain, algorithm, attrs, sig, unsigned)?.len())
 }
 
 fn assemble(

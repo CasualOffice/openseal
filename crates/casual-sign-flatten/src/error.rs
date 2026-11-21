@@ -96,6 +96,13 @@ pub enum FlattenError {
         /// Bytes of the id supplied (0 when none was).
         bytes: usize,
     },
+    /// The document's catalog, form or page is not the kind of object a materialized
+    /// field needs, or a field to fill was not materialized (`CS-FLT-0007`, ADR-046
+    /// §3.2): the object number, 0 when none.
+    RemoteForm {
+        /// The object at fault.
+        object: u32,
+    },
     /// The document could not be read (its `CS-PDF-*` code).
     Read(PdfError),
     /// The update could not be written (its `CS-WRT-*` code).
@@ -119,6 +126,7 @@ impl FlattenError {
             Self::FontUnreadable { .. } => "CS-FLT-0005",
             Self::OptionalContentTooComplex { .. } => "CS-FLT-0006",
             Self::Content { code, .. } => code,
+            Self::RemoteForm { .. } => "CS-FLT-0007",
             Self::Read(e) => e.code(),
             Self::Write(e) => e.code(),
         }
@@ -194,6 +202,12 @@ impl fmt::Display for FlattenError {
                 f,
                 "{code}: content of object {object} crosses a tokenizer limit"
             ),
+            Self::RemoteForm { object } => {
+                write!(
+                    f,
+                    "{code}: object {object} cannot take a materialized field"
+                )
+            }
             Self::Read(e) => write!(f, "{e}"),
             Self::Write(e) => write!(f, "{e}"),
         }

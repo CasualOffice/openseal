@@ -25,6 +25,7 @@ pub mod recipients;
 pub mod reports;
 pub mod seal_signatures;
 pub mod sessions;
+pub mod signing;
 pub mod templates;
 pub mod webhooks;
 pub mod workflow;
@@ -145,6 +146,11 @@ impl TenantTx {
     /// Templates, their roles, documents and fields.
     pub fn templates(&mut self) -> templates::Templates<'_> {
         templates::Templates { tx: self }
+    }
+
+    /// Signing providers the account enabled and remote signing sessions (`RSP-01`).
+    pub fn signing(&mut self) -> signing::Signing<'_> {
+        signing::Signing { tx: self }
     }
 
     /// Webhook subscriptions and deliveries.

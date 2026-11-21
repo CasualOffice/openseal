@@ -11,7 +11,7 @@ step() { printf '\n== %s\n' "$1"; }
 step "checks: fmt";        cargo fmt --all -- --check
 step "checks: clippy";     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 step "checks: rustdoc";    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked -q
-step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-keyd-client --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-secrets --exclude casual-sign-seclog --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked -q   # hosts under server/ are native only
+step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-keyd-client --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-secrets --exclude casual-sign-csc --exclude casual-sign-seclog --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked -q   # hosts under server/ are native only
 step "checks: repository"; python3 tools/check-repo.py
 # One command per line: under `set -e`, a failure on the left of `&&` does not stop the
 # script (docs/04 rule 31).
@@ -34,6 +34,7 @@ VENV=target/tools-venv
 [ -x "$VENV/bin/python" ] || { ~/.local/bin/uv venv -q -p 3.12 "$VENV" && ~/.local/bin/uv pip install -q -p "$VENV/bin/python" "pyhanko==0.38.1" cryptography; }
 docker build -q -t openseal-eu-dss tools/eu-dss >/dev/null
 "$VENV/bin/python" -I tools/verify-sealed.py --self-test --dss openseal-eu-dss
+"$VENV/bin/python" -I tools/verify-sealed.py fixtures/sealed --dss openseal-eu-dss
 # HRD-02, as ci.yml's validators job: the interop PKI, sealed through the CLI (built by the
 # script), validated online; then the committed packet with its revocation data replayed.
 "$VENV/bin/python" -I tools/interop/interop.py check --dss openseal-eu-dss

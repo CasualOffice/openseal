@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_signing_sessions SET status = 'completed', prepared = $3, closed_at = $4, state_sha256 = NULL, pkce_sealed = NULL, code_sealed = NULL WHERE account_id = $1 AND id = $2 AND closed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6642e092e64202809c6d4b36afabb8dfda637d57fd0318f23e87dc40aaa5b37f"
+}

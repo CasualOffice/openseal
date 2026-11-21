@@ -639,6 +639,21 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // Delayed routing (WF-02): hours to wait, once their turn comes, before inviting them.
     const delay = h("input", { id: `rd-${r.key}`, class: "os-input os-input--sm os-input--num", type: "number", min: "0", max: "720", step: "1", inputMode: "numeric", value: r.delayHours ? String(r.delayHours) : "", placeholder: "0", attrs: { "data-testid": "recipient-delay", "aria-describedby": `rd-${r.key}-help` } });
     delay.addEventListener("change", () => { const v = Number.parseInt(delay.value, 10); r.delayHours = Number.isInteger(v) && v > 0 ? Math.min(v, 720) : 0; delay.value = r.delayHours ? String(r.delayHours) : ""; S.dirty = true; });
+    // How a signer signs (RSP-01, ADR-046): simple, or with their own certificate at a
+    // provider the account enabled. Shown only for a signer, and only when the account
+    // has a provider; two remote signers never share a step (the server says so at send).
+    const providers = (S.signingProviders || []).filter((p) => p.enabled);
+    let signatureCell = null;
+    if (r.type === "signer" && providers.length) {
+      const sel = h("select", { id: `rsig-${r.key}`, class: "os-input os-input--sm", attrs: { "data-testid": "recipient-signature", "aria-describedby": `rsig-${r.key}-help` } },
+        h("option", { value: "", text: t("prepare.signature-simple") }),
+        ...providers.map((p) => h("option", { value: p.id, text: t("prepare.signature-remote", { provider: p.name }) })));
+      sel.value = providers.some((p) => p.id === r.signatureProvider) ? r.signatureProvider : "";
+      sel.addEventListener("change", () => { r.signatureProvider = sel.value; S.dirty = true; });
+      signatureCell = h("div", { class: "os-rcpt__cell" },
+        h("label", { class: "os-label os-rcpt__label", attrs: { for: `rsig-${r.key}` } }, t("prepare.signature-type"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })),
+        sel, h("p", { id: `rsig-${r.key}-help`, class: "os-help", text: t("prepare.signature-type-help") }));
+    }
     // Document visibility (WF-02): with several documents, which ones they see.
     const seen = S.docs.length > 1 ? h("fieldset", { class: "os-rcpt__cell" },
       h("legend", { class: "os-label os-rcpt__label", text: t("prepare.documents-seen") }),
@@ -656,7 +671,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // Per-recipient options (UX-05, DocuSign's "More" on each row): how they prove who
     // they are. Set when the recipient is created (the API has no later change).
     const acting = r.type !== "cc";
-    const more = TPL || !acting ? null : h("details", { class: "os-details os-rcpt__more", open: !!(r.accessCode || r.emailOtp || r.smsOtp || r.voiceOtp || r.sso || r.delayHours || r.hiddenDocs?.length) && !r.id, attrs: { "data-testid": "recipient-more" } },
+    const more = TPL || !acting ? null : h("details", { class: "os-details os-rcpt__more", open: !!(r.accessCode || r.emailOtp || r.smsOtp || r.voiceOtp || r.sso || r.delayHours || r.hiddenDocs?.length || r.signatureProvider) && !r.id, attrs: { "data-testid": "recipient-more" } },
       h("summary", {}, h("span", { text: t("prepare.more-options") }), h("span", { class: "os-sr-only", text: t(TPL ? "template.of-role" : "prepare.of-recipient", { n: i + 1 }) })),
       h("div", { class: "os-rcpt__opts" },
         h("div", { class: "os-rcpt__cell" },
@@ -671,6 +686,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
         h("div", { class: "os-rcpt__cell" },
           h("label", { class: "os-label os-rcpt__label", attrs: { for: `rd-${r.key}` } }, t("prepare.delay-hours"), h("span", { class: "os-sr-only", text: t("prepare.of-recipient", { n: i + 1 }) })),
           delay, h("p", { id: `rd-${r.key}-help`, class: "os-help", text: t("prepare.delay-hours-help") })),
+        signatureCell,
         seen));
     // One dense row (UX-05): type, step, name, email, options, then the row's tools.
     const tools = h("div", { class: "os-rcpt__tools" }, up, down, del);
@@ -1911,7 +1927,7 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     const prevAccess = new Map(S.recipients.map((r) => [r.id, r.accessCode]));
     const steps = fromServer(recs.map((r) => r.routing_order));
     const docKeyOf = new Map(S.docs.map((d) => [d.id, d.key]));
-    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), phone: r.phone || "", smsOtp: (r.auth || []).includes("sms_otp"), voiceOtp: (r.auth || []).includes("voice_otp"), sso: (r.auth || []).includes("sso"), delayHours: r.route_delay_hours || 0, hiddenDocs: (r.excluded_documents || []).map((d) => docKeyOf.get(d)).filter(Boolean), order: steps[i] }));
+    S.recipients = recs.map((r, i) => ({ key: newKey("r"), id: r.id, name: r.name || "", email: r.email || "", type: RECIPIENT_TYPES.includes(r.type) ? r.type : "signer", accessCode: prevAccess.get(r.id) || "", hasAccessCode: (r.auth || []).includes("access_code"), emailOtp: (r.auth || []).includes("email_otp"), phone: r.phone || "", smsOtp: (r.auth || []).includes("sms_otp"), voiceOtp: (r.auth || []).includes("voice_otp"), sso: (r.auth || []).includes("sso"), delayHours: r.route_delay_hours || 0, signatureProvider: r.signature?.type === "remote" ? r.signature.provider_id : "", hiddenDocs: (r.excluded_documents || []).map((d) => docKeyOf.get(d)).filter(Boolean), order: steps[i] }));
     // Signers all at one step with copies after them is the switch off; anything else is steps.
     S.ordered = !isAllAtOnce(steps, (i) => S.recipients[i].type !== "cc");
     const rkey = new Map(S.recipients.map((r) => [r.id, r.key]));
@@ -2003,6 +2019,8 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     // Delayed routing and document visibility (WF-02). Hidden documents go by id once
     // saved; in the first create, by their index in the same request.
     if (r.type !== "cc" && r.delayHours > 0) body.route_delay_hours = r.delayHours;
+    // RSP-01: a signer signing with their own certificate at a provider.
+    if (r.type === "signer" && r.signatureProvider) body.signature = { type: "remote", provider_id: r.signatureProvider };
     const hidden = (r.hiddenDocs || []).map((k) => { const i = S.docs.findIndex((d) => d.key === k); return i < 0 ? null : (S.id ? S.docs[i].id : i); }).filter((x) => x != null);
     if (hidden.length) body.excluded_documents = hidden;
     return body;
@@ -2666,6 +2684,12 @@ export async function mount(view, ctx, [rawId] = [], _params = null, opts = {}) 
     } catch (err) {
       if (!ctx.failed(err)) toastError(err);
     }
+  }
+  // RSP-01: the signing providers the account may give a signer. None (or a refusal,
+  // a key without envelopes:write): the choice is not shown.
+  if (!TPL) {
+    try { S.signingProviders = (await ctx.api.listSigningProviders())?.items || []; } catch { S.signingProviders = []; }
+    if (S.signingProviders.length) renderAll();
   }
   // FG-009: a new envelope starts from the account's envelope id stamp default (the
   // server applies it too when a request does not say). Unreadable: off, as the server.

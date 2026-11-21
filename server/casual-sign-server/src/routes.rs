@@ -12,7 +12,7 @@ use tower_http::catch_panic::CatchPanicLayer;
 
 use crate::api::{
     admin, bulk, conversions, envelopes as env, factors, folders, groups, mfa, ml, oauth, org,
-    privacy, reports, sessions, switch, templates, usetemplates, webhooks,
+    privacy, reports, sessions, signing, switch, templates, usetemplates, webhooks,
 };
 use crate::authz::{Action, Level, OrgAction};
 use crate::ceremony;
@@ -120,8 +120,8 @@ pub fn table() -> Vec<Route> {
     use Action::{
         AdminAuditRead, ApiClientsManage, AuditRead, BulkSend, EnvelopesRead, EnvelopesSend,
         EnvelopesTransfer, EnvelopesWrite, ErsdManage, GroupsManage, ProfilesManage, ReportsRead,
-        RetentionManage, SettingsSending, TemplatesRead, TemplatesWrite, UsersInvite, UsersRead,
-        UsersRemove, UsersUpdate, WebhooksManage,
+        RetentionManage, SettingsSending, SettingsSigning, TemplatesRead, TemplatesWrite,
+        UsersInvite, UsersRead, UsersRemove, UsersUpdate, WebhooksManage,
     };
     let er = A(EnvelopesRead);
     let ew = A(EnvelopesWrite);
@@ -1207,6 +1207,28 @@ pub fn table() -> Vec<Route> {
             JSON,
             templates::delete_field,
         ),
+        // Signing providers (`RSP-01`, ADR-046 §3.14).
+        r(
+            "GET",
+            "/api/v1/signing-providers",
+            A(EnvelopesWrite),
+            JSON,
+            signing::list,
+        ),
+        r(
+            "GET",
+            "/api/v1/signing-providers/{id}",
+            A(SettingsSigning),
+            JSON,
+            signing::get,
+        ),
+        r(
+            "PUT",
+            "/api/v1/signing-providers/{id}",
+            A(SettingsSigning),
+            JSON,
+            signing::put,
+        ),
         // Webhooks.
         r(
             "GET",
@@ -1281,6 +1303,49 @@ pub fn table() -> Vec<Route> {
             Public,
             JSON,
             ceremony::session,
+        ),
+        // Remote-provider signatures (RSP-01, ADR-046 §3.4).
+        r(
+            "POST",
+            "/s/{token}/remote-signing",
+            Public,
+            JSON,
+            ceremony::rsp::start,
+        ),
+        r(
+            "GET",
+            "/s/{token}/remote-signing",
+            Public,
+            JSON,
+            ceremony::rsp::status,
+        ),
+        r(
+            "POST",
+            "/s/{token}/remote-signing/callback",
+            Public,
+            JSON,
+            ceremony::rsp::callback,
+        ),
+        r(
+            "POST",
+            "/s/{token}/remote-signing/authorize",
+            Public,
+            JSON,
+            ceremony::rsp::authorize,
+        ),
+        r(
+            "POST",
+            "/s/{token}/remote-signing/cancel",
+            Public,
+            JSON,
+            ceremony::rsp::cancel,
+        ),
+        r(
+            "GET",
+            "/s/{token}/remote-signing/documents/{id}",
+            Public,
+            JSON,
+            ceremony::rsp::document,
         ),
         r(
             "POST",

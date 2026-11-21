@@ -81,6 +81,13 @@ pub(crate) struct Open {
     /// Where this request sends the browser to sign in, answered as
     /// `sso_authorization_url` (RAUTH-01).
     sso_url: Option<String>,
+    /// Where this request sends the browser to the remote signing provider, answered as
+    /// `remote_authorization_url` (`RSP-01`).
+    remote_url: Option<String>,
+    /// The recipient's remote signing session, answered as `remote_signing`.
+    remote: Option<Value>,
+    /// Their provider's name, answered as `remote_provider_name`.
+    remote_name: Option<String>,
     /// Whether the cookie says `Secure` (the server's `secure_cookies`, as the staff
     /// session's: off only for plain-HTTP development on localhost).
     secure: bool,
@@ -302,6 +309,15 @@ async fn reopen(
         };
         let cmds = Commands::new(None, now, ctx, policy);
         let _ = RecipientId(target.recipient_id.0);
+        // RSP-01: the name of a remote signer's provider, for "Sign with <provider>".
+        let remote_name = l
+            .state
+            .recipient(&recipient)
+            .and_then(|r| r.spec.signature.provider())
+            .and_then(|p| {
+                st.signing()
+                    .and_then(|g| g.catalogue.get(p.as_str()).map(|x| x.name.clone()))
+            });
         Ok(Open {
             tx,
             l,
@@ -314,6 +330,9 @@ async fn reopen(
             adoption: None,
             idps: st.0.idps.get().cloned(),
             sso_url: None,
+            remote_url: None,
+            remote: None,
+            remote_name,
             secure: st.config().secure_cookies,
             sender,
             sandbox: acct.sandbox,
@@ -540,6 +559,15 @@ impl Open {
         }
         if let (Some(u), Some(o)) = (&self.sso_url, v.as_object_mut()) {
             o.insert("sso_authorization_url".into(), Value::String(u.clone()));
+        }
+        if let (Some(u), Some(o)) = (&self.remote_url, v.as_object_mut()) {
+            o.insert("remote_authorization_url".into(), Value::String(u.clone()));
+        }
+        if let (Some(r), Some(o)) = (&self.remote, v.as_object_mut()) {
+            o.insert("remote_signing".into(), r.clone());
+        }
+        if let (Some(n), Some(o)) = (&self.remote_name, v.as_object_mut()) {
+            o.insert("remote_provider_name".into(), Value::String(n.clone()));
         }
         // The providers to choose from while `sso` is still to pass (RAUTH-01): an empty
         // list says this server has none, so the page can say so.
@@ -2752,3 +2780,7 @@ pub(crate) async fn disclosure(
 
 #[allow(dead_code)]
 fn _ex(_: Ex) {}
+
+/// The signer's side of a remote signing session (`RSP-01`).
+#[path = "ceremony_rsp.rs"]
+pub(crate) mod rsp;

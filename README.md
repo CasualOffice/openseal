@@ -75,16 +75,16 @@ or try the same demo on the website with nothing installed.
 
 ## Status
 
-Docs are true as of `9c20a0e` (2026-11-21): `main`, CI run 44813535957 green on every job; slice 9 is on PR #40. **Pre-alpha.**
+Docs are true as of `9b9acab` (2026-11-21): `main`, CI run 44823112331 green on every job; slice 9 is closed; `RSP-01` is on its branch. **Pre-alpha.**
 **[v0.1.0](https://github.com/CasualOffice/openseal/releases/tag/v0.1.0)** is published (2026-11-20), the first signed pre-release: server, worker and key-service images on
 GHCR, each signed keyless with Sigstore, with build provenance and an SBOM, and a signed `SHA256SUMS`. It runs end to
 end on one machine with Docker Compose and is **not for production agreements**. **Phases D, 0, 1 and 2 are closed**
 and milestones M0 to M3 are reached (**M3, "first signature"**, 2026-11-19). **Slices closed: 1 (send and sign), 2
 (routing), 3 (templates), 4 (every field), 5 (authentication and consent), 6 (manage and correct: quick views, search,
-correct, transfer, Word uploads converted, reports and insights), 7 (verify) and 8 (API and webhooks)**, 8 of 35.
-Slice 9 (embedding: signing, prepare and correct views in
-a frame, the `<openseal-signing>` and `<openseal-prepare>` elements, per-workspace `frame-ancestors`) is in review.
-Closing it reaches **M4, team beta**, except its "SDKs released as beta" item, which the owner has held back
+correct, transfer, Word uploads converted, reports and insights), 7 (verify), 8 (API and webhooks) and 9 (embedding:
+signing, prepare and correct views in a frame, the `<openseal-signing>` and `<openseal-prepare>` elements,
+per-workspace `frame-ancestors`)**, 9 of 35. Every slice of **M4, team beta**, is closed; M4 waits only for its "SDKs
+released as beta" item, which the owner has held back
 (the TypeScript and Python SDKs are built and tested in [`sdk/`](sdk/), not published). Work follows one binding plan,
 one slice at a time ([docs/06](docs/06-ROADMAP-AND-DELIVERY.md) §Execution plan). ML, the platform console, and plans
 and metering stay paused (`Paused` in the tracker). Each item's exact state is in
@@ -126,7 +126,7 @@ ASVS 4.0.3 self-assessment ([docs/67](docs/67-ASVS-SELF-ASSESSMENT.md)) finds 1 
 self-assessment, not an audit or a certification. Nothing here states that a signature is legally valid or that
 OpenSeal is compliant or certified ([docs/09](docs/09-LEGAL-AND-COMPLIANCE.md)).
 
-**Next**, in the plan's order: close slice 9 for M4, team beta; then remote signing providers (a CSC API v2
+**Next**, in the plan's order: remote signing providers (now building: a CSC API v2
 adapter for DigiCert and A-Trust, then India eSign through a licensed ESP; designs ADR-046 and ADR-047 accepted),
 production PKI validation, and accessibility and mobile checks; then organization admin and SSO, bulk send, brand and
 language, data controls and operations for M5.
@@ -143,7 +143,7 @@ language, data controls and operations for M5.
 | Slices 1, 2, 5, 7 | **Closed** 2026-11-19 | M3 reached; run 44419251440; every gate item and its evidence in [docs/73](docs/73-M3-SLICE-EVIDENCE.md) |
 | Slices 3, 4, 8 | **Closed** 2026-11-20 | Runs 44610734814 and 44653889545; evidence in [docs/74](docs/74-SLICE-3-EVIDENCE.md), [75](docs/75-SLICE-4-EVIDENCE.md), [76](docs/76-SLICE-8-EVIDENCE.md) |
 | Slice 6 | **Closed** 2026-11-21 | Run 44813535957; evidence in [docs/77](docs/77-SLICE-6-EVIDENCE.md) |
-| Slice 9 | In review (PR #40) | [docs/78](docs/78-SLICE-9-EVIDENCE.md); closing it reaches M4, team beta, but for the SDK release |
+| Slice 9 | Closed 2026-11-21 (run 44823112331) | [docs/78](docs/78-SLICE-9-EVIDENCE.md); every M4 slice closed, M4 waits for the SDK release (`VS-08J`) |
 
 **What the engine does today** (Rust, `crates/`, each part tested against hostile files and real documents):
 

@@ -39,6 +39,9 @@ casual-sign-host = { path = "../casual-sign-host" }
 casual-sign-seclog = { path = "../casual-sign-seclog", features = ["tracing-layer"] }
 # The JWT signing key and other secrets, from the environment or a file it names.
 casual-sign-secrets = { path = "../casual-sign-secrets" }
+# Remote-provider signatures (RSP-01, ADR-046): the operator's provider catalogue and the
+# AES-256-GCM sealing of an account's own client secret and a session's PKCE verifier.
+casual-sign-csc = { path = "../casual-sign-csc" }
 # HTTP (ADR-014; the sisters' stack, OpenCalc's casual-calc-host). MIT.
 axum = { version = "0.8.4", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path", "original-uri"] }
 tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal", "time", "io-util", "sync"] }

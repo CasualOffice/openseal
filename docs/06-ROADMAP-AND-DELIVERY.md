@@ -54,31 +54,25 @@ independent slices run beside it in parallel sessions ([CLAUDE.md](../CLAUDE.md)
 
 ## Where things stand
 
-Docs are true as of 2026-11-21 (`main` at `9c20a0e`, CI run 44813535957 green on every job; slice 9 on PR #40).
+Docs are true as of 2026-11-21 (`main` at `9b9acab`, CI run 44823112331 green on every job; `RSP-01` on its branch).
 **M0 to M3 are reached** (M3, "first signature", 2026-11-19, instruction 59; every gate item in
 [73](73-M3-SLICE-EVIDENCE.md)). **Slices closed: 1, 2, 5 and 7** (2026-11-19, run 44419251440), **3 and 4** (2026-11-20,
-instructions 66 and 68, run 44610734814), **8** (2026-11-20, instruction 73, run 44653889545) and **6** (2026-11-21,
-instruction 83, run 44813535957): 8 of 35. Slice 6 (manage and correct) merged in PR #39 (`87854fe`); `main` run
-44809730807 went red in `compose-e2e (2)` on slice 8's `api-webhooks.spec.mjs` reading the webhook receiver too early,
-fixed by `9c20a0e`, whose run 44813535957 is green on every job with slice 6's specs on the Compose stack (chromium and
-webkit) ([77](77-SLICE-6-EVIDENCE.md)). **Slice 9** (embedding) is in PR #40 with its evidence
-in [78](78-SLICE-9-EVIDENCE.md). **v0.1.0 is published** (2026-11-20, tag at `f667422`, release run 44615842313;
-§v0.1.0). The remote-signing designs ADR-046 (CSC) and ADR-047 (India eSign) are Accepted (instruction 82) and are the
-plan's next step after M4 (§Execution plan, row 5r).
+instructions 66 and 68, run 44610734814), **8** (2026-11-20, instruction 73, run 44653889545), **6** (2026-11-21,
+instruction 83, run 44813535957) and **9** (embedding, 2026-11-21, instruction 85, run 44823112331,
+[78](78-SLICE-9-EVIDENCE.md)): 9 of 35. **v0.1.0 is published** (2026-11-20, tag at `f667422`, release run 44615842313;
+§v0.1.0). The remote-signing designs ADR-046 (CSC) and ADR-047 (India eSign) are Accepted (instruction 82); `RSP-01`
+is the plan's current work (§Execution plan, row 5r).
 
-**M4, team beta, is not reached.** Its gate items (§Milestones) and what each still needs:
+**M4, team beta, is not reached**, though every M4 slice is closed. Its gate items (§Milestones):
 
-- Slice end points: 3, 4, 6 and 8 met (closed by the owner; their demos are recorded, watching and linking them from
-  [65](65-RUNNING-IT.md) §Demos is `DOC-016`); **9** needs PR #40 merged, a green `main` run with `embedding.spec.mjs` on the Compose stack and
-  `slice-9-demo`, and the owner's sign-off.
-- [96](96-FEATURE-FIT-GAP.md) rows for those slices `Works`: 26 are not (`FG-002`, `FG-003`, `FG-012`, `FG-014`,
-  `FG-015`, `FG-037`, `FG-052`, `FG-058`, `FG-062`, `FG-063`, `FG-065`, `FG-066`, `FG-067`, `FG-071`, `FG-074`,
-  `FG-076`, `FG-077`, `FG-079`, `FG-082`, `FG-098`, `FG-099`, `FG-130`, `FG-196`, `FG-197`, `FG-198`, `FG-199`); several
-  are outside the slices' outcome words by owner decision (instruction 67, `VS-04G`) and stay their own rows.
-- API reference published: met for slices 1 to 8 (`pages` green on `main`, run 44813535992); slice 9's operations
-  publish when PR #40 merges.
-- TypeScript and Python SDKs released as beta: **open** by owner instruction 70 ("Not now", `VS-08J`); the SDKs are
-  built and tested in the repository (`VS-08E`).
+- Slice end points: 3, 4, 6, 8 and 9 met (closed by the owner; the demos of 3, 4, 6 and 8 watched and linked from
+  [65](65-RUNNING-IT.md) §Demos, `DOC-016`).
+- [96](96-FEATURE-FIT-GAP.md) rows for those slices `Works`: those still Partial are outside the slices' outcome words
+  by owner decision (instruction 67, `VS-04G`) or their own follow-up rows (`FG-198`'s template edit view is
+  `VS-09F`), and stay their own rows.
+- API reference published: met for slices 1 to 9 (`pages` on `main`).
+- TypeScript and Python SDKs released as beta: **open** by owner instruction 70 ("Not now", `VS-08J`): this alone holds
+  M4 back; the SDKs are built and tested in the repository (`VS-08E`).
 
 Proven by CI on `main` before M3 (runs 44001061169 and 44018844840): `HRD-01`, `HRD-02`, `HRD-10`, `ASVS-08`,
 `ASVS-13`, `ASVS-14`, `ASVS-31`, keyd seal tokens (`KEYD-02`); Acrobat Reader reads B-LTA seals valid offline
@@ -98,7 +92,7 @@ docs/14 (instruction 51, §Freeze) and resume after M4.
 | Slices 3, 4 | **Closed** 2026-11-20 | Owner, instructions 66 and 68, on `main` run 44610734814 (f667422) green on every job; evidence [74](74-SLICE-3-EVIDENCE.md), [75](75-SLICE-4-EVIDENCE.md) |
 | Slice 8 | **Closed** 2026-11-20 | Owner, instruction 73, on `main` run 44653889545 (a4da083) green on every job; evidence [76](76-SLICE-8-EVIDENCE.md). M4's "SDKs released as beta" stays open (instruction 70, `VS-08J`) |
 | Slice 6 manage and correct (`VS-06`) | **Closed** 2026-11-21 | Owner, instruction 83, on `main` run 44813535957 (`9c20a0e`) green on every job, slice 6's specs on the Compose stack; Word uploads converted (ADR-042, instruction 76; Excel and PowerPoint are `VS-06F`), restore (ADR-031), sign on paper, strike-through and envelope id stamping (ADR-043 to ADR-045, instruction 79), insights, one evidence package ([77](77-SLICE-6-EVIDENCE.md)). Open follow-ups: `VS-06F`, `VS-06G`, `ORG-18` |
-| Slice 9 embedding (`VS-09`) | In PR #40 (2026-11-21) | Embedded signing, prepare and correct views, `<openseal-signing>` and `<openseal-prepare>`, per-workspace `frame-ancestors` with `http` intranet origins (instruction 81); the embedding spec passed on the real stack locally. Left: merge, a green `main` run, `slice-9-demo`, owner closure ([78](78-SLICE-9-EVIDENCE.md)) |
+| Slice 9 embedding (`VS-09`) | **Closed** 2026-11-21 (instruction 85, run 44823112331) | Embedded signing, prepare and correct views, `<openseal-signing>` and `<openseal-prepare>`, per-workspace `frame-ancestors` with `http` intranet origins (instruction 81); `embedding.spec.mjs` green in `compose-e2e` on `main` ([78](78-SLICE-9-EVIDENCE.md)); follow-ups `VS-09F`, `VS-09G` Open |
 | Other slices | Not closed | 10 to 35; M5's are 10, 11, 12, 15 and 20 (§Execution plan). [96](96-FEATURE-FIT-GAP.md) counts 80 of 169 rows working, 29 in part, 5 with their engine built and 23 designed |
 | UI pass (`UX-01`) | **Done** 2026-11-13 | All seven packages `UX-02` to `UX-08` merged: design system and a distinct destructive colour, send editor (click-to-place, every field kind, recipient types), signing page, Home/Agreements/envelope, Templates/Reports/Admin rail, app shell with notifications and profile. Signer view names the sender and serves the disclosure (`UXW-34`). Follow-ups and missing workflows are `UXW-*` and `UX-09` onward |
 | Organizations; console and plans **paused** | ADR-028 Accepted ([23](23-ORGANIZATIONS-WORKSPACES-AND-CONSOLE.md)) | Done: organizations (`ORG-02`), organization routes (`ORG-03`), switching (`ORG-04`), admin audit logs (`ORG-05`); console operators with TOTP (`CON-03`), the Keys page (`CON-06`), timestamp authorities with two-person changes (`CON-07`), operator actions copied to organization logs (`CON-16`); plans, metering and quota enforcement (`PLAN-02` to `PLAN-04`); workspace actions (`ORG-07`), organization policy with locked and tighten-only keys (`ORG-08`), envelope transfer within a workspace (`ORG-09`). Since 2026-11-19 every console (`CON-*`) and plans (`PLAN-*`) row not Done is `Paused` under instruction 51 (`FRZ-01`) and resumes after M4; organization admin screens (`ORG-06`) are slice 10's |
@@ -121,7 +115,7 @@ current slice starts unless the owner asks for it. Work already started is finis
 Current, Finishing or Paused line below. A slice moves to Current only when the one before it is closed; its new
 rows go on the Current line in the same commit.
 
-- Current: `VS-09` `VS-09A` `VS-09B` `VS-09C` `VS-09D` `VS-09E`
+- Current: `RSP-01`
 - Finishing (started before 2026-11-19; each was to close or go back to Open by 2026-11-21, which falls due now): (none: every row due 2026-11-21 was closed, blocked on the owner or returned to Open that day)
 - Paused (owner instruction 51, until M4): `ML-02` `ML-05` `ML-07` `ML-08` `ML-09` `ML-21` `CON-01` `CON-02` `CON-04` `CON-05` `CON-15` `CON-17` `PLAN-01` `WEB-19`
 
@@ -132,7 +126,7 @@ rows go on the Current line in the same commit.
 | 2 | **4 Every field** | Complex forms: applications, insurance, loans | **Closed** 2026-11-20 (run 44610734814; [75](75-SLICE-4-EVIDENCE.md)) | — |
 | 3 | **8 API and webhooks** | Developers integrating signing | **Closed** 2026-11-20 (run 44653889545; [76](76-SLICE-8-EVIDENCE.md)) | `UXW-10` `UXW-31` `UXW-32` `UXW-33` |
 | 4 | **6 Manage and correct** | Daily senders: folders, search, correct, resend | **Closed** 2026-11-21 (run 44813535957; [77](77-SLICE-6-EVIDENCE.md)) | `UXW-02` `UXW-20` `UXW-42` `WEB-07` |
-| 5 | **9 Embedding** (current, PR #40; [78](78-SLICE-9-EVIDENCE.md)) | Developers embedding signing in their app → **M4** (with the SDK release, `VS-08J`, open by instruction 70) | 2026-11-22 | — |
+| 5 | **9 Embedding** | Developers embedding signing in their app → **M4** (with the SDK release, `VS-08J`, open by instruction 70) | **Closed** 2026-11-21 (run 44823112331; [78](78-SLICE-9-EVIDENCE.md)) | — |
 | 5r | Remote signing providers (from slice 18, brought forward; owner instruction 75; ADR-046 and ADR-047 Accepted, instruction 82): `RSP-01` CSC API v2 (DigiCert Document Trust Manager, A-Trust), then `RSP-02` India eSign through a licensed ESP | Customers who need a CSC provider or India eSign (Aadhaar OTP or eKYC) | `RSP-01` 2026-11-24, `RSP-02` 2026-11-26 (against provider stubs; sandbox credentials and contracts come from the owner) | `RSP-01` `RSP-02` |
 | 5a | Production PKI validation (owner instruction 74) | Operators going live: seal chain, OCSP and CRL, TSA, HSM or KMS key checked before go-live | 2026-11-27 | `PKI-VAL-01` |
 | 5b | Accessibility and mobile checks (owner instruction 74) | Keyboard-only and screen-reader users, phone signers | 2026-11-28 | `UX-TEST-01` |

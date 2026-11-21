@@ -227,6 +227,10 @@ async fn another_accounts_ids_are_not_found_on_every_operation(rls: Rls) {
             || path.starts_with("/api/v1/organizations/")
             || path.starts_with("/api/v1/auth/sessions/")
             || path.starts_with("/api/v1/auth/mfa/passkeys/")
+            // A signing provider's id names an operator catalogue entry shared by every
+            // account; that one account never sees another's settings for it is tested in
+            // tests/signing_providers.rs (RSP-01).
+            || path.starts_with("/api/v1/signing-providers/")
         {
             continue;
         }

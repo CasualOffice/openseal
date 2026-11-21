@@ -67,6 +67,7 @@ limit was crossed and the rest of the document still opened; `fixtures/hostile/m
 | CS-FLT-0004 | More fields on one page than the flattening limit |
 | CS-FLT-0005 | A font face supplied by the host cannot be read |
 | CS-FLT-0006 | An optional content visibility expression (`/VE`) nested deeper than 32 or over 4,096 terms |
+| CS-FLT-0007 | A document's catalog, form or page cannot take a materialized field at a remote signature's lock point, or a field to fill in place was not materialized (ADR-046 §3.2) |
 
 ## XFA layout (`casual-sign-xfa`, `XFA-01`)
 
@@ -442,5 +443,7 @@ code or a hash value.
 | CS-RSP-0004 | The provider's answer does not hold: an XML Signature that does not verify under the configured certificate or does not cover the root, a wrong number of values, a value or CMS that does not verify over our digest, another certificate, a chain that does not reach the configured anchors, a revoked or expired certificate, a weak algorithm, a BER CMS (session `response_invalid`) |
 | CS-RSP-0005 | The provider's CMS is larger than the planned `/Contents` placeholder; never re-laid out (session `placeholder_overflow`) |
 | CS-RSP-0006 | The signer has no credential the account accepts (status, algorithm, required qualifier) (session `no_eligible_credential`) |
-| CS-RSP-0007 | Not allowed with remote signatures: two remote signers at one routing order (`422` at send); a field, document or stamp change after a document's lock point, or a signature type changed after the recipient started (`409`); another remote session already open in the envelope (`409`) |
+| CS-RSP-0007 | Not allowed with remote signatures: two remote signers at one routing order, or a remote type on a recipient who is not a `signer` (`422` at send, each violation at `/recipients/{id}`; a send refused for other reasons too is `CS-WF-0004` with these among its violations); a field, document or stamp change after a document's lock point, or a signature type changed after the recipient started (`409`); another remote session already open in the envelope (`409`) |
 | CS-RSP-0008 | The provider refused the request itself (an ESP's `ESP-901` to `ESP-911`, `ESP-922`, `ESP-992`; an OAuth `invalid_client`): a configuration or registration problem, alerted to the operator (session `provider_refused`) |
+| CS-RSP-0009 | The provider secrets key (`OPENSEAL_PROVIDER_SECRETS_KEY`) is missing or not a 32-byte key, or a sealed provider secret, PKCE verifier or authorization code does not open under it (another row's value, a lost key, tampering) |
+| CS-RSP-0010 | The operator's signing-provider catalogue (`OPENSEAL_SIGNING_PROVIDERS_FILE`) is malformed: names the provider's position and member, never a value; the server and worker do not start |

@@ -628,3 +628,59 @@ fn appending_twice_is_refused() {
     let e = append_certificate(&mut a, &input, &fonts, &CertificateOptions::default()).unwrap_err();
     assert_eq!(e.code(), "CS-AUD-0022");
 }
+
+/// `RSP-01` (docs/09 §2a): a remote signer's block states who created the signature,
+/// with which certificate (subject, issuer, serial, validity, fingerprint), what the
+/// provider and the certificate state, attributed, and how the name compares; never a
+/// legal level in OpenSeal's own voice.
+#[test]
+fn a_remote_signature_is_stated_with_its_certificate_and_attributed_claims_only() {
+    let fonts = FontSet::bundled();
+    let (chain, delivered) = chain(1);
+    let mut inp = input(&chain, delivered, 1);
+    inp.recipients[0].remote = Some(casual_sign_certificate::RemoteSignature {
+        provider: "Example Trust".into(),
+        subject: "Ana Remote".into(),
+        issuer: "CN=Example Qualified CA,O=Example Trust".into(),
+        serial: "4f1a09".into(),
+        not_before: t(0),
+        not_after: t(86_400_000),
+        certificate_sha256: casual_sign_audit::Hash256::digest(b"leaf"),
+        qualifier: Some("eu_eidas_qes".into()),
+        qc_statements: vec!["QcCompliance".into(), "QcSSCD".into()],
+        name_match: casual_sign_audit::NameMatch::Normalized,
+        level: "B-LT".into(),
+        timestamp: Some(t(1_000_000)),
+    });
+    let r = render_certificate(&inp, &fonts, &CertificateOptions::default()).unwrap();
+    let mut a = admit(&r.bytes, &Limits::default(), &never).unwrap();
+    let pages = a.report.pages.clone();
+    let text = casual_sign_fields::extract_text(&mut a.document, &pages, &never)
+        .unwrap()
+        .iter()
+        .flat_map(|p| p.runs.iter().map(|r| r.text.clone()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for want in [
+        "Created by Example Trust with the signer's certificate",
+        "PAdES B-LT",
+        "Ana Remote, issued by CN=Example Qualified CA,O=Example Trust",
+        "4f1a09",
+        // The fingerprint, wrapped across two lines.
+        &casual_sign_audit::Hash256::digest(b"leaf").hex()[..40],
+        "eu_eidas_qes (as stated by Example Trust)",
+        "QcCompliance, QcSSCD",
+        "ignoring case, spacing and accents",
+    ] {
+        assert!(text.contains(want), "{want}: {text}");
+    }
+    let lower = text.to_lowercase();
+    for never_said in [
+        "qualified electronic signature",
+        "advanced electronic signature",
+        "legally",
+        "qualified signature",
+    ] {
+        assert!(!lower.contains(never_said), "{never_said}: {text}");
+    }
+}

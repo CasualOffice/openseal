@@ -146,6 +146,14 @@ public final class Validate {
                 }
                 validator.setCertificateVerifier(verifier);
                 Reports reports = validator.validateDocument();
+                // A debugging aid: the whole diagnostic data, when asked for (it holds the
+                // object modifications DSS counts as undefined changes).
+                String diagDir = System.getenv("OPENSEAL_DSS_DIAGNOSTIC_DIR");
+                if (diagDir != null && !diagDir.isEmpty()) {
+                    java.nio.file.Files.writeString(
+                            java.nio.file.Path.of(diagDir, name + ".diagnostic.xml"),
+                            reports.getXmlDiagnosticData());
+                }
                 SimpleReport simple = reports.getSimpleReport();
                 DiagnosticData diag = reports.getDiagnosticData();
                 if (simple.getSignatureIdList().isEmpty()) {

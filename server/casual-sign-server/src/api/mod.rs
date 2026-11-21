@@ -22,6 +22,7 @@ pub(crate) mod placing;
 pub(crate) mod privacy;
 pub(crate) mod reports;
 pub(crate) mod sessions;
+pub(crate) mod signing;
 pub(crate) mod switch;
 pub(crate) mod templates;
 pub(crate) mod usetemplates;

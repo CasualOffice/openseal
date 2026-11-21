@@ -28,7 +28,7 @@ use casual_sign_keyd::{DEV_REASON, DigestSigner, Endpoint, KeydError, RemoteKey,
 use casual_sign_model::{EnvelopeStatus, Field, FieldValue, Id, RecipientType, SealProfile};
 use casual_sign_sdk::evidence::{
     AuthStep, Consent, CopyKind, CopyRow, DocumentRow, EnvelopeSummary, Mark, Outcome, Party,
-    RecipientRow, Role, SealInfo,
+    RecipientRow, RemoteSignature, Role, SealInfo,
 };
 use casual_sign_sdk::verify::{Check, Indication, ModificationClass, SubIndication};
 use casual_sign_sdk::{
@@ -309,6 +309,11 @@ pub struct SealInput {
     /// signature (`KEYD-02`); `None` for a key in this process, or while the database has
     /// no token key installed.
     pub keyd_token: Option<casual_sign_keyd::SealToken>,
+    /// Documents past their lock point (`RSP-01`, ADR-046 §3.2), by id: their current
+    /// bytes (the last remote signature's revision) and the materialized fields not yet
+    /// filled. Such a document is filled in place and sealed as it stands; nothing is
+    /// drawn into its pages or appended to it.
+    pub remote: BTreeMap<String, (Vec<u8>, Vec<String>)>,
 }
 
 impl core::fmt::Debug for SealInput {
@@ -495,6 +500,7 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
         let mut marks: BTreeMap<&'static str, Mark> = BTreeMap::new();
         let mut outcome = Outcome::Pending;
         let mut consent = None;
+        let mut remote = None;
         let mut acted_context = None;
         for c in &mine {
             let e = &c.event;
@@ -548,6 +554,30 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
                 EventData::RecipientSigned { .. } => {
                     outcome = Outcome::Signed(e.at);
                     acted_context = Some(&e.context);
+                }
+                // RSP-01: the provider's signature, as docs/09 §2a lets the certificate
+                // state it.
+                EventData::RecipientRemoteSigned {
+                    provider,
+                    certificate,
+                    name_match,
+                    documents,
+                    ..
+                } => {
+                    remote = Some(RemoteSignature {
+                        provider: provider.name.clone(),
+                        subject: certificate.subject_cn.get().clone(),
+                        issuer: certificate.issuer.clone(),
+                        serial: certificate.serial.clone(),
+                        not_before: certificate.not_before,
+                        not_after: certificate.not_after,
+                        certificate_sha256: certificate.sha256,
+                        qualifier: certificate.qualifier.clone(),
+                        qc_statements: certificate.qc_statements.clone(),
+                        name_match: *name_match,
+                        level: "B-LT".to_owned(),
+                        timestamp: documents.iter().find_map(|d| d.timestamp_time),
+                    });
                 }
                 // FG-013, ADR-043: the scan is a document of the envelope, sealed with it.
                 EventData::RecipientSignedOnPaper { document_id, .. } => {
@@ -606,6 +636,7 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
             }),
             outcome,
             consent,
+            remote,
         });
     }
     rows.sort_by_key(|r| r.routing_order);
@@ -725,6 +756,40 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
         if Hash256::digest(delivered) != doc.spec.delivered_hash {
             return Err(WorkerError::SealInput { what: "document" });
         }
+        // ADR-046 §3.2: a locked document gets a last fill in place, then the platform
+        // seal last over everything; the certificate of completion stays a PDF of its own.
+        if let Some((current, unfilled)) = input.remote.get(doc.id().as_str()) {
+            let bytes = remote_completion(services, input, doc.id(), current, unfilled)?;
+            let flattened_hash = Hash256::digest(&bytes);
+            let sealed = seal_bytes(
+                services,
+                &bytes,
+                target,
+                input.now,
+                provider.as_ref(),
+                development,
+            )?;
+            let tsa_time = sealed
+                .report
+                .signature_timestamp
+                .and_then(|d| i64::try_from(d.as_millis()).ok())
+                .and_then(Timestamp::from_unix_millis);
+            out.push(SealedOut {
+                record: SealedDocument {
+                    document_id: doc.id().clone(),
+                    delivered_hash: doc.spec.delivered_hash,
+                    flattened_hash,
+                    sealed_hash: Hash256::digest(&sealed.bytes),
+                    profile: s.seal_profile,
+                    certificate_fingerprint: fingerprint,
+                    tsa_time,
+                    verified: false,
+                },
+                bytes: sealed.bytes,
+                pages: doc.spec.pages,
+            });
+            continue;
+        }
         let (fields, captures) = fill_parts(&s.fields.0, doc.id(), s, &input.captures)?;
         let values = BTreeMap::new();
         let fill = Fill {
@@ -798,6 +863,46 @@ pub fn seal_all(services: &SealServices, input: &SealInput) -> Result<Sealed> {
         certificate,
         signatures: key.signatures(),
     })
+}
+
+/// A locked document's last fill (ADR-046 §3.2): every materialized field not yet filled
+/// that now has a value, in place, over the last remote signature's revision.
+fn remote_completion(
+    services: &SealServices,
+    input: &SealInput,
+    document: &Id,
+    current: &[u8],
+    unfilled: &[String],
+) -> Result<Vec<u8>> {
+    use casual_sign_sdk::remote::{FillMaterialized, admit, fill_materialized};
+    let s = &input.state;
+    let (fields, captures) = fill_parts(&s.fields.0, document, s, &input.captures)?;
+    let to_fill: Vec<Field> = fields
+        .into_iter()
+        .filter(|f| unfilled.iter().any(|u| u == f.id.as_str()) && f.value.is_some())
+        .collect();
+    let values: BTreeMap<Id, FieldValue> = to_fill
+        .iter()
+        .filter_map(|f| f.value.clone().map(|v| (f.id.clone(), v)))
+        .collect();
+    let never = || false;
+    let mut a = admit(current, &casual_sign_sdk::Limits::default(), &never)
+        .map_err(|e| pipeline(e.code()))?;
+    let filled = fill_materialized(
+        &mut a,
+        &FillMaterialized {
+            fields: &to_fill,
+            values: &values,
+            captures: &captures,
+            envelope_id: Some(s.id.as_str()),
+            signature: None,
+        },
+        &services.fonts,
+        &FlattenOptions::default(),
+        &never,
+    )
+    .map_err(|e| pipeline(e.code()))?;
+    Ok(filled.bytes)
 }
 
 /// The platform key `alias` in keyd at `endpoint`, every signature keyd does not give

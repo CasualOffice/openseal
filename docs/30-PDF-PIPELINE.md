@@ -375,6 +375,21 @@ field's rectangle and none outside across every geometry and field type (32 docu
 check), pypdf extracts every value and reads back `/V`; 20 real corpus forms (up to 6,197 fields) flatten and fill with
 no failure. Not yet: text shaping and CJK or RTL faces (`FLT-01`).
 
+**Remote-signature revisions (`RSP-01`, ADR-046 §3.2; built in the engine).** At a document's lock point the
+values already final are flattened as above, then `casual_sign_flatten::materialize` adds, in one update, a read-only
+text field (`/FT /Tx`, `/Ff 1`, printed, named `os_<field id>`, an empty Flate appearance written exactly as a fill's
+will be) for every field still to be filled, and an unsigned `/Sig` field per remote signer at their first
+signature field (an empty unfiltered appearance, as the seal writes a widget's). `fill_materialized` then writes
+values in place: `/V` (the text, `Yes`/`Off`, or `signed` for a mark) and a new appearance drawing exactly what
+flattening would draw there; for a remote signer about to sign it writes their widget's appearance (the adopted
+mark, their name as sent, "Digitally signed, see the signature panel") as an XObject nothing references yet, which
+their signature revision attaches (`SlotAppearance`), because pyHanko counts an unsigned signature field's
+appearance changing in a revision of its own as more than form filling, and EU DSS counts a stream gaining a
+`/Filter` as an undefined change. Every materialized field is a text field whatever it shows (a decision of
+`RSP-01`, confirmed with pyHanko and EU DSS: `/V` and `/AP` of a text field changing is form filling to both).
+`fixtures/sealed/remote-csc-*.pdf`: our verifier, pyHanko (`FORM_FILLING`) and EU DSS (0 undefined changes) agree,
+and refuse the page-content change after a remote signature (`remote-csc-page-changed-after-signing-blt.pdf`).
+
 **Strike-throughs (`FG-080`, ADR-044):** a visible `strikethrough` field is drawn as one line through the vertical
 middle of its box, as wide as it, 1 point (`0 J`, the field's colour), in the same update as every other field; its
 value is the implied `{checked: true}`, anything else is `CS-FLD-0002`. Tested in every rotation, crop and UserUnit

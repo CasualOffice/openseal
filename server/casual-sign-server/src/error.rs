@@ -98,6 +98,19 @@ impl ApiError {
         }])
     }
 
+    /// A remote-signature refusal (`CS-RSP-*`, ADR-046) with its status, and the
+    /// member at fault when there is one.
+    pub fn remote(status: StatusCode, code: &'static str, pointer: Option<&str>) -> Self {
+        let e = Self::new(status, code);
+        match pointer {
+            Some(p) => e.fields(vec![FieldProblem {
+                pointer: p.into(),
+                code,
+            }]),
+            None => e,
+        }
+    }
+
     /// `CS-API-0001` 422: the request was read and its content is invalid.
     pub fn invalid(pointer: &str) -> Self {
         Self::new(StatusCode::UNPROCESSABLE_ENTITY, "CS-API-0001").fields(vec![FieldProblem {
@@ -600,7 +613,15 @@ impl From<WorkflowError> for ApiError {
             out.errors = violations
                 .iter()
                 .map(|v| FieldProblem {
-                    pointer: String::new(),
+                    // A remote-signature rule names its recipient (ADR-046 §3.1).
+                    pointer: match (&v.problem, &v.object) {
+                        (
+                            casual_sign_workflow::Problem::RemoteSignersShareOrder { .. }
+                            | casual_sign_workflow::Problem::RemoteNotForType,
+                            Some(id),
+                        ) => format!("/recipients/{id}"),
+                        _ => String::new(),
+                    },
                     code: v.code(),
                 })
                 .collect();

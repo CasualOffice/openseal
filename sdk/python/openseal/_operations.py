@@ -831,6 +831,16 @@ OPERATIONS = {
         "path_params": [],
         "query": []
     },
+    "getSigningProvider": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/signing-providers/{id}",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
     "getTemplate": {
         "body": False,
         "body_required": False,
@@ -1129,6 +1139,14 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "listSigningProviders": {
+        "body": False,
+        "body_required": False,
+        "method": "GET",
+        "path": "/api/v1/signing-providers",
+        "path_params": [],
+        "query": []
+    },
     "listSuggestions": {
         "body": False,
         "body_required": False,
@@ -1391,6 +1409,16 @@ OPERATIONS = {
         "body_required": False,
         "method": "POST",
         "path": "/api/v1/envelopes/{id}/purge",
+        "path_params": [
+            "id"
+        ],
+        "query": []
+    },
+    "putSigningProvider": {
+        "body": True,
+        "body_required": True,
+        "method": "PUT",
+        "path": "/api/v1/signing-providers/{id}",
         "path_params": [
             "id"
         ],

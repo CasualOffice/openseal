@@ -40,6 +40,42 @@ pub enum SealError {
     /// Our own output could not be laid out: the placeholder was not found once in the
     /// update, or a ByteRange value did not fit its fixed width (`CS-SEAL-0010`).
     Layout(LayoutProblem),
+    /// A remote provider's answer does not hold for the prepared revision
+    /// (`CS-RSP-0004`; ADR-046 §3.6). Nothing is written.
+    Remote(RemoteProblem),
+    /// A remote signature's CMS is larger than the placeholder planned at `prepare`
+    /// (`CS-RSP-0005`). Never re-laid out: a new layout is a hash the signer did not
+    /// authorize (ADR-046 §3.3).
+    RemoteOverflow {
+        /// Bytes reserved in `/Contents`.
+        reserved: usize,
+        /// Bytes the DER needed.
+        needed: usize,
+    },
+}
+
+/// Why a remote provider's signature value was refused by `complete`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RemoteProblem {
+    /// The prepared bytes or signed attributes are not those `prepare` wrote: the
+    /// ByteRange, the placeholder or the `message-digest` no longer agree.
+    PreparedAltered,
+    /// The value is not a signature over the prepared signed attributes by the
+    /// credential's certificate (another document's hash, another key, a malformed or
+    /// wrong-length value).
+    SignatureValue,
+}
+
+impl fmt::Display for RemoteProblem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PreparedAltered => f.write_str("the prepared revision was altered"),
+            Self::SignatureValue => {
+                f.write_str("the value does not verify over the prepared attributes")
+            }
+        }
+    }
 }
 
 impl SealError {
@@ -55,6 +91,8 @@ impl SealError {
             Self::Revocation(_) => "CS-SEAL-0004",
             Self::Request(_) => "CS-SEAL-0006",
             Self::SelfCheck(_) | Self::Layout(_) => "CS-SEAL-0010",
+            Self::Remote(_) => "CS-RSP-0004",
+            Self::RemoteOverflow { .. } => "CS-RSP-0005",
         }
     }
 }
@@ -77,6 +115,11 @@ impl fmt::Display for SealError {
             Self::Request(p) => write!(f, "request: {p}"),
             Self::SelfCheck(c) => write!(f, "our own output failed verification: {c}"),
             Self::Layout(p) => write!(f, "layout: {p}"),
+            Self::Remote(p) => write!(f, "remote signature: {p}"),
+            Self::RemoteOverflow { reserved, needed } => write!(
+                f,
+                "remote signature of {needed} bytes exceeds its {reserved}-byte placeholder"
+            ),
         }
     }
 }

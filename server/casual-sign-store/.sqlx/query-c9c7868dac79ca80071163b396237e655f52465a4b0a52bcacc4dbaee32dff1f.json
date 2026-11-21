@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_signing_sessions AS s SET code_sealed = NULL FROM (SELECT id, code_sealed FROM remote_signing_sessions WHERE account_id = $1 AND id = $2 AND status = $3 AND closed_at IS NULL FOR UPDATE) AS old WHERE s.account_id = $1 AND s.id = old.id RETURNING old.code_sealed",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "code_sealed",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "code_sealed"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Text"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "c9c7868dac79ca80071163b396237e655f52465a4b0a52bcacc4dbaee32dff1f"
+}

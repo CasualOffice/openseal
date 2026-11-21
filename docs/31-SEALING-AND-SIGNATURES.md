@@ -48,9 +48,10 @@ through the CCA eSign API. Each document is locked at its first such signature, 
 other, and the certificate of completion and audit trail are **separate PDFs** so the signed PDF stays untouched by
 our additions (the same choice Documenso made [V]).
 
-### 3.1 Remote-provider signatures (designed: ADR-046 and ADR-047, Accepted by owner instruction 82; `RSP-01`, `RSP-02`)
+### 3.1 Remote-provider signatures (ADR-046 and ADR-047, Accepted by owner instruction 82; `RSP-01` built for CSC with `RSP-01B` to `RSP-01H` to come, `RSP-02` not built)
 
-Not built. The decisions are in [08](08-ADR-REGISTER.md) §Full records; this is the map.
+The decisions are in [08](08-ADR-REGISTER.md) §Full records; this is the map. What is built is listed under
+"As built" at the end of this section; everything else here is design.
 
 - **Who signs what.** A `signer` recipient with signature type `remote` signs with a certificate in their own name,
   held by a provider: a CSC API v2 provider (DigiCert Document Trust Manager, A-Trust; ADR-046) or an eSign Service
@@ -78,6 +79,55 @@ Not built. The decisions are in [08](08-ADR-REGISTER.md) §Full records; this is
 - **Evidence and claims**: four additive audit types (`recipient.remote_signing_started`, `_prepared`, `_failed`,
   `recipient.remote_signed`) in [32](32-AUDIT-TRAIL-AND-EVIDENCE.md) §3; what may be said about these signatures is
   [09](09-LEGAL-AND-COMPLIANCE.md) §2a.
+
+**As built (`RSP-01` step 1, the engine).** `casual-sign-seal` has `prepare(input, &SealRequest, &ExternalSigner,
+timestamp_token_bound) -> Prepared` and `complete(&Prepared, value, &dyn TimestampSource, &dyn RevocationSource,
+&CompleteOptions) -> Sealed`. `prepare` lays out the revision through the same writer `seal()` uses (the
+`/Contents` placeholder planned from the provider's chain and key with `max_der_len_for`, the TSA bound and the
+margin), digests the ByteRange, and returns the DER signed attributes (explicit `SET OF`, RFC 5652 §5.4) and their
+digest, the hash a provider signs. `Prepared` is plain data. `complete` re-checks the prepared ByteRange, placeholder
+and `message-digest` against the bytes (`CS-RSP-0004` when altered), checks the value under the certificate's key
+over those attributes (`casual_sign_crypto::cms::external_signature`; a raw `r‖s` ECDSA value is re-encoded as DER;
+another document's hash or another key is `CS-RSP-0004`), adds our signature time-stamp (B-T), embeds the CMS
+without ever re-laying out (larger than the placeholder: `CS-RSP-0005`), adds the DSS for that signature at B-LT, and
+runs the §4 step 8 self-check. B-LTA is refused at `prepare` (`CS-SEAL-0006`): the account's B-LTA is applied once at
+completion. `seal()` shares the revision writer (`lay_out` then `embed`) and writes the same bytes as before the
+split: a unit test seals 24 cases (P-256 and RSA-3072; B-B to B-LTA, certification, a visible widget; a plain page and
+an existing form) through `seal()` and through a frozen copy of the pre-split code with replayed key, TSA and OCSP
+answers and compares the bytes (seen red with a one-character change to the writer). Tests:
+`crates/casual-sign-seal/tests/remote.rs`, `src/golden.rs`.
+
+**As built (`RSP-01` gate 2, the revisions).** The lock point's form and the fills are docs/30 §7 "Remote-signature
+revisions". `crates/casual-sign-seal/tests/remote_revisions.rs` builds, with the engine alone, an envelope of a
+simple signer flattened, a remote signer over the materialized form (P-256, B-LT: B-T then the DSS at once) and a
+later simple signer filled in place, platform seal B-LT last; and one of two remote signers (P-256, RSA-3072) with a
+simple signer filled between them, platform seal B-LTA last. Every signature passes and every later revision
+classifies as form filling, signing or DSS data in our verifier; a page-content change after the remote signature
+is `TOTAL_FAILED/DISALLOWED_MODIFICATION`. The same files are `fixtures/sealed/remote-csc-*.pdf` (written by
+`gen_sealed` with the test key in the provider's place): **pyHanko 0.38.1** reports `FORM_FILLING` after each remote
+signature and **EU DSS 6.5.1** `TOTAL_PASSED` with **0 undefined changes** for every signature (2026-11-21, `python3
+tools/verify-sealed.py fixtures/sealed --dss openseal-eu-dss`, now a step of the validators job); for the tampered
+copy pyHanko says `OTHER` and EU DSS counts 5 undefined changes, so all three refuse it. The first build, which wrote
+a remote signer's widget appearance in a revision of its own and empty appearances without the fill's filter, was
+`OTHER` to pyHanko and 3 to 4 undefined changes to EU DSS; both were fixed in the engine before anything else was
+built on it.
+
+**As built (`RSP-01` steps 3 to 5, the hosts, end to end).** The worker's `remote_signing` job prepares every document
+the signer sees from its current revision (the lock point's R0 when it has none: the engine flattens final values,
+unfinished fields are materialized, one slot per remote signer), fills the signer's values in place with the slot's
+appearance, and `prepare`s at B-LT; after the second redirect it calls `signHash` with the authorized hashes and
+`complete`s each document (our B-T, the DSS at once) against the operator's anchors plus the provider's. At
+completion the seal job seals each locked document over its latest revision, the remaining materialized fields filled
+in place first, with nothing appended; the certificate of completion is its own sealed PDF with the remote signer's
+block. On the Compose stack with the CI's CSC stub (`tools/e2e`, signing with `openssl`; the stub's signer certificate
+and the development TSA's name the root's CRL, which `dev-tsa` serves), `webapp/e2e/remote-signing.spec.mjs` ran a
+simple, a remote and a simple signer in chromium and webkit (2026-11-21, 2 passed). Each sealed document: **pyHanko
+0.38.1** passes both signatures (the remote one `FORM_FILLING` after it, valid from the DSS alone with hard-fail
+revocation; the platform seal over the whole file); **our verifier** says `TOTAL_PASSED` for both (after the remote
+signature: `DssUpdate`, `FormFill`, `Signature`); **EU DSS 6.5.1** says `TOTAL_PASSED` with **0 undefined changes**,
+`PAdES-BASELINE-LT` for the remote signature and `-T` for the platform seal. The certificates of completion are B-T,
+as every development-stack certificate: pyHanko passes them; offline, our verifier says `INDETERMINATE/TRY_LATER` and
+EU DSS `INDETERMINATE` for want of revocation data for the seal key, as for `fixtures/sealed`'s B-T files.
 
 ## 4. The sealing algorithm
 

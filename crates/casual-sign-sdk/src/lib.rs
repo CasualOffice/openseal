@@ -64,6 +64,19 @@ pub use casual_sign_verify::{
 };
 pub use casual_sign_xfa::{Faces as XfaFaces, XfaError, XfaLimits, XfaReport};
 
+/// Remote-provider signatures (`RSP-01`, ADR-046 §3.2, §3.3): the lock point's
+/// materialized form and fills in place, and signing in two phases.
+pub mod remote {
+    pub use casual_sign_flatten::{
+        FillMaterialized, Filled, REMOTE_CAPTION, SignatureAppearance, SignatureSlot,
+        SlotAppearance, fill_materialized, materialize, materialized_name,
+    };
+    pub use casual_sign_pdf::admit;
+    pub use casual_sign_seal::{
+        Appearance, CompleteOptions, ExternalSigner, Prepared, Rect, Visible, complete, prepare,
+    };
+}
+
 pub mod anchor;
 
 /// The field model the facade takes: fields, values and identifiers (docs/22 §6).
@@ -84,7 +97,8 @@ pub mod evidence {
     };
     pub use casual_sign_certificate::{
         AuthStep, Consent, CopyKind, CopyRow, Disclosure, DisclosurePlacement, DocumentRow,
-        EmailMask, EnvelopeSummary, Mark, Outcome, PageSize, Party, RecipientRow, Role, SealInfo,
+        EmailMask, EnvelopeSummary, Mark, Outcome, PageSize, Party, RecipientRow, RemoteSignature,
+        Role, SealInfo,
     };
 }
 

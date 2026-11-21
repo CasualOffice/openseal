@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE remote_signing_sessions AS s SET state_sha256 = NULL, pkce_sealed = NULL, code_sealed = $5, status = $6 FROM (SELECT id, pkce_sealed FROM remote_signing_sessions WHERE account_id = $1 AND recipient_id = $2 AND state_sha256 = $3 AND status = $4 AND closed_at IS NULL AND expires_at > $7 FOR UPDATE) AS old WHERE s.account_id = $1 AND s.id = old.id RETURNING s.id, old.pkce_sealed AS pkce",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "pkce",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "pkce_sealed"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid",
+        "Bytea",
+        "Text",
+        "Bytea",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "6073034dcee1ed3243c78039438102a2742975b3f832c99c3cab539bfe5c9245"
+}

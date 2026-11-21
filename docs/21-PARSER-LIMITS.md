@@ -366,10 +366,16 @@ inside the child before the converter reads the archive (`src/screen.rs`). Every
 | Jobs at once | 2 (`OPENSEAL_CONVERTD_SLOTS`); a request beyond them is refused at once, never queued | CS-CNV-0005 (`busy`) | none: `daemon::tests::slots_are_taken_and_given_back` |
 | The server's wait for one conversion | 90 s (`OPENSEAL_CONVERTD_TIMEOUT`), connecting and moving the bytes included | CS-CNV-0003 (`time`) | none: server `tests/convert.rs` |
 
-## Remote signing providers (designed, ADR-046 and ADR-047 Accepted, owner instruction 82; not built)
+## Remote signing providers (ADR-046 and ADR-047 Accepted; `RSP-01` in progress, `RSP-02` not built)
+
+Built for `RSP-01` except the eSign row.
 
 | Limit | Default | Code |
 | --- | ---: | --- |
+| The provider catalogue file | 256 KiB; at most 32 providers; ids `^[a-z0-9][a-z0-9-]{0,31}$`, names 1 to 100 characters, URLs 2,048 bytes (HTTPS, or HTTP to a loopback host); a trust-anchor file 256 KiB | CS-RSP-0010 |
+| An account's provider options | 8 `required_qualifiers`, each `^[a-z0-9_-]{1,64}$`; `session_minutes` 5 to 60; an own client secret 1 to 2,048 bytes | CS-API-0001 |
+| A sealed provider value | 2,048 bytes of plaintext (client secret, PKCE verifier, authorization code) | CS-RSP-0009 |
+| A provider's answer brought back by the signing page | `state` 256 bytes, `code` 900 bytes (sealed with the verifier as JSON, within the bound above), `error` 256 bytes, kept as at most 64 characters of `[A-Za-z0-9_.-]` | CS-API-0001 |
 | A CSC answer (JSON) | 1 MiB; at most 32 credentials, 16 certificates per chain | CS-RSP-0004 |
 | An eSign response (XML) | 512 KiB, depth 16, 256 elements, 5 `DocSignature`, 16 KiB of base64 certificate, 512 KiB of base64 per signature; no DTD or entities | CS-RSP-0004 |
 | A remote signing session | 15 minutes without an answer (account setting, 5 to 60) | CS-RSP-0003 after it closes |

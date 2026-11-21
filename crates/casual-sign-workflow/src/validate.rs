@@ -106,6 +106,27 @@ pub(crate) fn violations(
         if r.spec.route_delay_hours > 0 && r.spec.rtype == RecipientType::Cc {
             push(Some(r.id()), Problem::RouteDelayOnCopy);
         }
+        // Remote signatures (ADR-046 §3.1): a `signer` only, one per routing order.
+        if !r.spec.signature.is_simple() {
+            if r.spec.rtype != RecipientType::Signer {
+                push(Some(r.id()), Problem::RemoteNotForType);
+            }
+            for q in &s.recipients {
+                if q.id() != r.id()
+                    && !q.spec.signature.is_simple()
+                    && q.spec.routing_order == r.spec.routing_order
+                    && q.status != casual_sign_model::RecipientStatus::Reassigned
+                    && r.status != casual_sign_model::RecipientStatus::Reassigned
+                {
+                    push(
+                        Some(r.id()),
+                        Problem::RemoteSignersShareOrder {
+                            with: q.id().clone(),
+                        },
+                    );
+                }
+            }
+        }
         if let Some(w) = &r.spec.witness_for
             && !s.recipient(w).is_some_and(|q| q.spec.rtype.signs())
         {

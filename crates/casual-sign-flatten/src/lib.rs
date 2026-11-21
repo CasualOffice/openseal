@@ -50,6 +50,7 @@ mod image;
 mod ink;
 mod optional;
 mod read;
+mod remote;
 mod subset;
 mod text;
 mod write;
@@ -62,6 +63,10 @@ use casual_sign_model::{Field, FieldValue, Id, Rgb};
 pub use error::FlattenError;
 pub use flatten::flatten;
 pub use fonts::{FontSet, Role};
+pub use remote::{
+    FillMaterialized, Filled, REMOTE_CAPTION, SignatureAppearance, SignatureSlot, SlotAppearance,
+    fill_materialized, materialize, materialized_name,
+};
 
 /// Bounds on what flattening draws (docs/21 unless marked as a decision).
 pub mod limits {

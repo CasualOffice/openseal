@@ -828,6 +828,16 @@ export const OPERATIONS = Object.freeze({
     "path_params": [],
     "query": []
   },
+  "getSigningProvider": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/signing-providers/{id}",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
   "getTemplate": {
     "body": false,
     "body_required": false,
@@ -1126,6 +1136,14 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "listSigningProviders": {
+    "body": false,
+    "body_required": false,
+    "method": "GET",
+    "path": "/api/v1/signing-providers",
+    "path_params": [],
+    "query": []
+  },
   "listSuggestions": {
     "body": false,
     "body_required": false,
@@ -1388,6 +1406,16 @@ export const OPERATIONS = Object.freeze({
     "body_required": false,
     "method": "POST",
     "path": "/api/v1/envelopes/{id}/purge",
+    "path_params": [
+      "id"
+    ],
+    "query": []
+  },
+  "putSigningProvider": {
+    "body": true,
+    "body_required": true,
+    "method": "PUT",
+    "path": "/api/v1/signing-providers/{id}",
     "path_params": [
       "id"
     ],

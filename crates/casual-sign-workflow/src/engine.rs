@@ -251,7 +251,7 @@ fn actor_for(principal: &Principal, state: &EnvelopeState) -> Actor {
     actor
 }
 
-fn not_allowed(command: &Command, state: &EnvelopeState) -> WorkflowError {
+pub(crate) fn not_allowed(command: &Command, state: &EnvelopeState) -> WorkflowError {
     WorkflowError::NotAllowed {
         command: command.name(),
         status: state.status,
@@ -312,6 +312,7 @@ fn create(
         sealed: Vec::new(),
         purged: false,
         deleted_at: None,
+        locked_documents: std::collections::BTreeSet::new(),
         book,
     };
     let mut out = Out::new(ctx, actor_for(&ctx.principal, &state));
@@ -336,7 +337,7 @@ fn authorize_sender(s: &EnvelopeState, cmd: &Command, ctx: &Context) -> Result<(
     }
 }
 
-fn authorize_system(cmd: &Command, ctx: &Context) -> Result<(), WorkflowError> {
+pub(crate) fn authorize_system(cmd: &Command, ctx: &Context) -> Result<(), WorkflowError> {
     if ctx.principal == Principal::System {
         Ok(())
     } else {
@@ -344,7 +345,10 @@ fn authorize_system(cmd: &Command, ctx: &Context) -> Result<(), WorkflowError> {
     }
 }
 
-fn rec<'a>(s: &'a EnvelopeState, id: &Id) -> Result<(usize, &'a RecipientState), WorkflowError> {
+pub(crate) fn rec<'a>(
+    s: &'a EnvelopeState,
+    id: &Id,
+) -> Result<(usize, &'a RecipientState), WorkflowError> {
     s.recipients
         .iter()
         .enumerate()
@@ -367,7 +371,7 @@ pub(crate) fn rec_mut(
 
 /// The principal may act for the recipient: the recipient, their embedding host, or
 /// their in-person host.
-fn authorize_recipient(
+pub(crate) fn authorize_recipient(
     r: &RecipientState,
     cmd: &Command,
     ctx: &Context,
@@ -383,7 +387,7 @@ fn authorize_recipient(
     if ok { Ok(()) } else { Err(not_permitted(cmd)) }
 }
 
-fn recipient_refused(cmd: &Command, r: &RecipientState) -> WorkflowError {
+pub(crate) fn recipient_refused(cmd: &Command, r: &RecipientState) -> WorkflowError {
     WorkflowError::NotAllowedForRecipient {
         command: cmd.name(),
         recipient: r.id().clone(),
@@ -450,7 +454,7 @@ fn gate_in(s: &EnvelopeState, r: &RecipientState, cmd: &Command) -> Result<(), W
 }
 
 /// In, and has accepted the current disclosure when the account requires one (FR-04).
-fn gate_ready(
+pub(crate) fn gate_ready(
     s: &EnvelopeState,
     r: &RecipientState,
     cmd: &Command,
@@ -718,6 +722,13 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             let (i, r) = rec(s, recipient)?;
             authorize_recipient(r, cmd, ctx)?;
             gate_ready(s, r, cmd, ctx)?;
+            // ADR-046 §3.4: values are frozen while a remote session is open.
+            if r.remote.is_some() {
+                return Err(WorkflowError::Remote {
+                    rule: crate::error::RemoteRule::ValuesFrozen,
+                    object: Some(recipient.clone()),
+                });
+            }
             complete_field(s, i, entry, out)
         }
         Command::Finish { recipient, values } => finish(s, cmd, recipient, values, out),
@@ -869,6 +880,62 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
             Ok(())
         }
         Command::RecordAccess { access } => record_access(s, cmd, access, out),
+        Command::BeginRemoteSigning {
+            recipient,
+            session,
+            provider,
+            values,
+        } => crate::remote::begin(s, cmd, recipient, session, provider, values, out),
+        Command::RemoteSigningPrepared {
+            recipient,
+            session,
+            documents,
+            certificate_sha256,
+        } => crate::remote::prepared(
+            s,
+            cmd,
+            recipient,
+            session,
+            documents,
+            *certificate_sha256,
+            out,
+        ),
+        Command::CompleteRemoteSigning {
+            recipient,
+            session,
+            provider,
+            provider_reference,
+            certificate,
+            name_match,
+            documents,
+        } => crate::remote::complete(
+            s,
+            cmd,
+            &crate::remote::Completion {
+                recipient,
+                session,
+                provider,
+                provider_reference: provider_reference.as_deref(),
+                certificate,
+                name_match: *name_match,
+                documents,
+            },
+            out,
+        ),
+        Command::FailRemoteSigning {
+            recipient,
+            session,
+            reason,
+            provider_code,
+        } => crate::remote::fail(
+            s,
+            cmd,
+            recipient,
+            session,
+            *reason,
+            provider_code.as_deref(),
+            out,
+        ),
         Command::Purge { policy } => {
             match ctx.principal {
                 Principal::System | Principal::Admin { .. } => {}
@@ -894,7 +961,7 @@ fn apply(s: &mut EnvelopeState, cmd: &Command, out: &mut Out<'_>) -> Result<(), 
     }
 }
 
-fn authorize_recipient_or_system(
+pub(crate) fn authorize_recipient_or_system(
     r: &RecipientState,
     cmd: &Command,
     ctx: &Context,
@@ -1155,6 +1222,9 @@ fn end(
     topic: WebhookTopic,
     out: &mut Out<'_>,
 ) {
+    // ADR-046 §3.12: an open remote session closes `envelope_ended`; a late answer is
+    // refused (`CS-RSP-0003`).
+    crate::remote::close_all(s, out);
     s.status = status;
     s.ended_at = Some(out.ctx.now);
     cancel_pending(s, out);
@@ -1723,6 +1793,13 @@ fn finish(
     let (i, r) = rec(s, recipient)?;
     authorize_recipient(r, cmd, ctx)?;
     gate_ready(s, r, cmd, ctx)?;
+    // ADR-046 §3.4: a remote signer finishes through their provider, never plainly.
+    if !r.spec.signature.is_simple() {
+        return Err(WorkflowError::Remote {
+            rule: crate::error::RemoteRule::FinishThroughProvider,
+            object: Some(recipient.clone()),
+        });
+    }
     let rtype = r.spec.rtype;
     match rtype {
         RecipientType::Approver | RecipientType::Cc => Err(recipient_refused(cmd, r)),
@@ -1834,6 +1911,19 @@ fn sign(
     values: &[FieldEntry],
     out: &mut Out<'_>,
 ) -> Result<(), WorkflowError> {
+    set_signer_values(s, i, values, out)?;
+    signed(s, i, out)
+}
+
+/// A signer's values set, their server-filled fields auto-filled and stamped, and every
+/// field rule re-run (docs/24 §5): what a finish does before it records the signature,
+/// and what a remote signer's start freezes (ADR-046 §3.4).
+pub(crate) fn set_signer_values(
+    s: &mut EnvelopeState,
+    i: usize,
+    values: &[FieldEntry],
+    out: &mut Out<'_>,
+) -> Result<(), WorkflowError> {
     let ctx = out.ctx;
     for entry in values {
         complete_field(s, i, entry, out)?;
@@ -1900,7 +1990,26 @@ fn sign(
             mark: MarkKind::Signature,
         });
     }
+    check_own_fields(s, &rid)?;
+    Ok(())
+}
 
+/// `recipient.signed` with the hash of each of the signer's values, payments charged,
+/// then `recipient.completed`.
+pub(crate) fn signed(
+    s: &mut EnvelopeState,
+    i: usize,
+    out: &mut Out<'_>,
+) -> Result<(), WorkflowError> {
+    let rid = s
+        .recipients
+        .get(i)
+        .ok_or(WorkflowError::Unknown {
+            kind: ObjectKind::Recipient,
+            id: None,
+        })?
+        .id()
+        .clone();
     let field_value_hashes = check_own_fields(s, &rid)?;
     let payments: Vec<Id> = s
         .fields
@@ -1974,7 +2083,7 @@ fn check_own_fields(
     Ok(hashes)
 }
 
-fn complete_recipient(
+pub(crate) fn complete_recipient(
     s: &mut EnvelopeState,
     i: usize,
     documents: Vec<DocumentHash>,

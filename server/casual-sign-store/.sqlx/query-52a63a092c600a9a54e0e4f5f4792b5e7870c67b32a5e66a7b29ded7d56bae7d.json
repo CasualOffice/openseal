@@ -1,0 +1,209 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, envelope_id, recipient_id, provider_id, status, state_sha256, pkce_sealed, code_sealed, credential_id, credentials, prepared, failure, provider_code, created_at, expires_at, closed_at FROM remote_signing_sessions WHERE account_id = $1 AND id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "envelope_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "envelope_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "recipient_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "recipient_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "provider_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "state_sha256",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "state_sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "pkce_sealed",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "pkce_sealed"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "code_sealed",
+        "type_info": "Bytea",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "code_sealed"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "credential_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "credential_id"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "credentials",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "credentials"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "prepared",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "prepared"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "failure",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "failure"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "provider_code",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "provider_code"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "expires_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "expires_at"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "closed_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "remote_signing_sessions",
+            "name": "closed_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "52a63a092c600a9a54e0e4f5f4792b5e7870c67b32a5e66a7b29ded7d56bae7d"
+}

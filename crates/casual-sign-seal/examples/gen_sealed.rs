@@ -24,6 +24,8 @@
 
 #[path = "../tests/common/mod.rs"]
 mod common;
+#[path = "../tests/common/remote.rs"]
+mod remote;
 
 use std::path::{Path, PathBuf};
 
@@ -110,6 +112,30 @@ impl Out {
         }
         self.rows
             .push(format!("{name}\tintact\t{why}\t{}\t{ours}", level(p)));
+    }
+
+    /// A B-LT file changed after signing: every validator must refuse it; ours gives
+    /// the same verdict for every signature, recorded in the manifest.
+    fn put_tampered(&mut self, name: &str, input: &[u8], bytes: &[u8], why: &str) {
+        assert!(bytes.starts_with(input), "{name}: input is not a prefix");
+        std::fs::write(self.dir.join(name), bytes).unwrap();
+        let report = verify(bytes, &trust(), &VerifyOptions::at(VALIDATION_TIME));
+        let mut verdict: Option<String> = None;
+        for (i, s) in report.signatures.iter().enumerate() {
+            let got = match s.indication {
+                Indication::TotalPassed => "TOTAL_PASSED".to_string(),
+                Indication::TotalFailed(r) | Indication::Indeterminate(r) => {
+                    format!("{}:{}", s.indication.name(), r.sub.name())
+                }
+            };
+            println!("{name}\t{i}\t{:?}\t{got}", s.kind);
+            assert_ne!(got, "TOTAL_PASSED", "{name} signature {i}");
+            assert!(verdict.as_ref().is_none_or(|v| *v == got), "{name}");
+            verdict = Some(got);
+        }
+        let ours = verdict.expect("a signature");
+        self.rows
+            .push(format!("{name}\ttampered\t{why}\tB-LT\t{ours}"));
     }
 }
 
@@ -309,6 +335,39 @@ fn main() {
                     "fixtures/hostile/{file} normalized ({xref:?} xref), {}",
                     level(p)
                 ),
+            );
+        }
+    }
+
+    // Remote-provider signatures (RSP-01, ADR-046 §3.2): the lock point's form, each
+    // remote signer's fill and signature through prepare/complete (the test key in the
+    // provider's place), later fills, the platform seal last.
+    for (name, scenario, p, why) in [
+        (
+            "remote-csc-simple-remote-simple-blt.pdf",
+            remote::Scenario::SimpleRemoteSimple,
+            Profile::BaselineLt,
+            "simple signer flattened, remote signer (P-256, B-LT) over the materialized form, later simple signer filled in place, platform seal B-LT",
+        ),
+        (
+            "remote-csc-two-remote-blta.pdf",
+            remote::Scenario::TwoRemote,
+            Profile::BaselineLta,
+            "two remote signers (P-256, RSA-3072; each B-LT) with a simple signer filled between them, platform seal B-LTA",
+        ),
+    ] {
+        let built = remote::build(scenario, p);
+        out.put(name, &[], &built.bytes, p, why);
+        if scenario == remote::Scenario::SimpleRemoteSimple {
+            // The tampered counterpart every validator must refuse (rule 26): a later
+            // signer's value drawn into page content after the remote signature.
+            let changed =
+                remote::page_content_change(&built.after_first_remote, &built.later_field);
+            out.put_tampered(
+                "remote-csc-page-changed-after-signing-blt.pdf",
+                &built.after_first_remote,
+                &changed,
+                "a value drawn into page content after the remote signature (B-LT): disallowed",
             );
         }
     }

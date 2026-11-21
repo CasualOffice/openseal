@@ -62,8 +62,49 @@ async fn command(
     cmd: Command,
     expected: Option<u64>,
 ) -> Result<(), ApiError> {
+    let before = remote_providers(&l.state);
     let ctx = cmds.ctx(staff(&c.p, &l.state)?, expected)?;
+    let send = matches!(cmd, Command::Send);
     run(tx, l, &cmd, &ctx).await?;
+    check_providers(c, tx, &l.state, if send { None } else { Some(&before) }).await
+}
+
+/// Each recipient's remote provider, by recipient id.
+fn remote_providers(s: &EnvelopeState) -> Vec<(Id, Id)> {
+    s.recipients
+        .iter()
+        .filter_map(|r| {
+            r.spec
+                .signature
+                .provider()
+                .map(|p| (r.id().clone(), p.clone()))
+        })
+        .collect()
+}
+
+/// A remote signer's provider must be in the operator's catalogue, offered to the
+/// account and enabled by it (ADR-046 §3.1, `422 CS-RSP-0001`): checked for every
+/// remote signer at send, and for each one a command gave a new provider. The caller's
+/// transaction is not committed on a refusal, so nothing is kept.
+async fn check_providers(
+    c: &Call,
+    tx: &mut TenantTx,
+    s: &EnvelopeState,
+    before: Option<&[(Id, Id)]>,
+) -> Result<(), ApiError> {
+    let account = c.p.account.0.to_string();
+    for (r, p) in remote_providers(s) {
+        if before.is_some_and(|b| b.iter().any(|(br, bp)| *br == r && *bp == p)) {
+            continue;
+        }
+        if !super::signing::usable(&c.st, tx, &account, p.as_str()).await? {
+            return Err(ApiError::remote(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "CS-RSP-0001",
+                Some(&format!("/recipients/{r}/signature/provider_id")),
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -2074,6 +2115,10 @@ struct RecipientPatch {
     /// (`WF-02`); `0` invites at once.
     #[serde(default)]
     route_delay_hours: Option<u16>,
+    /// The signature type (ADR-046 §3.1): `{"type": "simple"}` or
+    /// `{"type": "remote", "provider_id": "…"}`.
+    #[serde(default)]
+    signature: Option<casual_sign_model::SignatureType>,
 }
 
 /// `PATCH /envelopes/{id}/recipients/{r}`: name, email, routing order, type (a draft
@@ -2119,6 +2164,9 @@ pub(crate) async fn patch_recipient(
     }
     if let Some(h) = req.route_delay_hours {
         spec.route_delay_hours = h;
+    }
+    if let Some(sig) = req.signature {
+        spec.signature = sig;
     }
     if let Some(list) = &req.excluded_documents {
         spec.excluded_documents = list
