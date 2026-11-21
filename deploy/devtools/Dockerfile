@@ -14,7 +14,10 @@ FROM ${DEBIAN_IMAGE}
 RUN apt-get update -q \
  && apt-get install -y -q --no-install-recommends openssl python3 xmlsec1 \
  && rm -rf /var/lib/apt/lists/* \
- && useradd --system --uid 10002 --home-dir /var/lib/tsa --create-home tsa
+ && useradd --system --uid 10002 --home-dir /var/lib/tsa --create-home tsa \
+ # The stub ESP publishes its certificate here as tsa; a new named volume mounted at
+ # /esign takes this directory's owner (compose-e2e, RSP-02).
+ && mkdir -p /esign && chown tsa:tsa /esign
 COPY deploy/devtools/dev-pki.sh /usr/local/bin/dev-pki
 COPY deploy/devtools/dev-tsa.py /usr/local/bin/dev-tsa
 COPY deploy/devtools/tsa.cnf /etc/openseal/tsa.cnf
