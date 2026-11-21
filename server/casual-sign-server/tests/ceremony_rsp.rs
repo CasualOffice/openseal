@@ -243,7 +243,12 @@ async fn a_remote_signers_session_takes_each_answer_once_and_fails_without_a_fal
         Some(json!({"state": state, "code": "c".repeat(901)})),
     )
     .await;
-    assert_eq!(long.status, StatusCode::UNPROCESSABLE_ENTITY, "{:?}", long.json());
+    assert_eq!(
+        long.status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "{:?}",
+        long.json()
+    );
     // Another state is refused and spends nothing; the right one queues the worker once.
     refused(
         &call(
