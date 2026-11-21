@@ -1347,6 +1347,22 @@ pub fn table() -> Vec<Route> {
             JSON,
             ceremony::rsp::document,
         ),
+        // India eSign (RSP-02, ADR-047 §3.1, §3.6): the hand-off page, and the ESP's
+        // answer (public; checked by its XML Signature and single-use state only).
+        r(
+            "GET",
+            "/s/{token}/remote-signing/esign",
+            Public,
+            JSON,
+            ceremony::esign::handoff,
+        ),
+        r(
+            "POST",
+            "/rsp/esign/{provider}/response",
+            Public,
+            JSON,
+            ceremony::esign::response,
+        ),
         r(
             "POST",
             "/s/{token}/consent",

@@ -88,6 +88,9 @@ pub(crate) struct Open {
     remote: Option<Value>,
     /// Their provider's name, answered as `remote_provider_name`.
     remote_name: Option<String>,
+    /// India eSign (`RSP-02`): the consent and authentication modes, answered as
+    /// `remote_esign`.
+    remote_esign: Option<Value>,
     /// Whether the cookie says `Secure` (the server's `secure_cookies`, as the staff
     /// session's: off only for plain-HTTP development on localhost).
     secure: bool,
@@ -309,6 +312,15 @@ async fn reopen(
         };
         let cmds = Commands::new(None, now, ctx, policy);
         let _ = RecipientId(target.recipient_id.0);
+        // RSP-02: an eSign signer's consent and authentication modes.
+        let remote_esign = l
+            .state
+            .recipient(&recipient)
+            .and_then(|r| r.spec.signature.provider())
+            .and_then(|p| {
+                st.signing()
+                    .and_then(|g| g.catalogue.get(p.as_str()).and_then(esign::view_of))
+            });
         // RSP-01: the name of a remote signer's provider, for "Sign with <provider>".
         let remote_name = l
             .state
@@ -333,6 +345,7 @@ async fn reopen(
             remote_url: None,
             remote: None,
             remote_name,
+            remote_esign,
             secure: st.config().secure_cookies,
             sender,
             sandbox: acct.sandbox,
@@ -568,6 +581,9 @@ impl Open {
         }
         if let (Some(n), Some(o)) = (&self.remote_name, v.as_object_mut()) {
             o.insert("remote_provider_name".into(), Value::String(n.clone()));
+        }
+        if let (Some(e), Some(o)) = (&self.remote_esign, v.as_object_mut()) {
+            o.insert("remote_esign".into(), e.clone());
         }
         // The providers to choose from while `sso` is still to pass (RAUTH-01): an empty
         // list says this server has none, so the page can say so.
@@ -2784,3 +2800,7 @@ fn _ex(_: Ex) {}
 /// The signer's side of a remote signing session (`RSP-01`).
 #[path = "ceremony_rsp.rs"]
 pub(crate) mod rsp;
+
+/// India eSign's consent, hand-off and answer (`RSP-02`).
+#[path = "ceremony_esign.rs"]
+pub(crate) mod esign;

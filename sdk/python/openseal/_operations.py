@@ -528,6 +528,16 @@ OPERATIONS = {
         ],
         "query": []
     },
+    "esignResponse": {
+        "body": False,
+        "body_required": False,
+        "method": "POST",
+        "path": "/rsp/esign/{provider}/response",
+        "path_params": [
+            "provider"
+        ],
+        "query": []
+    },
     "exportMe": {
         "body": False,
         "body_required": False,

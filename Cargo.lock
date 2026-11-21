@@ -777,6 +777,7 @@ dependencies = [
  "casual-sign-audit",
  "casual-sign-convertd",
  "casual-sign-csc",
+ "casual-sign-esign",
  "casual-sign-fields",
  "casual-sign-host",
  "casual-sign-model",

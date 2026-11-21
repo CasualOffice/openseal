@@ -121,7 +121,8 @@ ACRONYMS = {"Otp": "OTP", "Sso": "SSO", "Mfa": "MFA", "Totp": "TOTP", "Ersd": "E
 
 def group_of(path: str) -> str:
     # The embedded views' own page and session (VS-09) are the ceremony's kind: not public API.
-    if path.startswith("/s/") or path.startswith("/e/"):
+    # The ESP's answer endpoint (RSP-02) is the ceremony's too: the ESP brings it back.
+    if path.startswith("/s/") or path.startswith("/e/") or path.startswith("/rsp/"):
         return "ceremony"
     if path.startswith("/.well-known/") or path.startswith("/api/v1/oauth"):
         return "oauth"

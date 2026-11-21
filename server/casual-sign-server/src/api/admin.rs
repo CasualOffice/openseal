@@ -1708,6 +1708,12 @@ fn serde_urlencoded_parse(body: &[u8]) -> Option<TokenIn> {
     serde_json::from_value(Value::Object(m)).ok()
 }
 
+/// One `application/x-www-form-urlencoded` name or value, decoded (also the eSign
+/// answer's form field, `RSP-02`).
+pub(crate) fn form_decode(s: &str) -> Option<String> {
+    decode(s)
+}
+
 fn decode(s: &str) -> Option<String> {
     let mut out = Vec::with_capacity(s.len());
     let mut bytes = s.bytes();

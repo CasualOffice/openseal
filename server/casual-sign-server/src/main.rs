@@ -371,15 +371,29 @@ async fn migrate() -> ExitCode {
     );
     // KEYD-02: the seal token key, the same bytes keyd holds.
     match secret("OPENSEAL_KEYD_SEAL_TOKEN_KEY") {
-        Ok(None) => ExitCode::SUCCESS,
-        Err(e) => fail(&e),
+        Ok(None) => {}
+        Err(e) => return fail(&e),
         Ok(Some(hex)) => {
             let Some(key) = hex_key(hex.trim()) else {
                 return fail("OPENSEAL_KEYD_SEAL_TOKEN_KEY: not 64 hex digits");
             };
             match store.install_seal_token_key(&key).await {
+                Ok(()) => println!("keyd seal token key installed"),
+                Err(e) => return fail(e.code()),
+            }
+        }
+    }
+    // RSP-02 (ADR-047 §3.5): the ASP token key, the same bytes keyd holds.
+    match secret("OPENSEAL_KEYD_ASP_TOKEN_KEY") {
+        Ok(None) => ExitCode::SUCCESS,
+        Err(e) => fail(&e),
+        Ok(Some(hex)) => {
+            let Some(key) = hex_key(hex.trim()) else {
+                return fail("OPENSEAL_KEYD_ASP_TOKEN_KEY: not 64 hex digits");
+            };
+            match store.install_asp_token_key(&key).await {
                 Ok(()) => {
-                    println!("keyd seal token key installed");
+                    println!("keyd ASP token key installed");
                     ExitCode::SUCCESS
                 }
                 Err(e) => fail(e.code()),
