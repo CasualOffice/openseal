@@ -277,7 +277,8 @@ pub(crate) struct SignIn<'a> {
     pub(crate) record: PreparedSession,
     pub(crate) prepared: Vec<Vec<u8>>,
     pub(crate) requests: Vec<Vec<u8>>,
-    pub(crate) responses: Vec<Vec<u8>>,
+    /// Each document's answer, in order; `None` after an answer that ended the session.
+    pub(crate) responses: Vec<Option<Vec<u8>>>,
     pub(crate) rid: &'a Id,
     pub(crate) session: &'a Id,
     pub(crate) provider: &'a RemoteProvider,
@@ -327,6 +328,10 @@ pub(crate) fn sign(i: SignIn<'_>) -> Outcome {
         .zip(i.requests)
         .zip(i.responses)
     {
+        // An answer ended the session before this document: its failure came first.
+        let Some(response) = response else {
+            return Outcome::Failed(RemoteFailure::ResponseInvalid, Some("CS-RSP-0004".into()));
+        };
         // Read again from the stored bytes, verified under the configured certificate.
         let answer = match casual_sign_esign::response::read(&response, &esp) {
             Ok(a) => a,
@@ -597,17 +602,17 @@ impl<B: casual_sign_store::blob::BlobStore + 'static> super::Worker<B> {
                 let mut responses = Vec::new();
                 let key = |k: Option<&str>| BlobKey::parse(k.unwrap_or("")).ok();
                 for d in &record.documents {
-                    let (Some(p), Some(q), Some(r)) = (
-                        key(Some(&d.prepared)),
-                        key(d.request.as_deref()),
-                        key(d.response.as_deref()),
-                    ) else {
-                        // Not every document answered: nothing is embedded.
+                    let (Some(p), Some(q)) = (key(Some(&d.prepared)), key(d.request.as_deref()))
+                    else {
                         return Ok(Outcome::Failed(RemoteFailure::ResponseInvalid, None));
                     };
                     prepared.push(self.blob_or(&p, "document").await?);
                     requests.push(self.blob_or(&q, "document").await?);
-                    responses.push(self.blob_or(&r, "document").await?);
+                    // A document after the answer that ended the session has none.
+                    responses.push(match key(d.response.as_deref()) {
+                        Some(r) => Some(self.blob_or(&r, "document").await?),
+                        None => None,
+                    });
                 }
                 let name = state
                     .recipient(rid)

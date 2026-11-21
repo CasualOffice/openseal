@@ -793,13 +793,16 @@ impl<B: BlobStore + 'static> Worker<B> {
                 let value = serde_json::to_value(&record).map_err(|_| bad())?;
                 match apply_in(&mut tx, envelope, &command, &c).await {
                     Ok(_) => {
+                        // An eSign session has no credential (the ESP issues it).
+                        let credential =
+                            Some(record.credential_id.as_str()).filter(|c| !c.is_empty());
                         tx.signing()
                             .advance(
                                 session.id,
                                 SessionStatus::Prepared,
                                 None,
                                 None,
-                                Some(&record.credential_id),
+                                credential,
                                 None,
                                 Some(&value),
                             )
