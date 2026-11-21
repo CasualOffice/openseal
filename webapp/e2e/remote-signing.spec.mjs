@@ -59,6 +59,7 @@ async function adminKey(page, run) {
   await panel.getByLabel("Name", { exact: true }).fill(`RSP-01 ${run}`);
   await panel.getByLabel("Kind").selectOption("api_key");
   await panel.locator("#c-scope-admin-account").check();
+  await panel.locator("#c-scope-audit-read").check();
   await panel.getByRole("button", { name: "Create" }).click();
   const secret = page.getByRole("dialog", { name: "Copy the secret now" });
   await expect(secret).toBeVisible();
@@ -188,14 +189,14 @@ test("a remote signer signs with their provider between two simple signers; the 
   }
   fs.mkdirSync(OUT, { recursive: true });
   const doc = done.documents[0].id;
-  const sealed = Buffer.from(await (await call("GET", `/envelopes/${env.id}/documents/${doc}/content`, undefined, true)).arrayBuffer());
+  const sealed = Buffer.from(await (await call("GET", `/envelopes/${env.id}/documents/${doc}/content?version=sealed`, undefined, true)).arrayBuffer());
   const certificate = Buffer.from(await (await call("GET", `/envelopes/${env.id}/certificate`, undefined, true)).arrayBuffer());
   expect(sealed.subarray(0, 5).toString()).toBe("%PDF-");
-  // Three signatures: the remote signer's, then the platform seal; nothing appended.
-  expect((sealed.toString("latin1").match(/\/Type\s*\/Sig\b/g) || []).length).toBeGreaterThanOrEqual(2);
   const name = `rsp01-${testInfo.project.name}`;
   fs.writeFileSync(path.join(OUT, `${name}-sealed.pdf`), sealed);
   fs.writeFileSync(path.join(OUT, `${name}-certificate.pdf`), certificate);
+  // Two signatures in the document: the remote signer's, then the platform seal.
+  expect((sealed.toString("latin1").match(/\/ByteRange\s*\[/g) || []).length).toBe(2);
   const manifest = path.join(OUT, "manifest.tsv");
   if (!fs.existsSync(manifest)) fs.writeFileSync(manifest, "file\texpect\twhy\tlevel\n");
   fs.appendFileSync(manifest, `${name}-sealed.pdf\tintact\tRSP-01 remote signature then the platform seal, ${testInfo.project.name}\tB-T\n`);

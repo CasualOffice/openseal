@@ -474,12 +474,12 @@ catalogue and account enablement. Documents: docs/19, 20, 21, 22, 24, 30, 31, 32
   fields filled in place) and the certificate of completion stays a separate sealed PDF, its remote signer block in
   docs/09 §2a's words. HTTP to providers goes through `ureq` with the worker's address policy (no redirects, 30 s,
   plain HTTP only to loopback). docs/31 §3.1 As built.
-- **Still to build in `RSP-01`.** The signer's choice among several eligible credentials (the first eligible one is
-  used; the session's `choosing` step exists unused); `multisign` batches when a signer has more documents than
-  their credential's `multisign` (one `signHash` today); P-384 and RSA-PSS credentials (P-256 and RSA PKCS#1 v1.5
-  with SHA-256 are accepted; others are not eligible); the webhook topic `recipient.remote_signing_failed`;
-  template roles' signature type. keyd's `csc` backend (§3.10) is its own row, `RSP-01B`: it serves a platform seal
-  key held at a QTSP and has no consumer in the per-recipient flow.
+- **Still to build, each its own row.** keyd's `csc` backend (§3.10, `RSP-01B`: it serves a platform seal key held
+  at a QTSP and has no consumer in the per-recipient flow); the signer's choice among several eligible credentials
+  (`RSP-01C`; the first eligible one is used, the session's `choosing` step exists unused); `multisign` batches
+  (`RSP-01D`; one `signHash` today); P-384 and RSA-PSS credentials (`RSP-01E`; P-256 and RSA PKCS#1 v1.5 with SHA-256
+  are eligible); the webhook topic `recipient.remote_signing_failed` (`RSP-01F`); template roles' signature type
+  (`RSP-01G`); a real sandbox run and counsel's review (`RSP-01H`).
 
 ### ADR-047 — India eSign through a licensed ESP, as an ASP (`RSP-02`)
 
