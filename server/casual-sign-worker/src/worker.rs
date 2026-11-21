@@ -276,6 +276,10 @@ pub struct Worker<B: BlobStore> {
 #[path = "rsp.rs"]
 pub mod rsp;
 
+/// The worker's half of an India eSign session (`RSP-02`).
+#[path = "esign.rs"]
+pub mod esign;
+
 impl<B: BlobStore> core::fmt::Debug for Worker<B> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("Worker")

@@ -175,6 +175,45 @@ impl Store {
         crate::migrate::install_seal_token_key(&self.pool, key).await
     }
 
+    /// Install (or replace) the 32-byte key the database mints keyd's ASP tokens under
+    /// (ADR-047 §3.5, migration 0052), as the schema owner. keyd must hold the same key.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0008` for a key that is not 32 bytes; `CS-DB-0001` otherwise.
+    pub async fn install_asp_token_key(&self, key: &[u8]) -> Result<()> {
+        // A runtime-checked, parameterized query: the definer function is new in 0052 and
+        // the offline cache is regenerated on CI (sqlx-prepare.sh).
+        sqlx::query("SELECT openseal_keyd.set_asp_token_key($1)")
+            .bind(key)
+            .execute(&self.pool)
+            .await
+            .map_err(crate::error::db)?;
+        Ok(())
+    }
+
+    /// The account of the open eSign session `session` of `provider` (migration 0052),
+    /// for the ESP's answer, which arrives with no account in hand; `None` for any other
+    /// id. Everything else about the answer is checked in that account's transaction.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn esign_session_account(
+        &self,
+        session: uuid::Uuid,
+        provider: &str,
+    ) -> Result<Option<crate::ids::AccountId>> {
+        let row: Option<(Option<uuid::Uuid>,)> =
+            sqlx::query_as("SELECT openseal_esign_session_account($1, $2)")
+                .bind(session)
+                .bind(provider)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(crate::error::db)?;
+        Ok(row.and_then(|r| r.0).map(crate::ids::AccountId))
+    }
+
     /// Every staff user's sealed TOTP seed (`HRD-12`, migration 0043), as the schema
     /// owner: what `casual-sign-server mfa-reseal` moves under a new second-factor key.
     /// Sealed values only; the key never reaches the database.

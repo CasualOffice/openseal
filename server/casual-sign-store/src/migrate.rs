@@ -87,6 +87,7 @@ pub const MIGRATIONS: &[Migration] = &[
     migration!(49, "0049_sandbox_workspaces.sql"),
     migration!(50, "0050_embedding.sql"),
     migration!(51, "0051_remote_signing.sql"),
+    migration!(52, "0052_esign_asp_tokens.sql"),
 ];
 
 /// The migration ledger. Also the first statement of migration 0001.

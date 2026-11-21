@@ -30,6 +30,9 @@ export const MOCK = {
   // RSP-01: a signer who signs with their own certificate at the mock's provider (offered
   // with `sessionStorage["openseal.mock.rsp"] = "1"`); made when the link is first opened.
   remoteSignToken: "demo-remote-sign",
+  // RSP-02: a signer who signs with India eSign through the mock's ESP (offered with the
+  // same switch); the hand-off returns straight to the page, with no ESP page.
+  esignSignToken: "demo-esign-sign",
   // The demo user's own link to an envelope another member sent them (the Inbox, UX-03).
   inboxToken: "demo-inbox",
   accessCode: "2468",
@@ -603,7 +606,9 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       ...(rec.auth.includes("sso") && !rec.auth_passed.includes("sso") ? { sso_providers: [MOCK.ssoProvider] } : {}),
       sender: { name: sender?.name || "", email: sender?.email || "", organisation: acct.settings?.branding?.name || acct.name },
       // RSP-01, as the server: a remote signer's provider, by name.
-      ...(rec.signature?.type === "remote" ? { remote_provider_name: REMOTE_PROVIDER.name } : {}),
+      ...(rec.signature?.type === "remote" ? { remote_provider_name: providerOf(rec).name } : {}),
+      // RSP-02, as the server: an eSign signer's consent and authentication modes.
+      ...(rec.signature?.provider_id === ESIGN_PROVIDER.id ? { remote_esign: { consent_version: ESIGN_CONSENT_VERSION, consent_text: esignConsent(ESIGN_PROVIDER.name), auth_modes: ["otp", "face"] } } : {}),
       // ADR-041: an envelope sent from a sandbox workspace.
       sandbox: env.sandbox === true,
       // VS-02, as the server: an agent, intermediary or editor sees the later
@@ -630,11 +635,11 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     return { ...rest, authenticated: r.auth.every((m) => r.auth_passed.includes(m)) };
   };
   /// RSP-01: the view with the recipient's remote signing session, as the server's.
-  const remoteView = (env, rec, token, s) => ({ ...view(env, rec, token), remote_signing: s ? { session: s.id, status: s.status, failure: s.failure || null, provider: REMOTE_PROVIDER.name, documents: s.status === "prepared" ? env.documents.map((d) => d.id) : [] } : null });
+  const remoteView = (env, rec, token, s) => ({ ...view(env, rec, token), remote_signing: s ? { session: s.id, status: s.status, failure: s.failure || null, provider: providerOf(rec).name, documents: s.status === "prepared" ? env.documents.map((d) => d.id) : [], ...(s.esign ? { esign: s.esign } : {}) } : null });
   const publicEnvelope = (e) => ({ ...e, recipients: e.recipients.map((r) => ({ ...publicRecipient(r), mock_token: r.token || null })) });
 
   // ---- Seed ------------------------------------------------------------------
-  async function seed({ fieldKinds = false, embed = false, remote = false } = {}) {
+  async function seed({ fieldKinds = false, embed = false, remote = false, esign = false } = {}) {
     const doc = (title, n = 2) => makePdf(Array.from({ length: n }, (_, i) => ({
       title: i === 0 ? title : `${title} (continued)`,
       lines: [
@@ -664,6 +669,12 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       { type: "signature", page: 1, x: 72, y, width: 160, height: 44, required: true },
       { type: "date_signed", page: 1, x: 340, y: y + 22, width: 110, height: 22 },
     ];
+    // RSP-02: a signer who signs with India eSign through the mock's ESP.
+    if (esign) {
+      await mk("Lease deed — Contoso India", 10, [{ name: "Asha Esign", email: "asha@contoso.example", routing_order: 1 }], [sigFields(600)],
+        async (env, recs) => { recs[0].token = MOCK.esignSignToken; recs[0].signature = { type: "remote", provider_id: ESIGN_PROVIDER.id }; await send(env); });
+      return;
+    }
     // RSP-01: a signer whose signature is made at the mock's remote provider.
     if (remote) {
       await mk("Supply agreement — Fabrikam", 10, [{ name: "Robin Remote", email: "robin@fabrikam.example", routing_order: 1 }], [sigFields(600)],
@@ -3181,6 +3192,7 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
     const sub = parts[3];
     if (token === MOCK.fieldsToken && !db.tokens[token]) await seed({ fieldKinds: true });
     if (token === MOCK.remoteSignToken && !db.tokens[token]) await seed({ remote: true });
+    if (token === MOCK.esignSignToken && !db.tokens[token]) await seed({ esign: true });
     if (EMBED_TOKENS.includes(token) && !db.embedSeeded) await seed({ embed: true });
     const t = db.tokens[token];
     if (!t) fail(404, "CS-API-0002", "Not found");
@@ -3446,6 +3458,36 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
       const rs = (db.remote ||= {})[rec.id];
       const state = (s) => remoteView(env, rec, token, s);
       const back = (s) => { s.state = uid(); return `/s/rsp?state=${encodeURIComponent(s.state)}&code=mock-rsp-code`; };
+      // RSP-02, as the server: an eSign start needs the consent ticked; the worker
+      // prepares at once; each authorize hands off one document (here straight back).
+      if (rec.signature.provider_id === ESIGN_PROVIDER.id) {
+        if (!parts[4] && method === "POST") {
+          if (rs && !["completed", "failed"].includes(rs.status)) fail(409, "CS-RSP-0007", "A remote signing session is open");
+          const c = body?.esign;
+          if (!c || c.consent !== ESIGN_CONSENT_VERSION) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/esign", code: "required" }]);
+          if (c.accepted !== true) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/esign/accepted", code: "invalid" }]);
+          if (!["otp", "face"].includes(c.auth_mode || "otp")) fail(422, "CS-API-0001", "Malformed or invalid request", [{ pointer: "/esign/auth_mode", code: "invalid" }]);
+          checkRequired(env, rec);
+          const s = { id: uid(), status: "prepared", answered: 0 };
+          db.remote[rec.id] = s;
+          await audit(env, "recipient.remote_signing_started", { recipient_id: rec.id, session: s.id, provider: { id: ESIGN_PROVIDER.id, kind: "in_esign", name: ESIGN_PROVIDER.name }, esign: { consent_sha256: await sha256hex(esignConsent(ESIGN_PROVIDER.name)), api_version: "2.1", auth_mode: c.auth_mode || "otp" } }, loc);
+          await audit(env, "recipient.remote_signing_prepared", { recipient_id: rec.id, session: s.id });
+          return json(200, state(s));
+        }
+        if (parts[4] === "authorize" && method === "POST") {
+          if (!rs || rs.status !== "prepared") fail(409, "CS-RSP-0003", "No remote signing session for this state");
+          const of = env.documents.length;
+          rs.answered += 1;
+          rs.esign = { handoff: "/s/rsp?state=esign", document: rs.answered, of };
+          if (rs.answered >= of) {
+            rs.status = "completed";
+            for (const f of env.fields) if (f.recipient_id === rec.id && f.type === "date_signed") f.value = { text: iso().slice(0, 10) };
+            await audit(env, "recipient.remote_signed", { recipient_id: rec.id, session: rs.id, provider_reference: "MOCK-RES-1" });
+            await complete(env, rec, loc, "signed");
+          }
+          return json(200, state(rs));
+        }
+      }
       if (!parts[4] && method === "POST") {
         if (rs && !["completed", "failed"].includes(rs.status)) fail(409, "CS-RSP-0007", "A remote signing session is open");
         checkRequired(env, rec);
@@ -3724,9 +3766,23 @@ export function createMockFetch({ store = null, now = () => new Date() } = {}) {
 /// RSP-01: the mock's one remote signing provider.
 const REMOTE_PROVIDER = { id: "csc-demo", name: "Demo CSC provider" };
 
+/// RSP-02: the mock's India eSign Service Provider.
+const ESIGN_PROVIDER = { id: "esign-demo", name: "Demo eSign provider" };
+const ESIGN_CONSENT_VERSION = "esign-consent-v1-en";
+
+/// The consent text, as the server words it (ceremony_esign.rs `consent_text`).
+function esignConsent(esp) {
+  return `I consent to ${esp} authenticating me through my e-KYC (Aadhaar or another e-KYC provider) and receiving my identity and address details for this purpose; applying on my behalf for a digital signature certificate in my name; generating a key pair to sign this document once; and deleting that key after signing. I will give my Aadhaar number or VID and my one-time password or biometrics to ${esp} only, on its own page: OpenSeal never receives them.`;
+}
+
+/// The provider of a remote signer.
+function providerOf(rec) {
+  return rec.signature?.provider_id === ESIGN_PROVIDER.id ? ESIGN_PROVIDER : REMOTE_PROVIDER;
+}
+
 /// RSP-01: the mock's signing providers (`sessionStorage["openseal.mock.rsp"] = "1"`).
 function mockProviders() {
   let on = false;
   try { on = globalThis.sessionStorage?.getItem("openseal.mock.rsp") === "1"; } catch { on = false; }
-  return on ? [{ ...REMOTE_PROVIDER, kind: "csc", enabled: true }] : [];
+  return on ? [{ ...REMOTE_PROVIDER, kind: "csc", enabled: true }, { ...ESIGN_PROVIDER, kind: "in_esign", enabled: true }] : [];
 }

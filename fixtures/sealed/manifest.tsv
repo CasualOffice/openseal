@@ -21,3 +21,7 @@ valid-xrefstream-normalized-blt.pdf	intact	fixtures/hostile/valid_xrefstream.pdf
 remote-csc-simple-remote-simple-blt.pdf	intact	simple signer flattened, remote signer (P-256, B-LT) over the materialized form, later simple signer filled in place, platform seal B-LT	B-LT	TOTAL_PASSED
 remote-csc-page-changed-after-signing-blt.pdf	tampered	a value drawn into page content after the remote signature (B-LT): disallowed	B-LT	TOTAL_FAILED:DISALLOWED_MODIFICATION
 remote-csc-two-remote-blta.pdf	intact	two remote signers (P-256, RSA-3072; each B-LT) with a simple signer filled between them, platform seal B-LTA	B-LTA	TOTAL_PASSED
+remote-esign-cades-blt.pdf	intact	eSign signer (P-256): an ESP's CAdES-like CMS as ETSI.CAdES.detached, our time-stamp, DSS; platform seal B-LT	B-LT	TOTAL_PASSED
+remote-esign-adobe-pkcs7-blt.pdf	intact	eSign signer (RSA-3072): an ESP's Adobe-like CMS (signingTime, no ESS) as adbe.pkcs7.detached, our time-stamp, DSS; platform seal B-LT	B-LT	TOTAL_PASSED
+remote-esign-page-changed-after-signing-blt.pdf	tampered	a value drawn into page content after the eSign signature (B-LT): disallowed	B-LT	TOTAL_FAILED:DISALLOWED_MODIFICATION
+remote-esign-esp-timestamped-blt.pdf	intact	eSign signer (P-256): an ESP's CAdES-like CMS carrying its own signature time-stamp, kept; DSS; platform seal B-LT	B-LT	TOTAL_PASSED

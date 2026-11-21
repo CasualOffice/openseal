@@ -10,4 +10,18 @@
   "trust_anchors_file": "/secrets/ca.pem",
   "accounts": ["*"],
   "redirect_uri": "http://localhost:8080/s/rsp"
+}, {
+  "id": "esign-ci",
+  "kind": "in_esign",
+  "name": "OpenSeal CI eSign provider",
+  "trust_anchors_file": "/secrets/ca.pem",
+  "accounts": ["*"],
+  "esign": {
+    "esign_url": "http://localhost:8092/esign/2.1/signdoc",
+    "asp_id": "ASP-OPENSEAL-CI",
+    "asp_key_alias": "asp-ci",
+    "response_certificate_file": "/esign/esp-response.pem",
+    "cms_format": "cades",
+    "response_url": "http://localhost:8080/rsp/esign/esign-ci/response"
+  }
 }]}

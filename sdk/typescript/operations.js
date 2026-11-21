@@ -525,6 +525,16 @@ export const OPERATIONS = Object.freeze({
     ],
     "query": []
   },
+  "esignResponse": {
+    "body": false,
+    "body_required": false,
+    "method": "POST",
+    "path": "/rsp/esign/{provider}/response",
+    "path_params": [
+      "provider"
+    ],
+    "query": []
+  },
   "exportMe": {
     "body": false,
     "body_required": false,

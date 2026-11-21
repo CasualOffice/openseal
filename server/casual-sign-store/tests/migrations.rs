@@ -129,7 +129,8 @@ async fn every_tenant_table_has_rls_a_policy_a_not_null_account_id_and_a_leading
     // definer functions only); 0047 `folder_templates` (TSH-03), a tenant table; 0048
     // `oauth_consents`, `oauth_codes` and `oauth_refresh_tokens` (VS-08A), tenant tables;
     // 0049 none (VS-08D); 0050 `embed_views` (VS-09), a tenant table; 0051
-    // `account_signing_providers` and `remote_signing_sessions` (RSP-01), tenant tables.
+    // `account_signing_providers` and `remote_signing_sessions` (RSP-01), tenant tables;
+    // 0052 none in `public` (RSP-02: the ASP token key is in `openseal_keyd`).
     assert_eq!(tables.len(), 74, "{tables:?}");
     const ORG: &[&str] = &[
         "organizations",

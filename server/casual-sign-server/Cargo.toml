@@ -42,6 +42,8 @@ casual-sign-secrets = { path = "../casual-sign-secrets" }
 # Remote-provider signatures (RSP-01, ADR-046): the operator's provider catalogue and the
 # AES-256-GCM sealing of an account's own client secret and a session's PKCE verifier.
 casual-sign-csc = { path = "../casual-sign-csc" }
+# India eSign as an ASP (RSP-02): reading and verifying the ESP's answers.
+casual-sign-esign = { path = "../casual-sign-esign" }
 # HTTP (ADR-014; the sisters' stack, OpenCalc's casual-calc-host). MIT.
 axum = { version = "0.8.4", default-features = false, features = ["http1", "json", "query", "tokio", "matched-path", "original-uri"] }
 tokio = { version = "1.40", default-features = false, features = ["rt-multi-thread", "macros", "net", "signal", "time", "io-util", "sync"] }

@@ -87,6 +87,22 @@ are the codes of that step (docs/30 §3 XFA, limits in docs/21 §XFA).
 | CS-XFA-0009 | Cancelled by the host |
 | CS-XFA-0010 | No usable face supplied to draw text with |
 
+## Bounded XML reader (`casual-sign-xml`, ADR-026, ADR-047 §3.5)
+
+The reader's own codes. `casual-sign-xfa` reports them as its `CS-XFA-0002` to `-0005` and `-0009` (unchanged since
+the reader moved out of it); `casual-sign-esign` reports any of them on an ESP's answer as `CS-RSP-0004`. Limits in
+docs/21 §XFA and §Remote signing providers.
+
+| Code | Meaning |
+| --- | --- |
+| CS-XML-0001 | The document is larger than the limit |
+| CS-XML-0002 | Elements nested deeper than the limit |
+| CS-XML-0003 | Too many nodes or elements, or too many attributes on one element |
+| CS-XML-0004 | Not well formed: syntax, crossed or unbalanced tags, a duplicate attribute (also by expanded name, strict), an undefined entity or prefix, an invalid character or character reference, a processing instruction (strict) |
+| CS-XML-0005 | A document type or entity declaration: refused, so no entity is expanded or resolved |
+| CS-XML-0006 | Strict mode: not UTF-8, or another encoding declared |
+| CS-XML-0007 | Cancelled by the host |
+
 ## Sealing and verification
 
 | Code | Meaning |

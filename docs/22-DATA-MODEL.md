@@ -441,6 +441,16 @@ live template sets it (the template keeps its roles, documents and fields, leave
 `Templates::list_deleted`, `get_deleted` and `restore` serve the Deleted view); deleting it there removes it for good.
 A template has no audit chain, so neither step is evidence. Fifty-four tables with `0022`.
 
+`0052_esign_asp_tokens.sql` (`RSP-02`, ADR-047 §3.5, §3.6): no table in `public`. `openseal_keyd.asp_token_key`
+(the 32-byte ASP token key, unreadable by the application role, installed by `casual-sign-server migrate` from
+`OPENSEAL_KEYD_ASP_TOKEN_KEY`), `openseal_keyd_asp_token(session)` (a definer function minting the token keyd needs to
+sign an ASP request, only for an open session of the transaction's account that is `preparing` and within its time) and
+`openseal_esign_session_account(session, provider)` (the account of an open session of that provider, so the public
+answer endpoint can open the account's transaction; nothing for any other id). An eSign session uses
+`remote_signing_sessions` as CSC does: the `prepared` JSON holds, per document, its `txn`, the signed request's and the
+answer's blobs and the `/SubFilter`; the `state` hash is the single-use key of each hand-off's answer. These two
+functions are called with runtime-checked, parameterized queries until the offline cache is regenerated on CI.
+
 `0051_remote_signing.sql` (`RSP-01`, ADR-046 §3.4, §3.11): `account_signing_providers` and `remote_signing_sessions`, as §5
 `signature` describes; both tenant tables (`openseal_tenant_table`), every query through `TenantTx::signing`.
 

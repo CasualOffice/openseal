@@ -33,7 +33,7 @@ test("the mock lists the enabled provider and refuses two remote signers at one 
   try {
     const api = createClient({ fetch: createMockFetch() });
     await api.login(MOCK.email, MOCK.password);
-    assert.deepEqual((await api.listSigningProviders()).items.map((p) => [p.id, p.enabled]), [["csc-demo", true]]);
+    assert.deepEqual((await api.listSigningProviders()).items.map((p) => [p.id, p.enabled]), [["csc-demo", true], ["esign-demo", true]]);
     const env = await api.createEnvelope({
       subject: "Remote",
       documents: [{ name: "a.pdf", content_base64: pdf }],

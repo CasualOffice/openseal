@@ -74,6 +74,8 @@ der = { version = "0.8.3", default-features = false, features = ["alloc"] }
 
 # Remote-provider signatures (RSP-01): the catalogue, provider secrets and the CSC client.
 casual-sign-csc = { path = "../casual-sign-csc" }
+# India eSign as an ASP (RSP-02): the request, the answer and their XML Signatures.
+casual-sign-esign = { path = "../casual-sign-esign" }
 
 # The one JSON log line and the security events (ASVS-08).
 casual-sign-seclog = { path = "../casual-sign-seclog" }

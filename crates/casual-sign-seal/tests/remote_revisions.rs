@@ -70,6 +70,25 @@ fn simple_remote_simple_with_the_platform_seal_last_passes_and_classifies_as_fil
 }
 
 #[test]
+fn an_esign_signer_over_the_materialized_form_then_the_platform_seal_all_pass() {
+    // ADR-047 §3.3: CAdES-like, Adobe-like (adbe.pkcs7.detached) and ESP-time-stamped.
+    for scenario in [
+        Scenario::EsignCades,
+        Scenario::EsignAdobe,
+        Scenario::EsignTimestamped,
+    ] {
+        let b = build(scenario, Profile::BaselineLt);
+        check(&b.bytes, 2);
+        let adobe = b"/adbe.pkcs7.detached";
+        assert_eq!(
+            count(&b.bytes, adobe),
+            usize::from(scenario == Scenario::EsignAdobe),
+            "{scenario:?}"
+        );
+    }
+}
+
+#[test]
 fn two_remote_signers_then_the_platform_seal_at_b_lta_all_pass() {
     let b = build(Scenario::TwoRemote, Profile::BaselineLta);
     check(&b.bytes, 3);

@@ -75,7 +75,7 @@ or try the same demo on the website with nothing installed.
 
 ## Status
 
-Docs are true as of `9b9acab` (2026-11-21): `main`, CI run 44823112331 green on every job; slice 9 is closed; `RSP-01` is on its branch. **Pre-alpha.**
+Docs are true as of `9b9acab` (2026-11-21): `main`, CI run 44823112331 green on every job; slice 9 is closed; `RSP-01` merged (PR #42); `RSP-02` (India eSign v2.1) is on its branch. **Pre-alpha.**
 **[v0.1.0](https://github.com/CasualOffice/openseal/releases/tag/v0.1.0)** is published (2026-11-20), the first signed pre-release: server, worker and key-service images on
 GHCR, each signed keyless with Sigstore, with build provenance and an SBOM, and a signed `SHA256SUMS`. It runs end to
 end on one machine with Docker Compose and is **not for production agreements**. **Phases D, 0, 1 and 2 are closed**

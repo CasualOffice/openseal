@@ -16,8 +16,8 @@ use casual_sign_flatten::{
 use casual_sign_model::{Field, FieldType, FieldValue, Id, Placement, Points, Text};
 use casual_sign_pdf::{Limits, admit};
 use casual_sign_seal::{
-    Appearance, CompleteOptions, ExternalSigner, Profile, Rect, SealRequest, Sealed,
-    TimestampSource, Visible, complete, prepare, seal,
+    Appearance, CmsFormat, CompleteOptions, ExternalSigner, Profile, Rect, SealRequest, Sealed,
+    TimestampSource, Visible, complete, complete_cms, prepare, prepare_for_cms, seal,
 };
 use rust_decimal::Decimal;
 
@@ -54,6 +54,113 @@ pub enum Scenario {
     SimpleRemoteSimple,
     /// r1 remote, r2 simple, r3 remote.
     TwoRemote,
+    /// As `SimpleRemoteSimple`, r1 signing through an India eSign ESP whose `PKCS7pdf`
+    /// CMS is CAdES-like (ESS v2, no `signingTime`), carried as `ETSI.CAdES.detached`
+    /// (ADR-047 §3.3); our time-stamp added.
+    EsignCades,
+    /// As `EsignCades` with an Adobe-like CMS (`signingTime`, no ESS), carried as
+    /// `adbe.pkcs7.detached`, the one exception (ADR-047 §3.3).
+    EsignAdobe,
+    /// As `EsignCades` with the ESP's own time-stamp in the CMS (the CA's TSA), kept as
+    /// received.
+    EsignTimestamped,
+}
+
+impl Scenario {
+    fn esign(self) -> bool {
+        matches!(
+            self,
+            Self::EsignCades | Self::EsignAdobe | Self::EsignTimestamped
+        )
+    }
+}
+
+/// Adobe-like signed attributes: content-type, signingTime, message-digest (no ESS), in
+/// DER set order, written by hand as an ESP's would be.
+pub fn adobe_attributes(digest: &[u8]) -> Vec<u8> {
+    let hex = |s: &str| -> Vec<u8> {
+        let s: String = s.split_whitespace().collect();
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    };
+    let mut body = hex("30180609 2a864886f70d010903 310b0609 2a864886f70d010701");
+    body.extend(hex("301c0609 2a864886f70d010905 310f170d"));
+    body.extend_from_slice(b"261121000000Z");
+    body.extend(hex("302f0609 2a864886f70d010904 31220420"));
+    body.extend_from_slice(digest);
+    let mut set = vec![0x31, u8::try_from(body.len()).unwrap()];
+    set.extend(body);
+    set
+}
+
+/// An eSign signature on `slot`: `prepare_for_cms`, the "ESP" (the test key) signs its
+/// own attributes over the ByteRange digest and answers with a whole CMS, then
+/// `complete_cms` at B-LT.
+pub fn esign_sign(
+    bytes: &[u8],
+    slot: &str,
+    appearance: Option<SlotAppearance>,
+    key: &TestProvider,
+    scenario: Scenario,
+    tsa: &TestTsa,
+    rev: &TestRevocation,
+) -> Sealed {
+    use casual_sign_crypto::{DigestAlgorithm, DigestValue, cms, tsp};
+    let mut r = SealRequest::new(Profile::BaselineLt, slot, SIGNING_TIME);
+    r.trust = trust();
+    r.visible = appearance.map(|a| Visible {
+        page: 0,
+        rect: Rect {
+            llx: 0.0,
+            lly: 0.0,
+            urx: 0.0,
+            ury: 0.0,
+        },
+        appearance: Appearance::Content {
+            content: a.content(),
+            resources: Some(a.resources()),
+        },
+    });
+    let format = if scenario == Scenario::EsignAdobe {
+        CmsFormat::Pkcs7
+    } else {
+        CmsFormat::Cades
+    };
+    let p = prepare_for_cms(bytes, &r, format, 24 * 1024).unwrap();
+    let digest = DigestValue::from_bytes(DigestAlgorithm::Sha256, &p.byte_range_digest).unwrap();
+    let attrs = if scenario == Scenario::EsignAdobe {
+        adobe_attributes(&p.byte_range_digest)
+    } else {
+        cms::signed_attributes_der(&key.certificate_chain()[0], &digest).unwrap()
+    };
+    let value = key.sign(&attrs).unwrap().as_bytes().to_vec();
+    let signed =
+        cms::external_signature(key.certificate_chain(), key.algorithm(), &attrs, &value).unwrap();
+    let token = (scenario == Scenario::EsignTimestamped).then(|| {
+        let imprint = DigestAlgorithm::Sha256.digest(signed.signature_value());
+        let req = tsp::TimestampRequest::new(&imprint, &tsa.nonce()).unwrap();
+        let resp = tsa.timestamp(req.as_der()).unwrap();
+        tsp::verify_timestamp_response(&resp, &req)
+            .unwrap()
+            .as_der()
+            .to_vec()
+    });
+    let der = signed.to_der(token.as_deref()).unwrap();
+    complete_cms(
+        &p,
+        &der,
+        &der_of(&key.certificate_chain()[0]),
+        tsa,
+        rev,
+        &CompleteOptions {
+            trust: trust(),
+            limits: Limits::default(),
+        },
+    )
+    .unwrap()
+    .0
 }
 
 /// What the build left at each step, for assertions.
@@ -200,7 +307,7 @@ pub fn build(scenario: Scenario, platform: Profile) -> Built {
     // finished simple signer's, and the lock-point signer's own fields other than the
     // signature their widget shows.
     let mut final_fields: Vec<Field> = vec![r1_date.clone()];
-    if scenario == Scenario::SimpleRemoteSimple {
+    if scenario != Scenario::TwoRemote {
         final_fields.extend(r0.iter().cloned());
     }
     let flat = {
@@ -254,15 +361,33 @@ pub fn build(scenario: Scenario, platform: Profile) -> Built {
         }),
         &fonts,
     );
-    let after_first_remote = remote_sign(
-        &r1_fill.bytes,
-        "Remote_r1",
-        r1_fill.signature,
-        &p256(),
-        &tsa,
-        &rev,
-    )
-    .bytes;
+    let after_first_remote = if scenario.esign() {
+        let key = if scenario == Scenario::EsignAdobe {
+            rsa()
+        } else {
+            p256()
+        };
+        esign_sign(
+            &r1_fill.bytes,
+            "Remote_r1",
+            r1_fill.signature,
+            &key,
+            scenario,
+            &tsa,
+            &rev,
+        )
+        .bytes
+    } else {
+        remote_sign(
+            &r1_fill.bytes,
+            "Remote_r1",
+            r1_fill.signature,
+            &p256(),
+            &tsa,
+            &rev,
+        )
+        .bytes
+    };
 
     // r2 finishes; in the two-remote envelope r3 signs next, with r2's values filled in
     // the same revision as r3's own.

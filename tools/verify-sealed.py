@@ -337,15 +337,26 @@ def dss_rows_by_file(image, d, names):
     return out
 
 
-def dss_judge(rows, level):
+def sub_filters(data):
+    """Each signature's `/SubFilter` in file order, document time-stamps left out (EU DSS
+    lists signatures, not document time-stamps, as rows)."""
+    import re
+    found = [m.group(1).decode() for m in re.finditer(rb"/SubFilter\s*/([A-Za-z0-9.]+)", data)]
+    return [f for f in found if f != "ETSI.RFC3161"]
+
+
+def dss_judge(rows, level, subs=()):
     """EU DSS must find each signature intact and valid, at the manifest's PAdES level,
     with no undefined changes; TOTAL_PASSED where revocation data is embedded (B-LT,
-    B-LTA), and never TOTAL_FAILED."""
-    want = "PAdES-BASELINE-" + level[2:]
+    B-LTA), and never TOTAL_FAILED. A signature written as `adbe.pkcs7.detached` (a
+    provider's CMS that is not CAdES, ADR-047 §3.3) must be found at the same level as
+    `PKCS7-`, never claimed as PAdES."""
     problems = []
     if not rows:
         return ["EU DSS found no signature"]
     for i, r in enumerate(rows):
+        legacy = i < len(subs) and subs[i] == "adbe.pkcs7.detached"
+        want = ("PKCS7-" if legacy else "PAdES-BASELINE-") + level[2:]
         if r.get("intact") != "true" or r.get("valid") != "true":
             problems.append(f"EU DSS signature {i}: intact={r.get('intact')} valid={r.get('valid')}")
         if r.get("format") != want:
@@ -388,7 +399,7 @@ def check_dirs(dirs, dss_image=None):
                 name, level = r["file"], r["level"]
                 found, summary = pyhanko_sealed((d / name).read_bytes(), root, level)
                 if dss_image:
-                    found += dss_judge(dss.get(name, []), level)
+                    found += dss_judge(dss.get(name, []), level, sub_filters((d / name).read_bytes()))
                     dtext = "; ".join(f"{x.get('indication')}/{x.get('subindication')} {x.get('format')} "
                                       f"intact={x.get('intact')} valid={x.get('valid')} "
                                       f"undefined={x.get('undefined_changes')}"

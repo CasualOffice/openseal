@@ -753,6 +753,9 @@ pub(crate) fn plan(
 /// A remote signature's rows (`RSP-01`), in docs/09 §2a's words: what the provider
 /// and the certificate state, attributed; never a legal level in our voice.
 fn remote_rows(x: &crate::RemoteSignature, o: &CertificateOptions) -> Vec<(String, Value)> {
+    if let Some(e) = &x.esign {
+        return esign_rows(x, e, o);
+    }
     let stated = match &x.qualifier {
         Some(q) => format!("{q} (as stated by {})", x.provider),
         None => format!("None stated by {}", x.provider),
@@ -802,6 +805,91 @@ fn remote_rows(x: &crate::RemoteSignature, o: &CertificateOptions) -> Vec<(Strin
         ("The certificate states".into(), Value::plain(found)),
         ("Name on the certificate".into(), Value::plain(name)),
     ]
+}
+
+/// How an eSign request's authentication reads: the ESP's means, never "Aadhaar-verified"
+/// (docs/09 §2a).
+fn auth_words(mode: &str) -> &'static str {
+    match mode {
+        "otp" => "a one-time password (OTP)",
+        "face" => "face authentication",
+        "fingerprint" => "fingerprint authentication",
+        "iris" => "iris authentication",
+        _ => "the means the ESP applies",
+    }
+}
+
+/// An India eSign signature's rows (`RSP-02`, ADR-047 §3.8, docs/09 §2a): signed with
+/// eSign through the ESP, how the signer authenticated there, the certificate and its
+/// issuer, the ESP's reference and the format, stated honestly ("CMS signature,
+/// adbe.pkcs7.detached", never PAdES when it is not); never the certificate's e-KYC
+/// attributes and never a legal status.
+fn esign_rows(
+    x: &crate::RemoteSignature,
+    e: &crate::EsignFacts,
+    o: &CertificateOptions,
+) -> Vec<(String, Value)> {
+    let ts = x
+        .timestamp
+        .map(|t| format!(", time-stamped {}", datetime(t, o)))
+        .unwrap_or_default();
+    let format = if e.format == "adbe.pkcs7.detached" {
+        format!("CMS signature, adbe.pkcs7.detached, with time-stamp and validation data{ts}")
+    } else {
+        format!("PAdES {} ({}){ts}", x.level, e.format)
+    };
+    let name = match x.name_match {
+        casual_sign_audit::NameMatch::Exact => "The same as the recipient's",
+        casual_sign_audit::NameMatch::Normalized => {
+            "The same as the recipient's, ignoring case, spacing and accents"
+        }
+        _ => "Not the same as the recipient's",
+    };
+    let mut rows = vec![
+        (
+            "Signature".into(),
+            Value::plain(format!(
+                "Signed with eSign through {}; {format}",
+                x.provider
+            )),
+        ),
+        (
+            "Authentication".into(),
+            Value::plain(format!(
+                "The signer authenticated at {} by {} (as requested)",
+                x.provider,
+                auth_words(&e.auth_mode)
+            )),
+        ),
+        (
+            "Certificate".into(),
+            Value::plain(format!("{}, issued by {}", x.subject, x.issuer)),
+        ),
+        ("Serial".into(), Value::hash(x.serial.clone())),
+        (
+            "Valid".into(),
+            Value::plain(format!(
+                "{} to {}",
+                datetime(x.not_before, o),
+                datetime(x.not_after, o)
+            )),
+        ),
+        (
+            "Certificate SHA-256".into(),
+            Value::hash(x.certificate_sha256.hex()),
+        ),
+    ];
+    if let Some(r) = &e.reference {
+        rows.push(("ESP reference".into(), Value::hash(r.clone())));
+    }
+    if !e.policy_oids.is_empty() {
+        rows.push((
+            "Certificate policies".into(),
+            Value::plain(e.policy_oids.join(", ")),
+        ));
+    }
+    rows.push(("Name on the certificate".into(), Value::plain(name)));
+    rows
 }
 
 pub(crate) fn title(input: &CertificateInput<'_>) -> &'static str {

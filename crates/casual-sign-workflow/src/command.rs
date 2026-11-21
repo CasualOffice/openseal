@@ -579,6 +579,10 @@ pub enum Command {
         provider: casual_sign_audit::RemoteProvider,
         /// Values set first, as in `Finish`.
         values: Vec<FieldEntry>,
+        /// India eSign (ADR-047 §3.1): the consent's hash, API version and
+        /// authentication; `None` for CSC.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        esign: Option<casual_sign_audit::EsignStarted>,
     },
     /// The worker prepared the session's documents (the platform): records the hashes the
     /// signature will bind; a document not yet locked reaches its lock point here.
@@ -610,6 +614,10 @@ pub enum Command {
         name_match: casual_sign_audit::NameMatch,
         /// Each document signed.
         documents: Vec<casual_sign_audit::RemoteSignedDocument>,
+        /// India eSign (ADR-047 §3.8): the authentication asked, the certificate's
+        /// policies; `None` for CSC.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        esign: Option<casual_sign_audit::EsignSigned>,
     },
     /// The session failed: cancelled by the signer, or ended by the platform. The
     /// signer's fields reopen; a new attempt is a new session.

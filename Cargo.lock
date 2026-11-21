@@ -533,6 +533,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "casual-sign-esign"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "casual-sign-xml",
+ "der",
+ "rcgen",
+ "x509-cert",
+]
+
+[[package]]
 name = "casual-sign-fields"
 version = "0.1.0"
 dependencies = [
@@ -765,6 +777,7 @@ dependencies = [
  "casual-sign-audit",
  "casual-sign-convertd",
  "casual-sign-csc",
+ "casual-sign-esign",
  "casual-sign-fields",
  "casual-sign-host",
  "casual-sign-model",
@@ -865,6 +878,7 @@ dependencies = [
  "casual-sign-certificate",
  "casual-sign-crypto",
  "casual-sign-csc",
+ "casual-sign-esign",
  "casual-sign-host",
  "casual-sign-keyd",
  "casual-sign-model",
@@ -920,9 +934,14 @@ name = "casual-sign-xfa"
 version = "0.0.0"
 dependencies = [
  "casual-sign-pdf",
+ "casual-sign-xml",
  "miniz_oxide 0.8.9",
  "skrifa 0.46.2",
 ]
+
+[[package]]
+name = "casual-sign-xml"
+version = "0.0.0"
 
 [[package]]
 name = "cbc"

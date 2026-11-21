@@ -278,6 +278,8 @@ async function start() {
     try { window.history.replaceState(null, "", `/s/${encodeURIComponent(token)}`); } catch { /* kept */ }
     loader.reach(1);
     fillHeader();
+    // RSP-02: back from the eSign Service Provider, whose answer the server took itself.
+    if (rspBack.state === "esign") return remoteProgress();
     try {
       view = await api.ceremony.remoteCallback(token, rspBack.state, rspBack.code, rspBack.error);
     } catch (err) { return remoteFailed(err); }
@@ -1806,6 +1808,8 @@ function review() {
   const go = button(goLabel, { icon: "check", variant: "primary", size: "lg", attrs: { "data-testid": "review-finish" } });
   back.addEventListener("click", () => documents());
   go.addEventListener("click", async () => {
+    // RSP-02: an eSign signer consents first; nothing is requested before the tick.
+    if (remote && view.remote_esign) return esignConsent();
     if (remote) {
       try {
         const r = await busy(go, () => api.ceremony.remoteStart(token, location_));
@@ -1958,6 +1962,48 @@ function toProvider(r) {
   window.location.assign(url);
 }
 
+/// RSP-02: the eSign consent (ADR-047 §3.1): the server's versioned text shown as it is,
+/// a checkbox unticked by default, the authentication to use at the ESP, and "Sign with
+/// eSign"; nothing is requested until the box is ticked.
+function esignConsent() {
+  const e = view.remote_esign || {};
+  const provider = view.remote_provider_name || t("sign.remote.provider");
+  const text = h("p", { class: "os-esign__consent", attrs: { "data-testid": "esign-consent-text" }, text: e.consent_text || "" });
+  const box = h("input", { attrs: { type: "checkbox", id: "esign-consent", "data-testid": "esign-consent" } });
+  const label = h("label", { attrs: { for: "esign-consent" }, text: t("sign.esign.agree") });
+  const modes = (e.auth_modes || ["otp"]).filter((m) => ["otp", "face", "fingerprint", "iris"].includes(m));
+  const group = h("fieldset", { class: "os-esign__modes" }, h("legend", { text: t("sign.esign.how") }));
+  modes.forEach((m, i) => {
+    const id = `esign-mode-${m}`;
+    const r = h("input", { attrs: { type: "radio", name: "esign-mode", id, value: m, "data-testid": `esign-mode-${m}` } });
+    r.checked = i === 0;
+    group.append(h("div", {}, r, h("label", { attrs: { for: id }, text: t(`sign.esign.mode.${m}`) })));
+  });
+  const go = button(t("sign.esign.start", { provider }), { icon: "pen-line", variant: "primary", size: "lg", attrs: { "data-testid": "esign-start" } });
+  go.disabled = true;
+  box.addEventListener("change", () => { go.disabled = !box.checked; });
+  const back = button(t("sign.review.back"), { icon: "chevron-left", size: "lg" });
+  back.addEventListener("click", () => review());
+  go.addEventListener("click", async () => {
+    if (!box.checked) return;
+    const auth_mode = group.querySelector("input:checked")?.value || modes[0];
+    try {
+      await busy(go, () => api.ceremony.remoteStart(token, location_, { consent: e.consent_version, accepted: true, auth_mode }));
+      return remoteProgress();
+    } catch (err) { return toastError(err); }
+  });
+  screen(stateCard({ mark: stateMark("shield-check"), title: t("sign.esign.title", { provider }), children: [text, h("div", { class: "os-esign__agree" }, box, label), group], actions: [go, back], testId: "esign-consent-card" }));
+}
+
+/// RSP-02: send the browser to the hand-off page, whose form posts the signed request to
+/// the ESP (top-level), keeping the link in this tab for the return.
+function toEsp(r) {
+  const to = r?.remote_signing?.esign?.handoff;
+  if (!to) return remoteFailed(null);
+  try { session?.setItem(RSP_KEY, token); } catch { /* the return then cannot find the link */ }
+  window.location.assign(to);
+}
+
 /// RSP-01: a session that did not hold, with why and a way to start again.
 function remoteFailed(err) {
   const why = err ? errorMessage(err) : t("sign.remote.failed.text");
@@ -1987,6 +2033,19 @@ async function remoteProgress(reopened = false) {
         try { await busy(cancel, () => api.ceremony.remoteCancel(token)); window.location.replace(`/s/${encodeURIComponent(token)}`); } catch (err) { toastError(err); }
       });
       screen(stateCard({ mark: stateMark("shield-check"), title: t("sign.remote.left.title"), text: t("sign.remote.left.text", { provider: s.provider || t("sign.remote.provider") }), actions: [cancel], testId: "remote-left" }));
+      return;
+    }
+    if (s.status === "prepared" && view.remote_esign) {
+      const go = button(t("sign.esign.continue", { provider: s.provider || t("sign.remote.provider") }), { icon: "pen-line", variant: "primary", size: "lg", attrs: { "data-testid": "esign-continue" } });
+      const cancel = button(t("sign.remote.cancel"), { size: "lg", attrs: { "data-testid": "remote-cancel" } });
+      go.addEventListener("click", async () => {
+        try { toEsp(await busy(go, () => api.ceremony.remoteAuthorize(token))); } catch (err) { toastError(err); }
+      });
+      cancel.addEventListener("click", async () => {
+        try { await busy(cancel, () => api.ceremony.remoteCancel(token)); window.location.replace(`/s/${encodeURIComponent(token)}`); } catch (err) { toastError(err); }
+      });
+      const n = (s.documents || []).length;
+      screen(stateCard({ mark: stateMark("file-check"), title: t("sign.remote.ready.title"), text: t("sign.esign.ready.text", { n, provider: s.provider || t("sign.remote.provider") }), actions: [go, cancel], testId: "remote-ready" }));
       return;
     }
     if (s.status === "prepared") {

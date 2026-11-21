@@ -64,6 +64,9 @@ pub struct RemoteSigning {
     pub key: Arc<ProviderSecretsKey>,
     /// Addresses a provider may be reached at, besides public ones.
     pub policy: SsrfPolicy,
+    /// What signs India eSign requests (`RSP-02`): keyd's ASP key; `None` fails eSign
+    /// sessions `provider_unavailable`.
+    pub asp: Option<Arc<dyn super::esign::AspSigner>>,
 }
 
 impl core::fmt::Debug for RemoteSigning {
@@ -189,6 +192,35 @@ pub(crate) struct PreparedDoc {
     /// The signed revision's blob, once completed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) signed: Option<String>,
+    /// eSign (ADR-047): this document's transaction id, `{session}.{n}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) txn: Option<String>,
+    /// eSign: the signed request XML's blob, kept with the evidence (§3.6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) request: Option<String>,
+    /// eSign: the ESP's answer's blob, once it arrived and verified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) response: Option<String>,
+    /// eSign: the `/SubFilter` written at preparation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) format: Option<String>,
+}
+
+/// A prepared document's record and its bytes.
+pub(crate) type PreparedBytes = (PreparedDoc, Vec<u8>);
+
+/// How a session's documents are prepared: for a CSC credential whose chain is known,
+/// or for an ESP's own CMS (ADR-047 §3.2), under the `/SubFilter` the catalogue says.
+pub(crate) enum How<'a> {
+    /// CSC: our CAdES signed attributes over the credential's chain.
+    Csc(&'a ExternalSigner),
+    /// eSign: the placeholder planned and the format.
+    Esign {
+        /// CAdES-conformant (`ETSI.CAdES.detached`) or not (`adbe.pkcs7.detached`).
+        cades: bool,
+        /// Bytes planned for the ESP's CMS and our time-stamp.
+        placeholder: usize,
+    },
 }
 
 /// A session's `prepared` record.
@@ -291,12 +323,17 @@ fn unix_ts(t: x509_cert::time::Time) -> Option<Timestamp> {
         .and_then(Timestamp::from_unix_millis)
 }
 
+/// The key's name as the audit trail records it (`rsa-2048`, `ec-p256`), or empty.
+pub(crate) fn key_name(cert: &Certificate) -> String {
+    algorithm_of(cert).map(|(_, k)| k).unwrap_or_default()
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// What the certificate says, as found (ADR-046 §3.7).
-fn certificate_facts(
+pub(crate) fn certificate_facts(
     cert: &Certificate,
     der: &[u8],
     key: &str,
@@ -335,7 +372,7 @@ pub(crate) fn name_match(cn: &str, recipient: &str) -> NameMatch {
     }
 }
 
-fn pem_anchors(pem: &[u8]) -> Vec<Vec<u8>> {
+pub(crate) fn pem_anchors(pem: &[u8]) -> Vec<Vec<u8>> {
     let text = String::from_utf8_lossy(pem);
     let mut out = Vec::new();
     for block in text.split("-----BEGIN CERTIFICATE-----").skip(1) {
@@ -394,10 +431,10 @@ fn captures_for(
 }
 
 /// One document to prepare, with its current bytes.
-struct DocIn {
-    id: Id,
-    bytes: Vec<u8>,
-    current: Option<PreparedDoc>,
+pub(crate) struct DocIn {
+    pub(crate) id: Id,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) current: Option<PreparedDoc>,
 }
 
 /// The failure a pipeline step ends the session with.
@@ -408,15 +445,15 @@ fn invalid(code: &'static str) -> (RemoteFailure, String) {
 /// Prepare every document (blocking): the revisions of ADR-046 §3.2 and `prepare`.
 #[allow(clippy::too_many_lines)]
 // One pass per document, in the ADR's order.
-fn prepare_documents(
+pub(crate) fn prepare_documents(
     services: &SealServices,
     state: &EnvelopeState,
     signer_id: &Id,
-    signer: &ExternalSigner,
+    how: &How<'_>,
     docs: Vec<DocIn>,
     arts: &BTreeMap<String, casual_sign_sdk::Art>,
     signing_time: Duration,
-) -> core::result::Result<Vec<(PreparedDoc, Prepared)>, (RemoteFailure, String)> {
+) -> core::result::Result<Vec<PreparedBytes>, (RemoteFailure, String)> {
     let never = || false;
     let fields = &state.fields.0;
     let caps = captures_for(fields, state, arts);
@@ -571,36 +608,99 @@ fn prepare_documents(
                 resources: Some(s.resources()),
             },
         });
-        let p = casual_sign_sdk::remote::prepare(&filled_doc.bytes, &request, signer, bound)
-            .map_err(|e| invalid(e.code()))?;
-        out.push((
-            PreparedDoc {
-                document_id: d.id.as_str().to_owned(),
-                base: BlobKey::of(&d.bytes).hex(),
-                prepared: BlobKey::of(&p.bytes).hex(),
-                byte_range: p.byte_range,
-                placeholder_len: p.placeholder_len,
-                byte_range_digest: STANDARD.encode(&p.byte_range_digest),
-                signed_attributes: STANDARD.encode(&p.signed_attributes),
-                to_be_signed: STANDARD.encode(&p.to_be_signed),
-                first_new_revision: p.first_new_revision,
-                materialized,
-                filled,
-                signed: None,
-            },
-            p,
-        ));
+        let doc = |bytes: &[u8],
+                   byte_range: [u64; 4],
+                   placeholder_len: usize,
+                   digest: &[u8],
+                   attrs: &[u8],
+                   tbs: &[u8],
+                   first: usize,
+                   format: Option<String>| PreparedDoc {
+            document_id: d.id.as_str().to_owned(),
+            base: BlobKey::of(&d.bytes).hex(),
+            prepared: BlobKey::of(bytes).hex(),
+            byte_range,
+            placeholder_len,
+            byte_range_digest: STANDARD.encode(digest),
+            signed_attributes: STANDARD.encode(attrs),
+            to_be_signed: STANDARD.encode(tbs),
+            first_new_revision: first,
+            materialized: materialized.clone(),
+            filled: filled.clone(),
+            signed: None,
+            txn: None,
+            request: None,
+            response: None,
+            format,
+        };
+        match how {
+            How::Csc(signer) => {
+                let p =
+                    casual_sign_sdk::remote::prepare(&filled_doc.bytes, &request, signer, bound)
+                        .map_err(|e| invalid(e.code()))?;
+                let record = doc(
+                    &p.bytes,
+                    p.byte_range,
+                    p.placeholder_len,
+                    &p.byte_range_digest,
+                    &p.signed_attributes,
+                    &p.to_be_signed,
+                    p.first_new_revision,
+                    None,
+                );
+                out.push((record, p.bytes));
+            }
+            How::Esign { cades, placeholder } => {
+                let format = if *cades {
+                    casual_sign_sdk::remote::CmsFormat::Cades
+                } else {
+                    casual_sign_sdk::remote::CmsFormat::Pkcs7
+                };
+                let p = casual_sign_sdk::remote::prepare_for_cms(
+                    &filled_doc.bytes,
+                    &request,
+                    format,
+                    *placeholder,
+                )
+                .map_err(|e| invalid(e.code()))?;
+                let record = doc(
+                    &p.bytes,
+                    p.byte_range,
+                    p.placeholder_len,
+                    &p.byte_range_digest,
+                    &[],
+                    &p.byte_range_digest,
+                    p.first_new_revision,
+                    Some(format.sub_filter().to_owned()),
+                );
+                out.push((record, p.bytes));
+            }
+        }
     }
     Ok(out)
 }
 
-fn hash32(b64: &str) -> Option<Hash256> {
+/// The audit trail's record of one prepared document.
+pub(crate) fn prepared_document(doc: &PreparedDoc, bytes: &[u8], rid: &Id) -> PreparedDocument {
+    PreparedDocument {
+        document_id: Id::new(doc.document_id.clone()).unwrap_or_else(|_| rid.clone()),
+        base_hash: Hash256(BlobKey::parse(&doc.base).map(|k| k.0).unwrap_or_default()),
+        prepared_hash: Hash256::digest(bytes),
+        byte_range: doc.byte_range,
+        byte_range_digest: hash32(&doc.byte_range_digest).unwrap_or_default(),
+        to_be_signed: hash32(&doc.to_be_signed).unwrap_or_default(),
+        lock_point: false,
+        txn: doc.txn.clone(),
+    }
+}
+
+pub(crate) fn hash32(b64: &str) -> Option<Hash256> {
     let v = STANDARD.decode(b64).ok()?;
     <[u8; 32]>::try_from(v.as_slice()).ok().map(Hash256)
 }
 
 /// What a finished phase leaves for the database.
-enum Outcome {
+pub(crate) enum Outcome {
     /// Prepared: blobs to store, the session record and the engine's command.
     Prepared {
         blobs: Vec<Vec<u8>>,
@@ -693,13 +793,16 @@ impl<B: BlobStore + 'static> Worker<B> {
                 let value = serde_json::to_value(&record).map_err(|_| bad())?;
                 match apply_in(&mut tx, envelope, &command, &c).await {
                     Ok(_) => {
+                        // An eSign session has no credential (the ESP issues it).
+                        let credential =
+                            Some(record.credential_id.as_str()).filter(|c| !c.is_empty());
                         tx.signing()
                             .advance(
                                 session.id,
                                 SessionStatus::Prepared,
                                 None,
                                 None,
-                                Some(&record.credential_id),
+                                credential,
                                 None,
                                 Some(&value),
                             )
@@ -797,6 +900,12 @@ impl<B: BlobStore + 'static> Worker<B> {
         let Some(row) = row.filter(|r| r.enabled) else {
             return Ok(Outcome::Failed(RemoteFailure::ProviderRefused, None));
         };
+        // India eSign (RSP-02): no OAuth code; the ESP's answers are stored blobs.
+        if provider.esign.is_some() {
+            return self
+                .esign_phase(account, envelope, session, state, rid, completed)
+                .await;
+        }
         let acct = account.0;
         let sid = session.id;
         // The code and PKCE verifier, sealed by the server, opened once.
@@ -952,7 +1061,7 @@ impl<B: BlobStore + 'static> Worker<B> {
                         &services,
                         &state,
                         &rid,
-                        &signer,
+                        &How::Csc(&signer),
                         docs,
                         &arts,
                         signing_time,
@@ -963,20 +1072,9 @@ impl<B: BlobStore + 'static> Worker<B> {
                     let mut blobs = bases;
                     let mut documents = Vec::new();
                     let mut records = Vec::new();
-                    for (doc, p) in prepared {
-                        documents.push(PreparedDocument {
-                            document_id: Id::new(doc.document_id.clone())
-                                .unwrap_or_else(|_| rid.clone()),
-                            base_hash: Hash256(
-                                BlobKey::parse(&doc.base).map(|k| k.0).unwrap_or_default(),
-                            ),
-                            prepared_hash: Hash256::digest(&p.bytes),
-                            byte_range: p.byte_range,
-                            byte_range_digest: hash32(&doc.byte_range_digest).unwrap_or_default(),
-                            to_be_signed: hash32(&doc.to_be_signed).unwrap_or_default(),
-                            lock_point: false,
-                        });
-                        blobs.push(p.bytes);
+                    for (doc, bytes) in prepared {
+                        documents.push(prepared_document(&doc, &bytes, &rid));
+                        blobs.push(bytes);
                         records.push(doc);
                     }
                     let leaf_der = info.chain.first().cloned().unwrap_or_default();
@@ -1192,6 +1290,9 @@ fn sign_phase(
                 .signature_timestamp
                 .and_then(|d| i64::try_from(d.as_millis()).ok())
                 .and_then(Timestamp::from_unix_millis),
+            request_sha256: None,
+            response_sha256: None,
+            signature_format: None,
         });
         blobs.push(sealed.bytes);
     }
@@ -1215,6 +1316,7 @@ fn sign_phase(
             certificate: Box::new(certificate),
             name_match: matched,
             documents: signed_docs,
+            esign: None,
         },
         record,
     }

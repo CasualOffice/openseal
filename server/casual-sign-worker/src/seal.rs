@@ -559,9 +559,11 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
                 // state it.
                 EventData::RecipientRemoteSigned {
                     provider,
+                    provider_reference,
                     certificate,
                     name_match,
                     documents,
+                    esign,
                     ..
                 } => {
                     remote = Some(RemoteSignature {
@@ -577,6 +579,17 @@ fn certificate_input<'a>(input: &'a SealInput) -> CertificateInput<'a> {
                         name_match: *name_match,
                         level: "B-LT".to_owned(),
                         timestamp: documents.iter().find_map(|d| d.timestamp_time),
+                        // RSP-02: the ESP, the authentication asked, its reference and
+                        // the format written (ADR-047 §3.8).
+                        esign: esign.as_ref().map(|e| casual_sign_certificate::EsignFacts {
+                            auth_mode: e.auth_mode.clone(),
+                            reference: provider_reference.clone(),
+                            format: documents
+                                .iter()
+                                .find_map(|d| d.signature_format.clone())
+                                .unwrap_or_else(|| "ETSI.CAdES.detached".to_owned()),
+                            policy_oids: e.policy_oids.clone(),
+                        }),
                     });
                 }
                 // FG-013, ADR-043: the scan is a document of the envelope, sealed with it.

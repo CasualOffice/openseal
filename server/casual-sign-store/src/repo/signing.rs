@@ -587,4 +587,24 @@ impl Signing<'_> {
         .map_err(db)?;
         rows.into_iter().map(SessionRow::into_session).collect()
     }
+
+    /// The database's ASP token for `session` (ADR-047 §3.5, migration 0052): its expiry
+    /// (Unix seconds) and MAC while the session is open, within its time and being
+    /// prepared, the MAC `None` while no ASP token key is installed; `None` otherwise.
+    /// keyd signs an ASP request for the session only with it.
+    ///
+    /// # Errors
+    ///
+    /// `CS-DB-0001`.
+    pub async fn asp_token(&mut self, session: Uuid) -> Result<Option<(i64, Option<Vec<u8>>)>> {
+        // Runtime-checked and parameterized: the definer function is new in 0052 and the
+        // offline cache is regenerated on CI (sqlx-prepare.sh).
+        let row: Option<(Option<i64>, Option<Vec<u8>>)> =
+            sqlx::query_as("SELECT expires, mac FROM openseal_keyd_asp_token($1)")
+                .bind(session)
+                .fetch_optional(self.tx.conn())
+                .await
+                .map_err(db)?;
+        Ok(row.and_then(|(e, m)| e.map(|e| (e, m))))
+    }
 }

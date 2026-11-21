@@ -59,7 +59,7 @@ pub use pem::{MAX_CHAIN, certificates};
 pub use pkcs11::{ChainSource, Pkcs11Key, Pkcs11KeyConfig, Pkcs11Module};
 pub use server::{AllowList, KeyService, Keyd, KeydLimits, fingerprint, server_tls};
 pub use signer::{DigestSigner, digest_for, digest_len};
-pub use token::{MAX_TOKEN_LIFETIME_S, SEAL_TOKEN_KEY_LEN, SealTokenKey};
+pub use token::{AspTokenKey, MAX_TOKEN_LIFETIME_S, SEAL_TOKEN_KEY_LEN, SealTokenKey};
 
 /// Re-exported so hosts name the same types.
 pub use casual_sign_secrets::Secret;

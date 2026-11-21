@@ -1,0 +1,2 @@
+# Signed XML fixtures: their bytes are what was signed (ADR-047 §4, docs/04 rule 16).
+server/casual-sign-esign/tests/fixtures/*.xml -text

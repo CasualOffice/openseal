@@ -1599,8 +1599,22 @@ components:
         failure: {type: [string, 'null']}
         provider: {type: [string, 'null']}
         documents: {type: array, items: {type: string}}
+        esign:
+          description: >-
+            RSP-02, answered by `POST …/remote-signing/authorize` for an India eSign
+            session: where the hand-off page is and which document it hands off.
+          type: object
+          properties:
+            handoff: {type: string}
+            document: {type: integer}
+            of: {type: integer}
     RemoteStartRequest:
-      description: RSP-01. Values given with the start, as at finish; usually none (each was saved as filled).
+      description: >-
+        RSP-01. Values given with the start, as at finish; usually none (each was saved as
+        filled). RSP-02: for an India eSign provider, `esign` is required: the consent
+        version the page showed (the view's `remote_esign.consent_version`), `accepted`
+        true (the signer ticked it; unticked by default), and the authentication chosen
+        among `remote_esign.auth_modes`. `422` without it.
       type: object
       additionalProperties: false
       properties:
@@ -1614,6 +1628,14 @@ components:
               field: {type: string}
               value: {type: object}
         location: {$ref: '#/components/schemas/DeviceLocation'}
+        esign:
+          type: object
+          additionalProperties: false
+          required: [consent, accepted]
+          properties:
+            consent: {type: string}
+            accepted: {type: boolean}
+            auth_mode: {type: string, enum: [otp, face, fingerprint, iris]}
     RemoteCallbackRequest:
       description: >-
         RSP-01: what the provider sent the browser back with (to the provider's redirect
@@ -5987,6 +6009,64 @@ paths:
           content:
             application/pdf:
               schema: {type: string, format: binary}
+        default: {$ref: '#/components/responses/Problem'}
+  /s/{token}/remote-signing/esign:
+    parameters:
+      - name: token
+        in: path
+        required: true
+        description: Ceremony link token (secret)
+        schema: {type: string}
+    get:
+      operationId: ceremonyEsignHandoff
+      summary: "Hand the signed eSign request to the ESP"
+      description: >-
+        RSP-02 (ADR-047 §3.1): once `POST …/remote-signing/authorize` armed a document, a
+        small page whose form posts the ASP's signed request to the ESP in a top-level
+        navigation (its Content Security Policy lets the form reach that ESP only). The
+        signer gives their Aadhaar number or VID and OTP or biometrics to the ESP on the
+        ESP's page; OpenSeal never receives them. `409 CS-RSP-0003` with no armed session.
+      security: []
+      x-permission: public
+      responses:
+        '200':
+          description: The hand-off page
+          content:
+            text/html:
+              schema: {type: string}
+        default: {$ref: '#/components/responses/Problem'}
+  /rsp/esign/{provider}/response:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        description: The catalogue's eSign provider id
+        schema: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,31}$'}
+    post:
+      operationId: esignResponse
+      summary: "An ESP's answer"
+      description: >-
+        RSP-02 (ADR-047 §3.4, §3.6): where the ESP sends the browser (v2.1) with its
+        `EsignResp`, in the form field the catalogue names or as `application/xml`. Public:
+        it is rate-limited per provider and address, refuses a body over 1 MiB, reads the
+        answer within the eSign limits (512 KiB, depth 16, 256 elements, no DTD or
+        entities) and verifies its XML Signature under the ESP's configured certificate;
+        the `txn` must name an open session's armed document, whose single-use state the
+        answer spends. A forged, wrapped, late, replayed or duplicate answer changes
+        nothing and is logged as a security event. Every case answers `303` to
+        `{OPENSEAL_PUBLIC_URL}/s/rsp?state=esign`, the same for a known `txn` or not.
+      security: []
+      x-permission: public
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: {type: object, additionalProperties: {type: string}}
+          application/xml:
+            schema: {type: string}
+      responses:
+        '303':
+          description: Back to the signing page
         default: {$ref: '#/components/responses/Problem'}
   /s/{token}/sso:
     parameters:

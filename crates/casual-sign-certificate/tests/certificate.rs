@@ -651,6 +651,7 @@ fn a_remote_signature_is_stated_with_its_certificate_and_attributed_claims_only(
         name_match: casual_sign_audit::NameMatch::Normalized,
         level: "B-LT".into(),
         timestamp: Some(t(1_000_000)),
+        esign: None,
     });
     let r = render_certificate(&inp, &fonts, &CertificateOptions::default()).unwrap();
     let mut a = admit(&r.bytes, &Limits::default(), &never).unwrap();
@@ -680,6 +681,69 @@ fn a_remote_signature_is_stated_with_its_certificate_and_attributed_claims_only(
         "advanced electronic signature",
         "legally",
         "qualified signature",
+    ] {
+        assert!(!lower.contains(never_said), "{never_said}: {text}");
+    }
+}
+
+/// `RSP-02` (ADR-047 §3.7, §3.8, docs/09 §2a): an eSign signer's block says "Signed with
+/// eSign through <ESP>", how the signer authenticated at the ESP, the certificate, the
+/// ESP's reference and the format as it is ("CMS signature, adbe.pkcs7.detached", never
+/// PAdES for it); never Aadhaar, an e-KYC attribute or a legal status.
+#[test]
+fn an_esign_signature_states_the_esp_the_authentication_and_the_format_only() {
+    let fonts = FontSet::bundled();
+    let (chain, delivered) = chain(1);
+    let mut inp = input(&chain, delivered, 1);
+    inp.recipients[0].remote = Some(casual_sign_certificate::RemoteSignature {
+        provider: "Example ESP".into(),
+        subject: "Ana Esign".into(),
+        issuer: "CN=Example ESP CA 2026".into(),
+        serial: "77aa01".into(),
+        not_before: t(0),
+        not_after: t(1_800_000),
+        certificate_sha256: casual_sign_audit::Hash256::digest(b"esign leaf"),
+        qualifier: None,
+        qc_statements: Vec::new(),
+        name_match: casual_sign_audit::NameMatch::Differs,
+        level: "B-LT".into(),
+        timestamp: Some(t(1_000_000)),
+        esign: Some(casual_sign_certificate::EsignFacts {
+            auth_mode: "otp".into(),
+            reference: Some("RC-2026-0001".into()),
+            format: "adbe.pkcs7.detached".into(),
+            policy_oids: vec!["2.16.356.100.2.4.1".into()],
+        }),
+    });
+    let r = render_certificate(&inp, &fonts, &CertificateOptions::default()).unwrap();
+    let mut a = admit(&r.bytes, &Limits::default(), &never).unwrap();
+    let pages = a.report.pages.clone();
+    let text = casual_sign_fields::extract_text(&mut a.document, &pages, &never)
+        .unwrap()
+        .iter()
+        .flat_map(|p| p.runs.iter().map(|r| r.text.clone()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for want in [
+        "Signed with eSign through Example ESP",
+        "CMS signature, adbe.pkcs7.detached",
+        "authenticated at Example ESP by a one-time password (OTP)",
+        "Ana Esign, issued by CN=Example ESP CA 2026",
+        "RC-2026-0001",
+        "2.16.356.100.2.4.1",
+        "Not the same as the recipient's",
+    ] {
+        assert!(text.contains(want), "{want}: {text}");
+    }
+    let lower = text.to_lowercase();
+    for never_said in [
+        "aadhaar",
+        "e-kyc",
+        "pades b-lt",
+        "legally",
+        "qualified",
+        "valid under",
+        "section 3a",
     ] {
         assert!(!lower.contains(never_said), "{never_said}: {text}");
     }

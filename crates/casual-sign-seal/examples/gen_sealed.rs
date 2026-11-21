@@ -355,9 +355,38 @@ fn main() {
             Profile::BaselineLta,
             "two remote signers (P-256, RSA-3072; each B-LT) with a simple signer filled between them, platform seal B-LTA",
         ),
+        // India eSign (RSP-02, ADR-047 §3.3): the ESP's own PKCS7pdf CMS embedded.
+        (
+            "remote-esign-cades-blt.pdf",
+            remote::Scenario::EsignCades,
+            Profile::BaselineLt,
+            "eSign signer (P-256): an ESP's CAdES-like CMS as ETSI.CAdES.detached, our time-stamp, DSS; platform seal B-LT",
+        ),
+        (
+            "remote-esign-adobe-pkcs7-blt.pdf",
+            remote::Scenario::EsignAdobe,
+            Profile::BaselineLt,
+            "eSign signer (RSA-3072): an ESP's Adobe-like CMS (signingTime, no ESS) as adbe.pkcs7.detached, our time-stamp, DSS; platform seal B-LT",
+        ),
+        (
+            "remote-esign-esp-timestamped-blt.pdf",
+            remote::Scenario::EsignTimestamped,
+            Profile::BaselineLt,
+            "eSign signer (P-256): an ESP's CAdES-like CMS carrying its own signature time-stamp, kept; DSS; platform seal B-LT",
+        ),
     ] {
         let built = remote::build(scenario, p);
         out.put(name, &[], &built.bytes, p, why);
+        if scenario == remote::Scenario::EsignAdobe {
+            let changed =
+                remote::page_content_change(&built.after_first_remote, &built.later_field);
+            out.put_tampered(
+                "remote-esign-page-changed-after-signing-blt.pdf",
+                &built.after_first_remote,
+                &changed,
+                "a value drawn into page content after the eSign signature (B-LT): disallowed",
+            );
+        }
         if scenario == remote::Scenario::SimpleRemoteSimple {
             // The tampered counterpart every validator must refuse (rule 26): a later
             // signer's value drawn into page content after the remote signature.

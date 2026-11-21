@@ -211,7 +211,7 @@ fn check_token(
 
     let content_digest = cms.digest_algorithm().digest(tst_bytes.as_bytes());
     let signer = cms
-        .verify_signer(oid::ID_CT_TST_INFO, &content_digest)
+        .verify_signer(oid::ID_CT_TST_INFO, &content_digest, true)
         .map_err(|e| match e {
             CryptoError::UnsupportedAlgorithm => e,
             CryptoError::Malformed(_) => CryptoError::Malformed(Structure::TimestampToken),

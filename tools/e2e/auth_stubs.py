@@ -54,7 +54,27 @@ mentions them.
         --redirect-uri http://localhost:8080/s/rsp --signer-name "Remote Signer" \\
         --crl-url http://tsa:8318/ca.crl
 
-Standard library only (and the `openssl` command for keys and signatures). Exits
+- `esign` (RSP-02, ADR-047 §4): an India eSign Service Provider (API v2.1) for the eSign
+  row of tools/e2e/signing-providers.json. `POST /esign/2.1/signdoc` takes the ASP's
+  request from the browser (form field `eSignRequest`), verifies its XML Signature with
+  **xmlsec1** against the ASP certificate (`--asp-cert`, the one keyd's `asp-ci` key
+  holds), records whether the request carries no Aadhaar data (`GET /requests`), and
+  shows a page asking for a made-up 12-digit number, a 6-digit code, the name and a
+  variant; `POST /esign/2.1/authenticate` issues a one-time P-256 certificate under the
+  development root (`--issue-from`, `--crl-url`), writes the signed attributes in DER by
+  hand (CAdES-like with ESS `signing-certificate-v2`, or Adobe-like with `signingTime`),
+  signs them with `openssl pkeyutl`, assembles the CMS, signs the `EsignResp` with
+  `xmlsec1 --sign` under its response-signing key (its certificate written to
+  `--publish`, which the catalogue names) and posts it back to the request's
+  `responseUrl` through the browser. Cancel answers `ESP-944`, a malformed number
+  `K-100`, an unverified request `ESP-911`. Hostile variants: `unsigned`, `wrong-key`,
+  `other-digest`, `ber`, `other-cert`. Never OpenSeal's code.
+
+    python3 -I tools/e2e/auth_stubs.py esign --issue-from /secrets --listen 0.0.0.0:8092 \\
+        --asp-cert /secrets/asp.pem --publish /esign --crl-url http://tsa:8318/ca.crl
+
+Standard library only (and the `openssl` command for keys and signatures; `xmlsec1` for
+the `esign` stub). Exits
 non-zero and names the problem when it cannot start.
 """
 
@@ -68,6 +88,7 @@ import hmac
 import html
 import json
 import os
+import re
 import secrets
 import ssl
 import subprocess
@@ -659,6 +680,301 @@ def csc_handler(csc: Csc) -> type[BaseHTTPRequestHandler]:
     return Handler
 
 
+# ---------------------------------------------------------------------------------------
+# India eSign Service Provider (RSP-02, ADR-047 §4)
+
+DSIG_TEMPLATE = (
+    '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo>'
+    '<CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
+    '<SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"/>'
+    '<Reference URI=""><Transforms>'
+    '<Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>'
+    '</Transforms><DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>'
+    '<DigestValue></DigestValue></Reference></SignedInfo><SignatureValue/></Signature>'
+)
+
+# Each variant the page offers (the default first): how the CMS or the answer is made.
+ESIGN_VARIANTS = ("cades", "adobe", "unsigned", "wrong-key", "other-digest", "ber", "other-cert")
+
+
+def xmlsec1(*args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
+    """Run xmlsec1 with the options its version needs: from 1.3, a key given on the
+    command line is found for a signature without `KeyInfo` only with `--lax-key-search`
+    (1.2 refuses the option)."""
+    # The command (`--sign`, `--verify`) comes first; its options after it.
+    return subprocess.run(["xmlsec1", *args[:1], *XMLSEC1_LAX(), *args[1:]], capture_output=True, check=False, cwd=cwd)
+
+
+def xmlsec1_verified(done: subprocess.CompletedProcess) -> bool:
+    """xmlsec1's own verdict, not only its exit status (a usage error exits 0): 1.3 says
+    "Verification status: OK", 1.2 "OK" on a line of its own."""
+    text = (done.stdout + done.stderr).decode(errors="replace")
+    return done.returncode == 0 and ("Verification status: OK" in text
+                                     or any(line.strip() == "OK" for line in text.splitlines()))
+
+
+def _xmlsec1_lax() -> list[str]:
+    done = subprocess.run(["xmlsec1", "--version"], capture_output=True, check=False)
+    m = re.search(r"(\d+)\.(\d+)", done.stdout.decode(errors="replace"))
+    return ["--lax-key-search"] if m and (int(m.group(1)), int(m.group(2))) >= (1, 3) else []
+
+
+_LAX: list[list[str]] = []
+
+
+def XMLSEC1_LAX() -> list[str]:  # noqa: N802
+    if not _LAX:
+        _LAX.append(_xmlsec1_lax())
+    return _LAX[0]
+
+
+def der(tag: int, body: bytes) -> bytes:
+    """One DER TLV."""
+    n = len(body)
+    if n < 0x80:
+        head = bytes([n])
+    else:
+        b = n.to_bytes((n.bit_length() + 7) // 8, "big")
+        head = bytes([0x80 | len(b)]) + b
+    return bytes([tag]) + head + body
+
+
+def der_children(tlv: bytes) -> list[bytes]:
+    """The TLVs inside a constructed TLV (definite lengths only)."""
+    def header(b: bytes, at: int) -> tuple[int, int]:
+        n = b[at + 1]
+        if n < 0x80:
+            return at + 2, n
+        k = n & 0x7F
+        return at + 2 + k, int.from_bytes(b[at + 2:at + 2 + k], "big")
+    start, length = header(tlv, 0)
+    body, out, at = tlv[start:start + length], [], 0
+    while at < len(body):
+        s, n = header(body, at)
+        out.append(body[at:s + n])
+        at = s + n
+    return out
+
+
+OID = {
+    "data": bytes.fromhex("06092a864886f70d010701"),
+    "signedData": bytes.fromhex("06092a864886f70d010702"),
+    "contentType": bytes.fromhex("06092a864886f70d010903"),
+    "messageDigest": bytes.fromhex("06092a864886f70d010904"),
+    "signingTime": bytes.fromhex("06092a864886f70d010905"),
+    "signingCertificateV2": bytes.fromhex("060b2a864886f70d010910022f"),
+    "sha256": bytes.fromhex("0609608648016503040201"),
+    "ecdsaWithSHA256": bytes.fromhex("06082a8648ce3d040302"),
+}
+
+
+def signed_attributes(digest: bytes, cert_der: bytes, variant: str) -> bytes:
+    """The DER `SET OF` signed attributes an ESP's `PKCS7pdf` carries: CAdES-like (ESS
+    `signing-certificate-v2`) or Adobe-like (`signingTime`, no ESS), written by hand."""
+    attr = lambda oid, value: der(0x30, oid + der(0x31, value))  # noqa: E731
+    attrs = [
+        attr(OID["contentType"], OID["data"]),
+        attr(OID["messageDigest"], der(0x04, digest)),
+    ]
+    if variant == "adobe":
+        attrs.append(attr(OID["signingTime"], der(0x17, time.strftime("%y%m%d%H%M%SZ", time.gmtime()).encode())))
+    else:
+        cert_hash = der(0x04, hashlib.sha256(cert_der).digest())
+        attrs.append(attr(OID["signingCertificateV2"], der(0x30, der(0x30, der(0x30, cert_hash)))))
+    return der(0x31, b"".join(sorted(attrs)))
+
+
+def cms(attrs: bytes, signature: bytes, cert_der: bytes, extra_certs: list[bytes]) -> bytes:
+    """A detached CMS `SignedData` with one SignerInfo (issuer and serial), ECDSA SHA-256."""
+    tbs = der_children(cert_der)[0]
+    parts = der_children(tbs)
+    serial, issuer = (parts[1], parts[3]) if parts[0][0] == 0xA0 else (parts[0], parts[2])
+    signer_info = der(0x30, b"".join([
+        der(0x02, b"\x01"),
+        der(0x30, issuer + serial),
+        der(0x30, OID["sha256"]),
+        b"\xa0" + attrs[1:],
+        der(0x30, OID["ecdsaWithSHA256"]),
+        der(0x04, signature),
+    ]))
+    signed_data = der(0x30, b"".join([
+        der(0x02, b"\x01"),
+        der(0x31, der(0x30, OID["sha256"])),
+        der(0x30, OID["data"]),
+        der(0xA0, b"".join([cert_der, *extra_certs])),
+        der(0x31, signer_info),
+    ]))
+    return der(0x30, OID["signedData"] + der(0xA0, signed_data))
+
+
+class Esign:
+    """The stub ESP: its response-signing key, the CA it issues one-time certificates
+    under, and the requests it took."""
+
+    def __init__(self, ca_dir: Path, work: Path, publish: Path, asp_cert: Path, crl_url: str | None) -> None:
+        self.ca_dir, self.work, self.asp_cert, self.crl_url = ca_dir, work, asp_cert, crl_url
+        self.lock = threading.Lock()
+        self.pending: dict[str, dict] = {}
+        self.seen: list[dict] = []
+        self.key = work / "esp-response.key"
+        self.cert = work / "esp-response.pem"
+        openssl("genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", str(self.key))
+        openssl("req", "-new", "-x509", "-key", str(self.key), "-days", "2", "-subj",
+                "/O=OpenSeal CI ESP/CN=CI ESP response signing", "-out", str(self.cert))
+        publish.mkdir(parents=True, exist_ok=True)
+        (publish / "esp-response.pem").write_bytes(self.cert.read_bytes())
+        self.other_key = work / "other.key"
+        openssl("genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", str(self.other_key))
+
+    def xmlsec(self, *args: str) -> subprocess.CompletedProcess:
+        return xmlsec1(*args, cwd=self.work)
+
+    def check_request(self, xml: str) -> dict:
+        """What an ESP checks of an ASP's request: the ASP's XML Signature (with xmlsec1,
+        against the ASP certificate registered), and here also that it carries no Aadhaar
+        data. Answers the request's members."""
+        path = self.work / f"req-{secrets.token_hex(8)}.xml"
+        path.write_text(xml)
+        done = self.xmlsec("--verify", "--pubkey-cert-pem", str(self.asp_cert), str(path))
+        get = lambda name: (re.search(rf'\b{name}="([^"]*)"', xml) or [None, None])[1]  # noqa: E731
+        m = re.search(r"<InputHash[^>]*>([0-9a-fA-F]{64})</InputHash>", xml)
+        return {
+            "verified": xmlsec1_verified(done),
+            "txn": get("txn"), "response_url": get("responseUrl"), "auth_mode": get("AuthMode"),
+            "sc": get("sc"), "ekyc_id": get("ekycId"), "doc_info": get("docInfo"),
+            "hash": m.group(1).lower() if m else None,
+            "aadhaar_free": get("ekycId") == "" and "uid" not in xml.lower().replace("uidai", ""),
+        }
+
+    def user_certificate(self, name: str) -> tuple[Path, bytes]:
+        """A one-time signer certificate under the CI root, as the ESP's CA issues it."""
+        key, csr, ext, cert = (self.work / f"user-{secrets.token_hex(6)}.{x}" for x in ("key", "csr", "ext", "pem"))
+        openssl("genpkey", "-algorithm", "EC", "-pkeyopt", "ec_paramgen_curve:P-256", "-out", str(key))
+        openssl("req", "-new", "-key", str(key), "-subj", f"/O=OpenSeal CI ESP/CN={name}", "-out", str(csr))
+        ext.write_text("\n".join([
+            "basicConstraints=critical,CA:FALSE",
+            "keyUsage=critical,digitalSignature,nonRepudiation",
+            "certificatePolicies=2.16.356.100.2.4.1",
+            "subjectKeyIdentifier=hash",
+            "authorityKeyIdentifier=keyid",
+        ] + ([f"crlDistributionPoints=URI:{self.crl_url}"] if self.crl_url else [])) + "\n")
+        openssl("x509", "-req", "-in", str(csr), "-CA", str(self.ca_dir / "ca.pem"), "-CAkey", str(self.ca_dir / "ca.key"),
+                "-sha256", "-days", "1", "-set_serial", "0x" + secrets.token_hex(16), "-extfile", str(ext), "-out", str(cert))
+        return key, openssl("x509", "-in", str(cert), "-outform", "DER")
+
+    def answer(self, req: dict, *, signed: bool, name: str = "Asha Esign", variant: str = "cades",
+               err: str | None = None) -> str:
+        """The signed `EsignResp` for `req`: a signature (CMS by `variant`) or an error."""
+        ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() + 19800))
+        res = "CI-" + secrets.token_hex(6).upper()
+        if not signed:
+            body = (f'<EsignResp status="0" ts="{ts}" txn="{html.escape(req["txn"] or "")}" resCode="{res}" '
+                    f'errCode="{html.escape(err or "ESP-999")}" errMsg="NA">')
+        else:
+            key, user = self.user_certificate(name)
+            digest = bytes.fromhex(req["hash"])
+            if variant == "other-digest":
+                digest = hashlib.sha256(b"other bytes").digest()
+            ca = openssl("x509", "-in", str(self.ca_dir / "ca.pem"), "-outform", "DER")
+            attrs = signed_attributes(digest, user, "adobe" if variant == "adobe" else "cades")
+            sig = openssl("pkeyutl", "-sign", "-inkey", str(key), data=hashlib.sha256(attrs).digest())
+            value = cms(attrs, sig, user, [ca])
+            if variant == "ber":
+                value = b"\x30\x80" + value[2 + (value[1] & 0x7F if value[1] & 0x80 else 0):] + b"\x00\x00"
+            named = user
+            if variant == "other-cert":
+                _, named = self.user_certificate("Someone Else")
+            body = (f'<EsignResp status="1" ts="{ts}" txn="{html.escape(req["txn"] or "")}" resCode="{res}" '
+                    f'errCode="NA" errMsg="NA"><UserX509Certificate>{base64.b64encode(named).decode()}'
+                    f'</UserX509Certificate><Signatures><DocSignature id="1" sigHashAlgorithm="SHA256" error="">'
+                    f'{base64.b64encode(value).decode()}</DocSignature></Signatures>')
+        if variant == "unsigned":
+            return '<?xml version="1.0" encoding="UTF-8"?>\n' + body + "</EsignResp>"
+        tmpl = self.work / f"resp-{secrets.token_hex(8)}.xml"
+        out = tmpl.with_suffix(".signed.xml")
+        tmpl.write_text('<?xml version="1.0" encoding="UTF-8"?>\n' + body + DSIG_TEMPLATE + "</EsignResp>")
+        key = self.other_key if variant == "wrong-key" else self.key
+        done = self.xmlsec("--sign", "--privkey-pem", str(key), "--output", str(out), str(tmpl))
+        if done.returncode != 0:
+            raise RuntimeError(f"xmlsec1 --sign failed: {done.stderr.decode(errors='replace')[:200]}")
+        return out.read_text()
+
+
+def esign_page(title: str, body: str) -> bytes:
+    return (f'<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{html.escape(title)}</title></head>'
+            f"<body><main><h1>{html.escape(title)}</h1>{body}</main></body></html>").encode()
+
+
+def esign_handler(esp: Esign) -> type[BaseHTTPRequestHandler]:
+    class Handler(_Handler):
+        def form(self) -> dict:
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 2 * 1024 * 1024:
+                return {}
+            return {k: v[0] for k, v in parse_qs(self.rfile.read(n).decode("utf-8", "replace"), keep_blank_values=True).items()}
+
+        def do_GET(self) -> None:  # noqa: N802
+            u = urlsplit(self.path)
+            if u.path == "/healthz":
+                return self.answer(200, {"ok": True})
+            if u.path == "/requests":
+                with esp.lock:
+                    return self.answer(200, {"requests": esp.seen})
+            return self.answer(404, {"error": "not found"})
+
+        def do_POST(self) -> None:  # noqa: N802
+            u = urlsplit(self.path)
+            f = self.form()
+            if u.path == "/esign/2.1/signdoc":
+                req = esp.check_request(f.get("eSignRequest", ""))
+                with esp.lock:
+                    esp.seen.append(req)
+                if not req["verified"] or not req["txn"] or not req["hash"]:
+                    # ESP-911: the ASP's signature does not verify; nothing is signed.
+                    req = {**req, "hash": req["hash"] or "00" * 32}
+                    return self.post_back(req, esp.answer(req, signed=False, err="ESP-911"))
+                ref = secrets.token_urlsafe(12)
+                with esp.lock:
+                    esp.pending[ref] = req
+                options = "".join(f'<option value="{v}">{v}</option>' for v in ESIGN_VARIANTS)
+                body = (f"<p>Document: {html.escape(req['doc_info'] or '')}. Hash to sign: "
+                        f"<code data-testid=\"esp-hash\">{req['hash']}</code>.</p>"
+                        f'<form method="post" action="/esign/2.1/authenticate"><input type="hidden" name="ref" value="{ref}">'
+                        '<label>Aadhaar number or VID (made up) <input name="uid" data-testid="esp-uid" inputmode="numeric"></label>'
+                        '<label>One-time password <input name="otp" data-testid="esp-otp" inputmode="numeric"></label>'
+                        '<label>Name on the certificate <input name="name" value="Asha Esign" data-testid="esp-name"></label>'
+                        f'<label>Variant <select name="variant" data-testid="esp-variant">{options}</select></label>'
+                        '<button name="decision" value="sign" data-testid="esp-sign">Sign</button> '
+                        '<button name="decision" value="cancel" data-testid="esp-cancel">Cancel</button></form>')
+                return self.answer(200, esign_page("CI eSign Service Provider", body), content_type="text/html; charset=utf-8")
+            if u.path == "/esign/2.1/authenticate":
+                with esp.lock:
+                    req = esp.pending.pop(f.get("ref", ""), None)
+                if req is None:
+                    return self.answer(404, {"error": "unknown request"})
+                if f.get("decision") != "sign":
+                    return self.post_back(req, esp.answer(req, signed=False, err="ESP-944"))
+                ok = re.fullmatch(r"\d{12}", f.get("uid", "")) and re.fullmatch(r"\d{6}", f.get("otp", ""))
+                if not ok:
+                    return self.post_back(req, esp.answer(req, signed=False, err="K-100"))
+                variant = f.get("variant", "cades")
+                if variant not in ESIGN_VARIANTS:
+                    variant = "cades"
+                return self.post_back(req, esp.answer(req, signed=True, name=f.get("name") or "Asha Esign", variant=variant))
+            return self.answer(404, {"error": "not found"})
+
+        def post_back(self, req: dict, xml: str) -> None:
+            """Send the browser to the ASP's `responseUrl` with the answer (v2.1 §3.1.1)."""
+            target = req.get("response_url") or ""
+            body = (f'<form id="r" method="post" action="{html.escape(target)}" data-testid="esp-return">'
+                    f'<input type="hidden" name="eSignResponse" value="{html.escape(xml)}">'
+                    '<button data-testid="esp-return-button">Return to the application</button></form>'
+                    '<script>document.getElementById("r").submit()</script>')
+            return self.answer(200, esign_page("Returning to the application", body), content_type="text/html; charset=utf-8")
+
+    return Handler
+
+
 def address(s: str) -> tuple[str, int]:
     host, _, port = s.rpartition(":")
     try:
@@ -699,6 +1015,12 @@ def main(argv: list[str] | None = None) -> None:
     c.add_argument("--redirect-uri", required=True, help="the server's redirect URI: {OPENSEAL_PUBLIC_URL}/s/rsp")
     c.add_argument("--signer-name", default="Remote Signer")
     c.add_argument("--crl-url", help="the issuing root's CRL, named in the signer's certificate")
+    e = sub.add_parser("esign", help="an India eSign Service Provider, API v2.1 (RSP-02)")
+    e.add_argument("--listen", type=address, default=("0.0.0.0", 8092))
+    e.add_argument("--issue-from", type=Path, required=True, help="directory holding ca.pem and ca.key")
+    e.add_argument("--asp-cert", type=Path, required=True, help="the ASP's request-signing certificate (PEM)")
+    e.add_argument("--publish", type=Path, required=True, help="where esp-response.pem is written")
+    e.add_argument("--crl-url", help="the issuing root's CRL, named in each signer's certificate")
     args = ap.parse_args(argv)
 
     work = Path(tempfile.mkdtemp(prefix="auth-stubs-"))
@@ -724,6 +1046,9 @@ def main(argv: list[str] | None = None) -> None:
                 fail("OPENSEAL_E2E_CSC_SECRET is not set")
             csc = Csc(args.issue_from, work, args.signer_name, args.redirect_uri, secret, args.crl_url)
             servers = (ThreadingHTTPServer(args.listen, csc_handler(csc)),)
+        elif args.stub == "esign":
+            esp = Esign(args.issue_from, work, args.publish, args.asp_cert, args.crl_url)
+            servers = (ThreadingHTTPServer(args.listen, esign_handler(esp)),)
         else:
             servers = (oidc_server(args.listen, Provider(args.providers, args.redirect_uri, Signer(work))),)
     except (OSError, RuntimeError) as e:

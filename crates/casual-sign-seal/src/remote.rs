@@ -93,35 +93,45 @@ impl Prepared {
     /// The laid-out revision, checked against the recorded ByteRange: the second range
     /// reaches the end and the gap is exactly a zero hex placeholder.
     fn laid(&self) -> Result<Laid, SealError> {
-        let altered = SealError::Remote(RemoteProblem::PreparedAltered);
-        let [zero, a, b, c] = self.byte_range;
-        let a = usize::try_from(a).map_err(|_| altered.clone())?;
-        let b = usize::try_from(b).map_err(|_| altered.clone())?;
-        let c = usize::try_from(c).map_err(|_| altered.clone())?;
-        let hex_len = self.placeholder_len.saturating_mul(2);
-        let consistent = zero == 0
-            && b.checked_add(c) == Some(self.bytes.len())
-            && a.checked_add(hex_len).and_then(|v| v.checked_add(2)) == Some(b);
-        if !consistent {
-            return Err(altered);
-        }
-        let slot = self.bytes.get(a..b).ok_or(altered.clone())?;
-        let (Some(b'<'), Some(b'>')) = (slot.first(), slot.last()) else {
-            return Err(altered);
-        };
-        if !slot
-            .get(1..slot.len().saturating_sub(1))
-            .is_some_and(|h| h.iter().all(|&x| x == b'0'))
-        {
-            return Err(altered);
-        }
-        Ok(Laid {
-            bytes: self.bytes.clone(),
-            a,
-            b,
-            placeholder: self.placeholder_len,
-        })
+        checked_laid(&self.bytes, self.byte_range, self.placeholder_len)
     }
+}
+
+/// A stored revision as [`Laid`], checked against its recorded ByteRange: the second
+/// range reaches the end and the gap is exactly a zero hex placeholder.
+pub(crate) fn checked_laid(
+    bytes: &[u8],
+    byte_range: [u64; 4],
+    placeholder_len: usize,
+) -> Result<Laid, SealError> {
+    let altered = SealError::Remote(RemoteProblem::PreparedAltered);
+    let [zero, a, b, c] = byte_range;
+    let a = usize::try_from(a).map_err(|_| altered.clone())?;
+    let b = usize::try_from(b).map_err(|_| altered.clone())?;
+    let c = usize::try_from(c).map_err(|_| altered.clone())?;
+    let hex_len = placeholder_len.saturating_mul(2);
+    let consistent = zero == 0
+        && b.checked_add(c) == Some(bytes.len())
+        && a.checked_add(hex_len).and_then(|v| v.checked_add(2)) == Some(b);
+    if !consistent {
+        return Err(altered);
+    }
+    let slot = bytes.get(a..b).ok_or(altered.clone())?;
+    let (Some(b'<'), Some(b'>')) = (slot.first(), slot.last()) else {
+        return Err(altered);
+    };
+    if !slot
+        .get(1..slot.len().saturating_sub(1))
+        .is_some_and(|h| h.iter().all(|&x| x == b'0'))
+    {
+        return Err(altered);
+    }
+    Ok(Laid {
+        bytes: bytes.to_vec(),
+        a,
+        b,
+        placeholder: placeholder_len,
+    })
 }
 
 /// Lay out a signature revision of `input` as `request` asks, for `signer`, with room for

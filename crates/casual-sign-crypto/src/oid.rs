@@ -14,6 +14,9 @@ pub const ID_MESSAGE_DIGEST: Oid = Oid::new_unwrap("1.2.840.113549.1.9.4");
 pub const ID_SIGNING_CERTIFICATE_V2: Oid = Oid::new_unwrap("1.2.840.113549.1.9.16.2.47");
 /// `id-aa-signatureTimeStampToken` (RFC 3161 appendix A).
 pub const ID_SIGNATURE_TIME_STAMP_TOKEN: Oid = Oid::new_unwrap("1.2.840.113549.1.9.16.2.14");
+/// `id-signingTime` (RFC 5652): never written by us; its presence makes a provider's CMS
+/// not CAdES-conformant (ADR-047 §3.3).
+pub const ID_SIGNING_TIME: Oid = Oid::new_unwrap("1.2.840.113549.1.9.5");
 /// `id-ct-TSTInfo` (RFC 3161).
 pub const ID_CT_TST_INFO: Oid = Oid::new_unwrap("1.2.840.113549.1.9.16.1.4");
 

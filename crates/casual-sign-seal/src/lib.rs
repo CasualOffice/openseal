@@ -54,6 +54,7 @@ mod golden;
 #[cfg(test)]
 mod legacy;
 mod remote;
+mod remote_cms;
 mod revision;
 mod source;
 mod text;
@@ -74,6 +75,7 @@ pub use error::{
     SelfCheckFailure,
 };
 pub use remote::{CompleteOptions, ExternalSigner, Prepared, complete, prepare};
+pub use remote_cms::{CmsFormat, PreparedForCms, ProviderCms, complete_cms, prepare_for_cms};
 pub use source::{
     CrlQuery, NoRevocation, NoTimestamps, OcspQuery, RevocationSource, SourceError, TimestampSource,
 };
@@ -319,10 +321,16 @@ fn name(n: &[u8]) -> Object {
 
 /// The signature dictionary's entries before `/ByteRange` and `/Contents`.
 fn signature_head(request: &SealRequest) -> Result<Dictionary, SealError> {
+    signature_head_with(request, b"ETSI.CAdES.detached")
+}
+
+/// As [`signature_head`] with another `/SubFilter`: `adbe.pkcs7.detached` only to carry
+/// a provider's CMS that is not CAdES-conformant (ADR-047 §3.3), never for ours.
+fn signature_head_with(request: &SealRequest, sub_filter: &[u8]) -> Result<Dictionary, SealError> {
     let mut d = Dictionary::new();
     d.insert(b"Type", name(b"Sig"));
     d.insert(b"Filter", name(b"Adobe.PPKLite"));
-    d.insert(b"SubFilter", name(b"ETSI.CAdES.detached"));
+    d.insert(b"SubFilter", name(sub_filter));
     if let SealKind::Certification { docmdp } = request.kind {
         let mut params = Dictionary::new();
         params.insert(b"Type", name(b"TransformParams"));

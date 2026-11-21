@@ -115,6 +115,8 @@ export interface Operations {
   eraseMe(params?: Record<string, never>): Promise<any>;
   /** Erase a member's identity (ASVS-16) — `POST /api/v1/users/{id}/erase` (users.remove) */
   eraseUser(params: { "id": string | number | boolean }): Promise<any>;
+  /** An ESP's answer — `POST /rsp/esign/{provider}/response` */
+  esignResponse(params: { "provider": string | number | boolean }): Promise<any>;
   /** Export one's own data in this workspace (ASVS-16) — `GET /api/v1/users/me/export` */
   exportMe(params?: Record<string, never>): Promise<any>;
   /** Star a template for the caller (Favourites, UXW-06); idempotent — `PUT /api/v1/templates/{id}/favourite` (templates.read) */

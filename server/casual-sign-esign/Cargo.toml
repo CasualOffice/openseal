@@ -1,0 +1,28 @@
+[package]
+name = "casual-sign-esign"
+version = "0.1.0"
+description = "OpenSeal as an Application Service Provider to an India eSign Service Provider: the CCA eSign API request and response, XML canonicalization and one narrow XML Signature profile (RSP-02, ADR-047)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+# The bounded XML reader, strict mode (ADR-026, ADR-047 §3.5). No general XML library.
+casual-sign-xml = { path = "../../crates/casual-sign-xml" }
+# SHA-256 and the RSA and ECDSA verification of the ESP's XML Signature (ADR-006: hosts
+# use aws-lc-rs). Already in the tree.
+aws-lc-rs = "1.19.0"
+# DigestValue, SignatureValue, the certificates. Already in the tree.
+base64 = "0.22.1"
+# The configured ESP certificate's public key. Already in the tree.
+x509-cert = { version = "0.3.0", default-features = false }
+der = { version = "0.8.3", default-features = false, features = ["alloc", "oid"] }
+
+[dev-dependencies]
+# A throwaway RSA and P-256 key to sign requests in tests. Already in the tree.
+rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "crypto"] }
+
+[lints]
+workspace = true

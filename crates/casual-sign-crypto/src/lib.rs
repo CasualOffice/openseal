@@ -20,6 +20,7 @@ mod der_walk;
 pub mod digest;
 mod error;
 pub mod ess;
+pub mod foreign;
 mod key;
 pub mod oid;
 pub mod revocation;

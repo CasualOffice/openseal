@@ -115,7 +115,7 @@ current slice starts unless the owner asks for it. Work already started is finis
 Current, Finishing or Paused line below. A slice moves to Current only when the one before it is closed; its new
 rows go on the Current line in the same commit.
 
-- Current: `RSP-01`
+- Current: `RSP-01`, `RSP-02`
 - Finishing (started before 2026-11-19; each was to close or go back to Open by 2026-11-21, which falls due now): (none: every row due 2026-11-21 was closed, blocked on the owner or returned to Open that day)
 - Paused (owner instruction 51, until M4): `ML-02` `ML-05` `ML-07` `ML-08` `ML-09` `ML-21` `CON-01` `CON-02` `CON-04` `CON-05` `CON-15` `CON-17` `PLAN-01` `WEB-19`
 

@@ -35,5 +35,16 @@ if [ -n "${OPENSEAL_KEYD_IMPORT_SANDBOX_KEY:-}" ] && [ -n "${OPENSEAL_KEYD_SANDB
         echo "keyd: sandbox key imported (development)" >&2
     fi
 fi
-unset OPENSEAL_KEYD_IMPORT_KEY OPENSEAL_KEYD_IMPORT_SANDBOX_KEY OPENSEAL_KEYD_SO_PIN_FILE
+# The India eSign ASP request-signing key (RSP-02, ADR-047 §3.5; the CI stack only: its
+# overlay sets these), imported once under its own label.
+if [ -n "${OPENSEAL_KEYD_IMPORT_ASP_KEY:-}" ] && [ -n "${OPENSEAL_KEYD_ASP_PKCS11_KEY_LABEL:-}" ]; then
+    pin="$(cat "$OPENSEAL_KEYD_PKCS11_PIN_FILE")"
+    if [ ! -f /var/lib/keyd/.asp-imported ]; then
+        softhsm2-util --import "$OPENSEAL_KEYD_IMPORT_ASP_KEY" --token "$OPENSEAL_KEYD_PKCS11_TOKEN" \
+            --label "$OPENSEAL_KEYD_ASP_PKCS11_KEY_LABEL" --id 03 --pin "$pin" >/dev/null
+        touch /var/lib/keyd/.asp-imported
+        echo "keyd: ASP key imported (development)" >&2
+    fi
+fi
+unset OPENSEAL_KEYD_IMPORT_KEY OPENSEAL_KEYD_IMPORT_SANDBOX_KEY OPENSEAL_KEYD_IMPORT_ASP_KEY OPENSEAL_KEYD_SO_PIN_FILE
 exec /usr/local/bin/casual-sign-keyd

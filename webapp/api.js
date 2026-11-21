@@ -856,7 +856,8 @@ export function createClient({ baseUrl = "", fetch: fetchImpl = globalThis.fetch
       /// RSP-01: start signing with the recipient's remote provider (the view with
       /// `remote_authorization_url`), the provider's return, the session's state, the
       /// prepared documents' authorization, and cancel.
-      remoteStart: (token, location) => data(request("POST", `${S(token)}/remote-signing`, { body: withLocation({}, location), ceremony: true })),
+      /// RSP-02: an India eSign start carries `esign {consent, accepted, auth_mode}`.
+      remoteStart: (token, location, esign) => data(request("POST", `${S(token)}/remote-signing`, { body: withLocation(esign ? { esign } : {}, location), ceremony: true })),
       remoteCallback: (token, state, code, error) => data(request("POST", `${S(token)}/remote-signing/callback`, { body: error ? { state, error } : { state, code }, ceremony: true })),
       remoteStatus: (token) => data(request("GET", `${S(token)}/remote-signing`, { ceremony: true })),
       remoteAuthorize: (token) => data(request("POST", `${S(token)}/remote-signing/authorize`, { body: {}, ceremony: true })),

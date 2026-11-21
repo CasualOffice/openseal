@@ -38,7 +38,7 @@ use crate::error::KeydError;
 use crate::oplog::{OpLog, OpRecord, hex};
 use crate::pem::tls_certificates;
 use crate::signer::{DigestSigner, wire_id};
-use crate::token::SealTokenKey;
+use crate::token::{AspTokenKey, SealTokenKey};
 use crate::wire::{
     Health, KeyHealth, KeyInfo, Request, Response, read_frame, valid_id, write_frame,
 };
@@ -154,6 +154,7 @@ pub struct KeyService {
     limits: KeydLimits,
     security: SecurityLog,
     tokens: Option<SealTokenKey>,
+    asp_tokens: Option<AspTokenKey>,
 }
 
 impl core::fmt::Debug for KeyService {
@@ -189,6 +190,7 @@ impl KeyService {
             limits,
             security: SecurityLog::from_env(Service::Keyd),
             tokens: None,
+            asp_tokens: None,
         }
     }
 
@@ -198,6 +200,15 @@ impl KeyService {
     #[must_use]
     pub fn with_seal_tokens(mut self, key: SealTokenKey) -> Self {
         self.tokens = Some(key);
+        self
+    }
+
+    /// Sign with an ASP request-signing key (alias `asp-*`, ADR-047 §3.5) only for a
+    /// request carrying the database's ASP token, minted under `key`, for the open eSign
+    /// session its `envelope` field names. Without this, ASP keys never sign.
+    #[must_use]
+    pub fn with_asp_tokens(mut self, key: AspTokenKey) -> Self {
+        self.asp_tokens = Some(key);
         self
     }
 
@@ -421,7 +432,7 @@ impl KeyService {
                     outcome: "ok",
                 };
                 let result = self
-                    .sealing(envelope, token.as_ref())
+                    .authorized(alias, envelope, token.as_ref())
                     .and_then(|()| self.sign(caller, alias, *alg, digest));
                 if let Err(e) = &result {
                     rec.outcome = e.code();
@@ -547,6 +558,24 @@ impl KeyService {
             None => Ok(()),
             Some(key) => key.check(envelope, token, now()),
         }
+    }
+
+    /// The token rule for `alias`: an ASP key (`asp-*`) needs the database's ASP token
+    /// for the session `subject` names, always (deny by default without the ASP token
+    /// key); any other key the seal token rule.
+    fn authorized(
+        &self,
+        alias: &str,
+        subject: &str,
+        token: Option<&casual_sign_keyd_client::SealToken>,
+    ) -> Result<(), KeydError> {
+        if alias.starts_with(casual_sign_keyd_client::ASP_ALIAS_PREFIX) {
+            return match &self.asp_tokens {
+                None => Err(KeydError::SealRefused),
+                Some(key) => key.check(subject, token, now()),
+            };
+        }
+        self.sealing(subject, token)
     }
 
     fn sign(

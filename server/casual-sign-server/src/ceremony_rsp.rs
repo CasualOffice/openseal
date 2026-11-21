@@ -180,11 +180,26 @@ struct ValueIn {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+struct EsignIn {
+    /// The consent's version the page showed.
+    consent: String,
+    /// The signer ticked it (unticked by default).
+    accepted: bool,
+    /// The authentication the signer chose among those offered.
+    #[serde(default)]
+    auth_mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct StartIn {
     #[serde(default)]
     values: Vec<ValueIn>,
     #[serde(default)]
     location: Option<DeviceLocation>,
+    /// India eSign (`RSP-02`): the consent and the authentication chosen.
+    #[serde(default)]
+    esign: Option<EsignIn>,
 }
 
 /// `POST /s/{token}/remote-signing`.
@@ -223,8 +238,35 @@ pub(crate) async fn start(
             });
         }
         let p = signing.catalogue.get(&pid).ok_or_else(unavailable)?;
+        // RSP-02 (ADR-047 §3.1): an eSign request is made only after the signer ticked
+        // the consent the page showed; its text's hash is recorded.
+        let esign = match (&p.esign, &req.esign) {
+            (None, None) => None,
+            (Some(e), Some(c)) => {
+                if c.consent != super::esign::CONSENT_VERSION {
+                    return Err(ApiError::invalid("/esign/consent"));
+                }
+                if !c.accepted {
+                    return Err(ApiError::invalid("/esign/accepted"));
+                }
+                let mode = c.auth_mode.clone().unwrap_or_else(|| "otp".to_owned());
+                if !e.auth_modes.contains(&mode) {
+                    return Err(ApiError::invalid("/esign/auth_mode"));
+                }
+                Some(casual_sign_audit::EsignStarted {
+                    consent_sha256: casual_sign_audit::Hash256(sha256(
+                        super::esign::consent_text(&p.name).as_bytes(),
+                    )),
+                    api_version: e.api_version.clone(),
+                    auth_mode: mode,
+                })
+            }
+            (Some(_), None) => return Err(ApiError::invalid("/esign")),
+            (None, Some(_)) => return Err(ApiError::invalid("/esign")),
+        };
         let sid = uuid::Uuid::now_v7();
         let r = o.recipient.clone();
+        let esign_mode = esign.as_ref().map(|e| e.auth_mode.clone());
         o.run(Command::BeginRemoteSigning {
             recipient: r.clone(),
             session: Id::new(sid.to_string()).map_err(|_| ApiError::internal("session"))?,
@@ -234,6 +276,7 @@ pub(crate) async fn start(
                 name: p.name.clone(),
             },
             values,
+            esign,
         })
         .await?;
         let state = random_secret()?;
@@ -261,12 +304,36 @@ pub(crate) async fn start(
                 now.saturating_add(time::Duration::minutes(i64::from(minutes))),
             )
             .await?;
-        o.remote_url = Some(authorization_url(
-            p,
-            &Scope::Service,
-            &state,
-            &pkce_challenge(&verifier),
-        ));
+        if let Some(mode) = esign_mode {
+            // eSign: no provider login; the worker prepares at once (ADR-047 §3.1 step 2).
+            o.tx.signing()
+                .advance(
+                    sid,
+                    SessionStatus::Preparing,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(&json!({"esign": {"auth_mode": mode}})),
+                )
+                .await?;
+            o.tx.jobs()
+                .enqueue(&casual_sign_host::jobs::remote_signing_job(
+                    casual_sign_store::JobId(uuid::Uuid::now_v7()),
+                    envelope,
+                    sid,
+                    "prepare",
+                    now,
+                ))
+                .await?;
+        } else {
+            o.remote_url = Some(authorization_url(
+                p,
+                &Scope::Service,
+                &state,
+                &pkce_challenge(&verifier),
+            ));
+        }
         let s = o.latest_session().await?;
         o.remote = Some(o.remote_state(s.as_ref(), Some(&p.name)));
         Ok(StatusCode::OK)
@@ -420,6 +487,45 @@ pub(crate) async fn authorize(
             .get(&s.provider_id)
             .ok_or_else(unavailable)?;
         let prepared = s.prepared.clone().ok_or_else(no_session)?;
+        if p.esign.is_some() {
+            // RSP-02: arm the next document's single-use answer and hand off its request.
+            let (n, of) = super::esign::next_document(&prepared).ok_or_else(no_session)?;
+            let acct = uuid::Uuid::parse_str(o.l.state.account_id.as_str())
+                .map_err(|_| ApiError::internal("account"))?;
+            let marker = random_secret()?;
+            let sealed = signing
+                .key
+                .seal(
+                    marker.as_bytes(),
+                    &casual_sign_csc::sealing::session_binding(
+                        acct.as_bytes(),
+                        s.id.as_bytes(),
+                        "pkce",
+                    ),
+                )
+                .map_err(|_| ApiError::internal("seal"))?;
+            o.tx.signing()
+                .advance(
+                    s.id,
+                    SessionStatus::AuthorizingCredential,
+                    Some(&super::esign::response_state(&s.id.to_string(), n)),
+                    Some(&sealed),
+                    None,
+                    None,
+                    None,
+                )
+                .await?;
+            let s = o.latest_session().await?;
+            let mut v = o.remote_state(s.as_ref(), Some(&p.name));
+            if let Some(m) = v.as_object_mut() {
+                m.insert(
+                    "esign".into(),
+                    json!({"handoff": format!("{}/remote-signing/esign", o.link), "document": n, "of": of}),
+                );
+            }
+            o.remote = Some(v);
+            return Ok(StatusCode::OK);
+        }
         let credential = prepared
             .get("credential_id")
             .and_then(Value::as_str)

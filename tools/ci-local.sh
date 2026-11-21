@@ -11,7 +11,7 @@ step() { printf '\n== %s\n' "$1"; }
 step "checks: fmt";        cargo fmt --all -- --check
 step "checks: clippy";     cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 step "checks: rustdoc";    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps --locked -q
-step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-keyd-client --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-secrets --exclude casual-sign-csc --exclude casual-sign-seclog --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked -q   # hosts under server/ are native only
+step "checks: wasm32";     cargo check --target wasm32-unknown-unknown --workspace --exclude casual-sign-store --exclude casual-sign-keyd --exclude casual-sign-keyd-client --exclude casual-sign-modeld --exclude casual-sign-convertd --exclude casual-sign-secrets --exclude casual-sign-csc --exclude casual-sign-esign --exclude casual-sign-seclog --exclude casual-sign-host --exclude casual-sign-worker --exclude casual-sign-server --exclude casual-sign-platform-store --exclude casual-sign-console --locked -q   # hosts under server/ are native only
 step "checks: repository"; python3 tools/check-repo.py
 # One command per line: under `set -e`, a failure on the left of `&&` does not stop the
 # script (docs/04 rule 31).
@@ -25,7 +25,7 @@ step "checks: sdks";       python3 tools/build-sdks.py --check
                            python3 -I -m unittest discover -s sdk/python/tests -t sdk/python
 step "commit messages";    python3 tools/check-commits.py --range "$(git rev-list --max-parents=0 HEAD | tail -1)..HEAD"
 step "test";               cargo fetch --locked
-                           cargo test --workspace --all-features --locked --no-fail-fast -q
+                           OPENSEAL_REQUIRE_XMLSEC1=1 OPENSEAL_XMLSEC1_IMAGE="${OPENSEAL_XMLSEC1_IMAGE:-openseal-devtools:dev}" cargo test --workspace --all-features --locked --no-fail-fast -q   # xmlsec1 from the devtools image (ADR-047 §4)
 step "msrv 1.95";          cargo +1.95.0 check --workspace --locked -q
 step "dependency policy";  cargo deny check bans licenses sources
                            cargo audit --deny warnings
