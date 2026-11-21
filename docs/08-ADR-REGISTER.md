@@ -769,3 +769,26 @@ ASP tokens), migrations (sessions' eSign members, the token function). Documents
   otherwise end a signer's session with junk. It is refused (`CS-RSP-0004`), logged as a security event and
   ignored; the session waits for a valid answer or its end. An answer that verifies but whose CMS does not hold
   fails the session `response_invalid` (§3.4).
+- **The engine for an ESP's CMS (§3.2 to §3.4), a decision.** The `/SubFilter` is inside the signed bytes, so it is
+  fixed when the revision is laid out, from the catalogue row's `cms_format` (`cades` writes `ETSI.CAdES.detached`,
+  `pkcs7` writes `adbe.pkcs7.detached`); a CMS that is not CAdES-conformant arriving for a CAdES revision is refused
+  (`CS-RSP-0004`), never re-laid out. `prepare_for_cms` and `complete_cms` in `casual-sign-seal`, `check_foreign` and
+  `append_unsigned_attribute` (our time-stamp spliced into the DER, every byte the ESP wrote kept) in
+  `casual-sign-crypto`; our verifier now checks an `adbe.pkcs7.detached` signer without ESS. docs/31 §3.1 As built.
+- **keyd (§3.5).** An alias beginning `asp-` is an ASP key (`OPENSEAL_KEYD_ASP_ALIAS`); it signs only with the
+  database's ASP token for the session (`OPENSEAL_KEYD_ASP_TOKEN_KEY`, migration 0052's `openseal_keyd_asp_token`,
+  minted only for an open session being prepared); without the key ASP keys never sign; a seal token never opens it
+  nor an ASP token the seal key.
+- **The flow (§3.1, §3.6), decisions.** `txn` is `{session}.{n}` (one request per document, v2.1); the start answers
+  no URL and the worker prepares at once; `POST …/remote-signing/authorize` arms the next document's single-use
+  answer (the session's `state` hash) and `GET …/remote-signing/esign` is a hand-off page served with its own CSP
+  (`form-action` the ESP only), since the signing page's `form-action 'self'` cannot post to the ESP; the ESP's
+  answer comes to `POST /rsp/esign/{provider}/response`, which finds the session's account through
+  `openseal_esign_session_account`, spends the armed state once and answers `303` to `/s/rsp?state=esign` in every
+  case. The consent is the server's versioned text (`esign-consent-v1-en`, with the ESP's name), its SHA-256 in
+  `recipient.remote_signing_started`.
+- **The stub (§4), a simplification.** `tools/e2e/auth_stubs.py esign` issues one-time certificates under the
+  development root, which stands for both the CCA root and the ESP's CA; a two-level test chain is left to the UAT
+  run (`RSP-02` acceptance (6)).
+- **Still to build or obtain.** v3.3 is `RSP-02A`. The real-stack run of `webapp/e2e/esign.spec.mjs` is CI's
+  (`compose-e2e`); a run through eMudhra's or CVL's UAT and counsel's review are `RSP-02` acceptance (6) and (7).

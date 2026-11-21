@@ -45,7 +45,13 @@ Built in part for CSC (`RSP-01`): the signing page's "Sign with <provider>" and 
 signer block ("Created by <provider> with the signer's certificate", the certificate's subject, issuer, serial,
 validity and SHA-256, "<qualifier> (as stated by <provider>)", "The certificate states", the name match; a test
 holds that it never says "qualified electronic signature", "advanced electronic signature", "qualified signature" or
-"legally", `casual-sign-certificate` `tests/certificate.rs`) use the wording below. It binds the product's copy, the
+"legally", `casual-sign-certificate` `tests/certificate.rs`) use the wording below. Built for India eSign (`RSP-02`): the consent shown before any request
+(`esign-consent-v1-en`, the points the v2.1 specification lists, that OpenSeal never receives the Aadhaar number, VID,
+OTP or biometrics; for counsel's review, `LEG-02`), "Sign with eSign (<ESP>)", and the certificate of completion's
+eSign block ("Signed with eSign through <ESP>", "The signer authenticated at <ESP> by <a one-time password (OTP)>
+(as requested)", the certificate, the ESP's reference, the format as it is: "CMS signature, adbe.pkcs7.detached"
+never PAdES for it; never Aadhaar, an e-KYC attribute or a legal status: `casual-sign-certificate`
+`tests/certificate.rs`). It binds the product's copy, the
 certificate of completion, the site and these documents, and counsel reviews it before a real provider is enabled (`LEG-02`, `LEG-03`; docs/69 question 9). A signer whose recipient has
 signature type `remote` signs with a certificate in their own name that **a provider** holds or issues: a QTSP or
 other remote signing provider over the CSC API (ADR-046), or an Indian eSign Service Provider for which OpenSeal acts

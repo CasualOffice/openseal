@@ -27,8 +27,8 @@ The account chooses; the default is **PAdES B-T**, so every sealed document carr
 | PAdES **B-LTA** | A **document timestamp** (`/Type /DocTimeStamp`, `SubFilter /ETSI.RFC3161`) over everything including the DSS; renewed before the TSA certificate or algorithm weakens | Archives; renewal job (slice 17) |
 
 `adbe.pkcs7.sha1` and `adbe.x509.rsa_sha1` are never written. `adbe.pkcs7.detached` is read and verified, not written,
-except (designed, ADR-047) to carry a remote provider's CMS that is not CAdES-conformant (§3.1); never for a signature
-we make.
+except (built, ADR-047, `RSP-02`) to carry a remote provider's CMS that is not CAdES-conformant, as the catalogue row
+declares (§3.1); never for a signature we make.
 
 ## 3. When the seal is applied
 
@@ -153,6 +153,16 @@ undefined changes, `PAdES-BASELINE-LT` for the CAdES-like signatures and **`PKCS
 claimed as PAdES; `tools/verify-sealed.py` now expects `PKCS7-` for an `adbe.pkcs7.detached` signature). The tampered
 copy `remote-esign-page-changed-after-signing-blt.pdf` is `TOTAL_FAILED/DISALLOWED_MODIFICATION` to ours, `OTHER` to
 pyHanko and 5 undefined changes to EU DSS.
+
+**As built (`RSP-02` steps 2 to 4, the hosts).** The worker prepares an eSign signer's documents as for CSC (lock
+point, fills) but with `prepare_for_cms`, writes one v2.1 request per document (`txn` `{session}.{n}`, the SHA-256
+ByteRange digest as `InputHash`, `ekycId` empty, no Aadhaar data) signed by keyd's `asp-*` key with the database's
+ASP token, and keeps the signed requests with the evidence. The server's answer endpoint verifies each `EsignResp`
+under the ESP's configured certificate and keeps it; the worker reads each again, maps an ESP or UIDAI code to the
+session's result (ADR-047 §3.9), embeds each CMS with `complete_cms` (our B-T unless the ESP's time-stamp verifies,
+the DSS at once) and records the `resCode`, the request and response hashes and the format. At completion the
+platform seal comes last, as for CSC. The CI stack's stub ESP (`tools/e2e`, xmlsec1 and `openssl`) and
+`webapp/e2e/esign.spec.mjs` exercise it; its run on the Compose stack is CI's (`compose-e2e`), not yet seen.
 
 ## 4. The sealing algorithm
 

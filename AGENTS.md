@@ -67,7 +67,7 @@ Every task, none of it optional:
 
 ## Current state
 
-Docs are true as of `9b9acab` (2026-11-21): `main`, CI run 44823112331 green on every job; slice 9 is closed; `RSP-01` is on its branch.
+Docs are true as of `9b9acab` (2026-11-21): `main`, CI run 44823112331 green on every job; slice 9 is closed; `RSP-01` merged (PR #42); `RSP-02` (India eSign v2.1) is on its branch.
 
 **Phases D, 0, 1 and 2 are closed** and milestones M0 to M3 are reached (M3 on 2026-11-19, instruction 59).
 **Slices 1 to 9 are closed** (instructions 59, 66, 68, 73, 83, 85), 9 of 35. **v0.1.0 is published**

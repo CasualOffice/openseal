@@ -366,9 +366,11 @@ inside the child before the converter reads the archive (`src/screen.rs`). Every
 | Jobs at once | 2 (`OPENSEAL_CONVERTD_SLOTS`); a request beyond them is refused at once, never queued | CS-CNV-0005 (`busy`) | none: `daemon::tests::slots_are_taken_and_given_back` |
 | The server's wait for one conversion | 90 s (`OPENSEAL_CONVERTD_TIMEOUT`), connecting and moving the bytes included | CS-CNV-0003 (`time`) | none: server `tests/convert.rs` |
 
-## Remote signing providers (ADR-046 and ADR-047 Accepted; `RSP-01` in progress, `RSP-02` not built)
+## Remote signing providers (ADR-046 and ADR-047 Accepted; `RSP-01` built, `RSP-02` in progress)
 
-Built for `RSP-01` except the eSign row.
+Built for `RSP-01`; the eSign rows for `RSP-02`: the answer by `casual-sign-xml` (`Limits::esign()`, codes
+`CS-XML-0001` to `-0007` reported as `CS-RSP-0004`) and `casual-sign-esign` (`response.rs`), the body limit by the
+route (1 MiB, form-encoded), each refusal tested (`server/casual-sign-esign/tests/`, `crates/casual-sign-xml`).
 
 | Limit | Default | Code |
 | --- | ---: | --- |
