@@ -79,11 +79,9 @@ fn esp_cms(key: &TestProvider, attrs: &[u8], token: Option<&[u8]>) -> Vec<u8> {
 fn cades_cms(key: &TestProvider, p: &PreparedForCms) -> Vec<u8> {
     let d = DigestAlgorithm::Sha256.digest(&[]);
     let _ = d;
-    let digest = casual_sign_crypto::DigestValue::from_bytes(
-        DigestAlgorithm::Sha256,
-        &p.byte_range_digest,
-    )
-    .unwrap();
+    let digest =
+        casual_sign_crypto::DigestValue::from_bytes(DigestAlgorithm::Sha256, &p.byte_range_digest)
+            .unwrap();
     let attrs = signed_attributes_der(&key.certificate_chain()[0], &digest).unwrap();
     esp_cms(key, &attrs, None)
 }
@@ -142,7 +140,11 @@ fn a_cades_like_cms_completes_under_etsi_cades_with_our_time_stamp_and_the_dss()
         assert!(s.report.signature_timestamp.is_some(), "ours added");
         assert!(s.report.dss.is_some());
         let a = p.byte_range[1] as usize;
-        assert_eq!(&s.bytes[..a], &p.bytes[..a], "embedded into the prepared bytes");
+        assert_eq!(
+            &s.bytes[..a],
+            &p.bytes[..a],
+            "embedded into the prepared bytes"
+        );
         assert_eq!(indications(&s.bytes), vec![Indication::TotalPassed]);
     }
 }
@@ -177,7 +179,8 @@ fn a_time_stamp_the_esp_carries_is_kept() {
             .unwrap();
     let attrs = signed_attributes_der(&key.certificate_chain()[0], &digest).unwrap();
     let value = key.sign(&attrs).unwrap().as_bytes().to_vec();
-    let signed = external_signature(key.certificate_chain(), key.algorithm(), &attrs, &value).unwrap();
+    let signed =
+        external_signature(key.certificate_chain(), key.algorithm(), &attrs, &value).unwrap();
     let imprint = DigestAlgorithm::Sha256.digest(signed.signature_value());
     let req = TimestampRequest::new(&imprint, &tsa.nonce()).unwrap();
     let resp = tsa.timestamp(req.as_der()).unwrap();

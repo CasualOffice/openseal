@@ -48,7 +48,7 @@ through the CCA eSign API. Each document is locked at its first such signature, 
 other, and the certificate of completion and audit trail are **separate PDFs** so the signed PDF stays untouched by
 our additions (the same choice Documenso made [V]).
 
-### 3.1 Remote-provider signatures (ADR-046 and ADR-047, Accepted by owner instruction 82; `RSP-01` built for CSC with `RSP-01B` to `RSP-01H` to come, `RSP-02` not built)
+### 3.1 Remote-provider signatures (ADR-046 and ADR-047, Accepted by owner instruction 82; `RSP-01` built for CSC with `RSP-01B` to `RSP-01H` to come, `RSP-02` in progress)
 
 The decisions are in [08](08-ADR-REGISTER.md) §Full records; this is the map. What is built is listed under
 "As built" at the end of this section; everything else here is design.
@@ -128,6 +128,31 @@ signature: `DssUpdate`, `FormFill`, `Signature`); **EU DSS 6.5.1** says `TOTAL_P
 `PAdES-BASELINE-LT` for the remote signature and `-T` for the platform seal. The certificates of completion are B-T,
 as every development-stack certificate: pyHanko passes them; offline, our verifier says `INDETERMINATE/TRY_LATER` and
 EU DSS `INDETERMINATE` for want of revocation data for the seal key, as for `fixtures/sealed`'s B-T files.
+
+**As built (`RSP-02` step 3, the engine for an ESP's CMS).** `casual-sign-seal` has `prepare_for_cms(input,
+&SealRequest, CmsFormat, placeholder_len) -> PreparedForCms` and `complete_cms(&PreparedForCms, cms,
+signer_certificate, &dyn TimestampSource, &dyn RevocationSource, &CompleteOptions) -> (Sealed, ProviderCms)`. The
+`/SubFilter` is inside the signed bytes, so it is fixed at `prepare_for_cms` from what the operator's catalogue says
+the ESP's CMS is (`CmsFormat::Cades` writes `ETSI.CAdES.detached`, `CmsFormat::Pkcs7` writes `adbe.pkcs7.detached`, the
+one case we write it); the hash sent is the SHA-256 ByteRange digest. Before anything is written,
+`casual_sign_crypto::foreign::check_foreign` checks the CMS: DER (BER refused, `RemoteProblem::Ber`), one SignerInfo,
+`message-digest` equal to our digest (`MessageDigest`), its signature over the signed attributes as received
+(`Cms`), the signer certificate the one the ESP named in `UserX509Certificate` (`Certificate`), RSA 2,048 bits or more;
+a CMS that is not CAdES-conformant (`signingTime`, or no ESS `signing-certificate-v2`) for a revision prepared as
+CAdES is refused (`Format`). A time-stamp the CMS carries is kept and must verify in the self-check; otherwise ours is
+added by splicing an unsigned attribute into the DER (`append_unsigned_attribute`: every byte the ESP wrote is kept,
+only enclosing lengths change). Then the embed (never re-laid out, `CS-RSP-0005`), the DSS at B-LT and the self-check,
+as `complete`. Our verifier now checks an `adbe.pkcs7.detached` signer without ESS `signing-certificate-v2`
+(`ParsedCms::verify_detached_legacy`; such signatures were `INDETERMINATE` before); PAdES still requires it. Tests:
+`crates/casual-sign-seal/tests/remote_cms.rs` (each refusal seen red with its check removed),
+`tests/remote_revisions.rs`. Fixtures `fixtures/sealed/remote-esign-cades-blt.pdf`, `-adobe-pkcs7-blt.pdf` and
+`-esp-timestamped-blt.pdf` (an eSign signer over the materialized form, a simple signer filled after, the platform
+seal last), checked 2026-11-21: **our verifier** `TOTAL_PASSED` for both signatures of each; **pyHanko 0.38.1** valid
+and trusted, `FORM_FILLING` after the eSign signature, LTV from the DSS alone; **EU DSS 6.5.1** `TOTAL_PASSED` with 0
+undefined changes, `PAdES-BASELINE-LT` for the CAdES-like signatures and **`PKCS7-LT`** for the Adobe-like one (never
+claimed as PAdES; `tools/verify-sealed.py` now expects `PKCS7-` for an `adbe.pkcs7.detached` signature). The tampered
+copy `remote-esign-page-changed-after-signing-blt.pdf` is `TOTAL_FAILED/DISALLOWED_MODIFICATION` to ours, `OTHER` to
+pyHanko and 5 undefined changes to EU DSS.
 
 ## 4. The sealing algorithm
 

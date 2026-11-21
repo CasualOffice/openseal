@@ -67,7 +67,10 @@ pub fn check_foreign(
     if parsed.signer_certificate_der()? != signer_der {
         return Err(CryptoError::SigningCertificateMismatch);
     }
-    let spki = verified.certificate.tbs_certificate().subject_public_key_info();
+    let spki = verified
+        .certificate
+        .tbs_certificate()
+        .subject_public_key_info();
     if signature::rsa_modulus_len(spki).is_some_and(|n| n < 256) {
         return Err(CryptoError::UnsupportedAlgorithm);
     }
@@ -205,7 +208,10 @@ mod tests {
         // SEQ { SEQ { INT 1 } }  -> append INT 2 inside the inner SEQ.
         let tlv = [0x30, 0x05, 0x30, 0x03, 0x02, 0x01, 0x01];
         let out = splice(&tlv, &[0], &[0x02, 0x01, 0x02]).unwrap();
-        assert_eq!(out, vec![0x30, 0x08, 0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02]);
+        assert_eq!(
+            out,
+            vec![0x30, 0x08, 0x30, 0x06, 0x02, 0x01, 0x01, 0x02, 0x01, 0x02]
+        );
         assert!(splice(&tlv, &[3], &[0x05, 0x00]).is_none());
     }
 

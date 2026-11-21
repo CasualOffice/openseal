@@ -174,7 +174,11 @@ pub fn complete_cms(
     revocation: &dyn RevocationSource,
     options: &CompleteOptions,
 ) -> Result<(Sealed, ProviderCms), SealError> {
-    let laid = checked_laid(&prepared.bytes, prepared.byte_range, prepared.placeholder_len)?;
+    let laid = checked_laid(
+        &prepared.bytes,
+        prepared.byte_range,
+        prepared.placeholder_len,
+    )?;
     let digest = {
         let t = laid.to_sign();
         DigestAlgorithm::Sha256.digest_ranges(t.bytes, &t.ranges)?
